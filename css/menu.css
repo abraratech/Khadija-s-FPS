@@ -1,0 +1,45 @@
+/* ── MENU ── */
+#menu {
+  position:fixed; inset:0; z-index:50;
+  background:radial-gradient(ellipse at 50% 60%, #0d1a2e 0%, #050810 100%);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+  pointer-events:all;
+}
+#menu-title {
+  font-size:60px; font-weight:900; color:#fff; letter-spacing:8px;
+  text-shadow:0 0 40px #00d4ff, 0 0 80px #00d4ff44;
+  margin-bottom:4px;
+}
+#menu-sub { font-size:11px; color:rgba(255,255,255,0.35); letter-spacing:4px; text-transform:uppercase; }
+#controls-grid { display:flex; gap:20px; margin:12px 0 4px; flex-wrap:wrap; justify-content:center; max-width: 600px; }
+.key-info { display:flex; flex-direction:column; align-items:center; gap:5px; color:rgba(255,255,255,0.5); font-size:11px; letter-spacing:1px; }
+.key-badge {
+  background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.18);
+  border-radius:5px; padding:5px 10px; font-size:12px; color:rgba(255,255,255,0.9); font-weight:600;
+  box-shadow:0 1px 0 rgba(255,255,255,0.06);
+}
+#start-btn {
+  margin-top:4px; padding:15px 50px;
+  background:#00d4ff; color:#000; border:none;
+  font-size:15px; font-weight:800; letter-spacing:3px; text-transform:uppercase;
+  border-radius:6px; cursor:pointer; transition:background 0.15s, transform 0.1s;
+}
+#start-btn:hover { background:#33ddff; transform:scale(1.03); }
+
+/* ── DEATH ── */
+#death-screen {
+  display:none; position:fixed; inset:0; z-index:50;
+  background:rgba(0,0,0,0.85); backdrop-filter:blur(6px);
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  pointer-events:all;
+}
+#death-title { font-size:52px; font-weight:900; color:#ff3322; letter-spacing:5px; text-shadow:0 0 30px #ff332288; }
+#death-sub { font-size:13px; color:rgba(255,255,255,0.4); letter-spacing:3px; text-transform:uppercase; }
+#final-kills { font-size:64px; font-weight:900; color:#fff; line-height:1; text-shadow:0 0 20px #00d4ff66; }
+#respawn-btn {
+  margin-top:8px; padding:14px 44px;
+  background:#00d4ff; color:#000; border:none;
+  font-size:14px; font-weight:800; letter-spacing:3px; text-transform:uppercase;
+  border-radius:6px; cursor:pointer; transition:background 0.15s;
+}
+#respawn-btn:hover { background:#33ddff; }

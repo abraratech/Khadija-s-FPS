@@ -1,0 +1,52 @@
+/* ── HUD ── */
+#hud { position:fixed; inset:0; pointer-events:none; z-index:20; }
+
+/* Dynamic Crosshair */
+#crosshair { 
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); 
+  width:0; height:0; pointer-events:none; 
+  --gap: 15px; 
+  transition: opacity 0.15s;
+}
+.ch { position:absolute; background:rgba(255,255,255,0.9); border-radius:1px; transition:background 0.1s; }
+.ch-t { width:2px; height:9px; top: calc(var(--gap) * -1 - 9px); left:-1px; }
+.ch-b { width:2px; height:9px; top: var(--gap);  left:-1px; }
+.ch-l { width:9px; height:2px; top:-1px; left: calc(var(--gap) * -1 - 9px); }
+.ch-r { width:9px; height:2px; top:-1px; left: var(--gap); }
+
+/* Hit marker */
+#hit-marker { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:0; height:0; opacity:0; pointer-events:none; }
+.hm { position:absolute; background:#ff4040; border-radius:1px; }
+.hm-tl { width:2px; height:9px; top:-13px; left:-1px; transform:rotate(45deg); }
+.hm-tr { width:9px; height:2px; top:-1px; left:4px;  transform:rotate(45deg); }
+.hm-bl { width:2px; height:9px; top:4px;  left:-1px; transform:rotate(45deg); }
+.hm-br { width:9px; height:2px; top:-1px; left:-13px;transform:rotate(45deg); }
+
+/* Kills */
+#kills-display {
+  position:absolute; top:24px; left:50%; transform:translateX(-50%);
+  font-size:20px; font-weight:800; color:#fff; letter-spacing:4px;
+  text-shadow:0 0 14px #00d4ff99;
+}
+
+/* Health */
+#health-wrap { position:absolute; bottom:38px; left:38px; display:flex; align-items:center; gap:10px; }
+#health-icon { font-size:18px; }
+#health-bar-bg { width:150px; height:8px; background:rgba(255,255,255,0.15); border-radius:4px; overflow:hidden; }
+#health-fill { height:100%; width:100%; background:#22ff88; border-radius:4px; transition:width 0.12s,background 0.25s; }
+#health-label { font-size:13px; color:#fff; font-weight:700; min-width:26px; }
+
+/* Ammo */
+#ammo-wrap { position:absolute; bottom:32px; right:38px; text-align:right; }
+#weapon-label { font-size:10px; color:#00d4ff; letter-spacing:2px; font-weight:700; text-transform:uppercase; margin-bottom:2px; }
+#ammo-current { font-size:38px; font-weight:900; color:#fff; line-height:1; text-shadow:0 0 10px #00d4ff55; }
+#ammo-reserve { font-size:13px; color:rgba(255,255,255,0.45); font-weight:500; margin-top:1px; }
+
+/* Reload */
+#reload-wrap { position:absolute; bottom:100px; left:50%; transform:translateX(-50%); text-align:center; display:none; }
+#reload-label { font-size:12px; color:#ffcc00; letter-spacing:3px; font-weight:700; margin-bottom:5px; }
+#reload-bar-bg { width:130px; height:3px; background:rgba(255,255,255,0.15); border-radius:2px; }
+#reload-bar { height:100%; width:0; background:#ffcc00; border-radius:2px; }
+
+/* Damage flash */
+#damage-flash { position:absolute; inset:0; background:#ff0000; opacity:0; pointer-events:none; }

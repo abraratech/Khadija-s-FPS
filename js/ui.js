@@ -131,42 +131,59 @@ export function spawnFloatingScore(amount, isHeadshot) {
   }, 600);
 }
 
-// ── 1. DIRECTIONAL DAMAGE INDICATOR ──
-export function spawnDirectionalIndicator(enemyPos, playerPos, camDir) {
+// ── 1. DIRECTIONAL DAMAGE INDICATOR (OPTIMIZED WITH POOLING) ──
+const indicatorPool = [];
+let poolIndex = 0;
+
+// Create 5 reusable indicators at startup to prevent mid-game DOM creation
+function initIndicatorPool() {
   const container = document.getElementById('damage-indicators-container');
   if (!container) return;
+  
+  for (let i = 0; i < 5; i++) {
+    const arc = document.createElement('div');
+    arc.style.position = 'absolute';
+    arc.style.width = '80px';
+    arc.style.height = '15px';
+    arc.style.background = 'radial-gradient(ellipse, rgba(255,0,0,0.9) 0%, rgba(255,0,0,0) 70%)';
+    arc.style.boxShadow = '0 0 15px #ff0000';
+    arc.style.borderRadius = '50%';
+    arc.style.opacity = '0'; // Start hidden
+    arc.style.transition = 'opacity 1s ease-out';
+    arc.style.pointerEvents = 'none';
+    container.appendChild(arc);
+    indicatorPool.push(arc);
+  }
+}
+// Run this immediately when ui.js loads
+setTimeout(initIndicatorPool, 100);
 
-  // Calculate the 3D angle between where you are looking and where the zombie is
+export function spawnDirectionalIndicator(enemyPos, playerPos, camDir) {
+  if (indicatorPool.length === 0) return;
+
   const dx = enemyPos.x - playerPos.x;
   const dz = enemyPos.z - playerPos.z;
   const hitAngle = Math.atan2(dx, dz);
   const camAngle = Math.atan2(camDir.x, camDir.z);
 
-  // Convert the difference to degrees for CSS rotation
   const diff = hitAngle - camAngle;
   const angleDeg = -(diff * 180) / Math.PI;
 
-  // Create the glowing red arc
-  const arc = document.createElement('div');
-  arc.style.position = 'absolute';
-  arc.style.width = '80px';
-  arc.style.height = '15px';
-  arc.style.background = 'radial-gradient(ellipse, rgba(255,0,0,0.9) 0%, rgba(255,0,0,0) 70%)';
-  arc.style.boxShadow = '0 0 15px #ff0000';
-  arc.style.borderRadius = '50%';
-  
-  // Rotate it around the crosshair
+  // Grab the next available indicator from the pool
+  const arc = indicatorPool[poolIndex];
+  poolIndex = (poolIndex + 1) % indicatorPool.length;
+
+  // Instantly remove transition to snap it to the new angle, then fade it in
+  arc.style.transition = 'none';
   arc.style.transform = `translate(-50%, -50%) rotate(${angleDeg}deg) translateY(-120px)`;
   arc.style.opacity = '1';
-  arc.style.transition = 'opacity 1s ease-out';
 
-  container.appendChild(arc);
-
-  // Fade it out and delete it after 1 second
-  setTimeout(() => { arc.style.opacity = '0'; }, 50);
-  setTimeout(() => { if (container.contains(arc)) container.removeChild(arc); }, 1050);
+  // Force a tiny delay before fading out so the browser registers the opacity reset
+  requestAnimationFrame(() => {
+    arc.style.transition = 'opacity 1s ease-out';
+    arc.style.opacity = '0';
+  });
 }
-
 // ── 2. BULLETPROOF RADAR UPDATE ──
 export function updateMinimap(playerPos, camDir, enemies) {
   const canvas = document.getElementById('minimap');

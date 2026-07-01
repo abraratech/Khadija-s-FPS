@@ -96,19 +96,31 @@
   </div>
 <div id="mobile-ui" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 50; pointer-events: none; touch-action: none;">
     
-    <div id="joystick-left" style="position: absolute; bottom: 40px; left: 40px; width: 140px; height: 140px; background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.15); border-radius: 50%; pointer-events: auto;">
-      <div id="joystick-knob" style="position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; background: rgba(0, 212, 255, 0.4); border-radius: 50%; transform: translate(-50%, -50%);"></div>
+    <button id="btn-mobile-pause" style="position: absolute; top: 20px; right: 20px; width: 45px; height: 45px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); color: #ffaa00; border: 2px solid #ffaa00; font-weight: bold; font-size: 16px; pointer-events: auto; z-index: 60; cursor: pointer;">║║</button>
+
+    <div id="joystick-left" class="draggable-btn" data-key="joy" style="position: absolute; bottom: 40px; left: 40px; width: var(--sz-joy, calc(var(--mobile-btn-size, 60px) * 2.33)); height: var(--sz-joy, calc(var(--mobile-btn-size, 60px) * 2.33)); background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.15); border-radius: 50%; pointer-events: auto;">
+      <div id="joystick-knob" style="position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; background: rgba(0, 212, 255, 0.4); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none;"></div>
     </div>
     
     <div id="touch-look-area" style="position: absolute; top: 0; right: 0; width: 50%; height: 100%; pointer-events: auto;"></div>
     
-    <div style="position: absolute; bottom: 40px; right: 40px; pointer-events: auto; display: flex; flex-wrap: wrap; width: 160px; gap: 15px; justify-content: flex-end;">
-       <button id="btn-jump" style="width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold;">JMP</button>
-       <button id="btn-reload" style="width: 60px; height: 60px; border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold;">RLD</button>
-       <button id="btn-interact" style="width: 60px; height: 60px; border-radius: 50%; background: rgba(255,170,0,0.3); color: white; border: 1px solid rgba(255,170,0,0.5); font-weight: bold;">[ E ]</button>
-       <button id="btn-shoot" style="width: 75px; height: 75px; border-radius: 50%; background: rgba(255,34,0,0.4); color: white; border: 2px solid rgba(255,34,0,0.8); font-weight: bold;">FIRE</button>
+    <button id="btn-switch" class="draggable-btn" data-key="switch" style="position: absolute; bottom: 105px; right: 175px; width: var(--sz-switch, var(--mobile-btn-size, 60px)); height: var(--sz-switch, var(--mobile-btn-size, 60px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">SWP</button>
+    <button id="btn-interact" class="draggable-btn" data-key="interact" style="position: absolute; bottom: 105px; right: 100px; width: var(--sz-interact, var(--mobile-btn-size, 60px)); height: var(--sz-interact, var(--mobile-btn-size, 60px)); border-radius: 50%; background: rgba(255,170,0,0.3); color: white; border: 1px solid rgba(255,170,0,0.5); font-weight: bold; font-size: 12px; pointer-events: auto;">[ E ]</button>
+    <button id="btn-reload" class="draggable-btn" data-key="reload" style="position: absolute; bottom: 105px; right: 25px; width: var(--sz-reload, var(--mobile-btn-size, 60px)); height: var(--sz-reload, var(--mobile-btn-size, 60px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">RLD</button>
+    <button id="btn-jump" class="draggable-btn" data-key="jump" style="position: absolute; bottom: 25px; right: 115px; width: var(--sz-jump, var(--mobile-btn-size, 60px)); height: var(--sz-jump, var(--mobile-btn-size, 60px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">JMP</button>
+    <button id="btn-shoot" class="draggable-btn" data-key="shoot" style="position: absolute; bottom: 25px; right: 25px; width: var(--sz-shoot, calc(var(--mobile-btn-size, 60px) * 1.25)); height: var(--sz-shoot, calc(var(--mobile-btn-size, 60px) * 1.25)); border-radius: 50%; background: rgba(255,34,0,0.45); color: white; border: 2px solid rgba(255,34,0,0.8); font-weight: bold; font-size: 14px; pointer-events: auto; box-shadow: 0 0 10px rgba(255,34,0,0.2);">FIRE</button>
+
+    <div id="layout-editor-bar" style="display: none; position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 85%; background: rgba(0,0,0,0.9); border: 2px solid #00d4ff; padding: 10px; border-radius: 8px; z-index: 70; justify-content: space-between; align-items: center; pointer-events: auto; font-family: sans-serif; box-shadow: 0 0 20px rgba(0,212,255,0.3); touch-action: auto;">
+      <div style="color: #fff; font-size: 12px; font-weight: bold;">
+        SELECT A BUTTON, DRAG IT, AND ADJUST SIZE:
+        <input type="range" id="layout-element-size" min="40" max="120" value="60" style="margin-left: 10px; vertical-align: middle; width: 130px; touch-action: auto;">
+      </div>
+      <div>
+        <button id="layout-save-btn" style="background: #00d4ff; color: #000; border: none; font-weight: bold; padding: 6px 15px; border-radius: 4px; margin-right: 10px; cursor: pointer;">SAVE</button>
+        <button id="layout-cancel-btn" style="background: transparent; color: #ff2200; border: 1px solid #ff2200; font-weight: bold; padding: 5px 12px; border-radius: 4px; cursor: pointer;">CANCEL</button>
+      </div>
     </div>
-  </div>
+</div>
   <div id="floating-texts-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden;"></div>	
 
 <div id="menu">
@@ -134,6 +146,9 @@
       <select id="map-select" style="padding: 10px; font-size: 16px; background: #111; color: #00d4ff; border: 2px solid #00d4ff; border-radius: 4px; outline: none; cursor: pointer; font-family: sans-serif; font-weight: bold;">
         <option value="0">The Bunker</option>
         <option value="1">The Courtyard</option>
+		<option value="2">The Sandbox Arena</option>
+		<option value="3">The Red Monolith Courtyard</option>		
+		<option value="4">Multistory Warehouse</option>		
       </select>
       
       <select id="diff-select" style="padding: 10px; font-size: 16px; background: #111; color: #ff2200; border: 2px solid #ff2200; border-radius: 4px; outline: none; cursor: pointer; font-family: sans-serif; font-weight: bold;">
@@ -142,13 +157,29 @@
         <option value="1.5">Hard</option>
       </select>
     </div>
-
-    <button id="start-btn">▶  PLAY</button>
+	<div style="margin: 15px auto; text-align: center; font-family: sans-serif; color: #fff; font-size: 14px;">
+      <label for="btn-size-slider" style="letter-spacing: 1px; font-weight: bold; color: #00d4ff;">MOBILE BUTTON SIZE:</label>
+      <input type="range" id="btn-size-slider" min="45" max="90" value="60" style="margin-left: 10px; vertical-align: middle; cursor: pointer;">
+      
+      <div style="margin-top: 10px; display: flex; gap: 8px; justify-content: center; align-items: center; background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; width: fit-content; margin-left: auto; margin-right: auto;">
+        <span style="font-size: 11px; color: #888;">PREVIEW:</span>
+        <div style="width: var(--mobile-btn-size, 60px); height: var(--mobile-btn-size, 60px); border-radius: 50%; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; color: #fff;">SWP</div>
+        <div style="width: calc(var(--mobile-btn-size, 60px) * 1.25); height: calc(var(--mobile-btn-size, 60px) * 1.25); border-radius: 50%; background: rgba(255,34,0,0.4); border: 2px solid rgba(255,34,0,0.8); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 11px; color: #fff;">FIRE</div>
+      </div>
+    </div>
+	<div id="loading-container" style="margin-top: 30px;">
+      <div id="loading-label" style="color: #00d4ff; font-family: sans-serif; font-size: 14px; font-weight: bold; letter-spacing: 2px; margin-bottom: 8px;">DOWNLOADING 3D ASSETS... <span id="loading-pct">0%</span></div>
+      <div id="loading-bar-bg" style="width: 240px; height: 8px; background: rgba(0,0,0,0.5); border: 1px solid #00d4ff; border-radius: 4px; margin: 0 auto 20px auto; overflow: hidden;">
+        <div id="loading-bar-fill" style="width: 0%; height: 100%; background: #00d4ff; transition: width 0.1s;"></div>
+      </div>
+    </div>
+    <button id="start-btn" style="display: none;">▶  PLAY</button>
   </div>
 
   <div id="pause-screen" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 5, 10, 0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
     <div style="color: #fff; font-family: sans-serif; font-size: 54px; font-weight: bold; letter-spacing: 5px; margin-bottom: 40px; text-shadow: 3px 3px 0 #000;">PAUSED</div>
     <button id="resume-btn" style="padding: 15px 40px; font-size: 24px; font-weight: bold; background: #00d4ff; color: #000; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">RESUME</button>
+	<button id="mobile-customize-btn" style="padding: 12px 30px; font-size: 18px; font-weight: bold; background: rgba(0,212,255,0.15); color: #00d4ff; border: 2px solid #00d4ff; border-radius: 4px; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">CUSTOMIZE CONTROLS</button>
     <button id="quit-btn" style="padding: 15px 40px; font-size: 18px; font-weight: bold; background: transparent; color: #ff2200; border: 2px solid #ff2200; border-radius: 4px; cursor: pointer; transition: 0.2s;">QUIT TO MENU</button>
   </div>
 
@@ -165,13 +196,37 @@
 
   <div id="lock-hint">Click to capture mouse</div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>  
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
+        "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.3/build/index.module.js",
+        "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/utils/BufferGeometryUtils.js"
+      }
+    }
+  </script>
+  
+<script type="module">
+    import * as THREE_Core from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+    // Instead of modifying the locked module, we create a brand new object
+    // that combines the core library (...THREE_Core) with all of our addons!
+    window.THREE = {
+      ...THREE_Core,
+      GLTFLoader,
+      EffectComposer,
+      RenderPass,
+      UnrealBloomPass,
+      SkeletonUtils
+    };
+  </script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
+

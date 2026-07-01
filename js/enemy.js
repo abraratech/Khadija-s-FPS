@@ -1,33 +1,60 @@
 // js/enemy.js
-import { scene, walls, camera, spawnPoints, addScreenShake } from './map.js';
+import * as THREE from 'three';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { scene, camera, spawnPoints, addScreenShake, mapMeshes } from './map.js';
 import { player, damagePlayer } from './player.js';
 import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore } from './ui.js';
-import { spawnBloodDecal } from './particles.js';
+import { spawnBloodBurst } from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
 import { playSound } from './audio.js';
-import { difficultyMultiplier } from './main.js';
+import { pushOut } from './utils.js';
+import { difficultyMultiplier, ASSETS } from './main.js';
 
 export let eMeshList = []; 
 export const activeEnemies = [];
 const activePowerups = [];
 
-// ── NEW: PROJECTILE & EXPLOSION TRACKERS ──
-const activeProjectiles = [];
-const activeExplosions = [];
+// ── OPTIMIZATION: STRICT 3D MESH POOLING ──
+const MAX_ZOMBIES = 40;
+const MAX_PROJECTILES = 15;
+const MAX_EXPLOSIONS = 15;
+
+const zombiePool = [];
+const projectilePool = { items: [], index: 0 };
+const explosionPool = { items: [], index: 0 };
+const materialCache = {};
+let poolsInitialized = false;
+
+function getZombieMaterial(config, baseMaterial) {
+  const matKey = config.name;
+  if (!materialCache[matKey]) {
+    const newMat = baseMaterial.clone();
+    newMat.metalness = config.name === "GOLIATH" ? 0.4 : 0.0;
+    newMat.roughness = 0.8;
+    newMat.transparent = false;
+    newMat.depthWrite = true;
+    newMat.color.setHex(0xffffff);
+    newMat.emissive.setHex(config.color);
+    newMat.emissiveIntensity = 0.15;
+    
+    if (newMat.map) {
+      newMat.map.wrapS = THREE.RepeatWrapping;
+      newMat.map.wrapT = THREE.RepeatWrapping;
+      newMat.map.repeat.set(1, 1);
+      newMat.map.needsUpdate = true;
+    }
+    materialCache[matKey] = newMat;
+  }
+  return materialCache[matKey];
+}
+
 const projGeo = new THREE.SphereGeometry(0.18, 8, 8);
-const projMat = new THREE.MeshBasicMaterial({ color: 0x00ffff }); // Cyan plasma
+const projMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 const expGeo = new THREE.SphereGeometry(1, 16, 16);
-const expMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 }); // Orange fireball
+const expMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 });
 
-const gBodyGeo = new THREE.BoxGeometry(0.72, 1.15, 0.46);
-const gHeadGeo = new THREE.BoxGeometry(0.42, 0.42, 0.42);
-const gLegGeo  = new THREE.BoxGeometry(0.28, 0.58, 0.28);
-const gArmGeo  = new THREE.BoxGeometry(0.2, 0.54, 0.2);
-const skinMat  = new THREE.MeshStandardMaterial({ color: 0xffddaa, roughness: 0.8 });
-
-// ── UPGRADED TEXTURED AUDIO ENGINE (CRUNCH & RUMBLE) ──
+// ── AUDIO ENGINE ──
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
 const noiseBufferSize = audioCtx.sampleRate * 0.15;
 const noiseBuffer = audioCtx.createBuffer(1, noiseBufferSize, audioCtx.sampleRate);
 const output = noiseBuffer.getChannelData(0);
@@ -44,7 +71,6 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
   const panX = toEnemy.dot(rightVec);
   
   const vol = Math.max(0, 1 - (dist / 18)) * (type === "GOLIATH" ? 1.5 : 0.6);
-
   const gain = audioCtx.createGain();
   const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
 
@@ -78,8 +104,7 @@ export let currentWave = 1; let zombiesToSpawnThisRound = 0; let zombiesSpawnedS
 const ENEMY_TYPES = {
   SHAMBLER: { name: "SHAMBLER", speed: 2.4, maxHealth: 100, damage: 15, attackCooldown: 1.4, attackRange: 1.4, colRadius: 0.45, color: 0x446644, scale: new THREE.Vector3(1, 1, 1) },
   RUNNER:   { name: "RUNNER", speed: 5.2, maxHealth: 65, damage: 10, attackCooldown: 0.8, attackRange: 1.4, colRadius: 0.40, color: 0x883333, scale: new THREE.Vector3(0.85, 1.05, 0.85) },
-  GOLIATH:  { name: "GOLIATH", speed: 1.6, maxHealth: 1500, damage: 45, attackCooldown: 2.2, attackRange: 3.2, colRadius: 1.20, color: 0x1a1a1a, scale: new THREE.Vector3(2.5, 2.5, 2.5) },
-  // ── NEW MUTATIONS ──
+  GOLIATH:  { name: "GOLIATH", speed: 1.6, maxHealth: 1500, damage: 45, attackCooldown: 2.2, attackRange: 3.2, colRadius: 1.20, color: 0x1a1a1a, scale: new THREE.Vector3(1.8, 1.8, 1.8) },
   EXPLODER: { name: "EXPLODER", speed: 4.8, maxHealth: 70, damage: 45, attackCooldown: 0, attackRange: 2.5, colRadius: 0.50, color: 0xff4400, scale: new THREE.Vector3(1.15, 1.15, 1.15) },
   RANGED:   { name: "RANGED", speed: 2.0, maxHealth: 80, damage: 20, attackCooldown: 2.5, attackRange: 12.0, colRadius: 0.40, color: 0x00ffff, scale: new THREE.Vector3(0.8, 1.2, 0.8) }
 };
@@ -88,10 +113,77 @@ const POWERUP_TYPES = [
   { name: 'MAX AMMO', color: 0x00ff00 }, { name: 'INSTA-KILL', color: 0xffaa00 }, { name: 'DOUBLE POINTS', color: 0xffff00 }, { name: 'NUKE', color: 0xff0000 }
 ];
 
+function initPools() {
+  if (poolsInitialized) return;
+
+  for (let i = 0; i < MAX_PROJECTILES; i++) {
+    const pMesh = new THREE.Mesh(projGeo, projMat); pMesh.visible = false; scene.add(pMesh);
+    projectilePool.items.push({ mesh: pMesh, dir: new THREE.Vector3(), life: 0 });
+  }
+  for (let i = 0; i < MAX_EXPLOSIONS; i++) {
+    const eMesh = new THREE.Mesh(expGeo, expMat.clone()); eMesh.visible = false; scene.add(eMesh);
+    explosionPool.items.push({ mesh: eMesh, life: 0 });
+  }
+
+  for (let i = 0; i < MAX_ZOMBIES; i++) {
+    const g = new THREE.Group();
+    const enemyInstance = { 
+      mesh: g, type: "SHAMBLER", health: 100, maxHealth: 100, speed: 2.4,
+      damage: 15, attackRate: 1.4, atkCD: 0, attackRange: 1.4, colRadius: 0.45, 
+      walkT: 0, dyingT: -1, alive: false, mixer: null, originalScale: new THREE.Vector3(1,1,1)
+    };
+    g.userData.eRef = enemyInstance;
+
+    if (ASSETS.enemies.zombie && ASSETS.enemies.zombie.clone) {
+      const zombieModel = SkeletonUtils.clone(ASSETS.enemies.zombie);
+      zombieModel.scale.set(0.015, 0.015, 0.015);
+      zombieModel.traverse((child) => {
+        if (child.isMesh || child.isSkinnedMesh) {
+          child.frustumCulled = false; child.castShadow = true; child.receiveShadow = true;
+          child.userData.eRef = enemyInstance; 
+          if (child.name.toLowerCase().includes("head")) child.userData.isHead = true;
+        }
+      });
+      g.add(zombieModel);
+      
+      if (ASSETS.enemies.zombie.animations && ASSETS.enemies.zombie.animations.length > 0) {
+        enemyInstance.mixer = new THREE.AnimationMixer(zombieModel);
+        const walkAnim = enemyInstance.mixer.clipAction(ASSETS.enemies.zombie.animations[0]);
+        walkAnim.setLoop(THREE.LoopRepeat);
+        walkAnim.play();
+      }
+    } else {
+      const fallbackMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.2, 4, 8), new THREE.MeshStandardMaterial({ color: 0x00ffaa, roughness: 0.5 }));
+      fallbackMesh.position.y = 0.9; fallbackMesh.userData.eRef = enemyInstance; g.add(fallbackMesh);
+    }
+    
+    g.visible = false;
+    scene.add(g);
+    zombiePool.push(enemyInstance);
+  }
+  
+  poolsInitialized = true;
+  console.log("🟢 Zombie Pools Initialized!");
+}
+
 export function initEnemies() {
-  activeEnemies.forEach(e => scene.remove(e.mesh)); activeEnemies.length = 0; eMeshList.length = 0;
-  activePowerups.forEach(p => scene.remove(p.mesh)); activePowerups.length = 0;
-  currentWave = 1; startWave(currentWave);
+  initPools();
+  
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    const e = activeEnemies[i];
+    e.mesh.visible = false;
+    zombiePool.push(e);
+  }
+  
+  activeEnemies.length = 0; 
+  eMeshList.length = 0;
+  activePowerups.forEach(p => scene.remove(p.mesh)); 
+  activePowerups.length = 0;
+  projectilePool.items.forEach(p => p.mesh.visible = false);
+  explosionPool.items.forEach(ex => ex.mesh.visible = false);
+  
+  currentWave = 1; 
+  startWave(currentWave);
 }
 
 function startWave(waveNumber) {
@@ -107,6 +199,8 @@ function startWave(waveNumber) {
 }
 
 function spawnZombie() {
+  if (zombiePool.length === 0) return; 
+
   let config;
   if (goliathsToSpawn > 0) { config = ENEMY_TYPES.GOLIATH; goliathsToSpawn--; } 
   else { 
@@ -117,56 +211,59 @@ function spawnZombie() {
     else config = ENEMY_TYPES.SHAMBLER;
   }
 
-  const g = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: config.color, roughness: 0.65, metalness: config.name === "GOLIATH" ? 0.4 : 0.1 });
+  const recycled = zombiePool.pop();
   
-  const body = new THREE.Mesh(gBodyGeo, mat); body.position.y = 1.08; g.add(body);
-  const head = new THREE.Mesh(gHeadGeo, skinMat); head.position.y = 1.9; g.add(head);
-  const legL = new THREE.Mesh(gLegGeo, mat); legL.position.set(-0.17, 0.29, 0); g.add(legL);
-  const legR = new THREE.Mesh(gLegGeo, mat); legR.position.set(0.17, 0.29, 0); g.add(legR);
-  const armL = new THREE.Mesh(gArmGeo, mat); armL.position.set(-0.48, 1.04, 0); g.add(armL);
-  const armR = new THREE.Mesh(gArmGeo, mat); armR.position.set(0.48, 1.04, 0); g.add(armR);
-    
+  recycled.type = config.name;
+  recycled.health = config.maxHealth;
+  recycled.maxHealth = config.maxHealth;
+  recycled.speed = config.speed + (Math.random() - 0.5) * 0.4 + (currentWave * 0.1);
+  recycled.damage = config.damage;
+  recycled.attackRate = config.attackCooldown;
+  recycled.atkCD = Math.random() * config.attackCooldown;
+  recycled.attackRange = config.attackRange;
+  recycled.colRadius = config.colRadius;
+  recycled.walkT = Math.random() * Math.PI * 2;
+  recycled.dyingT = -1;
+  recycled.alive = true;
+  recycled.originalScale.copy(config.scale);
+
+  if (recycled.mixer && ASSETS.enemies.zombie && ASSETS.enemies.zombie.animations.length > 0) {
+    recycled.mixer.stopAllAction();
+    const walkAnim = recycled.mixer.clipAction(ASSETS.enemies.zombie.animations[0]);
+    walkAnim.setLoop(THREE.LoopRepeat);
+    walkAnim.play();
+  }
+
+  recycled.mesh.scale.copy(config.scale);
+  recycled.mesh.position.y = 0; 
+  recycled.mesh.visible = true;
+
+  recycled.mesh.traverse((child) => {
+    if (child.isMesh && child.material) child.material = getZombieMaterial(config, child.material);
+  });
+
   if (spawnPoints.length > 0) {
     const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
-    g.position.set(sp.x + (Math.random() - 0.5) * 2, 0, sp.z + (Math.random() - 0.5) * 2);
+    recycled.mesh.position.set(sp.x + (Math.random() - 0.5) * 2, 0, sp.z + (Math.random() - 0.5) * 2);
   } else {
-    g.position.set(0, 0, 0); 
+    recycled.mesh.position.set(0, 0, 0); 
   }
-  
-  g.scale.copy(config.scale); scene.add(g);
 
-// Inside spawnZombie() in js/enemy.js, replace the enemyInstance block:
-
-  // ── NEW: APPLY DIFFICULTY SCALING ──
-  const diffHealth = config.maxHealth * difficultyMultiplier;
-  const diffDamage = config.damage * difficultyMultiplier;
-
-  const enemyInstance = { 
-    mesh: g, 
-    type: config.name, 
-    health: diffHealth, 
-    maxHealth: diffHealth, 
-    speed: config.speed + (Math.random() - 0.5) * 0.4 + (currentWave * 0.1),
-    damage: diffDamage, 
-    attackRate: config.attackCooldown, 
-    atkCD: Math.random() * config.attackCooldown, 
-    attackRange: config.attackRange, 
-    colRadius: config.colRadius, 
-    walkT: Math.random() * Math.PI * 2, 
-    dyingT: -1, 
-    alive: true
-  };
-
-  body.userData.eRef = enemyInstance; head.userData.eRef = enemyInstance; head.userData.isHead = true;
-  activeEnemies.push(enemyInstance); zombiesSpawnedSoFar++; rebuildEMeshList();
+  activeEnemies.push(recycled);
+  zombiesSpawnedSoFar++;
+  rebuildEMeshList();
 }
 
 function rebuildEMeshList() {
   eMeshList = [];
   activeEnemies.forEach(e => {
     if (!e.alive || e.dyingT >= 0) return;
-    e.mesh.children.forEach(child => { if (child.isMesh) { if (!child.userData.eRef) child.userData.eRef = e; eMeshList.push(child); } });
+    e.mesh.traverse(child => {
+      if (child.isMesh) {
+        if (!child.userData.eRef) child.userData.eRef = e;
+        eMeshList.push(child);
+      }
+    });
   });
 }
 
@@ -175,51 +272,43 @@ const _eToP = new THREE.Vector3();
 export function updateEnemies(dt) {
   if (!player.alive) return;
 
-  // ── NEW: FIREBALL EXPLOSION LOOP ──
-  for (let i = activeExplosions.length - 1; i >= 0; i--) {
-    const ex = activeExplosions[i];
-    ex.life -= dt;
-    ex.mesh.scale.addScalar(dt * 18); // Rapidly expand sphere
-    ex.mesh.material.opacity = (ex.life / 0.3) * 0.8; // Fade out
-    if (ex.life <= 0) { scene.remove(ex.mesh); ex.mesh.material.dispose(); activeExplosions.splice(i, 1); }
-  }
-
-  // ── NEW: RANGED PROJECTILE LOOP ──
-  for (let i = activeProjectiles.length - 1; i >= 0; i--) {
-    const p = activeProjectiles[i];
-    p.mesh.position.addScaledVector(p.dir, dt * 14.0); // Fly towards player
-    p.life -= dt;
-    
-    // Check if it hits the player
-    if (player.pos.distanceTo(p.mesh.position) < 1.0) {
-      damagePlayer(20, p.mesh.position);
-      scene.remove(p.mesh); activeProjectiles.splice(i, 1); continue;
+  explosionPool.items.forEach(ex => {
+    if (ex.life > 0) {
+      ex.life -= dt;
+      ex.mesh.scale.addScalar(dt * 18);
+      ex.mesh.material.opacity = (ex.life / 0.3) * 0.8;
+      if (ex.life <= 0) ex.mesh.visible = false;
     }
-    if (p.life <= 0) { scene.remove(p.mesh); activeProjectiles.splice(i, 1); }
-  }
+  });
+
+  projectilePool.items.forEach(p => {
+    if (p.life > 0) {
+      p.mesh.position.addScaledVector(p.dir, dt * 14.0);
+      p.life -= dt;
+      if (player.pos.distanceTo(p.mesh.position) < 1.0) {
+        damagePlayer(20, p.mesh.position);
+        p.life = 0; p.mesh.visible = false;
+      }
+      if (p.life <= 0) p.mesh.visible = false;
+    }
+  });
   
-  // Powerup updates
   for (let i = activePowerups.length - 1; i >= 0; i--) {
     const p = activePowerups[i];
     p.mesh.rotation.y += dt * 2.5; p.mesh.position.y = 0.8 + Math.sin(Date.now() * 0.005) * 0.15; p.life -= dt;
     if (p.life <= 0) { scene.remove(p.mesh); activePowerups.splice(i, 1); continue; }
     
-    // Player picks up the powerup
     if (player.pos.distanceTo(p.mesh.position) < 1.6) {
       flashWaveBanner(p.type.name, 2500); playSound('hit', 1.0, false);
-      
       if (p.type.name === 'MAX AMMO') giveMaxAmmo();
       if (p.type.name === 'INSTA-KILL') player.instaKillTimer = 15.0;
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
       if (p.type.name === 'NUKE') {
         player.score += 400; updateScoreHUD(player.score); spawnFloatingScore(400, false);
         zombiesSpawnedSoFar = zombiesToSpawnThisRound; 
-        const enemiesToKill = [...activeEnemies];
-        enemiesToKill.forEach(z => { if (z.alive) { killEnemy(z); } });
+        [...activeEnemies].forEach(z => { if (z.alive) killEnemy(z); });
       }
-      
-      scene.remove(p.mesh); 
-      activePowerups.splice(i, 1);
+      scene.remove(p.mesh); activePowerups.splice(i, 1);
     }
   } 
 
@@ -227,64 +316,104 @@ export function updateEnemies(dt) {
     spawnTimer += dt; if (spawnTimer >= 1.0) { spawnZombie(); spawnTimer = 0; }
   }
 
-  for (const e of activeEnemies) {
-    if (e.dyingT >= 0) {
-      e.dyingT += dt; const t = Math.min(e.dyingT / 0.45, 1);
-      e.mesh.scale.y = (1 - t) * (e.type === "GOLIATH" ? 2.5 : (e.type === "RUNNER" ? 1.05 : 1)); e.mesh.position.y = -t * 0.5; continue;
+  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+    const e = activeEnemies[i];
+
+    if (e.mixer) {
+      e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : 1.0;
+      e.mixer.update(dt);
     }
-    if (!e.alive) continue;
 
-    _eToP.set(player.pos.x - e.mesh.position.x, 0, player.pos.z - e.mesh.position.z);
-    const dist = _eToP.length();
-
-    if (dist > 0.1) e.mesh.lookAt(player.pos.x, e.mesh.position.y, player.pos.z);
-
-    if (dist > e.attackRange) {
-      const oldWalk = e.walkT;
-      e.walkT += dt * e.speed * 3.5;
-      e.mesh.position.x += (_eToP.x / dist) * e.speed * dt;
-      e.mesh.position.z += (_eToP.z / dist) * e.speed * dt;
+    if (e.dyingT >= 0) {
+      e.dyingT += dt; 
+      const t = Math.min(e.dyingT / 0.6, 1);
+      e.mesh.scale.y = (1 - t) * e.originalScale.y; 
+      e.mesh.position.y = -t * 0.5; 
       
-      for (const w of walls) {
-        const ep = e.mesh.position;
-        const cx = Math.max(w.minX, Math.min(ep.x, w.maxX));
-        const cz = Math.max(w.minZ, Math.min(ep.z, w.maxZ));
-        const ddx = ep.x - cx, ddz = ep.z - cz, d2 = ddx * ddx + ddz * ddz;
-        const r = e.colRadius; 
-        if (d2 < r * r) { 
-          const d = Math.sqrt(d2) || 0.001; 
-          ep.x += (ddx / d) * (r - d); 
-          ep.z += (ddz / d) * (r - d); 
+      if (e.dyingT >= 0.6) {
+        e.mesh.visible = false;
+        zombiePool.push(e);
+        activeEnemies.splice(i, 1);
+        
+        if (zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 0) {
+          currentWave++; flashWaveBanner("ROUND CLEAR", 2500);
+          setTimeout(() => { if (player.alive) startWave(currentWave); }, 5000);
         }
       }
+      continue;
+    }
+
+    if (!e.alive) continue;
+
+    // Calculate dynamic distance components
+    _eToP.set(player.pos.x - e.mesh.position.x, player.pos.y - e.mesh.position.y, player.pos.z - e.mesh.position.z);
+    const horizontalDist = Math.sqrt(_eToP.x * _eToP.x + _eToP.z * _eToP.z);
+    const trueVerticalDist = Math.abs(_eToP.y);
+
+    if (horizontalDist > 0.1) {
+      e.mesh.lookAt(player.pos.x, e.mesh.position.y, player.pos.z);
+    }
+
+    // ── MOVEMENT & STAIRWAY ROUTING ENGINE ──
+    if (horizontalDist > e.attackRange || trueVerticalDist > 1.8) {
+      const oldWalk = e.walkT;
+      e.walkT += dt * e.speed * 3.5;
       
-      const c = e.mesh.children; const amp = e.type === "RUNNER" ? 0.65 : 0.42;
-      if (c[2]) c[2].rotation.x = Math.sin(e.walkT) * amp; if (c[3]) c[3].rotation.x = -Math.sin(e.walkT) * amp;
-      if (c[4]) c[4].rotation.x = -Math.sin(e.walkT) * (amp * 0.8); if (c[5]) c[5].rotation.x = Math.sin(e.walkT) * (amp * 0.8);
+      let moveX = _eToP.x / (horizontalDist || 1);
+      let moveZ = _eToP.z / (horizontalDist || 1);
+
+      // If player is upstairs (Y > 4) and zombie is down below, route them to the steps!
+      if (player.pos.y > 4.0 && e.mesh.position.y < 4.0) {
+        const stairEntranceZ = -10; // Corresponds directly to Map 4 staircase threshold
+        const toStairsX = 0 - e.mesh.position.x;
+        const toStairsZ = stairEntranceZ - e.mesh.position.z;
+        const stairDist = Math.sqrt(toStairsX * toStairsX + toStairsZ * toStairsZ);
+
+        if (stairDist > 1.2) {
+          moveX = toStairsX / stairDist;
+          moveZ = toStairsZ / stairDist;
+        }
+      }
+
+      e.mesh.position.x += moveX * e.speed * dt;
+      e.mesh.position.z += moveZ * e.speed * dt;
+
+      // ── HEIGHT SAMPLING (No flat lock override) ──
+      let currentGroundY = 0;
+      const downRay = new THREE.Raycaster(new THREE.Vector3(e.mesh.position.x, e.mesh.position.y + 1.5, e.mesh.position.z), new THREE.Vector3(0, -1, 0), 0, 10);
+      const hits = downRay.intersectObjects(mapMeshes);
+      if (hits.length > 0) {
+        currentGroundY = hits[0].point.y;
+      }
       
+      e.mesh.position.y = THREE.MathUtils.lerp(e.mesh.position.y, currentGroundY, dt * 12);
+      pushOut(e.mesh.position, e.colRadius);
+
       if (Math.floor(oldWalk / Math.PI) !== Math.floor(e.walkT / Math.PI)) playSpatialZombieSound(e.mesh.position, e.type, true);
       if (Math.random() < 0.005) playSpatialZombieSound(e.mesh.position, e.type, false);
     }
 
+    // ── ATTACK AND RANGE VALIDATION ──
     e.atkCD -= dt;
-    if (dist <= e.attackRange && e.atkCD <= 0 && player.alive) {
+    if (horizontalDist <= e.attackRange && trueVerticalDist <= 1.8 && e.atkCD <= 0 && player.alive) {
       e.atkCD = e.attackRate; 
       
-      // ── NEW: SPECIALIZED ATTACK BEHAVIORS ──
       if (e.type === "EXPLODER") {
-        killEnemy(e); // Exploders trigger their own death sequence to detonate!
+        killEnemy(e); 
       } 
       else if (e.type === "RANGED") {
-        const p = new THREE.Mesh(projGeo, projMat);
-        p.position.copy(e.mesh.position); p.position.y += 1.2; // Chest height
-        const dir = new THREE.Vector3().subVectors(player.pos, p.position).normalize();
-        scene.add(p); activeProjectiles.push({ mesh: p, dir: dir, life: 2.5 });
+        const pool = projectilePool;
+        const p = pool.items[pool.index];
+        p.mesh.position.copy(e.mesh.position); p.mesh.position.y += 1.2;
+        p.dir.subVectors(player.pos, p.mesh.position).normalize();
+        p.life = 2.5; p.mesh.visible = true;
+        pool.index = (pool.index + 1) % MAX_PROJECTILES;
         playSound('shoot_pistol', 0.3, true); 
       } 
       else {
-        // Standard Melee
         damagePlayer(e.damage, e.mesh.position);
-        e.mesh.position.x += (_eToP.x / dist) * 0.15; e.mesh.position.z += (_eToP.z / dist) * 0.15;
+        e.mesh.position.x += (_eToP.x / (horizontalDist || 1)) * 0.15; 
+        e.mesh.position.z += (_eToP.z / (horizontalDist || 1)) * 0.15;
       }
     }
   }
@@ -293,21 +422,22 @@ export function updateEnemies(dt) {
 export function killEnemy(e) {
   if (!e.alive) return;
   e.alive = false; e.dyingT = 0; 
-  spawnBloodDecal(e.mesh.position);
+  spawnBloodBurst(e.mesh.position);
+  
   if (e.type === "EXPLODER") {
-    addScreenShake(0.6); // Massive screen shake
+    addScreenShake(0.6); 
     playSound('shoot_shotgun', 1.0, true); 
     
-    // Spawn visual expanding fireball
-    const boom = new THREE.Mesh(expGeo, expMat.clone());
-    boom.position.copy(e.mesh.position); scene.add(boom);
-    activeExplosions.push({ mesh: boom, life: 0.3 });
+    const pool = explosionPool;
+    const ex = pool.items[pool.index];
+    ex.mesh.position.copy(e.mesh.position);
+    ex.mesh.scale.set(1, 1, 1);
+    ex.life = 0.3; ex.mesh.visible = true;
+    pool.index = (pool.index + 1) % MAX_EXPLOSIONS;
     
-    // Deal AoE damage to player if too close!
-    if (player.pos.distanceTo(e.mesh.position) < 5.0) {
-      damagePlayer(e.damage, e.mesh.position);
-    }
+    if (player.pos.distanceTo(e.mesh.position) < 5.0) damagePlayer(e.damage, e.mesh.position);
   }
+  
   player.kills++; updateKillsHUD(player.kills); rebuildEMeshList(); 
   
   if (Math.random() < 0.10) {
@@ -315,17 +445,6 @@ export function killEnemy(e) {
     const pMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: type.color, emissive: type.color, emissiveIntensity: 0.8 }));
     pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh); activePowerups.push({ mesh: pMesh, type: type, life: 15.0 });
   }
-  
-  setTimeout(() => {
-    scene.remove(e.mesh);
-    const instanceIdx = activeEnemies.indexOf(e);
-    if (instanceIdx !== -1) activeEnemies.splice(instanceIdx, 1);
-    
-    if (zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 0) {
-      currentWave++; flashWaveBanner("ROUND CLEAR", 2500);
-      setTimeout(() => { if (player.alive) startWave(currentWave); }, 5000);
-    }
-  }, 600);
 }
 
 export function getActiveEnemies() { 

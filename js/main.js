@@ -11,7 +11,7 @@ const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // ════════════ DEVELOPER DEBUG MODE ════════════
-export const DEV_MODE = true; 
+export const DEV_MODE = false; 
 // ══════════════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════

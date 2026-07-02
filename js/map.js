@@ -10,6 +10,12 @@ scene.fog = new THREE.FogExp2(0x0a0a11, 0.025); // Moody dark fog
 export const doors = [];
 export const spawnPoints = [];
 export const lockedSpawnPoints = [];
+export const barricades = [];
+export const traps = [];
+export const mapMeshes = [];
+export const walls = []; // Holds bounding metrics for mathematical pushOut collisions
+
+export let currentMap = 0;
 
 export function openDoor(doorObj) {
   scene.remove(doorObj.mesh);
@@ -26,7 +32,8 @@ export function openDoor(doorObj) {
   }
 }
 
-export const camera = new THREE.PerspectiveCamera(82, window.innerWidth / window.innerHeight, 0.1, 100);
+// Camera configuration with extended far clip plane to prevent disappearing floors
+export const camera = new THREE.PerspectiveCamera(82, window.innerWidth / window.innerHeight, 0.1, 1000);
 export const muzzleLight = new THREE.PointLight(0xffaa00, 0, 15);
 scene.add(camera);
 camera.add(muzzleLight);
@@ -56,15 +63,24 @@ window.addEventListener('resize', () => {
   composer.setSize(window.innerWidth, window.innerHeight); 
 });
 
-export const mapMeshes = [];
-export const walls = []; // Holds bounding metrics for mathematical pushOut collisions
-
 // ── ENVIRONMENT LIGHTING ──
-const ambLight = new THREE.AmbientLight(0xffffff, 1.85); // Boosted base illumination
+export const ambLight = new THREE.AmbientLight(0xffffff, 1.85); 
 scene.add(ambLight);
-const dirLight = new THREE.DirectionalLight(0xbbeeff, 1.2); // Blue moonlight cast
+export const dirLight = new THREE.DirectionalLight(0xbbeeff, 1.2); 
 dirLight.position.set(20, 40, -20);
 scene.add(dirLight);
+
+export function toggleSwarmLighting(isSwarm) {
+  if (isSwarm) {
+    scene.fog.color.setHex(0x220000); // Deep blood red fog
+    ambLight.color.setHex(0xffaaaa);  // Reddish ambient map glow
+    dirLight.color.setHex(0xff0000);  // Pure red moonlight cast
+  } else {
+    scene.fog.color.setHex(0x0a0a11); // Revert to moody dark fog
+    ambLight.color.setHex(0xffffff);  // Revert ambient
+    dirLight.color.setHex(0xbbeeff);  // Revert blue moonlight
+  }
+}
 
 // ── GRITTY TEXTURE SYSTEM ──
 function createGrungeTexture(size, baseColor, speckleColor) {
@@ -126,6 +142,28 @@ const MAP_LAYOUTS = [
       [1,1,0,0,0,0,0,0,1,1],
       [1,1,1,1,1,1,1,1,1,1]
     ]
+  },
+  {
+    // MAP 2: The Grid Arena (Layout replicated from your Roblox room-and-corridor layout asset)
+    // 1 = Solid Wall, 0 = Player Walkway/Floor, 2 = Purchasable Door, 3 = Locked Spawn
+    grid: [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,3,0,0,0,0,1,0,0,0,0,1,0,0,3,1],
+      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1],
+      [1,0,0,1,1,2,1,0,0,0,0,1,1,2,1,1],
+      [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
+      [1,0,0,1,0,0,0,0,1,1,0,0,0,0,0,1],
+      [1,1,2,1,0,0,1,1,1,1,1,1,2,1,1,1],
+      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1], // Central intersection crossroads
+      [1,0,0,0,0,0,2,0,0,0,0,2,0,0,0,1], // Dual tactical security gates
+      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1],
+      [1,1,1,1,2,1,1,1,1,1,1,1,0,0,1,1],
+      [1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+      [1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1],
+      [1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1],
+      [1,3,0,1,0,0,1,0,0,0,0,0,0,0,3,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ]
   }
 ];
 
@@ -148,6 +186,7 @@ function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false)
 
   const blockObj = {
     minX: x - w / 2, maxX: x + w / 2,
+    maxY: y + (h / 2), // Tell the engine where the top of the block is!
     minZ: z - d / 2, maxZ: z + d / 2,
     isDoor: isDoor,
     mesh: mesh,
@@ -160,8 +199,97 @@ function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false)
   return blockObj;
 }
 
+// ── PROCEDURAL BARRICADE GENERATOR ──
+export function spawnBarricade(x, z, rotY) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  group.rotation.y = rotY;
+  scene.add(group);
+
+  const plankGroup = new THREE.Group();
+  group.add(plankGroup);
+
+  const barricadeObj = {
+    pos: new THREE.Vector3(x, 0, z),
+    rotY: rotY,
+    maxPlanks: 5,
+    currentPlanks: 5,
+    planks: [], 
+    group: group,
+    plankGroup: plankGroup,
+    cooldown: 0,
+    wallTracker: null // Dynamic collision box reference
+  };
+
+  // Build 5 haphazardly stacked wooden planks
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6e4720, roughness: 0.9 }); 
+  for (let i = 0; i < 5; i++) {
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.3, 0.15), woodMat);
+    plank.position.set(0, 0.4 + i * 0.45, 0);
+    plank.rotation.z = (Math.random() - 0.5) * 0.12; // Slight janky angle tilt
+    plankGroup.add(plank);
+    barricadeObj.planks.push(plank);
+  }
+
+  // Generate mathematical collision bounds based on orientation (North-South vs East-West)
+  const isParallelToX = Math.abs(Math.sin(rotY)) > 0.5;
+  const w = isParallelToX ? 1.0 : 4.2;
+  const d = isParallelToX ? 4.2 : 1.0;
+
+  barricadeObj.wallTracker = {
+    minX: x - w / 2, maxX: x + w / 2,
+    minZ: z - d / 2, maxZ: z + d / 2,
+    isBarricade: true,
+    ref: barricadeObj
+  };
+
+  walls.push(barricadeObj.wallTracker);
+  barricades.push(barricadeObj);
+}
+
+// ── PROCEDURAL ELECTRIC TRAP GENERATOR ──
+export function spawnTrap(x, z, width, isZAxis = false) {
+  const group = new THREE.Group();
+  group.position.set(x, 0, z);
+  scene.add(group);
+
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+  const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3), poleMat);
+  const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3), poleMat);
+
+  if (isZAxis) { p1.position.z = -width/2; p2.position.z = width/2; }
+  else { p1.position.x = -width/2; p2.position.x = width/2; }
+  p1.position.y = 1.5; p2.position.y = 1.5;
+  group.add(p1, p2);
+
+  const switchMat = new THREE.MeshStandardMaterial({ color: 0xaa0000 });
+  const switchBox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.4), switchMat);
+  switchBox.position.copy(p1.position); switchBox.position.y = 1.0;
+  group.add(switchBox);
+
+  const fieldGeo = isZAxis ? new THREE.BoxGeometry(0.5, 3, width) : new THREE.BoxGeometry(width, 3, 0.5);
+  const fieldMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.4, wireframe: true });
+  const field = new THREE.Mesh(fieldGeo, fieldMat);
+  field.position.y = 1.5; field.visible = false;
+  group.add(field);
+
+  const trapObj = { 
+    pos: p1.position.clone().add(group.position).setY(0), // Interaction point
+    center: new THREE.Vector3(x, 0, z), width: width, isZAxis: isZAxis, 
+    group: group, field: field, switchMesh: switchBox, 
+    state: 'READY', timer: 0 
+  };
+  traps.push(trapObj);
+}
+
 export function buildMap(mapIndex) {
+  currentMap = mapIndex; // Sync the current map to the engine
+
   // Reset active scene elements
+  barricades.forEach(b => scene.remove(b.group));
+  barricades.length = 0;
+  traps.forEach(t => scene.remove(t.group));
+  traps.length = 0;
   mapMeshes.forEach(m => scene.remove(m));
   mapMeshes.length = 0;
   walls.length = 0;
@@ -171,17 +299,23 @@ export function buildMap(mapIndex) {
   if (floorMesh) scene.remove(floorMesh);
 
   // ── CORE GENERATION DISTRIBUTOR ──
-  if (mapIndex === 0 || mapIndex === 1) {
-    // GENERATE FROM ORIGINAL ARRAY GRIDS
+  if (mapIndex === 0 || mapIndex === 1 || mapIndex === 2) {    // GENERATE FROM ORIGINAL MATRIX ARRAYS
     const mapData = MAP_LAYOUTS[mapIndex].grid;
     const gridRows = mapData.length; const gridCols = mapData[0].length;
     const offsetX = (gridCols * TILE_SIZE) / 2; const offsetZ = (gridRows * TILE_SIZE) / 2;
 
-    const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9, metalness: 0.1 });
+    // Apply flat color rendering to Map 2 to match the clean aesthetic of your screen grab
+    let floorMaterial = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9, metalness: 0.1 });
+    if (mapIndex === 2) {
+      floorMaterial = new THREE.MeshStandardMaterial({ color: 0x1e1e24, roughness: 0.4 });
+    }
+
     const floorGeo = new THREE.PlaneGeometry(gridCols * TILE_SIZE, gridRows * TILE_SIZE);
-    floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh = new THREE.Mesh(floorGeo, floorMaterial);
     floorMesh.rotation.x = -Math.PI / 2;
-    scene.add(floorMesh); mapMeshes.push(floorMesh);
+    floorMesh.frustumCulled = false; // Forces the floor rendering pipeline to stay stable
+    scene.add(floorMesh); 
+    mapMeshes.push(floorMesh);
 
     for (let row = 0; row < gridRows; row++) {
       for (let col = 0; col < gridCols; col++) {
@@ -196,34 +330,42 @@ export function buildMap(mapIndex) {
         } 
         else if (tile === 1 || tile === 2) {
           const isDoor = (tile === 2);
-          const wallObj = spawnBlock(TILE_SIZE, WALL_HEIGHT, TILE_SIZE, posX, WALL_HEIGHT / 2, posZ, isDoor ? null : wallTex, true, isDoor);
+          
+          // Switch map 2 walls to a flat block style configuration to match Roblox style proportions
+          let surfaceMaterial = isDoor ? null : wallTex;
+          if (mapIndex === 2 && !isDoor) {
+            surfaceMaterial = 0x3a3a46; // Solid clean grey structural block color
+          }
+
+          const wallObj = spawnBlock(TILE_SIZE, WALL_HEIGHT, TILE_SIZE, posX, WALL_HEIGHT / 2, posZ, surfaceMaterial, true, isDoor);
           if (isDoor) doors.push(wallObj);
         }
       }
     }
   } 
   else {
-    // GENERATE OPEN PROC-CONTAINERS (MAPS 2, 3, AND 4)
+    // GENERATE OPEN PROC-CONTAINERS (MAPS 3, 4, AND 5)
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 }));
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
     mapMeshes.push(floor);
 
-    if (mapIndex === 2) {
-      // MAP 2: The Sandbox Arena
+    if (mapIndex === 3) {
+      // MAP 4: The Sandbox Arena
       spawnBlock(40, 6, 2, 0, 3, -20, wallTex); 
       spawnBlock(40, 6, 2, 0, 3, 20, wallTex);  
       spawnBlock(2, 6, 40, -20, 3, 0, wallTex); 
       spawnBlock(2, 6, 40, 20, 3, 0, wallTex);  
-
+      spawnBarricade(-18, 0, Math.PI / 2); // West wall window
+      spawnBarricade(0, -18, 0);           // North wall window
       spawnBlock(3, 2, 6, -8, 1, -5, 0x334455);
       spawnBlock(4, 3, 4, 10, 1.5, 8, 0x443322);
       spawnBlock(8, 2, 2, 0, 1, 10, 0x223322);
 
       spawnPoints.push(new THREE.Vector3(0, 0, -15), new THREE.Vector3(-15, 0, 15), new THREE.Vector3(15, 0, 15));
     } 
-    else if (mapIndex === 3) {
-      // MAP 3: The Red Courtyard
+    else if (mapIndex === 4) {
+      // MAP 5: The Red Courtyard
       spawnBlock(50, 4, 2, 0, 2, -25, wallTex);
       spawnBlock(50, 4, 2, 0, 2, 25, wallTex);
       spawnBlock(2, 4, 50, -25, 2, 0, wallTex);
@@ -233,8 +375,8 @@ export function buildMap(mapIndex) {
 
       spawnPoints.push(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 0, -20), new THREE.Vector3(-20, 0, 20), new THREE.Vector3(20, 0, 20));
     } 
-    else if (mapIndex === 4) {
-      // MAP 4: Massive Multistory Warehouse
+    else if (mapIndex === 5) {
+      // MAP 6: Massive Multistory Warehouse
       spawnBlock(70, 16, 2, 0, 8, -35, wallTex); 
       spawnBlock(70, 16, 2, 0, 8, 35, wallTex);  
       spawnBlock(2, 16, 70, -35, 8, 0, wallTex); 
@@ -250,7 +392,8 @@ export function buildMap(mapIndex) {
       for (let i = 0; i < 12; i++) {
         spawnBlock(6, 0.5 * (i + 1), 2, 0, (0.5 * (i + 1)) / 2, -10 - (i * 1.2), 0x444455);
       }
-
+      
+      spawnTrap(0, -7.5, 6, false); // Trap located at the bottom step of the staircase
       spawnBlock(8, 4, 8, -15, 2, 10, 0x554433);
       spawnBlock(12, 6, 4, 10, 3, 20, 0x554433);
       spawnBlock(4, 2, 4, 15, 1, 12, 0x335533); 

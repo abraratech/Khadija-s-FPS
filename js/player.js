@@ -73,10 +73,18 @@ export function updatePlayer(dt, keys, mdx, mdy) {
     player.onGround = false; 
   }
 
-// ── PROCEDURAL PHYSICS (MULTISTORY) ──
-  player.pos.x += player.vel.x * dt;
-  player.pos.y += player.vel.y * dt;
-  player.pos.z += player.vel.z * dt;
+// ── PROCEDURAL PHYSICS (MULTISTORY WITH ANTI-TUNNELING SUB-STEPPING) ──
+  const STEPS = 3; 
+  const stepDt = dt / STEPS;
+  
+  for (let i = 0; i < STEPS; i++) {
+    player.pos.x += player.vel.x * stepDt;
+    player.pos.y += player.vel.y * stepDt;
+    player.pos.z += player.vel.z * stepDt;
+
+    // Slide against mathematical walls instantly in micro-steps!
+    pushOut(player.pos, P_RADIUS, true); 
+  }
 
   // 1. Raycast straight down to find the highest floor/crate under the player
   let groundY = EYE_H; 
@@ -96,9 +104,6 @@ export function updatePlayer(dt, keys, mdx, mdy) {
   } else {
     player.onGround = false;
   }
-
-  // 3. Slide against mathematical walls instantly
-  pushOut(player.pos, P_RADIUS);
 
   // ── FAILSAFE BOUNDARY ──
   const B = 80;

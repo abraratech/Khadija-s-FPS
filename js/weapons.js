@@ -1,8 +1,8 @@
 // js/weapons.js
 import * as THREE from 'three';
-import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor } from './map.js';
+import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps } from './map.js';
 import { player } from './player.js';
-import { eMeshList, killEnemy } from './enemy.js';
+import { activeEnemies, killEnemy } from './enemy.js';
 import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke } from './particles.js'; 
 import { playSound } from './audio.js';
@@ -14,14 +14,61 @@ let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
 
+// ── MYSTERY BOX LOCATIONS ──
+const BOX_SPAWNS = [
+  new THREE.Vector3(8, 0.4, 0),
+  new THREE.Vector3(-15, 0.4, 15),
+  new THREE.Vector3(15, 0.4, -15),
+  new THREE.Vector3(0, 0.4, 25),
+  new THREE.Vector3(-10, 0.4, -20)
+];
+let currentBoxIndex = 0;
+
+const WALL_SPAWNS = [
+  new THREE.Vector3(-4, 0.4, -10),
+  new THREE.Vector3(4, 0.4, -10),
+  new THREE.Vector3(-12, 0.4, -5),
+  new THREE.Vector3(12, 0.4, -5),
+  new THREE.Vector3(0, 0.4, -20)
+];
+
+const AMMO_SPAWNS = [
+  new THREE.Vector3(-8, 0.4, 0), new THREE.Vector3(12, 0.4, 12), 
+  new THREE.Vector3(-15, 0.4, -10), new THREE.Vector3(0, 0.4, 15)
+];
+
+const HEALTH_SPAWNS = [
+  new THREE.Vector3(-12, 0.4, 0), new THREE.Vector3(-12, 0.4, 15), 
+  new THREE.Vector3(15, 0.4, -5), new THREE.Vector3(8, 0.4, -15)
+];
+
+const UPGRADE_SPAWNS = [
+  new THREE.Vector3(0, 0.4, 8), new THREE.Vector3(15, 0.4, 15), 
+  new THREE.Vector3(-15, 0.4, -15), new THREE.Vector3(-10, 0.4, 10)
+];
+
+// ── UNIVERSAL SHOP RELOCATOR ──
+function relocateShop(shop, spawnList) {
+  scene.remove(shop.mesh);
+  const idx = activeShops.indexOf(shop);
+  if (idx > -1) activeShops.splice(idx, 1);
+  
+  let newIdx = Math.floor(Math.random() * spawnList.length);
+  // Guarantee it picks a different location than where it currently is
+  while (spawnList.length > 1 && spawnList[newIdx].distanceTo(shop.pos) < 1.0) {
+    newIdx = Math.floor(Math.random() * spawnList.length);
+  }
+  spawnShop(shop.type, spawnList[newIdx]);
+}
+
 // ── WEAPON DEFINITIONS ──
 export const WEAPON_DEFS = {
   PISTOL: { 
-    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 45, maxAmmo: 12, fireRate: 0.25, isAutomatic: false, reloadDuration: 1.2, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: false, 
+    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 22, maxAmmo: 8, fireRate: 0.25, isAutomatic: false, reloadDuration: 1.2, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: false, 
     buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), null, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)) 
   },
   PISTOL_UPG: { 
-    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 150, maxAmmo: 20, fireRate: 0.15, isAutomatic: true, reloadDuration: 0.9, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: true, 
+    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 55, maxAmmo: 20, fireRate: 0.15, isAutomatic: true, reloadDuration: 0.9, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: true, 
     buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), 0xffaa00, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)) 
   },
   RIFLE: { 
@@ -181,11 +228,19 @@ export function buildGun() {
   player.inventory.push({ ...pistolDef, ammo: pistolDef.maxAmmo, reserve: pistolDef.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: pistolDef.buildMesh() });
   equipWeapon(0);
 
-  // ── SPAWN PROCEDURAL SHOPS ──
-  spawnShop('AMMO', new THREE.Vector3(-15, 0.4, 0));
-  spawnShop('MYSTERY_BOX', new THREE.Vector3(15, 0.4, 0));
-  spawnShop('HEALTH', new THREE.Vector3(0, 0.4, -18));
-  spawnShop('UPGRADE', new THREE.Vector3(0, 0.4, 18));
+// ── SPAWN PROCEDURAL SHOPS (SAFE CENTRAL COORDINATES) ──
+  spawnShop('AMMO', new THREE.Vector3(-8, 0.4, 0));
+  spawnShop('MYSTERY_BOX', BOX_SPAWNS[currentBoxIndex]); // ◄── Dynamic Location
+  
+  // They are back!
+  spawnShop('HEALTH', new THREE.Vector3(-12, 0.4, 0));
+  spawnShop('UPGRADE', new THREE.Vector3(0, 0.4, 8));
+  spawnShop('PERK_HEALTH', new THREE.Vector3(-8, 0.4, -8)); // Juggernog
+  spawnShop('PERK_RELOAD', new THREE.Vector3(8, 0.4, 8));   // Speed Cola
+
+  // ── NEW: WALL BUYS ──
+  spawnShop('WALL_SMG', new THREE.Vector3(-4, 0.4, -10));
+  spawnShop('WALL_SHOTGUN', new THREE.Vector3(4, 0.4, -10));
 }
 
 function spawnShop(type, position) {
@@ -224,10 +279,25 @@ function spawnShop(type, position) {
     const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.0, 0.8), machMat);
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), glowMat);
     screen.position.set(0, 0.5, 0.41); base.position.y = 0.6; g.add(base, screen);
-  } else if (type === 'WALL_SMG') {
-    const board = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.8, 0.1), new THREE.MeshStandardMaterial({ color: 0x222222 }));
-    const chalk = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.6), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }));
-    chalk.position.z = 0.06; board.position.y = 0.5; g.add(board, chalk);
+ } else if (type.startsWith('WALL_')) {
+    const wKey = type.split('_')[1]; // Extracts "SMG" or "SHOTGUN"
+    const board = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+    
+    // Recycle the Mystery Box hologram to make a "Chalk Outline"
+    const chalkMesh = getHologramMesh(wKey);
+    chalkMesh.position.z = 0.15; 
+    chalkMesh.position.y = 0.6;
+    chalkMesh.scale.z = 0.001; // Flatten it completely against the blackboard!
+    
+    chalkMesh.traverse(child => {
+      if (child.isMesh) {
+        child.material = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+      }
+    });
+
+    board.position.y = 0.6; 
+    g.add(board, chalkMesh);
+    shopData.weaponKey = wKey; // Save what weapon this wall holds
   }
   
   g.position.copy(position); scene.add(g);
@@ -252,7 +322,83 @@ export function cycleWeapon() {
 export function checkWorldInteractions(checkInteractionPressed = false) {
   if (!player.alive) return;
 
-  let closestInteractable = null; 
+// ── REPAIRABLE BARRICADE INTERACTION TRACKER (PASTE HERE) ──
+  let closestBarricade = null;
+  let minBarricadeDist = 3.0;
+
+  barricades.forEach(b => {
+    const d = player.pos.distanceTo(b.pos);
+    if (d < minBarricadeDist) {
+      minBarricadeDist = d;
+      closestBarricade = b;
+    }
+  });
+
+  if (closestBarricade) {
+    if (closestBarricade.currentPlanks < closestBarricade.maxPlanks) {
+      setInteractionPrompt(true, `Hold [E] to repair barricade (+10 PTS)`);
+      
+      if (checkInteractionPressed) {
+        closestBarricade.cooldown -= 0.016; 
+        
+        if (closestBarricade.cooldown <= 0) {
+          closestBarricade.cooldown = 0.4; // Build speed timer limit
+          
+          // Add plank back physically
+          const targetPlank = closestBarricade.planks[closestBarricade.currentPlanks];
+          closestBarricade.plankGroup.add(targetPlank);
+          closestBarricade.currentPlanks++;
+          
+          // Reward score progression
+          player.score += 10;
+          updateScoreHUD(player.score);
+          spawnFloatingScore(10, false);
+          playSound('reload', 0.5, true); 
+
+          // Re-engage mathematical collision wall if it was previously wide open
+          if (closestBarricade.currentPlanks === 1 && !walls.includes(closestBarricade.wallTracker)) {
+            walls.push(closestBarricade.wallTracker);
+          }
+        }
+      }
+    } else {
+      setInteractionPrompt(true, `BARRICADE IS FULLY REPAIRED`);
+    }
+return; // Halt other checks so shop prompts don't overlap
+  }
+
+  // ── TRAP INTERACTION TRACKER ──
+  let closestTrap = null;
+  let minTrapDist = 2.5;
+
+  traps.forEach(t => {
+    if (player.pos.distanceTo(t.pos) < minTrapDist) {
+      minTrapDist = player.pos.distanceTo(t.pos);
+      closestTrap = t;
+    }
+  });
+
+  if (closestTrap) {
+    if (closestTrap.state === 'READY') {
+      setInteractionPrompt(true, `Press [E] to activate Electric Trap [1000 PTS]`);
+      if (checkInteractionPressed) {
+        if (player.score >= 1000) {
+          player.score -= 1000; updateScoreHUD(player.score);
+          closestTrap.state = 'ACTIVE'; closestTrap.timer = 15.0; // 15 sec duration
+          closestTrap.field.visible = true; closestTrap.switchMesh.material.color.setHex(0x00ff00);
+          playSound('hit', 1.0, false); 
+        } else {
+          setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
+        }
+      }
+    } else if (closestTrap.state === 'COOLDOWN') {
+      setInteractionPrompt(true, `TRAP RECHARGING...`);
+    }
+    return; 
+  }
+  // ──────────────────────────────────────────────────────────
+
+  let closestInteractable = null;
   let minShopDist = 2.5; 
   let minDoorDist = 7.0; 
 
@@ -323,9 +469,12 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
               equipWeapon(player.inventory.length - 1);
             }
             
-            closestShop.spinMesh.clear();
+			closestShop.spinMesh.clear();
             closestShop.state = 'IDLE';
             playSound('reload', 0.8, false);
+            
+            // NEW: Instantly relocate the box after the player grabs the gun!
+            relocateShop(closestShop, BOX_SPAWNS);
           }
         } 
         else {
@@ -337,15 +486,22 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       }
 
       // ── STANDARD SHOP LOGIC (AMMO, PERKS, ETC) ──
-      const hasSMG = player.inventory.some(w => w.key === "SMG" || w.key === "SMG_UPG");
+// ── STANDARD SHOP LOGIC (AMMO, PERKS, WALL BUYS) ──
       let cost = 0; let shopName = "";
-      
-      if (closestShop.type === 'AMMO') { cost = 500; shopName = "Max Ammo"; }
+      const isWallBuy = closestShop.type.startsWith('WALL_');
+      let hasWallWeapon = false;
+
+      // Dynamically check if they already own the Wall-Buy weapon
+      if (isWallBuy) {
+        hasWallWeapon = player.inventory.some(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
+        cost = hasWallWeapon ? 500 : 1000;
+        shopName = hasWallWeapon ? `${closestShop.weaponKey} Ammo` : `Wall ${closestShop.weaponKey}`;
+      }
+      else if (closestShop.type === 'AMMO') { cost = 500; shopName = "Max Ammo"; }
       else if (closestShop.type === 'HEALTH') { cost = 300; shopName = "Medkit"; }
       else if (closestShop.type === 'UPGRADE') { cost = 5000; shopName = "Pack-a-Punch"; }
-      else if (closestShop.type === 'PERK_HEALTH') { cost = 2500; shopName = "Juggernog (Max Health)"; }
-      else if (closestShop.type === 'PERK_RELOAD') { cost = 3000; shopName = "Speed Cola (Fast Reload)"; }
-      else if (closestShop.type === 'WALL_SMG') { cost = hasSMG ? 500 : 1000; shopName = hasSMG ? "SMG Ammo" : "Wall SMG"; }
+      else if (closestShop.type === 'PERK_HEALTH') { cost = 2500; shopName = "Juggernog"; }
+      else if (closestShop.type === 'PERK_RELOAD') { cost = 3000; shopName = "Speed Cola"; }
 
       if (closestShop.type === 'HEALTH' && player.health >= player.maxHealth) { setInteractionPrompt(true, `HEALTH IS ALREADY FULL!`); } 
       else if (closestShop.type === 'UPGRADE' && activeW.isUpgraded) { setInteractionPrompt(true, `WEAPON ALREADY UPGRADED!`); } 
@@ -359,7 +515,19 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
             player.score -= cost; updateScoreHUD(player.score);
             playSound('hit', 0.8, false); 
             
-            if (closestShop.type === 'AMMO') {
+            if (isWallBuy) {
+              if (hasWallWeapon) {
+                const wIdx = player.inventory.findIndex(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
+                player.inventory[wIdx].ammo = player.inventory[wIdx].maxAmmo;
+                player.inventory[wIdx].reserve = player.inventory[wIdx].maxAmmo * 3;
+                equipWeapon(wIdx);
+              } else {
+                const def = WEAPON_DEFS[closestShop.weaponKey];
+                player.inventory.push({ ...def, ammo: def.maxAmmo, reserve: def.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: def.buildMesh() });
+                equipWeapon(player.inventory.length - 1);
+              }
+            }
+            else if (closestShop.type === 'AMMO') {
               activeW.ammo = activeW.maxAmmo; activeW.reserve = activeW.maxAmmo * 3;
               updateAmmoHUD(activeW.ammo, activeW.reserve); 
             } 
@@ -372,19 +540,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
             else if (closestShop.type === 'PERK_RELOAD') {
               player.reloadMult = 0.5;
             }
-            else if (closestShop.type === 'WALL_SMG') {
-              if (hasSMG) {
-                const smgIdx = player.inventory.findIndex(w => w.key === "SMG" || w.key === "SMG_UPG");
-                player.inventory[smgIdx].ammo = player.inventory[smgIdx].maxAmmo;
-                player.inventory[smgIdx].reserve = player.inventory[smgIdx].maxAmmo * 3;
-                equipWeapon(smgIdx);
-              } else {
-                const def = WEAPON_DEFS.SMG;
-                player.inventory.push({ ...def, ammo: def.maxAmmo, reserve: def.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: def.buildMesh() });
-                equipWeapon(player.inventory.length - 1);
-              }
-            }
-            else if (closestShop.type === 'UPGRADE') {
+			else if (closestShop.type === 'UPGRADE') {
               const upgKey = activeW.key + "_UPG";
               const upgDef = WEAPON_DEFS[upgKey];
               camera.remove(activeW.meshGroup);
@@ -393,6 +549,13 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
               };
               equipWeapon(player.currentWeaponIdx);
             }
+            
+// ── INSTANTLY RELOCATE SHOPS AFTER USE ──
+            if (isWallBuy) relocateShop(closestShop, WALL_SPAWNS);
+            else if (closestShop.type === 'AMMO') relocateShop(closestShop, AMMO_SPAWNS);
+            else if (closestShop.type === 'HEALTH') relocateShop(closestShop, HEALTH_SPAWNS);
+            else if (closestShop.type === 'UPGRADE') relocateShop(closestShop, UPGRADE_SPAWNS);
+            
           } else {
             setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
           }
@@ -435,19 +598,23 @@ export function shoot() {
   
   _recoilZ += w.recoilZ; _recoilY += w.recoilY; player.pitch += w.cameraKick; player.yaw += (Math.random() - 0.5) * w.cameraKick * 0.5;
 
-  ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-  const hitTargets = [...eMeshList, ...mapMeshes];
+// We map the active enemies and check recursively (true) to bypass the laggy array rebuilding!
+  const enemyGroups = activeEnemies.map(e => e.mesh);
+  const hitTargets = [...enemyGroups, ...mapMeshes];
   
-  if (w.name.includes("Pump")) {
+  // ── SHOTGUN BUG FIX: Check by key instead of name! ──
+  if (w.key.includes("SHOTGUN")) {
     const pelletCount = w.isUpgraded ? 12 : 8; 
     for (let i = 0; i < pelletCount; i++) {
       const spread = new THREE.Vector2((Math.random() - 0.5) * 0.045, (Math.random() - 0.5) * 0.045);
       ray.setFromCamera(spread, camera);
-      const hits = ray.intersectObjects(hitTargets, false);
+      // The 'true' flag tells the engine to check inside the models automatically!
+      const hits = ray.intersectObjects(hitTargets, true);
       if (hits.length) processHit(hits[0]);
     }
   } else {
-    const hits = ray.intersectObjects(hitTargets, false);
+    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const hits = ray.intersectObjects(hitTargets, true);
     if (hits.length) processHit(hits[0]);
   }
   
@@ -473,14 +640,19 @@ function processHit(hit) {
     const baseDamage = w.damage; 
     const isInstaKill = player.instaKillTimer > 0;
     
-    const finalDamage = isInstaKill ? 9999 : (hs ? baseDamage * 3 : baseDamage);
+const finalDamage = isInstaKill ? 9999 : (hs ? baseDamage * 3 : baseDamage);
     e.health -= finalDamage; 
     
-    let pointsAwarded = hs ? 100 : 10;
+    // ── ECONOMY FIX: 10 points for hits, bonus points only on KILL ──
+    let pointsAwarded = 10; // Standard non-lethal hit
+    if (e.health <= 0) {
+      pointsAwarded = hs ? 100 : 50; // 100 for Headshot Kill, 50 for Body Kill
+    }
+    
     if (player.doublePointsTimer > 0) pointsAwarded *= 2; 
     
     player.score = (player.score || 0) + pointsAwarded; 
-    spawnFloatingScore(pointsAwarded, hs);
+    spawnFloatingScore(pointsAwarded, e.health <= 0 && hs); // Only show gold text on Headshot Kill
     updateScoreHUD(player.score);
 
     showHitMarker(); playSound('hit', 0.4, true); spawnBloodBurst(hit.point);
@@ -601,9 +773,11 @@ export function updateShops(dt) {
         shop.timer -= dt;
         shop.cycleTimer -= dt;
         
+        // Spin the hologram
         shop.spinMesh.rotation.y += dt * 8.0; 
         shop.spinMesh.position.y = 1.2 + Math.sin(Date.now() * 0.01) * 0.15; 
         
+        // Cycle the random weapons every 0.12 seconds
         if (shop.cycleTimer <= 0) {
           shop.cycleTimer = 0.12;
           shop.spinMesh.clear();
@@ -614,23 +788,60 @@ export function updateShops(dt) {
           playSound('shoot_pistol', 0.05, false); 
         }
         
+        // When the 4 second spin ends, roll for a gun or a Teddy Bear
         if (shop.timer <= 0) {
-          shop.state = 'READY';
-          shop.timer = 12.0; 
-          shop.spinMesh.clear();
-          
-          const wKeys = ["RIFLE", "SMG", "SHOTGUN"];
-          const finalKey = wKeys[Math.floor(Math.random() * wKeys.length)];
-          shop.finalWeapon = WEAPON_DEFS[finalKey];
-          
-          const finalMesh = getHologramMesh(finalKey);
-          finalMesh.traverse((child) => {
-            if (child.isMesh) child.material = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.5 });
-          });
-          shop.spinMesh.add(finalMesh);
-          playSound('reload', 1.0, false); 
+          // 15% Chance to roll the Teddy Bear!
+          if (Math.random() < 0.15) {
+            shop.state = 'TEDDY';
+            shop.timer = 3.5; 
+            shop.spinMesh.clear();
+            shop.spinMesh.add(getTeddyMesh());
+            playSound('hurt', 0.5, false); // Proxy for a sinister laugh
+          } else {
+            // Roll a final weapon
+            shop.state = 'READY';
+            shop.timer = 12.0; 
+            shop.spinMesh.clear();
+            
+            const wKeys = ["RIFLE", "SMG", "SHOTGUN"];
+            const finalKey = wKeys[Math.floor(Math.random() * wKeys.length)];
+            shop.finalWeapon = WEAPON_DEFS[finalKey];
+            
+            const finalMesh = getHologramMesh(finalKey);
+            finalMesh.traverse((child) => {
+              if (child.isMesh) child.material = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.5 });
+            });
+            shop.spinMesh.add(finalMesh);
+            playSound('reload', 1.0, false); 
+          }
         }
       } 
+      // ── TEDDY BEAR TELEPORT SEQUENCE ──
+      else if (shop.state === 'TEDDY') {
+        shop.timer -= dt;
+        shop.spinMesh.position.y += dt * 0.5; // Float up into the air
+        shop.spinMesh.rotation.y += dt * 6.0; // Spin violently
+        
+        if (shop.timer <= 0) {
+          import('./player.js').then(({ player }) => {
+            player.score += 950; // Refund the player
+            import('./ui.js').then(({ updateScoreHUD, spawnFloatingScore }) => {
+              updateScoreHUD(player.score);
+              spawnFloatingScore(950, false);
+            });
+          });
+          
+          // Delete old box
+          scene.remove(shop.mesh);
+          activeShops.splice(activeShops.indexOf(shop), 1);
+          
+          // Move to a new valid location
+          let newIdx = currentBoxIndex;
+          while (newIdx === currentBoxIndex) { newIdx = Math.floor(Math.random() * BOX_SPAWNS.length); }
+          currentBoxIndex = newIdx;
+          spawnShop('MYSTERY_BOX', BOX_SPAWNS[currentBoxIndex]);
+        }
+      }
       else if (shop.state === 'READY') {
         shop.timer -= dt;
         shop.spinMesh.rotation.y += dt * 1.5; 
@@ -660,10 +871,27 @@ function getHologramMesh(key) {
   
   if (!clone) return new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.6));
   
-  clone.traverse((child) => {
+clone.traverse((child) => {
     if (child.isMesh) {
       child.material = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00aaee, emissiveIntensity: 0.8, wireframe: true });
     }
   });
   return clone;
+}
+
+// ── PROCEDURAL TEDDY BEAR ──
+function getTeddyMesh() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 1.0 });
+  
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.3, 0.2), mat);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), mat);
+  head.position.y = 0.25;
+  const earL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), mat);
+  earL.position.set(-0.12, 0.35, 0);
+  const earR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.08), mat);
+  earR.position.set(0.12, 0.35, 0);
+  
+  g.add(body, head, earL, earR);
+  return g;
 }

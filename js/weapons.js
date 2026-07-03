@@ -1,12 +1,13 @@
 // js/weapons.js
 import * as THREE from 'three';
-import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps } from './map.js';
+import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId } from './map.js';
 import { player } from './player.js';
 import { activeEnemies, killEnemy } from './enemy.js';
 import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke } from './particles.js'; 
 import { playSound } from './audio.js';
 import { ASSETS } from './main.js';
+import { getGameplayPointsForMap } from './maps/gameplay_points.js';
 
 const ray = new THREE.Raycaster();
 export let muzzleT = 0;
@@ -14,51 +15,149 @@ let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
 
-// ── MYSTERY BOX LOCATIONS ──
-const BOX_SPAWNS = [
-  new THREE.Vector3(8, 0.4, 0),
-  new THREE.Vector3(-15, 0.4, 15),
-  new THREE.Vector3(15, 0.4, -15),
-  new THREE.Vector3(0, 0.4, 25),
-  new THREE.Vector3(-10, 0.4, -20)
-];
-let currentBoxIndex = 0;
+function getCurrentGameplayPoints() {
+  return getGameplayPointsForMap(currentMapId);
+}
 
-const WALL_SPAWNS = [
-  new THREE.Vector3(-4, 0.4, -10),
-  new THREE.Vector3(4, 0.4, -10),
-  new THREE.Vector3(-12, 0.4, -5),
-  new THREE.Vector3(12, 0.4, -5),
-  new THREE.Vector3(0, 0.4, -20)
-];
+// Gameplay point pools are now shared from js/maps/gameplay_points.js
+// Perk spawn pools are shared from js/maps/gameplay_points.js
 
-const AMMO_SPAWNS = [
-  new THREE.Vector3(-8, 0.4, 0), new THREE.Vector3(12, 0.4, 12), 
-  new THREE.Vector3(-15, 0.4, -10), new THREE.Vector3(0, 0.4, 15)
-];
+const SHOP_WALL_CLEARANCE = 0.95;
+const SHOP_MIN_SHOP_DISTANCE = 3.0;
+const SHOP_MIN_PLAYER_DISTANCE = 7.0;
+const SHOP_MIN_FEATURE_DISTANCE = 2.25;
 
-const HEALTH_SPAWNS = [
-  new THREE.Vector3(-12, 0.4, 0), new THREE.Vector3(-12, 0.4, 15), 
-  new THREE.Vector3(15, 0.4, -5), new THREE.Vector3(8, 0.4, -15)
-];
+function flatDistance(a, b) {
+  if (!a || !b) return Infinity;
+  const dx = a.x - b.x;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dz * dz);
+}
 
-const UPGRADE_SPAWNS = [
-  new THREE.Vector3(0, 0.4, 8), new THREE.Vector3(15, 0.4, 15), 
-  new THREE.Vector3(-15, 0.4, -15), new THREE.Vector3(-10, 0.4, 10)
-];
+function shuffledCopy(list) {
+  const arr = list.slice();
+
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+
+  return arr;
+}
+
+function cloneShopPoint(pos) {
+  return new THREE.Vector3(pos.x, 0.4, pos.z);
+}
+
+function pointOverlapsWall(pos, padding = SHOP_WALL_CLEARANCE) {
+  for (const w of walls) {
+    if (!w) continue;
+    if (w.minX === undefined || w.maxX === undefined || w.minZ === undefined || w.maxZ === undefined) continue;
+
+    if (
+      pos.x > w.minX - padding &&
+      pos.x < w.maxX + padding &&
+      pos.z > w.minZ - padding &&
+      pos.z < w.maxZ + padding
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getShopCandidatePoints(spawnList) {
+  const candidates = [];
+
+  spawnList.forEach((pt) => {
+    if (pt) candidates.push(cloneShopPoint(pt));
+  });
+
+  // Emergency fallback: if a hardcoded shop list is bad for a future map,
+  // use known open floor zombie spawn points instead of forcing a wall spawn.
+  spawnPoints.forEach((pt) => {
+    if (pt) candidates.push(cloneShopPoint(pt));
+  });
+
+  return candidates;
+}
+
+function isShopSpawnSafe(pos, ignoreShop = null, options = {}) {
+  if (!pos) return false;
+
+  if (pointOverlapsWall(pos, SHOP_WALL_CLEARANCE)) return false;
+
+  for (const shop of activeShops) {
+    if (!shop || shop === ignoreShop) continue;
+    if (flatDistance(pos, shop.pos) < SHOP_MIN_SHOP_DISTANCE) return false;
+  }
+
+  if (!options.ignorePlayer && player?.pos) {
+    if (flatDistance(pos, player.pos) < SHOP_MIN_PLAYER_DISTANCE) return false;
+  }
+
+  for (const d of doors) {
+    if (d?.pos && flatDistance(pos, d.pos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  for (const b of barricades) {
+    if (b?.pos && flatDistance(pos, b.pos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  for (const t of traps) {
+    const trapPos = t?.center || t?.pos;
+    if (trapPos && flatDistance(pos, trapPos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  return true;
+}
+
+function pickSafeShopSpawn(shop, spawnList) {
+  const currentPos = shop?.pos || null;
+  const candidates = shuffledCopy(getShopCandidatePoints(spawnList));
+
+  // Pass 1: ideal pick. Different location, clear of walls/features/player/shops.
+  for (const candidate of candidates) {
+    if (currentPos && flatDistance(candidate, currentPos) < 1.0) continue;
+    if (isShopSpawnSafe(candidate, shop)) return candidate;
+  }
+
+  // Pass 2: allow player proximity, but still block walls/features/other shops.
+  for (const candidate of candidates) {
+    if (currentPos && flatDistance(candidate, currentPos) < 1.0) continue;
+    if (isShopSpawnSafe(candidate, shop, { ignorePlayer: true })) return candidate;
+  }
+
+  // Pass 3: keep current position only if it is not inside/too close to a wall.
+  if (currentPos && !pointOverlapsWall(currentPos, 0.65)) {
+    console.warn(`No better safe shop spawn found for ${shop.type}. Keeping previous safe position.`);
+    return cloneShopPoint(currentPos);
+  }
+
+  // Pass 4: last-resort open-floor fallback.
+  for (const candidate of candidates) {
+    if (!pointOverlapsWall(candidate, 0.65)) {
+      console.warn(`Using fallback open-floor shop spawn for ${shop?.type || "shop"}.`);
+      return candidate;
+    }
+  }
+
+  console.warn(`No safe shop spawn found for ${shop?.type || "shop"}. Using origin fallback.`);
+  return new THREE.Vector3(0, 0.4, 0);
+}
 
 // ── UNIVERSAL SHOP RELOCATOR ──
 function relocateShop(shop, spawnList) {
+  const nextPos = pickSafeShopSpawn(shop, spawnList);
+
   scene.remove(shop.mesh);
   const idx = activeShops.indexOf(shop);
   if (idx > -1) activeShops.splice(idx, 1);
-  
-  let newIdx = Math.floor(Math.random() * spawnList.length);
-  // Guarantee it picks a different location than where it currently is
-  while (spawnList.length > 1 && spawnList[newIdx].distanceTo(shop.pos) < 1.0) {
-    newIdx = Math.floor(Math.random() * spawnList.length);
-  }
-  spawnShop(shop.type, spawnList[newIdx]);
+
+  spawnShop(shop.type, nextPos);
 }
 
 // ── WEAPON DEFINITIONS ──
@@ -228,20 +327,20 @@ export function buildGun() {
   player.inventory.push({ ...pistolDef, ammo: pistolDef.maxAmmo, reserve: pistolDef.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: pistolDef.buildMesh() });
   equipWeapon(0);
 
-// ── SPAWN PROCEDURAL SHOPS (SAFE CENTRAL COORDINATES) ──
-  spawnShop('AMMO', new THREE.Vector3(-8, 0.4, 0));
-  spawnShop('MYSTERY_BOX', BOX_SPAWNS[currentBoxIndex]); // ◄── Dynamic Location
-  
-  // They are back!
-  spawnShop('HEALTH', new THREE.Vector3(-12, 0.4, 0));
-  spawnShop('UPGRADE', new THREE.Vector3(0, 0.4, 8));
-  spawnShop('PERK_HEALTH', new THREE.Vector3(-8, 0.4, -8)); // Juggernog
-  spawnShop('PERK_RELOAD', new THREE.Vector3(8, 0.4, 8));   // Speed Cola
+// ── SPAWN PROCEDURAL SHOPS ──
+  const gameplayPoints = getCurrentGameplayPoints();
 
-  // ── NEW: WALL BUYS ──
-  spawnShop('WALL_SMG', new THREE.Vector3(-4, 0.4, -10));
-  spawnShop('WALL_SHOTGUN', new THREE.Vector3(4, 0.4, -10));
-}
+  spawnShop('AMMO', pickSafeShopSpawn(null, gameplayPoints.AMMO_SPAWNS));
+  spawnShop('MYSTERY_BOX', pickSafeShopSpawn(null, gameplayPoints.BOX_SPAWNS));
+  spawnShop('HEALTH', pickSafeShopSpawn(null, gameplayPoints.HEALTH_SPAWNS));
+  spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS));
+  spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS)); // Juggernog
+  spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Speed Cola
+
+  // ── WALL BUYS ──
+  spawnShop('WALL_SMG', pickSafeShopSpawn(null, gameplayPoints.WALL_SPAWNS));
+  spawnShop('WALL_SHOTGUN', pickSafeShopSpawn(null, gameplayPoints.WALL_SPAWNS));
+  }
 
 function spawnShop(type, position) {
   const g = new THREE.Group();
@@ -474,7 +573,7 @@ return; // Halt other checks so shop prompts don't overlap
             playSound('reload', 0.8, false);
             
             // NEW: Instantly relocate the box after the player grabs the gun!
-            relocateShop(closestShop, BOX_SPAWNS);
+            relocateShop(closestShop, getCurrentGameplayPoints().BOX_SPAWNS);
           }
         } 
         else {
@@ -551,11 +650,14 @@ return; // Halt other checks so shop prompts don't overlap
             }
             
 // ── INSTANTLY RELOCATE SHOPS AFTER USE ──
-            if (isWallBuy) relocateShop(closestShop, WALL_SPAWNS);
-            else if (closestShop.type === 'AMMO') relocateShop(closestShop, AMMO_SPAWNS);
-            else if (closestShop.type === 'HEALTH') relocateShop(closestShop, HEALTH_SPAWNS);
-            else if (closestShop.type === 'UPGRADE') relocateShop(closestShop, UPGRADE_SPAWNS);
-            
+            const gameplayPoints = getCurrentGameplayPoints();
+
+            if (isWallBuy) relocateShop(closestShop, gameplayPoints.WALL_SPAWNS);
+            else if (closestShop.type === 'AMMO') relocateShop(closestShop, gameplayPoints.AMMO_SPAWNS);
+            else if (closestShop.type === 'HEALTH') relocateShop(closestShop, gameplayPoints.HEALTH_SPAWNS);
+            else if (closestShop.type === 'UPGRADE') relocateShop(closestShop, gameplayPoints.UPGRADE_SPAWNS);
+            else if (closestShop.type === 'PERK_HEALTH') relocateShop(closestShop, gameplayPoints.PERK_HEALTH_SPAWNS);
+            else if (closestShop.type === 'PERK_RELOAD') relocateShop(closestShop, gameplayPoints.PERK_RELOAD_SPAWNS);
           } else {
             setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
           }
@@ -831,15 +933,8 @@ export function updateShops(dt) {
             });
           });
           
-          // Delete old box
-          scene.remove(shop.mesh);
-          activeShops.splice(activeShops.indexOf(shop), 1);
-          
-          // Move to a new valid location
-          let newIdx = currentBoxIndex;
-          while (newIdx === currentBoxIndex) { newIdx = Math.floor(Math.random() * BOX_SPAWNS.length); }
-          currentBoxIndex = newIdx;
-          spawnShop('MYSTERY_BOX', BOX_SPAWNS[currentBoxIndex]);
+          // Move the Mystery Box using the same safe relocation system as every other shop.
+          relocateShop(shop, getCurrentGameplayPoints().BOX_SPAWNS);
         }
       }
       else if (shop.state === 'READY') {

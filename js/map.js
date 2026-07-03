@@ -1,5 +1,9 @@
 // js/map.js
 import * as THREE from 'three';
+import { MAP_IDS, getMapMeta, normalizeMapId } from './maps/map_registry.js';
+import { buildGridBunker } from './maps/grid_bunker.js';
+import { buildIndustrialYard } from './maps/industrial_yard.js';
+import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -8,14 +12,17 @@ export const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x0a0a11, 0.025); // Moody dark fog
 
 export const doors = [];
-export const spawnPoints = [];
+export const spawnPoints = []; // Zombie spawn candidates
+export const playerSpawnPoints = []; // Player start candidates
 export const lockedSpawnPoints = [];
 export const barricades = [];
 export const traps = [];
 export const mapMeshes = [];
 export const walls = []; // Holds bounding metrics for mathematical pushOut collisions
 
-export let currentMap = 0;
+export let currentMap = 0; // Legacy numeric compatibility.
+export let currentMapId = MAP_IDS.GRID_BUNKER;
+export let currentMapMeta = getMapMeta(MAP_IDS.GRID_BUNKER);
 
 export function openDoor(doorObj) {
   scene.remove(doorObj.mesh);
@@ -111,92 +118,28 @@ const TILE_SIZE = 6;
 const WALL_HEIGHT = 4.5;
 let floorMesh = null;
 
-// ── MAP REGISTRY INDEX LAYOUTS ──
-const MAP_LAYOUTS = [
-  {
-    // MAP 0: The Grid Bunker
-    grid: [
-      [1,1,1,1,1,1,1,1,1,1],
-      [1,0,0,0,0,0,0,0,0,1],
-      [1,0,1,1,2,2,1,1,0,1],
-      [1,0,1,3,3,3,3,1,0,1], 
-      [1,0,2,3,3,3,3,2,0,1],
-      [1,0,2,3,3,3,3,2,0,1],
-      [1,0,1,3,3,3,3,1,0,1],
-      [1,0,1,1,2,2,1,1,0,1],
-      [1,0,0,0,0,0,0,0,0,1],
-      [1,1,1,1,1,1,1,1,1,1]
-    ]
-  },
-  {
-    // MAP 1: The Grid Courtyard
-    grid: [
-      [1,1,1,1,1,1,1,1,1,1],
-      [1,1,0,0,0,0,0,0,1,1],
-      [1,0,0,0,1,1,0,0,0,1],
-      [1,0,0,0,2,2,0,0,0,1],
-      [1,0,1,2,3,3,2,1,0,1], 
-      [1,0,1,2,3,3,2,1,0,1],
-      [1,0,0,0,2,2,0,0,0,1],
-      [1,0,0,0,1,1,0,0,0,1],
-      [1,1,0,0,0,0,0,0,1,1],
-      [1,1,1,1,1,1,1,1,1,1]
-    ]
-  },
-  {
-    // MAP 2: The Grid Arena (Layout replicated from your Roblox room-and-corridor layout asset)
-    // 1 = Solid Wall, 0 = Player Walkway/Floor, 2 = Purchasable Door, 3 = Locked Spawn
-    grid: [
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-      [1,3,0,0,0,0,1,0,0,0,0,1,0,0,3,1],
-      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1],
-      [1,0,0,1,1,2,1,0,0,0,0,1,1,2,1,1],
-      [1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1],
-      [1,0,0,1,0,0,0,0,1,1,0,0,0,0,0,1],
-      [1,1,2,1,0,0,1,1,1,1,1,1,2,1,1,1],
-      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1], // Central intersection crossroads
-      [1,0,0,0,0,0,2,0,0,0,0,2,0,0,0,1], // Dual tactical security gates
-      [1,0,0,0,0,0,1,0,0,0,0,1,0,0,0,1],
-      [1,1,1,1,2,1,1,1,1,1,1,1,0,0,1,1],
-      [1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
-      [1,0,0,0,0,0,0,0,0,0,0,1,1,2,1,1],
-      [1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,1],
-      [1,3,0,1,0,0,1,0,0,0,0,0,0,0,3,1],
-      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-    ]
-  }
-];
-
-// Helper to spawn blocks and log their metrics directly into the AABB tracker array
+// Grid Bunker layout has moved to js/maps/grid_bunker.js
+// Compatibility wrapper.
+// Actual block creation now lives in js/maps/map_helpers.js.
 function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false) {
-  const geo = new THREE.BoxGeometry(w, h, d);
-  let mat;
-  if (colorOrMap instanceof THREE.Texture) {
-    mat = new THREE.MeshStandardMaterial({ map: colorOrMap, roughness: 0.8 });
-  } else if (isDoor) {
-    mat = new THREE.MeshStandardMaterial({ color: 0xff5500, emissive: 0xaa2200, transparent: true, opacity: 0.85 });
-  } else {
-    mat = new THREE.MeshStandardMaterial({ color: colorOrMap, roughness: 0.7 });
-  }
-  
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, z);
-  scene.add(mesh);
-  mapMeshes.push(mesh);
-
-  const blockObj = {
-    minX: x - w / 2, maxX: x + w / 2,
-    maxY: y + (h / 2), // Tell the engine where the top of the block is!
-    minZ: z - d / 2, maxZ: z + d / 2,
-    isDoor: isDoor,
-    mesh: mesh,
-    pos: new THREE.Vector3(x, 0, z)
-  };
-
-  if (isWall) {
-    walls.push(blockObj);
-  }
-  return blockObj;
+  return createMapBlock(
+    {
+      scene,
+      mapMeshes,
+      walls
+    },
+    {
+      w,
+      h,
+      d,
+      x,
+      y,
+      z,
+      colorOrMap,
+      isWall,
+      isDoor
+    }
+  );
 }
 
 // ── PROCEDURAL BARRICADE GENERATOR ──
@@ -282,128 +225,67 @@ export function spawnTrap(x, z, width, isZAxis = false) {
   traps.push(trapObj);
 }
 
-export function buildMap(mapIndex) {
-  currentMap = mapIndex; // Sync the current map to the engine
+const MAP_BUILDERS = {
+  [MAP_IDS.GRID_BUNKER]: buildGridBunker,
+  [MAP_IDS.INDUSTRIAL_YARD]: buildIndustrialYard
+};
+
+export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
+  const requestedMapId = normalizeMapId(mapId);
+  const requestedMeta = getMapMeta(requestedMapId);
+  const requestedBuilder = MAP_BUILDERS[requestedMapId];
+
+  if (!requestedMeta.playable || !requestedBuilder) {
+    console.warn(`Map "${requestedMapId}" is not buildable yet. Falling back to "${MAP_IDS.GRID_BUNKER}".`);
+    currentMapId = MAP_IDS.GRID_BUNKER;
+  } else {
+    currentMapId = requestedMapId;
+  }
+
+  currentMapMeta = getMapMeta(currentMapId);
+  currentMap = currentMapMeta.legacyIndex ?? 0;
 
   // Reset active scene elements
   barricades.forEach(b => scene.remove(b.group));
   barricades.length = 0;
+
   traps.forEach(t => scene.remove(t.group));
   traps.length = 0;
+
   mapMeshes.forEach(m => scene.remove(m));
   mapMeshes.length = 0;
-  walls.length = 0;
-  doors.length = 0;
-  spawnPoints.length = 0;
-  lockedSpawnPoints.length = 0;
-  if (floorMesh) scene.remove(floorMesh);
 
-  // ── CORE GENERATION DISTRIBUTOR ──
-  if (mapIndex === 0 || mapIndex === 1 || mapIndex === 2) {    // GENERATE FROM ORIGINAL MATRIX ARRAYS
-    const mapData = MAP_LAYOUTS[mapIndex].grid;
-    const gridRows = mapData.length; const gridCols = mapData[0].length;
-    const offsetX = (gridCols * TILE_SIZE) / 2; const offsetZ = (gridRows * TILE_SIZE) / 2;
+	walls.length = 0;
+	doors.length = 0;
+	spawnPoints.length = 0;
+	playerSpawnPoints.length = 0;
+	lockedSpawnPoints.length = 0;
 
-    // Apply flat color rendering to Map 2 to match the clean aesthetic of your screen grab
-    let floorMaterial = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9, metalness: 0.1 });
-    if (mapIndex === 2) {
-      floorMaterial = new THREE.MeshStandardMaterial({ color: 0x1e1e24, roughness: 0.4 });
-    }
-
-    const floorGeo = new THREE.PlaneGeometry(gridCols * TILE_SIZE, gridRows * TILE_SIZE);
-    floorMesh = new THREE.Mesh(floorGeo, floorMaterial);
-    floorMesh.rotation.x = -Math.PI / 2;
-    floorMesh.frustumCulled = false; // Forces the floor rendering pipeline to stay stable
-    scene.add(floorMesh); 
-    mapMeshes.push(floorMesh);
-
-    for (let row = 0; row < gridRows; row++) {
-      for (let col = 0; col < gridCols; col++) {
-        const tile = mapData[row][col];
-        const posX = (col * TILE_SIZE) - offsetX + (TILE_SIZE / 2);
-        const posZ = (row * TILE_SIZE) - offsetZ + (TILE_SIZE / 2);
-
-        if (tile === 0 || tile === 3) {
-          const pt = new THREE.Vector3(posX, 0, posZ);
-          if (tile === 0) spawnPoints.push(pt);
-          if (tile === 3) lockedSpawnPoints.push(pt);
-        } 
-        else if (tile === 1 || tile === 2) {
-          const isDoor = (tile === 2);
-          
-          // Switch map 2 walls to a flat block style configuration to match Roblox style proportions
-          let surfaceMaterial = isDoor ? null : wallTex;
-          if (mapIndex === 2 && !isDoor) {
-            surfaceMaterial = 0x3a3a46; // Solid clean grey structural block color
-          }
-
-          const wallObj = spawnBlock(TILE_SIZE, WALL_HEIGHT, TILE_SIZE, posX, WALL_HEIGHT / 2, posZ, surfaceMaterial, true, isDoor);
-          if (isDoor) doors.push(wallObj);
-        }
-      }
-    }
-  } 
-  else {
-    // GENERATE OPEN PROC-CONTAINERS (MAPS 3, 4, AND 5)
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 }));
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-    mapMeshes.push(floor);
-
-    if (mapIndex === 3) {
-      // MAP 4: The Sandbox Arena
-      spawnBlock(40, 6, 2, 0, 3, -20, wallTex); 
-      spawnBlock(40, 6, 2, 0, 3, 20, wallTex);  
-      spawnBlock(2, 6, 40, -20, 3, 0, wallTex); 
-      spawnBlock(2, 6, 40, 20, 3, 0, wallTex);  
-      spawnBarricade(-18, 0, Math.PI / 2); // West wall window
-      spawnBarricade(0, -18, 0);           // North wall window
-      spawnBlock(3, 2, 6, -8, 1, -5, 0x334455);
-      spawnBlock(4, 3, 4, 10, 1.5, 8, 0x443322);
-      spawnBlock(8, 2, 2, 0, 1, 10, 0x223322);
-
-      spawnPoints.push(new THREE.Vector3(0, 0, -15), new THREE.Vector3(-15, 0, 15), new THREE.Vector3(15, 0, 15));
-    } 
-    else if (mapIndex === 4) {
-      // MAP 5: The Red Courtyard
-      spawnBlock(50, 4, 2, 0, 2, -25, wallTex);
-      spawnBlock(50, 4, 2, 0, 2, 25, wallTex);
-      spawnBlock(2, 4, 50, -25, 2, 0, wallTex);
-      spawnBlock(2, 4, 50, 25, 2, 0, wallTex);
-
-      spawnBlock(6, 4, 6, 0, 2, 0, 0x111111); // Central Monolith
-
-      spawnPoints.push(new THREE.Vector3(-20, 0, -20), new THREE.Vector3(20, 0, -20), new THREE.Vector3(-20, 0, 20), new THREE.Vector3(20, 0, 20));
-    } 
-    else if (mapIndex === 5) {
-      // MAP 6: Massive Multistory Warehouse
-      spawnBlock(70, 16, 2, 0, 8, -35, wallTex); 
-      spawnBlock(70, 16, 2, 0, 8, 35, wallTex);  
-      spawnBlock(2, 16, 70, -35, 8, 0, wallTex); 
-      spawnBlock(2, 16, 70, 35, 8, 0, wallTex);  
-
-      // Second Floor Balcony (Walkable floor surface)
-      spawnBlock(70, 1, 15, 0, 6, -27.5, 0x2a2a35, false);
-
-      spawnBlock(4, 16, 4, -20, 8, -15, 0x333344);
-      spawnBlock(4, 16, 4, 20, 8, -15, 0x333344);
-
-      // The Staircase steps
-      for (let i = 0; i < 12; i++) {
-        spawnBlock(6, 0.5 * (i + 1), 2, 0, (0.5 * (i + 1)) / 2, -10 - (i * 1.2), 0x444455);
-      }
-      
-      spawnTrap(0, -7.5, 6, false); // Trap located at the bottom step of the staircase
-      spawnBlock(8, 4, 8, -15, 2, 10, 0x554433);
-      spawnBlock(12, 6, 4, 10, 3, 20, 0x554433);
-      spawnBlock(4, 2, 4, 15, 1, 12, 0x335533); 
-
-      spawnPoints.push(new THREE.Vector3(-25, 0, 25), new THREE.Vector3(25, 0, 25), new THREE.Vector3(0, 7, -30));
-    }
+  if (floorMesh) {
+    scene.remove(floorMesh);
+    floorMesh = null;
   }
-}
 
-// ── SCREEN SHAKE ENGINE ──
+  const builder = MAP_BUILDERS[currentMapId] || MAP_BUILDERS[MAP_IDS.GRID_BUNKER];
+	const result = builder({
+	  scene,
+	  mapMeshes,
+	  walls,
+	  doors,
+	  spawnPoints,
+	  playerSpawnPoints,
+	  lockedSpawnPoints,
+	  floorTex,
+	  wallTex,
+	  spawnBlock,
+	  spawnBarricade,
+	  spawnTrap,
+	  tileSize: TILE_SIZE,
+	  wallHeight: WALL_HEIGHT
+	});
+
+  floorMesh = result?.floorMesh || null;
+}
 export let shakeIntensity = 0;
 export function addScreenShake(amount) { shakeIntensity = Math.min(shakeIntensity + amount, 0.5); }
 export function applyScreenShake(dt) {

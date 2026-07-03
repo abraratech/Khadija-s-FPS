@@ -1,5 +1,5 @@
 // js/main.js
-import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints } from './map.js';
+import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints } from './map.js';
 import { player, updatePlayer, EYE_H } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap } from './ui.js';
@@ -31,7 +31,7 @@ function renderGameFrame() {
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // ════════════ DEVELOPER DEBUG MODE ════════════
-export const DEV_MODE = false; 
+export const DEV_MODE = true; 
 // ══════════════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════
@@ -340,13 +340,15 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   document.getElementById('hud').style.display = 'block';
   
   // ── PROCEDURAL MAP GENERATION (Synchronous) ──
-  const chosenMap = parseInt(document.getElementById('map-select').value) || 0;
+  const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
   buildMap(chosenMap);
   
   difficultyMultiplier = parseFloat(document.getElementById('diff-select').value) || 1.0;
   
-  if (spawnPoints && spawnPoints.length > 0) {
-    const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
+  const playerStartPool = playerSpawnPoints.length > 0 ? playerSpawnPoints : spawnPoints;
+
+  if (playerStartPool && playerStartPool.length > 0) {
+    const sp = playerStartPool[Math.floor(Math.random() * playerStartPool.length)];
     player.pos.set(sp.x, EYE_H, sp.z);
   } else {
     player.pos.set(0, EYE_H, 15);
@@ -399,9 +401,9 @@ async function respawnPlayer() {
   }
 
   // ── PROCEDURAL MAP GENERATION (Synchronous) ──
-  const chosenMap = parseInt(document.getElementById('map-select').value) || 0;
+  const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
   buildMap(chosenMap);
-
+  
   if (spawnPoints && spawnPoints.length > 0) {
     const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
     player.pos.set(sp.x, EYE_H, sp.z);

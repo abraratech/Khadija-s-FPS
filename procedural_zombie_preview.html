@@ -76,6 +76,7 @@
 
     let type = 'SHAMBLER';
     const zombie = createProceduralZombieVisual();
+    const zombieBaseYaw = zombie.rotation.y;
     scene.add(zombie);
 
     function applyType(nextType) {
@@ -99,7 +100,7 @@
     function animate(ms) {
       const t = ms * 0.001;
       updateProceduralZombieMotion(zombie, t, 1.0);
-      zombie.rotation.y = Math.sin(t * 0.25) * 0.25;
+      zombie.rotation.y = zombieBaseYaw + Math.sin(t * 0.25) * 0.25;
       controls.update();
       renderer.render(scene, camera);
       requestAnimationFrame(animate);

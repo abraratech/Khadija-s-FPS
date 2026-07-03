@@ -1,13 +1,33 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints } from './map.js';
 import { player, updatePlayer, EYE_H } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, currentWave } from './enemy.js';
+import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops } from './weapons.js';
 import { initAudio } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 
 const canvas = document.getElementById('c');
+renderer.info.autoReset = false;
+let usePostProcessing = true;
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F4') {
+    e.preventDefault();
+    usePostProcessing = !usePostProcessing;
+    console.log("Post Processing:", usePostProcessing ? "ON" : "OFF");
+  }
+});
+
+function renderGameFrame() {
+  renderer.info.reset();
+
+  if (usePostProcessing) {
+    composer.render();
+  } else {
+    renderer.render(scene, camera);
+  }
+}
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // ════════════ DEVELOPER DEBUG MODE ════════════
@@ -82,6 +102,7 @@ document.addEventListener('pointerlockchange', () => {
 
 // ── PAUSE MENU BUTTON LISTENERS ──
 document.getElementById('resume-btn').addEventListener('click', () => {
+	  resetFrameStats();
   document.getElementById('pause-screen').style.display = 'none';
   gs = 'playing';
   if (!isMobile) canvas.requestPointerLock();
@@ -124,27 +145,44 @@ loadingManager.onLoad = () => {
   document.getElementById('loading-container').style.display = 'none';
   document.getElementById('start-btn').style.display = 'inline-block'; 
   console.log("All 3D assets loaded successfully!");
-  if (ASSETS.enemies.zombie) {
-    initEnemies(); 
-  } else {
-    console.error("❌ CRITICAL: Zombie asset failed to load! Enemy pooling skipped to prevent crash.");
-  }
 };
 
 loadingManager.onError = (url) => {
   console.error("Error loading asset from path: " + url);
 };
 
-gltfLoader.load('assets/models/pistol.glb',  (gltf) => { ASSETS.weapons.pistol  = gltf.scene; });
-gltfLoader.load('assets/models/smg.glb',     (gltf) => { ASSETS.weapons.smg     = gltf.scene; });
-gltfLoader.load('assets/models/rifle.glb',   (gltf) => { ASSETS.weapons.rifle   = gltf.scene; });
-gltfLoader.load('assets/models/shotgun.glb', (gltf) => { ASSETS.weapons.shotgun = gltf.scene; });
-gltfLoader.load('assets/models/zombie.glb', (gltf) => { 
-  ASSETS.enemies.zombie = gltf.scene; 
-  ASSETS.enemies.zombie.animations = gltf.animations; 
+gltfLoader.load('assets/models/pistol.glb', (gltf) => {
+  ASSETS.weapons.pistol = gltf.scene;
+  assetManager.addModel('pistol', gltf.scene);
 });
 
+gltfLoader.load('assets/models/smg.glb', (gltf) => {
+  ASSETS.weapons.smg = gltf.scene;
+  assetManager.addModel('smg', gltf.scene);
+});
+
+gltfLoader.load('assets/models/rifle.glb', (gltf) => {
+  ASSETS.weapons.rifle = gltf.scene;
+  assetManager.addModel('rifle', gltf.scene);
+});
+
+gltfLoader.load('assets/models/shotgun.glb', (gltf) => {
+  ASSETS.weapons.shotgun = gltf.scene;
+  assetManager.addModel('shotgun', gltf.scene);
+});
+
+
 let gs = 'menu', prev = 0;
+let smoothFps = 60;
+let worstFrameMs = 0;
+let lastSpike = "none";
+
+function resetFrameStats() {
+  smoothFps = 60;
+  worstFrameMs = 0;
+  lastSpike = "none";
+  prev = 0;
+}
 let highScore = localStorage.getItem('fps_hi_score') || 0;
 let highWave = localStorage.getItem('fps_hi_wave') || 1;
 export let difficultyMultiplier = 1.0;
@@ -171,32 +209,67 @@ document.getElementById('hi-wave').textContent = highWave;
 function tick(t = 0) {
   requestAnimationFrame(tick);
   
-  const dt = Math.min((t - prev) * 0.001, 0.05); 
-  prev = t;
+if (prev === 0) prev = t;
+
+let rawDt = (t - prev) * 0.001;
+prev = t;
+
+// Ignore fake huge gaps caused by tab switches, pause, death screen, pointer lock, etc.
+if (rawDt > 0.25) {
+  rawDt = 1 / 60;
+}
+
+const dt = Math.min(rawDt, 0.05);
+
+const instantFps = rawDt > 0 ? 1 / rawDt : 60;
+smoothFps = smoothFps * 0.9 + instantFps * 0.1;
+
+const rawFrameMs = rawDt * 1000;
+
+if (gs === 'playing') {
+  if (rawFrameMs > worstFrameMs) {
+    worstFrameMs = rawFrameMs;
+  }
+
+  if (rawFrameMs > 25) {
+    lastSpike = `${rawFrameMs.toFixed(1)} ms`;
+  }
+}
   
   if (gs !== 'playing') { 
-    composer.render(); 
+    renderGameFrame();
     return; 
   }
   
-  updatePlayer(dt, keys, mdx, mdy);
-  mdx = 0; mdy = 0;
+const frameStart = performance.now();
+let mark = frameStart;
 
-  updateEnemies(dt);
-  
-  const isMoving = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) && player.onGround;
-  updateGun(dt, keys, isMoving);
-  updateShops(dt);
-  checkWorldInteractions(false); 
+updatePlayer(dt, keys, mdx, mdy);
+mdx = 0; mdy = 0;
+const playerMs = performance.now() - mark;
+mark = performance.now();
 
-  if (pendingShot) { 
-    shoot(); 
-    pendingShot = false; 
-  }
-  
-  updateParticles(dt);
-  updateUIEffects(dt);
-  processReloadTick(dt);
+updateEnemies(dt);
+const enemiesMs = performance.now() - mark;
+mark = performance.now();
+
+const isMoving = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) && player.onGround;
+updateGun(dt, keys, isMoving);
+updateShops(dt);
+checkWorldInteractions(false); 
+
+if (pendingShot) { 
+  shoot(); 
+  pendingShot = false; 
+}
+
+const weaponMs = performance.now() - mark;
+mark = performance.now();
+
+updateParticles(dt);
+updateUIEffects(dt);
+processReloadTick(dt);
+const effectsMs = performance.now() - mark;
 
   if (!player.alive && gs === 'playing') {
     gs = 'dead';
@@ -214,16 +287,55 @@ function tick(t = 0) {
     setTimeout(() => { document.getElementById('death-screen').style.display = 'flex'; }, 700);
   }
   
-  const camDir = new THREE.Vector3();
-  camera.getWorldDirection(camDir);
-  updateMinimap(player.pos, camDir, getActiveEnemies());
-  applyScreenShake(dt); 
-  composer.render();
+mark = performance.now();
+
+const camDir = new THREE.Vector3();
+camera.getWorldDirection(camDir);
+updateMinimap(player.pos, camDir, getActiveEnemies());
+applyScreenShake(dt); 
+
+const minimapMs = performance.now() - mark;
+
+const renderStart = performance.now();
+
+renderGameFrame();
+
+const renderMs = performance.now() - renderStart;
+const frameMs = performance.now() - frameStart;
+
+devConsole.update({
+    fps: Math.round(smoothFps),
+	instantFps: Math.round(instantFps),
+	frameMs: frameMs.toFixed(2),
+	rawFrameMs: rawFrameMs.toFixed(2),
+	worstFrameMs: worstFrameMs.toFixed(2),
+	lastSpike: lastSpike,
+
+    wave: currentWave,
+	postProcessing: usePostProcessing ? "ON" : "OFF",
+    actors: actorManager.count(),
+    enemies: getActiveEnemies().length,
+	...getEnemyVisualStats(),
+    playerMs: playerMs.toFixed(2),
+    enemiesMs: enemiesMs.toFixed(2),
+    weaponMs: weaponMs.toFixed(2),
+    effectsMs: effectsMs.toFixed(2),
+	minimapMs: minimapMs.toFixed(2),
+    renderMs: renderMs.toFixed(2),
+
+    ...assetManager.stats(),
+
+    drawCalls: renderer.info.render.calls,
+    triangles: renderer.info.render.triangles,
+    gpuGeometries: renderer.info.memory.geometries,
+    gpuTextures: renderer.info.memory.textures
+});
 }
 
 // ════════════ INIT / RESPAWN ════════════
 
 document.getElementById('start-btn').addEventListener('click', async () => {
+	  resetFrameStats();
   document.getElementById('menu').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
   
@@ -259,10 +371,13 @@ document.getElementById('start-btn').addEventListener('click', async () => {
   scene.add(camera); 
   initAudio();
   
-  buildGun(); 
-  resetGunState();
-  
-  if (DEV_MODE) {
+	buildGun(); 
+	resetGunState();
+
+	initEnemies();
+	clearAllDecals();
+
+	if (DEV_MODE) {
     player.score = 999999;
     console.log("DEV MODE ACTIVE: Infinite Points & Nuke Hotkey ('0') Enabled!");
   }
@@ -277,6 +392,7 @@ document.getElementById('start-btn').addEventListener('click', async () => {
 });
 
 async function respawnPlayer() {
+	  resetFrameStats();
   const activeW = getActiveWeapon();
   if (activeW && activeW.meshGroup) {
     camera.remove(activeW.meshGroup);

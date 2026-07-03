@@ -9,6 +9,7 @@ import { giveMaxAmmo } from './weapons.js';
 import { playSound } from './audio.js';
 import { pushOut } from './utils.js';
 import { difficultyMultiplier, ASSETS } from './main.js';
+import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion} from './actors/procedural_zombie.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -64,7 +65,32 @@ const projGeo = new THREE.SphereGeometry(0.18, 8, 8);
 const projMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 const expGeo = new THREE.SphereGeometry(1, 16, 16);
 const expMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 });
+// ── PROCEDURAL ZOMBIE VISUALS ──
+const USE_GLB_ZOMBIES = false;
+const DETAILED_VISUAL_BUDGET = USE_GLB_ZOMBIES ? 6 : 0;
+const DETAILED_VISUAL_DISTANCE = USE_GLB_ZOMBIES ? 14 : 0;
 
+let detailedVisualCount = 0;
+let proceduralVisualCount = 0;
+
+function setEnemyVisual(e, useDetailedVisual) {
+  if (e.fullModel) {
+    e.fullModel.visible = useDetailedVisual;
+  }
+
+  if (e.lodMesh) {
+    e.lodMesh.visible = !useDetailedVisual;
+  }
+
+  e.usingLod = !useDetailedVisual;
+}
+
+export function getEnemyVisualStats() {
+  return {
+    detailedVisuals: detailedVisualCount,
+    proceduralVisuals: proceduralVisualCount
+  };
+}
 // ── AUDIO ENGINE ──
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const noiseBufferSize = audioCtx.sampleRate * 0.15;
@@ -141,14 +167,32 @@ function initPools() {
 
 for (let i = 0; i < MAX_ZOMBIES; i++) {
     const g = new THREE.Group();
-    const enemyInstance = { 
-      mesh: g, type: "SHAMBLER", health: 100, maxHealth: 100, speed: 2.4,
-      damage: 15, attackRate: 1.4, atkCD: 0, attackRange: 1.4, colRadius: 0.45, 
-      walkT: 0, dyingT: -1, alive: false, mixer: null, originalScale: new THREE.Vector3(1,1,1)
-    };
+const enemyInstance = { 
+  mesh: g,
+  fullModel: null,
+  lodMesh: null,
+  usingLod: false,
+  _useFullVisual: false,
+  _visualDist: 9999,
+
+  type: "SHAMBLER",
+  health: 100,
+  maxHealth: 100,
+  speed: 2.4,
+  damage: 15,
+  attackRate: 1.4,
+  atkCD: 0,
+  attackRange: 1.4,
+  colRadius: 0.45,
+  walkT: 0,
+  dyingT: -1,
+  alive: false,
+  mixer: null,
+  originalScale: new THREE.Vector3(1,1,1)
+};
     g.userData.eRef = enemyInstance;
 
-    if (ASSETS.enemies.zombie && ASSETS.enemies.zombie.clone) {
+    if (USE_GLB_ZOMBIES && ASSETS.enemies.zombie && ASSETS.enemies.zombie.clone) {
       const zombieModel = SkeletonUtils.clone(ASSETS.enemies.zombie);
       zombieModel.scale.set(0.015, 0.015, 0.015);
       zombieModel.traverse((child) => {
@@ -159,6 +203,7 @@ for (let i = 0; i < MAX_ZOMBIES; i++) {
         }
       });
       g.add(zombieModel);
+	  enemyInstance.fullModel = zombieModel;
       
       if (ASSETS.enemies.zombie.animations && ASSETS.enemies.zombie.animations.length > 0) {
         enemyInstance.mixer = new THREE.AnimationMixer(zombieModel);
@@ -167,9 +212,30 @@ for (let i = 0; i < MAX_ZOMBIES; i++) {
       }
     }
     
-    g.visible = false;
-    scene.add(g);
-    zombiePool.push(enemyInstance);
+// Primary procedural body used by normal enemy rendering
+const lodMesh = createProceduralZombieVisual({
+  color: 0x7fa06b
+});
+
+lodMesh.visible = false;
+
+lodMesh.traverse((child) => {
+  if (child.isMesh) {
+    child.castShadow = false;
+    child.receiveShadow = false;
+    child.frustumCulled = true;
+    child.userData.eRef = enemyInstance;
+  }
+});
+
+lodMesh.userData.eRef = enemyInstance;
+
+g.add(lodMesh);
+enemyInstance.lodMesh = lodMesh;
+
+g.visible = false;
+scene.add(g);
+zombiePool.push(enemyInstance);
   }
   
   poolsInitialized = true;
@@ -178,7 +244,8 @@ for (let i = 0; i < MAX_ZOMBIES; i++) {
 
 export function initEnemies() {
   initPools();
-  
+  actorManager.clear();
+  campWarningTimer = 0;
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
     e.mesh.visible = false;
@@ -192,7 +259,6 @@ export function initEnemies() {
   explosionPool.items.forEach(ex => ex.mesh.visible = false);
   
   currentWave = 1; 
-  let campWarningTimer = 0;
   startWave(currentWave);
 }
 
@@ -239,11 +305,13 @@ function spawnZombie() {
   recycled.speed = config.speed + (Math.random() - 0.5) * 0.4 + (currentWave * 0.1);
   recycled.damage = config.damage;
   recycled.attackRate = config.attackCooldown;
+  recycled.aiTimer = Math.random() * 0.15;
   recycled.atkCD = Math.random() * config.attackCooldown;
   recycled.attackRange = config.attackRange;
   recycled.colRadius = config.colRadius;
   recycled.walkT = Math.random() * Math.PI * 2;
   recycled.dyingT = -1;
+  recycled.groundUpdateTimer = Math.random() * 0.1;
   recycled.alive = true;
   recycled.originalScale.copy(config.scale);
 
@@ -258,9 +326,15 @@ function spawnZombie() {
   recycled.mesh.position.y = 0; 
   recycled.mesh.visible = true;
 
-  recycled.mesh.traverse((child) => {
-    if (child.isMesh && child.material) child.material = getZombieMaterial(config, child.material);
-  });
+recycled.mesh.traverse(child => {
+  if (child.isMesh || child.isSkinnedMesh) {
+    if (child.userData.keepMaterial) return;
+
+    child.material = getZombieMaterial(config, child.material);
+    child.castShadow = false;
+    child.receiveShadow = false;
+  }
+});
 
   if (spawnPoints.length > 0) {
     const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
@@ -269,7 +343,9 @@ function spawnZombie() {
     recycled.mesh.position.set(0, 0, 0); 
   }
 
+  updateProceduralZombieStyle(recycled.lodMesh, config);
   activeEnemies.push(recycled);
+  actorManager.register(recycled);
   zombiesSpawnedSoFar++;
  
 }
@@ -334,11 +410,41 @@ export function updateEnemies(dt) {
     }
   } 
 
-  if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
-    spawnTimer += dt; if (spawnTimer >= 1.0) { spawnZombie(); spawnTimer = 0; }
-  }
+if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
+  spawnTimer += dt; if (spawnTimer >= 1.0) { spawnZombie(); spawnTimer = 0; }
+}
 
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
+// Update procedural visual counters and optional detailed visuals.
+detailedVisualCount = 0;
+proceduralVisualCount = 0;
+
+const visualCandidates = activeEnemies.filter(e => e.alive && e.dyingT < 0);
+
+for (const e of visualCandidates) {
+  e._visualDist = Math.hypot(
+    player.pos.x - e.mesh.position.x,
+    player.pos.z - e.mesh.position.z
+  );
+  e._useFullVisual = false;
+}
+
+visualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+
+let detailedSlots = DETAILED_VISUAL_BUDGET;
+
+for (const e of visualCandidates) {
+  if (detailedSlots > 0 && e._visualDist < DETAILED_VISUAL_DISTANCE) {
+    e._useFullVisual = true;
+    detailedSlots--;
+    detailedVisualCount++;
+  } else {
+    proceduralVisualCount++;
+  }
+}
+
+const visualAnimTime = performance.now() * 0.001;
+
+for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
 
     if (e.dyingT >= 0) {
@@ -350,6 +456,7 @@ export function updateEnemies(dt) {
       if (e.dyingT >= 0.6) {
         e.mesh.visible = false;
         zombiePool.push(e);
+		actorManager.unregister(e);
         activeEnemies.splice(i, 1);
         
         if (zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 0) {
@@ -378,6 +485,15 @@ if (!e.alive) continue;
     const horizontalDist = Math.sqrt(_eToP.x * _eToP.x + _eToP.z * _eToP.z);
     const trueVerticalDist = Math.abs(_eToP.y);
 
+	setEnemyVisual(e, e._useFullVisual);
+
+if (e.usingLod && e.lodMesh) {
+  updateProceduralZombieMotion(
+    e.lodMesh,
+    visualAnimTime,
+    e.type === "RUNNER" ? 1.35 : 1.0
+  );
+}
     // ── ANTI-CAMPING DETECTION ──
     // If zombie is right under you, but the height gap proves you are on a box (not a balcony)
     if (horizontalDist <= 2.2 && trueVerticalDist > 1.8 && trueVerticalDist < 4.5) {
@@ -385,10 +501,10 @@ if (!e.alive) continue;
     }
 
     // ── CPU OPTIMIZATION: Only animate skeletons if close ──
-    if (e.mixer && horizontalDist < 25) {
-      e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : 1.0;
-      e.mixer.update(dt);
-    }
+	if (e.mixer && e._useFullVisual) {
+	  e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : 1.0;
+	  e.mixer.update(dt);
+	}
 	
 // ── BARRICADE AGGRO SEARCH (PASTE HERE) ──
     let targetBarricade = null;
@@ -476,7 +592,6 @@ groundRay.ray.direction.copy(groundRayDir);
 
 const hits = groundRay.intersectObjects(mapMeshes, false);
       
-      const hits = downRay.intersectObjects(mapMeshes);
       if (hits.length > 0) { currentGroundY = hits[0].point.y; }
       
       // Snap up instantly to conquer stairs, drop smoothly if falling

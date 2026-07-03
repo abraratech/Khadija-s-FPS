@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Procedural Zombie Preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #080b0f; color: #d7f7d7; font-family: system-ui, Arial, sans-serif; overflow: hidden; }
+    #hud { position: fixed; left: 12px; top: 12px; z-index: 2; background: rgba(0,0,0,.55); border: 1px solid rgba(160,255,160,.25); border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.4; }
+    #hud b { color: #fff; }
+    #hud button { margin: 6px 4px 0 0; background: #172217; color: #d7f7d7; border: 1px solid rgba(160,255,160,.35); border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+    #hud button:hover { background: #233423; }
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <b>Procedural Zombie Preview</b><br>
+    Uses your real <code>js/actors/procedural_zombie.js</code><br>
+    Drag = rotate camera | Wheel = zoom<br>
+    <button data-type="SHAMBLER">Shambler</button>
+    <button data-type="RUNNER">Runner</button>
+    <button data-type="GOLIATH">Goliath</button>
+    <button data-type="EXPLODER">Exploder</button>
+    <button data-type="RANGED">Ranged</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import {
+      createProceduralZombieVisual,
+      updateProceduralZombieStyle,
+      updateProceduralZombieMotion
+    } from './js/actors/procedural_zombie.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080b0f);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 2.0, 5.0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.0, 0);
+    controls.enableDamping = true;
+
+    scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x203020, 2.2));
+
+    const key = new THREE.DirectionalLight(0xffffff, 2.5);
+    key.position.set(3, 5, 4);
+    scene.add(key);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x151915, roughness: 1 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.01;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(12, 12, 0x335533, 0x223322);
+    scene.add(grid);
+
+    let type = 'SHAMBLER';
+    const zombie = createProceduralZombieVisual();
+    scene.add(zombie);
+
+    function applyType(nextType) {
+      type = nextType;
+      const colors = {
+        SHAMBLER: 0x7fa06b,
+        RUNNER: 0x89b56a,
+        GOLIATH: 0x8f7d5b,
+        EXPLODER: 0xa66c48,
+        RANGED: 0x6a9ca6
+      };
+      updateProceduralZombieStyle(zombie, { type, name: type, color: colors[type] ?? 0x7fa06b });
+    }
+
+    document.querySelectorAll('button[data-type]').forEach((btn) => {
+      btn.addEventListener('click', () => applyType(btn.dataset.type));
+    });
+
+    applyType(type);
+
+    function animate(ms) {
+      const t = ms * 0.001;
+      updateProceduralZombieMotion(zombie, t, 1.0);
+      zombie.rotation.y = Math.sin(t * 0.25) * 0.25;
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

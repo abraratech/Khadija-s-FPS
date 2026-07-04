@@ -1,6 +1,7 @@
 // js/audio.js
 const sounds = {};
 let audioCtx = null; // Do NOT create it yet
+const AUDIO_DEBUG = false;
 
 export async function loadSound(name, url) {
   try {
@@ -10,7 +11,7 @@ export async function loadSound(name, url) {
     const arrayBuffer = await response.arrayBuffer();
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     sounds[name] = audioBuffer;
-    console.log(`🎵 Sound loaded: ${name}`);
+    if (AUDIO_DEBUG) console.log(`🎵 Sound loaded: ${name}`);
   } catch (error) {
     console.error(`Failed to load sound [${name}]:`, error);
   }
@@ -18,7 +19,7 @@ export async function loadSound(name, url) {
 
 export function playSound(name, volume = 1.0, randomizePitch = false) {
   if (!audioCtx || !sounds[name]) {
-    console.warn(`⚠️ Cannot play "${name}": AudioContext missing or sound not loaded yet.`);
+    if (AUDIO_DEBUG) console.warn(`⚠️ Cannot play "${name}": AudioContext missing or sound not loaded yet.`);
     return;
   }
 
@@ -26,7 +27,7 @@ export function playSound(name, volume = 1.0, randomizePitch = false) {
     audioCtx.resume();
   }
 
-  console.log(`🔊 Playing: ${name}`); // This will prove the trigger works!
+  if (AUDIO_DEBUG) console.log(`🔊 Playing: ${name}`);
 
   const source = audioCtx.createBufferSource();
   source.buffer = sounds[name];
@@ -47,7 +48,7 @@ export function playSound(name, volume = 1.0, randomizePitch = false) {
 export function initAudio() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    console.log("Audio Context Created & Unlocked!");
+    if (AUDIO_DEBUG) console.log("Audio Context Created & Unlocked!");
   }
   
   loadSound('shoot_rifle', 'assets/sounds/shoot_rifle.mp3');

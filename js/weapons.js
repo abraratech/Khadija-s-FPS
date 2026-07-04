@@ -1,9 +1,9 @@
 // js/weapons.js
 import * as THREE from 'three';
-import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId } from './map.js';
+import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId, updateBarricadeRepairGhost } from './map.js';
 import { player } from './player.js';
 import { activeEnemies, killEnemy } from './enemy.js';
-import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD } from './ui.js';
+import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke } from './particles.js'; 
 import { playSound } from './audio.js';
 import { ASSETS } from './main.js';
@@ -14,6 +14,36 @@ export let muzzleT = 0;
 let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
+
+// ── ECONOMY / INTERACTION TUNING ──
+// Centralized so future balancing does not require hunting magic numbers.
+const ECONOMY = Object.freeze({
+  DOOR_COST: 900,
+
+  MYSTERY_BOX_COST: 950,
+
+  WALL_WEAPON_COSTS: {
+    SMG: 1200,
+    SHOTGUN: 1500
+  },
+
+  WALL_AMMO_COSTS: {
+    SMG: 450,
+    SHOTGUN: 500
+  },
+
+  AMMO_COST: 500,
+  HEALTH_COST: 400,
+  UPGRADE_COST: 4500,
+  PERK_HEALTH_COST: 2500,
+  PERK_RELOAD_COST: 3000,
+
+  BARRICADE_REPAIR_SCORE: 15,
+  BARRICADE_REPAIR_COOLDOWN: 0.33,
+
+  TRAP_COST: 1000,
+  TRAP_DURATION: 14.0
+});
 
 function getCurrentGameplayPoints() {
   return getGameplayPointsForMap(currentMapId);
@@ -403,14 +433,25 @@ function spawnShop(type, position) {
   activeShops.push(shopData);
 }
 
+function announceWeaponEquipped(weapon) {
+  if (!weapon) return;
+
+  const color = weapon.isUpgraded ? '#ff66ff' : '#00d4ff';
+  showStatusToast(`EQUIPPED: ${weapon.name}`, color, 1500);
+}
+
 function equipWeapon(idx) {
   player.inventory.forEach(w => { if(w.meshGroup.parent) camera.remove(w.meshGroup); w.meshGroup.visible = false; });
   player.currentWeaponIdx = idx;
   const active = getActiveWeapon();
   active.meshGroup.visible = true;
   camera.add(active.meshGroup);
-  updateAmmoHUD(active.ammo, active.reserve);
+    updateAmmoHUD(active.ammo, active.reserve);
   updateWeaponNameHUD(active.name);
+
+  if (player.alive) {
+    announceWeaponEquipped(active);
+  }
 }
 
 export function cycleWeapon() {
@@ -434,38 +475,43 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
   });
 
   if (closestBarricade) {
-    if (closestBarricade.currentPlanks < closestBarricade.maxPlanks) {
-      setInteractionPrompt(true, `Hold [E] to repair barricade (+10 PTS)`);
-      
-      if (checkInteractionPressed) {
-        closestBarricade.cooldown -= 0.016; 
-        
-        if (closestBarricade.cooldown <= 0) {
-          closestBarricade.cooldown = 0.4; // Build speed timer limit
-          
-          // Add plank back physically
-          const targetPlank = closestBarricade.planks[closestBarricade.currentPlanks];
-          closestBarricade.plankGroup.add(targetPlank);
-          closestBarricade.currentPlanks++;
-          
-          // Reward score progression
-          player.score += 10;
-          updateScoreHUD(player.score);
-          spawnFloatingScore(10, false);
-          playSound('reload', 0.5, true); 
+    const frameDt = typeof dt === 'number' ? dt : 0.016;
+    closestBarricade.cooldown = Math.max(0, (closestBarricade.cooldown ?? 0) - frameDt);
 
-          // Re-engage mathematical collision wall if it was previously wide open
-          if (closestBarricade.currentPlanks === 1 && !walls.includes(closestBarricade.wallTracker)) {
-            walls.push(closestBarricade.wallTracker);
-          }
+    if (closestBarricade.currentPlanks < closestBarricade.maxPlanks) {
+      if (closestBarricade.cooldown > 0) {
+        setInteractionPrompt(true, `Repair cooldown: ${closestBarricade.cooldown.toFixed(1)}s`);
+        return;
+      }
+
+      setInteractionPrompt(true, `Press [E] to repair barricade (+${ECONOMY.BARRICADE_REPAIR_SCORE} PTS)`);
+
+      if (checkInteractionPressed) {
+        closestBarricade.cooldown = ECONOMY.BARRICADE_REPAIR_COOLDOWN;
+
+        // Add plank back physically
+        const targetPlank = closestBarricade.planks[closestBarricade.currentPlanks];
+        closestBarricade.plankGroup.add(targetPlank);
+        closestBarricade.currentPlanks++;
+        updateBarricadeRepairGhost(closestBarricade);
+
+        // Reward score progression
+        player.score += ECONOMY.BARRICADE_REPAIR_SCORE;
+        updateScoreHUD(player.score);
+        spawnFloatingScore(ECONOMY.BARRICADE_REPAIR_SCORE, false);
+        playSound('hit', 0.22, true); // Temporary plank-repair tap; avoids weapon reload sound.
+
+        // Re-engage mathematical collision wall if it was previously wide open
+        if (closestBarricade.currentPlanks === 1 && !walls.includes(closestBarricade.wallTracker)) {
+          walls.push(closestBarricade.wallTracker);
         }
       }
     } else {
       setInteractionPrompt(true, `BARRICADE IS FULLY REPAIRED`);
     }
-return; // Halt other checks so shop prompts don't overlap
-  }
 
+    return; // Halt other checks so shop prompts don't overlap
+  }
   // ── TRAP INTERACTION TRACKER ──
   let closestTrap = null;
   let minTrapDist = 2.5;
@@ -477,23 +523,32 @@ return; // Halt other checks so shop prompts don't overlap
     }
   });
 
-  if (closestTrap) {
+    if (closestTrap) {
     if (closestTrap.state === 'READY') {
-      setInteractionPrompt(true, `Press [E] to activate Electric Trap [1000 PTS]`);
+      setInteractionPrompt(true, `Press [E] to activate Electric Trap [${ECONOMY.TRAP_COST} PTS]`);
+
       if (checkInteractionPressed) {
-        if (player.score >= 1000) {
-          player.score -= 1000; updateScoreHUD(player.score);
-          closestTrap.state = 'ACTIVE'; closestTrap.timer = 15.0; // 15 sec duration
-          closestTrap.field.visible = true; closestTrap.switchMesh.material.color.setHex(0x00ff00);
-          playSound('hit', 1.0, false); 
+        if (player.score >= ECONOMY.TRAP_COST) {
+          player.score -= ECONOMY.TRAP_COST;
+          updateScoreHUD(player.score);
+
+          closestTrap.state = 'ACTIVE';
+          closestTrap.timer = ECONOMY.TRAP_DURATION;
+          closestTrap.field.visible = true;
+          closestTrap.switchMesh.material.color.setHex(0x00ff00);
+
+          playSound('hit', 1.0, false);
         } else {
           setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
         }
       }
+    } else if (closestTrap.state === 'ACTIVE') {
+      setInteractionPrompt(true, `TRAP ACTIVE (${Math.ceil(closestTrap.timer)}s)`);
     } else if (closestTrap.state === 'COOLDOWN') {
-      setInteractionPrompt(true, `TRAP RECHARGING...`);
+      setInteractionPrompt(true, `TRAP RECHARGING (${Math.ceil(closestTrap.timer)}s)`);
     }
-    return; 
+
+    return;
   }
   // ──────────────────────────────────────────────────────────
 
@@ -515,11 +570,11 @@ return; // Halt other checks so shop prompts don't overlap
 
   if (closestInteractable) {
     if (closestInteractable.type === 'DOOR') {
-      const doorCost = 750;
+      const doorCost = ECONOMY.DOOR_COST;
       const distToDoor = player.pos.distanceTo(closestInteractable.data.pos);
       
       if (distToDoor > 5.5) {
-        setInteractionPrompt(true, `Energy Gate Locked [Cost: ${doorCost} PTS]`);
+        setInteractionPrompt(true, `Move closer to open Energy Gate [${doorCost} PTS]`);
       } else {
         setInteractionPrompt(true, `Press [E] to open energy gate [${doorCost} PTS]`);
         
@@ -541,12 +596,14 @@ return; // Halt other checks so shop prompts don't overlap
       // ── MYSTERY BOX LOGIC (FULLY ISOLATED) ──
       if (closestShop.type === 'MYSTERY_BOX') {
         if (closestShop.state === 'IDLE') {
-          setInteractionPrompt(true, `Press [E] to buy Mystery Box [950 PTS]`);
+          setInteractionPrompt(true, `Press [E] to buy Mystery Box [${ECONOMY.MYSTERY_BOX_COST} PTS]`);
           if (checkInteractionPressed) {
-            if (player.score >= 950) {
-              player.score -= 950; updateScoreHUD(player.score);
-              closestShop.state = 'SPINNING';
+            if (player.score >= ECONOMY.MYSTERY_BOX_COST) {
+			  player.score -= ECONOMY.MYSTERY_BOX_COST;
+			  updateScoreHUD(player.score);
+			  closestShop.state = 'SPINNING';
               closestShop.timer = 4.0; // Spin duration
+              showStatusToast('MYSTERY BOX SPINNING...', '#ffaa00', 1500);
               playSound('hit', 0.8, false);
             } else {
               setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
@@ -568,6 +625,8 @@ return; // Halt other checks so shop prompts don't overlap
               equipWeapon(player.inventory.length - 1);
             }
             
+            showStatusToast(`MYSTERY BOX: ${rolledDef.name}`, '#ffaa00', 1800);
+
 			closestShop.spinMesh.clear();
             closestShop.state = 'IDLE';
             playSound('reload', 0.8, false);
@@ -590,17 +649,21 @@ return; // Halt other checks so shop prompts don't overlap
       const isWallBuy = closestShop.type.startsWith('WALL_');
       let hasWallWeapon = false;
 
-      // Dynamically check if they already own the Wall-Buy weapon
+            // Dynamically check if they already own the Wall-Buy weapon
       if (isWallBuy) {
         hasWallWeapon = player.inventory.some(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
-        cost = hasWallWeapon ? 500 : 1000;
+
+        const wallWeaponCost = ECONOMY.WALL_WEAPON_COSTS[closestShop.weaponKey] ?? 1200;
+        const wallAmmoCost = ECONOMY.WALL_AMMO_COSTS[closestShop.weaponKey] ?? 450;
+
+        cost = hasWallWeapon ? wallAmmoCost : wallWeaponCost;
         shopName = hasWallWeapon ? `${closestShop.weaponKey} Ammo` : `Wall ${closestShop.weaponKey}`;
       }
-      else if (closestShop.type === 'AMMO') { cost = 500; shopName = "Max Ammo"; }
-      else if (closestShop.type === 'HEALTH') { cost = 300; shopName = "Medkit"; }
-      else if (closestShop.type === 'UPGRADE') { cost = 5000; shopName = "Pack-a-Punch"; }
-      else if (closestShop.type === 'PERK_HEALTH') { cost = 2500; shopName = "Juggernog"; }
-      else if (closestShop.type === 'PERK_RELOAD') { cost = 3000; shopName = "Speed Cola"; }
+      else if (closestShop.type === 'AMMO') { cost = ECONOMY.AMMO_COST; shopName = "Ammo Refill"; }
+      else if (closestShop.type === 'HEALTH') { cost = ECONOMY.HEALTH_COST; shopName = "Medkit"; }
+      else if (closestShop.type === 'UPGRADE') { cost = ECONOMY.UPGRADE_COST; shopName = "Pack-a-Punch"; }
+      else if (closestShop.type === 'PERK_HEALTH') { cost = ECONOMY.PERK_HEALTH_COST; shopName = "Juggernog"; }
+      else if (closestShop.type === 'PERK_RELOAD') { cost = ECONOMY.PERK_RELOAD_COST; shopName = "Speed Cola"; }
 
       if (closestShop.type === 'HEALTH' && player.health >= player.maxHealth) { setInteractionPrompt(true, `HEALTH IS ALREADY FULL!`); } 
       else if (closestShop.type === 'UPGRADE' && activeW.isUpgraded) { setInteractionPrompt(true, `WEAPON ALREADY UPGRADED!`); } 
@@ -611,7 +674,8 @@ return; // Halt other checks so shop prompts don't overlap
         
         if (checkInteractionPressed) {
           if (player.score >= cost) {
-            player.score -= cost; updateScoreHUD(player.score);
+            player.score -= cost;
+            updateScoreHUD(player.score);
             playSound('hit', 0.8, false); 
             
             if (isWallBuy) {
@@ -620,26 +684,36 @@ return; // Halt other checks so shop prompts don't overlap
                 player.inventory[wIdx].ammo = player.inventory[wIdx].maxAmmo;
                 player.inventory[wIdx].reserve = player.inventory[wIdx].maxAmmo * 3;
                 equipWeapon(wIdx);
+                showStatusToast(`${closestShop.weaponKey} AMMO REFILLED`, '#00ff88', 1500);
               } else {
                 const def = WEAPON_DEFS[closestShop.weaponKey];
                 player.inventory.push({ ...def, ammo: def.maxAmmo, reserve: def.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: def.buildMesh() });
                 equipWeapon(player.inventory.length - 1);
+                showStatusToast(`BOUGHT ${def.name}`, '#00d4ff', 1600);
               }
             }
             else if (closestShop.type === 'AMMO') {
               activeW.ammo = activeW.maxAmmo; activeW.reserve = activeW.maxAmmo * 3;
-              updateAmmoHUD(activeW.ammo, activeW.reserve); 
-            } 
+              updateAmmoHUD(activeW.ammo, activeW.reserve);
+              showStatusToast('AMMO REFILLED', '#00ff88', 1500);
+            }
             else if (closestShop.type === 'HEALTH') {
-              player.health = player.maxHealth; updateHealthHUD(player.health, player.maxHealth); 
+              player.health = player.maxHealth;
+              updateHealthHUD(player.health, player.maxHealth);
+              showStatusToast('HEALTH RESTORED', '#ff5555', 1500);
             }
             else if (closestShop.type === 'PERK_HEALTH') {
-              player.maxHealth = 250; player.health = 250; updateHealthHUD(player.health, player.maxHealth); 
+              player.maxHealth = 250;
+              player.health = 250;
+              updateHealthHUD(player.health, player.maxHealth);
+              showStatusToast('JUGGERNOG ACTIVE: MAX HEALTH 250', '#ff3333', 1900);
             }
             else if (closestShop.type === 'PERK_RELOAD') {
               player.reloadMult = 0.5;
+              showStatusToast('SPEED COLA ACTIVE: FASTER RELOAD', '#00ff88', 1900);
             }
 			else if (closestShop.type === 'UPGRADE') {
+              showStatusToast('PACK-A-PUNCH COMPLETE', '#ff66ff', 1900);
               const upgKey = activeW.key + "_UPG";
               const upgDef = WEAPON_DEFS[upgKey];
               camera.remove(activeW.meshGroup);
@@ -679,7 +753,14 @@ export function resetGunState() { fireCooldown = 0; buildGun(); document.getElem
 export function shoot() {
   const w = getActiveWeapon();
   if (!player.alive || w.reloading || fireCooldown > 0) return;
-  if (w.ammo <= 0) { startReload(); return; }
+  if (w.ammo <= 0) {
+    if (w.reserve <= 0) {
+      showStatusToast('NO AMMO', '#ff5533', 900);
+    }
+
+    startReload();
+    return;
+  }
   
   w.ammo--; updateAmmoHUD(w.ammo, w.reserve); fireCooldown = w.fireRate;
   playSound(w.shootSound, w.name.includes("Pump") ? 1.0 : 0.6, true); 
@@ -732,7 +813,7 @@ function processHit(hit) {
     // GLTF HEIGHT-BASED HEADSHOT DETECTION
     if (!hs) {
       const hitHeight = hit.point.y - e.mesh.position.y;
-      const headThreshold = e.type === "GOLIATH" ? 3.8 : 2.00;
+      const headThreshold = e.type === "GOLIATH" ? 3.8 : (e.type === "CRAWLER" ? 0.95 : 2.00);
       if (hitHeight > headThreshold) {
         hs = true;
       }
@@ -744,6 +825,8 @@ function processHit(hit) {
     
 const finalDamage = isInstaKill ? 9999 : (hs ? baseDamage * 3 : baseDamage);
     e.health -= finalDamage; 
+    e.hitReactT = hs ? 0.18 : 0.13;
+    e.hitReactDir = hit.point.x < e.mesh.position.x ? 1 : -1;
     
     // ── ECONOMY FIX: 10 points for hits, bonus points only on KILL ──
     let pointsAwarded = 10; // Standard non-lethal hit
@@ -760,13 +843,18 @@ const finalDamage = isInstaKill ? 9999 : (hs ? baseDamage * 3 : baseDamage);
     showHitMarker(); playSound('hit', 0.4, true); spawnBloodBurst(hit.point);
     
     if (e.health <= 0) {
-      if (e.type === "GOLIATH") {
-        let bossBounty = 1000;
-        if (player.doublePointsTimer > 0) bossBounty *= 2; 
-        player.score += bossBounty; updateScoreHUD(player.score); spawnFloatingScore(bossBounty, false);
+       if (e.type === "GOLIATH") {
+        let bossBounty = 1700;
+        if (player.doublePointsTimer > 0) bossBounty *= 2;
+
+        player.score += bossBounty;
+        updateScoreHUD(player.score);
+        spawnFloatingScore(bossBounty, false);
+        showStatusToast('GOLIATH ELIMINATED', '#dd00ff', 1800);
       }
+
       killEnemy(e);
-    }
+	  }
   } else if (!e) {
     spawnBulletHole(hit.point, hit.face.normal);
   }
@@ -785,7 +873,8 @@ export function processReloadTick(dt) {
   const w = getActiveWeapon();
   if (!w || !w.reloading) return;
   w.reloadT -= dt;
-  document.getElementById('reload-bar').style.width = Math.min(100, (1 - w.reloadT / w.reloadDuration) * 100) + '%';
+  const totalReloadTime = w.reloadDuration * player.reloadMult;
+  document.getElementById('reload-bar').style.width = Math.min(100, (1 - w.reloadT / totalReloadTime) * 100) + '%';
   if (w.reloadT <= 0) {
     const need = w.maxAmmo - w.ammo; const give = Math.min(need, w.reserve);
     w.ammo += give; w.reserve -= give; w.reloading = false; 
@@ -898,7 +987,8 @@ export function updateShops(dt) {
             shop.timer = 3.5; 
             shop.spinMesh.clear();
             shop.spinMesh.add(getTeddyMesh());
-            playSound('hurt', 0.5, false); // Proxy for a sinister laugh
+            showStatusToast('TEDDY BEAR! BOX MOVING...', '#ff66ff', 2200);
+            playSound('hit', 0.35, true); // Temporary teddy-box sting; avoids player hurt sound.
           } else {
             // Roll a final weapon
             shop.state = 'READY';
@@ -926,10 +1016,11 @@ export function updateShops(dt) {
         
         if (shop.timer <= 0) {
           import('./player.js').then(({ player }) => {
-            player.score += 950; // Refund the player
+              player.score += ECONOMY.MYSTERY_BOX_COST; // Refund the player
             import('./ui.js').then(({ updateScoreHUD, spawnFloatingScore }) => {
               updateScoreHUD(player.score);
-              spawnFloatingScore(950, false);
+              spawnFloatingScore(ECONOMY.MYSTERY_BOX_COST, false);
+              showStatusToast(`REFUNDED ${ECONOMY.MYSTERY_BOX_COST} PTS`, '#ffaa00', 1600);
             });
           });
           

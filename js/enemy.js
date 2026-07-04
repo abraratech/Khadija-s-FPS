@@ -1,9 +1,9 @@
 // js/enemy.js
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, barricades, walls, traps, toggleSwarmLighting } from './map.js';
+import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost } from './map.js';
 import { player, damagePlayer } from './player.js';
-import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore } from './ui.js';
+import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore, showStatusToast } from './ui.js';
 import { spawnBloodBurst } from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
 import { playSound } from './audio.js';
@@ -26,6 +26,13 @@ const projectilePool = { items: [], index: 0 };
 const explosionPool = { items: [], index: 0 };
 const materialCache = {};
 let poolsInitialized = false;
+
+// Safe fallback so zombie spawning does not crash if actorManager is not loaded.
+const actorManager = {
+  clear() {},
+  register() {},
+  unregister() {}
+};
 
 function getZombieMaterial(config, baseMaterial) {
   // We append whether it has a map so the cache doesn't mix up GLBs and capsules!
@@ -142,11 +149,12 @@ export let isSpecialRound = false;
 let campWarningTimer = 0; // ◄── THIS IS THE MISSING VARIABLE!
 
 const ENEMY_TYPES = {
-  SHAMBLER: { name: "SHAMBLER", speed: 2.4, maxHealth: 100, damage: 15, attackCooldown: 1.4, attackRange: 1.4, colRadius: 0.45, color: 0x446644, scale: new THREE.Vector3(1, 1, 1) },
-  RUNNER:   { name: "RUNNER", speed: 10.5, maxHealth: 65, damage: 10, attackCooldown: 0.8, attackRange: 1.4, colRadius: 0.40, color: 0x883333, scale: new THREE.Vector3(0.85, 1.05, 0.85) },
-  GOLIATH:  { name: "GOLIATH", speed: 1.6, maxHealth: 1500, damage: 45, attackCooldown: 2.2, attackRange: 3.2, colRadius: 1.20, color: 0x1a1a1a, scale: new THREE.Vector3(1.8, 1.8, 1.8) },
-  EXPLODER: { name: "EXPLODER", speed: 4.8, maxHealth: 70, damage: 45, attackCooldown: 0, attackRange: 2.5, colRadius: 0.50, color: 0xff4400, scale: new THREE.Vector3(1.15, 1.15, 1.15) },
-  RANGED:   { name: "RANGED", speed: 2.0, maxHealth: 80, damage: 20, attackCooldown: 2.5, attackRange: 12.0, colRadius: 0.40, color: 0x00ffff, scale: new THREE.Vector3(0.8, 1.2, 0.8) }
+  SHAMBLER: { name: "SHAMBLER", speed: 2.25, maxHealth: 100, damage: 15, attackCooldown: 1.4, attackRange: 1.4, colRadius: 0.45, color: 0x446644, scale: new THREE.Vector3(1, 1, 1) },
+  CRAWLER:  { name: "CRAWLER", speed: 2.15, maxHealth: 85, damage: 10, attackCooldown: 1.25, attackRange: 1.05, colRadius: 0.36, color: 0x667a3a, scale: new THREE.Vector3(0.95, 0.62, 0.95) },
+  RUNNER:   { name: "RUNNER", speed: 7.25, maxHealth: 65, damage: 9, attackCooldown: 0.9, attackRange: 1.35, colRadius: 0.40, color: 0x883333, scale: new THREE.Vector3(0.85, 1.05, 0.85) },
+  GOLIATH:  { name: "GOLIATH", speed: 1.45, maxHealth: 1300, damage: 40, attackCooldown: 2.35, attackRange: 3.0, colRadius: 1.20, color: 0x1a1a1a, scale: new THREE.Vector3(1.8, 1.8, 1.8) },
+  EXPLODER: { name: "EXPLODER", speed: 3.8, maxHealth: 70, damage: 42, attackCooldown: 0, attackRange: 2.25, colRadius: 0.50, color: 0xff4400, scale: new THREE.Vector3(1.15, 1.15, 1.15) },
+  RANGED:   { name: "RANGED", speed: 1.85, maxHealth: 80, damage: 18, attackCooldown: 2.7, attackRange: 12.0, colRadius: 0.40, color: 0x00ffff, scale: new THREE.Vector3(0.8, 1.2, 0.8) }
 };
 
 const POWERUP_TYPES = [
@@ -185,6 +193,8 @@ const enemyInstance = {
   attackRange: 1.4,
   colRadius: 0.45,
   walkT: 0,
+  hitReactT: 0,
+  hitReactDir: 1,
   dyingT: -1,
   alive: false,
   mixer: null,
@@ -263,39 +273,89 @@ export function initEnemies() {
 }
 
 function startWave(waveNumber) {
-  zombiesSpawnedSoFar = 0; spawnTimer = 0;
+  zombiesSpawnedSoFar = 0;
+  spawnTimer = 0;
   isSpecialRound = (waveNumber > 0 && waveNumber % 5 === 0);
-  
-  // Instantly shift the map lighting!
+
+  // Instantly shift the map lighting.
   toggleSwarmLighting(isSpecialRound);
 
   if (isSpecialRound) {
-    goliathsToSpawn = 0; 
-    zombiesToSpawnThisRound = 8 + (waveNumber * 2); 
+    goliathsToSpawn = 0;
+    zombiesToSpawnThisRound = Math.min(34, 6 + Math.floor(waveNumber * 2.0));
     flashWaveBanner(`SWARM ROUND ${waveNumber}`);
   } else {
-    goliathsToSpawn = waveNumber > 5 ? Math.floor(waveNumber / 4) : 0; 
-    zombiesToSpawnThisRound = 4 + (waveNumber * 2) + goliathsToSpawn; 
+    // Delay heavy enemies a little and cap them so early/mid waves stay fair.
+    goliathsToSpawn = waveNumber >= 7 ? Math.min(2, Math.floor((waveNumber - 4) / 5)) : 0;
+    zombiesToSpawnThisRound = Math.min(34, 5 + Math.floor(waveNumber * 1.8) + goliathsToSpawn);
     flashWaveBanner(`ROUND ${waveNumber}`);
   }
+
   updateRoundHUD(waveNumber);
+}
+
+function getSpawnInterval() {
+  if (isSpecialRound) return Math.max(0.72, 0.95 - currentWave * 0.02);
+
+  // Slower early-wave entry, faster pressure later.
+  return Math.max(0.58, 1.35 - currentWave * 0.07);
+}
+
+function getActiveZombieCap() {
+  if (isSpecialRound) {
+    return Math.min(22, 8 + Math.floor(currentWave * 1.4));
+  }
+
+  return Math.min(24, 6 + Math.floor(currentWave * 1.6));
+}
+
+function pickEnemyTypeConfig() {
+  if (isSpecialRound) {
+    return ENEMY_TYPES.RUNNER;
+  }
+
+  if (goliathsToSpawn > 0) {
+    goliathsToSpawn--;
+    return ENEMY_TYPES.GOLIATH;
+  }
+
+  if (currentWave < 2) {
+    return ENEMY_TYPES.SHAMBLER;
+  }
+
+  const r = Math.random();
+
+  if (currentWave === 2) {
+    if (r < 0.18) return ENEMY_TYPES.CRAWLER;
+    return ENEMY_TYPES.SHAMBLER;
+  }
+
+  const rangedChance = currentWave >= 4 ? Math.min(0.10, 0.03 + currentWave * 0.008) : 0;
+  const exploderChance = currentWave >= 3 ? Math.min(0.14, 0.05 + currentWave * 0.010) : 0;
+  const crawlerChance = Math.min(0.22, 0.12 + currentWave * 0.012);
+  const runnerChance = Math.min(0.22, 0.08 + currentWave * 0.018);
+
+  let threshold = 0;
+
+  threshold += rangedChance;
+  if (r < threshold) return ENEMY_TYPES.RANGED;
+
+  threshold += exploderChance;
+  if (r < threshold) return ENEMY_TYPES.EXPLODER;
+
+  threshold += crawlerChance;
+  if (r < threshold) return ENEMY_TYPES.CRAWLER;
+
+  threshold += runnerChance;
+  if (r < threshold) return ENEMY_TYPES.RUNNER;
+
+  return ENEMY_TYPES.SHAMBLER;
 }
 
 function spawnZombie() {
   if (zombiePool.length === 0) return; 
 
-  let config;
-  if (isSpecialRound) {
-    config = ENEMY_TYPES.RUNNER; // Force only fast runners on Swarm Rounds
-  }
-  else if (goliathsToSpawn > 0) { config = ENEMY_TYPES.GOLIATH; goliathsToSpawn--; } 
-  else { 
-    const r = Math.random();
-    if (currentWave >= 4 && r < 0.15) config = ENEMY_TYPES.RANGED;
-    else if (currentWave >= 3 && r < 0.30) config = ENEMY_TYPES.EXPLODER;
-    else if (r < Math.min(0.50, 0.10 + (currentWave * 0.05))) config = ENEMY_TYPES.RUNNER;
-    else config = ENEMY_TYPES.SHAMBLER;
-  }
+  const config = pickEnemyTypeConfig();
 
   const recycled = zombiePool.pop();
   
@@ -310,6 +370,8 @@ function spawnZombie() {
   recycled.attackRange = config.attackRange;
   recycled.colRadius = config.colRadius;
   recycled.walkT = Math.random() * Math.PI * 2;
+  recycled.hitReactT = 0;
+  recycled.hitReactDir = 1;
   recycled.dyingT = -1;
   recycled.groundUpdateTimer = Math.random() * 0.1;
   recycled.alive = true;
@@ -323,6 +385,7 @@ function spawnZombie() {
   }
 
   recycled.mesh.scale.copy(config.scale);
+  recycled.mesh.rotation.set(0, 0, 0);
   recycled.mesh.position.y = 0; 
   recycled.mesh.visible = true;
 
@@ -347,7 +410,11 @@ recycled.mesh.traverse(child => {
   activeEnemies.push(recycled);
   actorManager.register(recycled);
   zombiesSpawnedSoFar++;
- 
+
+  if (config.name === "GOLIATH") {
+    showStatusToast('GOLIATH ENTERED THE ARENA', '#dd00ff', 2200);
+    flashWaveBanner('GOLIATH INBOUND', 1800);
+  }
 }
 
 const _eToP = new THREE.Vector3();
@@ -361,7 +428,7 @@ export function updateEnemies(dt) {
       t.timer -= dt;
       t.field.material.opacity = 0.2 + Math.random() * 0.5; // Zap flicker
       if (t.timer <= 0) { 
-        t.state = 'COOLDOWN'; t.timer = 20.0; // 20 sec cooldown
+        t.state = 'COOLDOWN'; t.timer = 18.0; // 18 sec cooldown
         t.field.visible = false; t.switchMesh.material.color.setHex(0x444444); 
       }
     } else if (t.state === 'COOLDOWN') {
@@ -397,7 +464,9 @@ export function updateEnemies(dt) {
     if (p.life <= 0) { scene.remove(p.mesh); activePowerups.splice(i, 1); continue; }
     
     if (player.pos.distanceTo(p.mesh.position) < 1.6) {
-      flashWaveBanner(p.type.name, 2500); playSound('hit', 1.0, false);
+      flashWaveBanner(p.type.name, 2500);
+      showStatusToast(p.type.name, '#ffaa00', 1600);
+      playSound('hit', 1.0, false);
       if (p.type.name === 'MAX AMMO') giveMaxAmmo();
       if (p.type.name === 'INSTA-KILL') player.instaKillTimer = 15.0;
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
@@ -411,7 +480,20 @@ export function updateEnemies(dt) {
   } 
 
 if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
-  spawnTimer += dt; if (spawnTimer >= 1.0) { spawnZombie(); spawnTimer = 0; }
+  const activeLivingEnemies = activeEnemies.reduce((count, e) => {
+    return count + (e.alive && e.dyingT < 0 ? 1 : 0);
+  }, 0);
+
+  if (activeLivingEnemies < getActiveZombieCap()) {
+    spawnTimer += dt;
+
+    if (spawnTimer >= getSpawnInterval()) {
+      spawnZombie();
+      spawnTimer = 0;
+    }
+  } else {
+    spawnTimer = Math.min(spawnTimer, getSpawnInterval());
+  }
 }
 
 // Update procedural visual counters and optional detailed visuals.
@@ -446,14 +528,31 @@ const visualAnimTime = performance.now() * 0.001;
 
 for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
+    e.hitReactT = Math.max(0, (e.hitReactT || 0) - dt);
 
     if (e.dyingT >= 0) {
       e.dyingT += dt; 
-      const t = Math.min(e.dyingT / 0.6, 1);
-      e.mesh.scale.y = (1 - t) * e.originalScale.y; 
-      e.mesh.position.y = -t * 0.5; 
+      const t = Math.min(e.dyingT / 0.75, 1);
+      const fall = THREE.MathUtils.smoothstep(t, 0, 1);
+
+      if (e.lodMesh) {
+        updateProceduralZombieMotion(e.lodMesh, visualAnimTime, 0.0, {
+          hitReactT: 0,
+          hitReactDir: e.hitReactDir || 1,
+          deathT: e.dyingT
+        });
+      }
+
+      e.mesh.rotation.x = -fall * Math.PI * 0.48;
+      e.mesh.rotation.z = (e.hitReactDir || 1) * fall * 0.18;
+      e.mesh.scale.set(
+        e.originalScale.x * (1 + fall * 0.04),
+        e.originalScale.y * (1 - fall * 0.12),
+        e.originalScale.z * (1 + fall * 0.04)
+      );
+      e.mesh.position.y = -fall * 0.18;
       
-      if (e.dyingT >= 0.6) {
+      if (e.dyingT >= 0.75) {
         e.mesh.visible = false;
         zombiePool.push(e);
 		actorManager.unregister(e);
@@ -491,7 +590,12 @@ if (e.usingLod && e.lodMesh) {
   updateProceduralZombieMotion(
     e.lodMesh,
     visualAnimTime,
-    e.type === "RUNNER" ? 1.35 : 1.0
+    e.type === "RUNNER" ? 1.35 : (e.type === "CRAWLER" ? 0.65 : 1.0),
+    {
+      hitReactT: e.hitReactT,
+      hitReactDir: e.hitReactDir,
+      deathT: e.dyingT
+    }
   );
 }
     // ── ANTI-CAMPING DETECTION ──
@@ -527,7 +631,8 @@ if (e.usingLod && e.lodMesh) {
         // Remove plank mesh visually from group
         const plankToRemove = targetBarricade.planks[targetBarricade.currentPlanks];
         targetBarricade.plankGroup.remove(plankToRemove);
-        playSound('hurt', 0.6, true); // Wooden tearing impact proxy
+        updateBarricadeRepairGhost(targetBarricade);
+        playSound('hit', 0.35, true); // Temporary wood-break proxy; avoids player hurt sound.
 
         // If all planks are broken, strip out the wall bounding parameters entirely so hordes pass through!
         if (targetBarricade.currentPlanks <= 0) {

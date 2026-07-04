@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { MAP_IDS, getMapMeta, normalizeMapId } from './maps/map_registry.js';
 import { buildGridBunker } from './maps/grid_bunker.js';
 import { buildIndustrialYard } from './maps/industrial_yard.js';
+import { buildNeonDepot } from './maps/neon_depot.js';
 import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -77,15 +78,322 @@ export const dirLight = new THREE.DirectionalLight(0xbbeeff, 1.2);
 dirLight.position.set(20, 40, -20);
 scene.add(dirLight);
 
+// ── MAP ENVIRONMENT PROFILES ──
+// Each map can now control its fog, lighting, clear color, and bloom mood.
+const MAP_ENVIRONMENTS = {
+  [MAP_IDS.GRID_BUNKER]: {
+  name: "Cold Bunker",
+  fogColor: 0x07101a,
+  fogDensity: 0.026,
+  clearColor: 0x03070c,
+
+  ambientColor: 0xc8e4ff,
+  ambientIntensity: 1.45,
+
+  dirColor: 0x9ed5ff,
+  dirIntensity: 1.25,
+  dirPosition: new THREE.Vector3(20, 40, -20),
+
+  bloomStrength: 0.62,
+  bloomRadius: 0.32,
+  bloomThreshold: 0.88
+},
+
+  [MAP_IDS.INDUSTRIAL_YARD]: {
+  name: "Dusty Yard",
+  fogColor: 0x241207,
+  fogDensity: 0.014,
+  clearColor: 0x100604,
+
+  ambientColor: 0xffc08a,
+  ambientIntensity: 1.38,
+
+  dirColor: 0xffb15c,
+  dirIntensity: 1.15,
+  dirPosition: new THREE.Vector3(-18, 36, 22),
+
+  bloomStrength: 0.48,
+  bloomRadius: 0.24,
+  bloomThreshold: 0.92
+  },
+  [MAP_IDS.NEON_DEPOT]: {
+  name: "Neon Depot",
+  fogColor: 0x061018,
+  fogDensity: 0.018,
+  clearColor: 0x03070b,
+
+  ambientColor: 0xb8f4ff,
+  ambientIntensity: 1.42,
+
+  dirColor: 0xff77dd,
+  dirIntensity: 1.08,
+  dirPosition: new THREE.Vector3(-16, 34, 24),
+
+  bloomStrength: 0.68,
+  bloomRadius: 0.30,
+  bloomThreshold: 0.86
+  }
+};
+
+const DEFAULT_MAP_ENVIRONMENT = MAP_ENVIRONMENTS[MAP_IDS.GRID_BUNKER];
+let activeMapEnvironment = DEFAULT_MAP_ENVIRONMENT;
+
+// ── GRAPHICS QUALITY PROFILES ──
+// Auto: chooses a safe starting profile, then can downgrade during gameplay if FPS is weak.
+// Low: fewer visual extras, lower pixel ratio, no bloom.
+// Medium: balanced default.
+// High: higher pixel ratio and stronger visual pass.
+const GRAPHICS_QUALITY_PROFILES = Object.freeze({
+  low: {
+    name: "Low",
+    pixelRatioCap: 1.0,
+    showMapDressing: false,
+    fogScale: 0.72,
+    bloomEnabled: false,
+    bloomStrengthScale: 0.45,
+    bloomRadiusScale: 0.70,
+    bloomThresholdAdd: 0.08
+  },
+
+  medium: {
+    name: "Medium",
+    pixelRatioCap: 1.35,
+    showMapDressing: true,
+    fogScale: 1.0,
+    bloomEnabled: true,
+    bloomStrengthScale: 1.0,
+    bloomRadiusScale: 1.0,
+    bloomThresholdAdd: 0
+  },
+
+  high: {
+    name: "High",
+    pixelRatioCap: 1.75,
+    showMapDressing: true,
+    fogScale: 1.08,
+    bloomEnabled: true,
+    bloomStrengthScale: 1.12,
+    bloomRadiusScale: 1.08,
+    bloomThresholdAdd: -0.02
+  }
+});
+
+const GRAPHICS_QUALITY_ORDER = ["auto", "low", "medium", "high"];
+
+let autoResolvedGraphicsQuality = null;
+let autoTuneTimer = 0;
+let autoTuneCooldown = 0;
+
+function normalizeGraphicsMode(mode) {
+  if (mode === "auto") return "auto";
+  if (GRAPHICS_QUALITY_PROFILES[mode]) return mode;
+  return "auto";
+}
+
+function guessAutoGraphicsQuality() {
+  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const cores = navigator.hardwareConcurrency || 4;
+  const memory = navigator.deviceMemory || 4;
+  const dpr = window.devicePixelRatio || 1;
+
+  if (isMobileDevice || cores <= 4 || memory <= 4 || dpr > 2.25) {
+    return "low";
+  }
+
+  if (cores >= 8 && memory >= 8 && dpr <= 1.6) {
+    return "high";
+  }
+
+  return "medium";
+}
+
+function resolveGraphicsQuality(mode = graphicsQuality) {
+  const normalized = normalizeGraphicsMode(mode);
+
+  if (normalized === "auto") {
+    if (!autoResolvedGraphicsQuality) {
+      autoResolvedGraphicsQuality = guessAutoGraphicsQuality();
+    }
+
+    return autoResolvedGraphicsQuality;
+  }
+
+  return normalized;
+}
+
+function getGraphicsProfile(mode = graphicsQuality) {
+  const effectiveMode = resolveGraphicsQuality(mode);
+  return GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
+}
+
+export let graphicsQuality = normalizeGraphicsMode(localStorage.getItem("ka_graphics_quality") || "auto");
+
+export function getGraphicsQuality() {
+  return graphicsQuality;
+}
+
+export function getEffectiveGraphicsQuality() {
+  return resolveGraphicsQuality(graphicsQuality);
+}
+
+export function getGraphicsQualityLabel() {
+  if (graphicsQuality === "auto") {
+    return `auto (${resolveGraphicsQuality("auto")})`;
+  }
+
+  return graphicsQuality;
+}
+
+export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
+  const previousMode = graphicsQuality;
+  const nextMode = normalizeGraphicsMode(mode);
+
+  graphicsQuality = nextMode;
+  localStorage.setItem("ka_graphics_quality", graphicsQuality);
+
+  if (graphicsQuality === "auto") {
+    if (previousMode !== "auto" || options.repickAuto || !autoResolvedGraphicsQuality) {
+      autoResolvedGraphicsQuality = guessAutoGraphicsQuality();
+      autoTuneTimer = 0;
+      autoTuneCooldown = 0;
+    }
+  } else {
+    autoResolvedGraphicsQuality = null;
+  }
+
+  const effectiveMode = resolveGraphicsQuality(graphicsQuality);
+  const profile = GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap));
+
+  if (scene.fog) {
+    scene.fog.density = activeMapEnvironment.fogDensity * profile.fogScale;
+  }
+
+  if (typeof bloomPass !== "undefined" && bloomPass) {
+    bloomPass.enabled = profile.bloomEnabled;
+    bloomPass.strength = activeMapEnvironment.bloomStrength * profile.bloomStrengthScale;
+    bloomPass.radius = activeMapEnvironment.bloomRadius * profile.bloomRadiusScale;
+    bloomPass.threshold = Math.max(
+      0,
+      Math.min(1, activeMapEnvironment.bloomThreshold + profile.bloomThresholdAdd)
+    );
+  }
+
+  mapMeshes.forEach((obj) => {
+    if (!obj?.userData?.isMapDressing) return;
+    obj.visible = profile.showMapDressing;
+  });
+
+  if (!options.silent) {
+    const label = graphicsQuality === "auto" ? `Auto → ${profile.name}` : profile.name;
+    console.log(`Graphics quality: ${label}`);
+  }
+
+  return graphicsQuality;
+}
+
+export function cycleGraphicsQuality() {
+  const currentIndex = GRAPHICS_QUALITY_ORDER.indexOf(graphicsQuality);
+  const nextIndex = (currentIndex + 1) % GRAPHICS_QUALITY_ORDER.length;
+  return applyGraphicsQuality(GRAPHICS_QUALITY_ORDER[nextIndex]);
+}
+
+export function autoTuneGraphicsFromFps(fps, dt = 0) {
+  if (graphicsQuality !== "auto") return false;
+  if (!Number.isFinite(fps) || dt <= 0) return false;
+
+  autoTuneTimer += dt;
+  autoTuneCooldown = Math.max(0, autoTuneCooldown - dt);
+
+  if (autoTuneTimer < 8 || autoTuneCooldown > 0) {
+    return false;
+  }
+
+  const currentEffective = resolveGraphicsQuality("auto");
+  let nextEffective = currentEffective;
+
+  // Auto only downgrades during combat to avoid distracting visual upgrades mid-fight.
+  if (fps < 36 && currentEffective === "medium") {
+    nextEffective = "low";
+  } else if (fps < 42 && currentEffective === "high") {
+    nextEffective = "medium";
+  }
+
+  if (nextEffective === currentEffective) {
+    return false;
+  }
+
+  autoResolvedGraphicsQuality = nextEffective;
+  autoTuneTimer = 0;
+  autoTuneCooldown = 12;
+
+  applyGraphicsQuality("auto", { silent: true });
+  console.log(`Auto graphics adjusted to: ${nextEffective}`);
+
+  return true;
+}
+
+// Dev console helpers.
+window.KASetGraphicsQuality = applyGraphicsQuality;
+window.KAGetGraphicsQuality = getGraphicsQuality;
+window.KAGetEffectiveGraphicsQuality = getEffectiveGraphicsQuality;
+
+// Apply saved graphics quality after graphicsQuality and helper functions exist.
+applyGraphicsQuality(graphicsQuality, { silent: true });
+
+export function applyMapEnvironment(mapId = currentMapId) {
+  const env = MAP_ENVIRONMENTS[mapId] || DEFAULT_MAP_ENVIRONMENT;
+  activeMapEnvironment = env;
+
+  if (!scene.fog) {
+    scene.fog = new THREE.FogExp2(env.fogColor, env.fogDensity);
+  }
+
+  scene.fog.color.setHex(env.fogColor);
+  scene.fog.density = env.fogDensity;
+
+  renderer.setClearColor(env.clearColor, 1);
+
+  ambLight.color.setHex(env.ambientColor);
+  ambLight.intensity = env.ambientIntensity;
+
+  dirLight.color.setHex(env.dirColor);
+  dirLight.intensity = env.dirIntensity;
+  dirLight.position.copy(env.dirPosition);
+
+  bloomPass.strength = env.bloomStrength;
+  bloomPass.radius = env.bloomRadius;
+  bloomPass.threshold = env.bloomThreshold;
+
+  applyGraphicsQuality(graphicsQuality, { silent: true });
+
+  console.log(`Environment profile: ${env.name}`);
+}
+
 export function toggleSwarmLighting(isSwarm) {
   if (isSwarm) {
-    scene.fog.color.setHex(0x220000); // Deep blood red fog
-    ambLight.color.setHex(0xffaaaa);  // Reddish ambient map glow
-    dirLight.color.setHex(0xff0000);  // Pure red moonlight cast
+    scene.fog.color.setHex(0x220000);
+    scene.fog.density = Math.max(activeMapEnvironment.fogDensity * 1.25, 0.028);
+
+    ambLight.color.setHex(0xffaaaa);
+    ambLight.intensity = activeMapEnvironment.ambientIntensity * 1.08;
+
+    dirLight.color.setHex(0xff0000);
+    dirLight.intensity = activeMapEnvironment.dirIntensity * 1.25;
+
+    const profile = getGraphicsProfile();
+
+    if (profile.bloomEnabled) {
+      bloomPass.enabled = true;
+      bloomPass.strength = Math.max(activeMapEnvironment.bloomStrength, 0.85) * profile.bloomStrengthScale;
+      bloomPass.radius = Math.max(activeMapEnvironment.bloomRadius, 0.35) * profile.bloomRadiusScale;
+      bloomPass.threshold = Math.min(activeMapEnvironment.bloomThreshold, 0.82);
+    } else {
+      bloomPass.enabled = false;
+    }
   } else {
-    scene.fog.color.setHex(0x0a0a11); // Revert to moody dark fog
-    ambLight.color.setHex(0xffffff);  // Revert ambient
-    dirLight.color.setHex(0xbbeeff);  // Revert blue moonlight
+    applyMapEnvironment(currentMapId);
   }
 }
 
@@ -142,7 +450,36 @@ function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false)
   );
 }
 
-// ── PROCEDURAL BARRICADE GENERATOR ──
+// ── BARRICADE REPAIR HOLOGRAM ──
+function makeBarricadeGhostMaterial(color, opacity, options = {}) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    wireframe: !!options.wireframe,
+    blending: THREE.AdditiveBlending
+  });
+}
+
+export function updateBarricadeRepairGhost(barricade) {
+  if (!barricade?.repairGhost) return;
+
+  const isDamaged = barricade.currentPlanks < barricade.maxPlanks;
+  const isDestroyed = barricade.currentPlanks <= 0;
+
+  barricade.repairGhost.visible = isDamaged;
+
+  const boost = isDestroyed ? 1.6 : 1.0;
+
+  barricade.repairGhost.traverse((child) => {
+    if (!child.material) return;
+
+    const baseOpacity = child.userData.baseGhostOpacity ?? child.material.opacity ?? 0.2;
+    child.material.opacity = Math.min(0.75, baseOpacity * boost);
+  });
+}
 export function spawnBarricade(x, z, rotY) {
   const group = new THREE.Group();
   group.position.set(x, 0, z);
@@ -151,7 +488,34 @@ export function spawnBarricade(x, z, rotY) {
 
   const plankGroup = new THREE.Group();
   group.add(plankGroup);
+	  // Repair locator: hidden when full, visible when damaged/destroyed.
+  const repairGhost = new THREE.Group();
+  repairGhost.name = 'barricade_repair_hologram';
+  repairGhost.visible = false;
+  group.add(repairGhost);
 
+  const ghostFloorMat = makeBarricadeGhostMaterial(0x00d4ff, 0.18);
+  const ghostFrameMat = makeBarricadeGhostMaterial(0x00d4ff, 0.24, { wireframe: true });
+  const ghostCoreMat = makeBarricadeGhostMaterial(0x66ffff, 0.08);
+
+  const ghostFloor = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1.25), ghostFloorMat);
+  ghostFloor.name = 'barricade_repair_floor_shadow';
+  ghostFloor.rotation.x = -Math.PI / 2;
+  ghostFloor.position.y = 0.035;
+  ghostFloor.userData.baseGhostOpacity = 0.18;
+
+  const ghostFrame = new THREE.Mesh(new THREE.BoxGeometry(4.35, 2.35, 0.12), ghostFrameMat);
+  ghostFrame.name = 'barricade_repair_wireframe';
+  ghostFrame.position.y = 1.35;
+  ghostFrame.userData.baseGhostOpacity = 0.24;
+
+  const ghostCore = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.0, 0.045), ghostCoreMat);
+  ghostCore.name = 'barricade_repair_soft_panel';
+  ghostCore.position.y = 1.25;
+  ghostCore.userData.baseGhostOpacity = 0.08;
+
+  repairGhost.add(ghostFloor, ghostFrame, ghostCore);
+  
   const barricadeObj = {
     pos: new THREE.Vector3(x, 0, z),
     rotY: rotY,
@@ -160,6 +524,7 @@ export function spawnBarricade(x, z, rotY) {
     planks: [], 
     group: group,
     plankGroup: plankGroup,
+    repairGhost: repairGhost,
     cooldown: 0,
     wallTracker: null // Dynamic collision box reference
   };
@@ -188,6 +553,7 @@ export function spawnBarricade(x, z, rotY) {
 
   walls.push(barricadeObj.wallTracker);
   barricades.push(barricadeObj);
+  updateBarricadeRepairGhost(barricadeObj);
 }
 
 // ── PROCEDURAL ELECTRIC TRAP GENERATOR ──
@@ -227,7 +593,8 @@ export function spawnTrap(x, z, width, isZAxis = false) {
 
 const MAP_BUILDERS = {
   [MAP_IDS.GRID_BUNKER]: buildGridBunker,
-  [MAP_IDS.INDUSTRIAL_YARD]: buildIndustrialYard
+  [MAP_IDS.INDUSTRIAL_YARD]: buildIndustrialYard,
+  [MAP_IDS.NEON_DEPOT]: buildNeonDepot
 };
 
 export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
@@ -244,6 +611,7 @@ export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
 
   currentMapMeta = getMapMeta(currentMapId);
   currentMap = currentMapMeta.legacyIndex ?? 0;
+  applyMapEnvironment(currentMapId);
 
   // Reset active scene elements
   barricades.forEach(b => scene.remove(b.group));

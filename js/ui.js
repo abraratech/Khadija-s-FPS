@@ -131,6 +131,46 @@ export function spawnFloatingScore(amount, isHeadshot) {
   }, 600);
 }
 
+export function showStatusToast(text, color = '#00d4ff', durationMs = 1800) {
+  const container = document.getElementById('floating-texts-container');
+  if (!container) return;
+
+  const el = document.createElement('div');
+  el.textContent = text;
+
+  el.style.position = 'absolute';
+  el.style.left = '50%';
+  el.style.top = '34%';
+  el.style.transform = 'translate(-50%, -50%) scale(0.96)';
+  el.style.color = color;
+  el.style.fontSize = '22px';
+  el.style.fontWeight = 'bold';
+  el.style.fontFamily = 'sans-serif';
+  el.style.letterSpacing = '2px';
+  el.style.textAlign = 'center';
+  el.style.textShadow = '2px 2px 0 #000, 0 0 12px rgba(0,0,0,0.85)';
+  el.style.pointerEvents = 'none';
+  el.style.opacity = '0';
+  el.style.transition = 'all 0.22s ease-out';
+  el.style.zIndex = '30';
+
+  container.appendChild(el);
+
+  requestAnimationFrame(() => {
+    el.style.opacity = '1';
+    el.style.transform = 'translate(-50%, -50%) scale(1)';
+  });
+
+  setTimeout(() => {
+    el.style.opacity = '0';
+    el.style.transform = 'translate(-50%, -60%) scale(1.04)';
+  }, Math.max(250, durationMs - 280));
+
+  setTimeout(() => {
+    if (container.contains(el)) container.removeChild(el);
+  }, durationMs);
+}
+
 // ── 1. DIRECTIONAL DAMAGE INDICATOR (OPTIMIZED WITH POOLING) ──
 const indicatorPool = [];
 let poolIndex = 0;
@@ -216,7 +256,16 @@ export function updateMinimap(playerPos, camDir, enemies) {
     const blipX = cx - Math.sin(angle) * radarDist; 
     const blipY = cy - Math.cos(angle) * radarDist;
 
-    ctx.fillStyle = e.type === "GOLIATH" ? '#dd00ff' : '#ff2200';
+    const enemyRadarColors = {
+      SHAMBLER: '#ff3333',
+      CRAWLER: '#d6ff33',
+      RUNNER: '#ff6600',
+      GOLIATH: '#dd00ff',
+      EXPLODER: '#ffcc00',
+      RANGED: '#00ffff'
+    };
+
+    ctx.fillStyle = enemyRadarColors[e.type] || '#ff2200';
     ctx.beginPath();
     ctx.arc(blipX, blipY, e.type === "GOLIATH" ? 5 : 3, 0, Math.PI * 2);
     ctx.fill();

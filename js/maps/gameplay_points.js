@@ -115,9 +115,57 @@ const INDUSTRIAL_YARD_POINTS = {
   ]
 };
 
+const NEON_DEPOT_POINTS = {
+  BOX_SPAWNS: [
+    v(-30, 24),
+    v(30, -24),
+    v(0, 0),
+    v(0, 34)
+  ],
+
+  WALL_SPAWNS: [
+    v(-35, 12),
+    v(35, -12),
+    v(-12, 35),
+    v(12, -35)
+  ],
+
+  AMMO_SPAWNS: [
+    v(-24, -28),
+    v(24, 28),
+    v(0, -18),
+    v(0, 18)
+  ],
+
+  HEALTH_SPAWNS: [
+    v(-34, 0),
+    v(34, 0),
+    v(0, 32),
+    v(0, -32)
+  ],
+
+  UPGRADE_SPAWNS: [
+    v(0, 12),
+    v(0, -12),
+    v(-22, 0),
+    v(22, 0)
+  ],
+
+  PERK_HEALTH_SPAWNS: [
+    v(-32, -18),
+    v(32, 18)
+  ],
+
+  PERK_RELOAD_SPAWNS: [
+    v(-36, 18),
+    v(36, -18)
+  ]
+};
+
 export const MAP_GAMEPLAY_POINTS = {
   [MAP_IDS.GRID_BUNKER]: GRID_BUNKER_POINTS,
-  [MAP_IDS.INDUSTRIAL_YARD]: INDUSTRIAL_YARD_POINTS
+  [MAP_IDS.INDUSTRIAL_YARD]: INDUSTRIAL_YARD_POINTS,
+  [MAP_IDS.NEON_DEPOT]: NEON_DEPOT_POINTS
 };
 
 export function getGameplayPointsForMap(mapId) {

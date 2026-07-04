@@ -159,6 +159,34 @@
   border: 1px solid rgba(255,255,255,0.2);
 }
 
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb {
+  background:
+    linear-gradient(90deg, rgba(0,229,255,0.16) 1px, transparent 1px),
+    linear-gradient(rgba(255,59,213,0.14) 1px, transparent 1px),
+    radial-gradient(circle at 35% 35%, rgba(0,229,255,0.28), transparent 30%),
+    radial-gradient(circle at 70% 65%, rgba(255,59,213,0.22), transparent 32%),
+    #071018;
+  background-size: 16px 16px, 16px 16px, 100% 100%, 100% 100%, 100% 100%;
+}
+
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb::before {
+  width: 74px;
+  height: 10px;
+  left: 20px;
+  top: 30px;
+  background: rgba(0, 229, 255, 0.28);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+}
+
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb::after {
+  width: 46px;
+  height: 36px;
+  right: 18px;
+  bottom: 22px;
+  background: rgba(255, 59, 213, 0.22);
+  box-shadow: 0 0 14px rgba(255, 59, 213, 0.30);
+}
+
 .menu-map-card[data-map-id="grid_bunker"] .menu-map-thumb::before {
   width: 48px;
   height: 34px;

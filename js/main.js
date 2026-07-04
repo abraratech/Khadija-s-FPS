@@ -1,5 +1,5 @@
 // js/main.js
-import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints } from './map.js';
+import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, EYE_H } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap } from './ui.js';
@@ -11,13 +11,131 @@ const canvas = document.getElementById('c');
 renderer.info.autoReset = false;
 let usePostProcessing = true;
 
+function syncGraphicsQualityControls() {
+  const currentValue = getGraphicsQuality();
+  const currentLabel = getGraphicsQualityLabel().toUpperCase();
+
+  const menuSelect = document.getElementById('graphics-quality-select');
+  const pauseSelect = document.getElementById('pause-graphics-quality-select');
+
+  if (menuSelect && menuSelect.value !== currentValue) {
+    menuSelect.value = currentValue;
+  }
+
+  if (pauseSelect && pauseSelect.value !== currentValue) {
+    pauseSelect.value = currentValue;
+  }
+
+  const menuCurrent = document.getElementById('graphics-quality-current');
+  if (menuCurrent) {
+    menuCurrent.textContent = currentLabel;
+  }
+
+  const pauseCurrent = document.getElementById('pause-graphics-quality-current');
+  if (pauseCurrent) {
+    pauseCurrent.textContent = currentLabel;
+  }
+}
+
+function bindGraphicsQualitySelect(selectEl) {
+  if (!selectEl) return;
+
+  selectEl.addEventListener('change', () => {
+    applyGraphicsQuality(selectEl.value, { repickAuto: selectEl.value === 'auto' });
+    syncGraphicsQualityControls();
+    updatePauseSummary();
+    console.log(`Graphics quality changed from menu: ${getGraphicsQualityLabel()}`);
+  });
+}
+
+function initGraphicsQualityControls() {
+  bindGraphicsQualitySelect(document.getElementById('graphics-quality-select'));
+  bindGraphicsQualitySelect(document.getElementById('pause-graphics-quality-select'));
+  syncGraphicsQualityControls();
+}
+
+function updatePauseSummary() {
+  const mapName = currentMapMeta?.name || 'Grid Bunker';
+
+  const pauseMapName = document.getElementById('pause-map-name');
+  if (pauseMapName) pauseMapName.textContent = mapName.toUpperCase();
+
+  const pauseGraphicsLabel = document.getElementById('pause-graphics-label');
+  if (pauseGraphicsLabel) pauseGraphicsLabel.textContent = getGraphicsQualityLabel().toUpperCase();
+
+  const pauseWaveLabel = document.getElementById('pause-wave-label');
+  if (pauseWaveLabel) pauseWaveLabel.textContent = String(currentWave);
+
+  const pauseScoreLabel = document.getElementById('pause-score-label');
+  if (pauseScoreLabel) pauseScoreLabel.textContent = String(player.score);
+
+  const pauseKillsLabel = document.getElementById('pause-kills-label');
+  if (pauseKillsLabel) pauseKillsLabel.textContent = String(player.kills);
+
+  const pauseStatusLabel = document.getElementById('pause-status-label');
+  if (pauseStatusLabel) pauseStatusLabel.textContent = player.alive ? 'ALIVE' : 'DOWNED';
+}
+
+function showPauseScreen() {
+  syncGraphicsQualityControls();
+  updatePauseSummary();
+
+  const pauseScreen = document.getElementById('pause-screen');
+  if (pauseScreen) pauseScreen.style.display = 'flex';
+}
+
+function hidePauseScreen() {
+  const pauseScreen = document.getElementById('pause-screen');
+  if (pauseScreen) pauseScreen.style.display = 'none';
+}
+
+function updateDeathStats() {
+  const finalKills = document.getElementById('final-kills');
+  if (finalKills) finalKills.textContent = player.kills;
+
+  const finalScore = document.getElementById('final-score');
+  if (finalScore) finalScore.textContent = player.score;
+
+  const finalWave = document.getElementById('final-wave');
+  if (finalWave) finalWave.textContent = currentWave;
+
+  const finalBestScore = document.getElementById('final-best-score');
+  if (finalBestScore) finalBestScore.textContent = highScore;
+
+  const finalBestWave = document.getElementById('final-best-wave');
+  if (finalBestWave) finalBestWave.textContent = highWave;
+}
+
+function showDeathScreen() {
+  updateDeathStats();
+
+  const deathScreen = document.getElementById('death-screen');
+  if (deathScreen) deathScreen.style.display = 'flex';
+}
+
+function hideDeathScreen() {
+  const deathScreen = document.getElementById('death-screen');
+  if (deathScreen) deathScreen.style.display = 'none';
+}
+
 window.addEventListener('keydown', (e) => {
   if (e.code === 'F4') {
     e.preventDefault();
     usePostProcessing = !usePostProcessing;
     console.log("Post Processing:", usePostProcessing ? "ON" : "OFF");
   }
+
+  if (e.code === 'F6') {
+    e.preventDefault();
+
+    cycleGraphicsQuality();
+    syncGraphicsQualityControls();
+    console.log(`Graphics quality switched to: ${getGraphicsQualityLabel()}`);
+  }
 });
+
+initGraphicsQualityControls();
+console.log(`Graphics quality loaded: ${getGraphicsQualityLabel()} | Press F6 to cycle.`);
 
 function renderGameFrame() {
   renderer.info.reset();
@@ -31,7 +149,7 @@ function renderGameFrame() {
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
 // ════════════ DEVELOPER DEBUG MODE ════════════
-export const DEV_MODE = true; 
+export const DEV_MODE = false; 
 // ══════════════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════
@@ -95,7 +213,7 @@ document.addEventListener('pointerlockchange', () => {
     
     if (gs === 'playing' && player.alive) {
       gs = 'paused';
-      document.getElementById('pause-screen').style.display = 'flex';
+      showPauseScreen();
     }
   }
 });
@@ -103,7 +221,7 @@ document.addEventListener('pointerlockchange', () => {
 // ── PAUSE MENU BUTTON LISTENERS ──
 document.getElementById('resume-btn').addEventListener('click', () => {
 	  resetFrameStats();
-  document.getElementById('pause-screen').style.display = 'none';
+  hidePauseScreen();
   gs = 'playing';
   if (!isMobile) canvas.requestPointerLock();
 });
@@ -121,7 +239,7 @@ document.getElementById('btn-mobile-pause').addEventListener('touchstart', (e) =
   e.preventDefault();
   if (gs === 'playing' && player.alive) {
     gs = 'paused';
-    document.getElementById('pause-screen').style.display = 'flex';
+    showPauseScreen();
   }
 }, { passive: false });  
 
@@ -227,6 +345,10 @@ smoothFps = smoothFps * 0.9 + instantFps * 0.1;
 const rawFrameMs = rawDt * 1000;
 
 if (gs === 'playing') {
+  if (autoTuneGraphicsFromFps(smoothFps, dt)) {
+    syncGraphicsQualityControls();
+  }
+
   if (rawFrameMs > worstFrameMs) {
     worstFrameMs = rawFrameMs;
   }
@@ -234,8 +356,7 @@ if (gs === 'playing') {
   if (rawFrameMs > 25) {
     lastSpike = `${rawFrameMs.toFixed(1)} ms`;
   }
-}
-  
+}  
   if (gs !== 'playing') { 
     renderGameFrame();
     return; 
@@ -271,20 +392,21 @@ updateUIEffects(dt);
 processReloadTick(dt);
 const effectsMs = performance.now() - mark;
 
-  if (!player.alive && gs === 'playing') {
+    if (!player.alive && gs === 'playing') {
     gs = 'dead';
-    document.getElementById('final-kills').textContent = player.kills;
-    
+
     if (player.score > highScore) { 
       highScore = player.score; 
       localStorage.setItem('fps_hi_score', highScore); 
     }
+
     if (currentWave > highWave) { 
       highWave = currentWave; 
       localStorage.setItem('fps_hi_wave', highWave); 
     }
-    
-    setTimeout(() => { document.getElementById('death-screen').style.display = 'flex'; }, 700);
+
+    updateDeathStats();
+    setTimeout(showDeathScreen, 700);
   }
   
 mark = performance.now();
@@ -404,8 +526,10 @@ async function respawnPlayer() {
   const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
   buildMap(chosenMap);
   
-  if (spawnPoints && spawnPoints.length > 0) {
-    const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
+  const playerStartPool = playerSpawnPoints.length > 0 ? playerSpawnPoints : spawnPoints;
+
+  if (playerStartPool && playerStartPool.length > 0) {
+    const sp = playerStartPool[Math.floor(Math.random() * playerStartPool.length)];
     player.pos.set(sp.x, EYE_H, sp.z);
   } else {
     player.pos.set(0, EYE_H, 15); 
@@ -435,7 +559,7 @@ async function respawnPlayer() {
   updateScoreHUD(player.score); 
   
   document.getElementById('damage-flash').style.opacity = '0';
-  document.getElementById('death-screen').style.display = 'none';
+  hideDeathScreen();
   
   if (isMobile) {
     try {

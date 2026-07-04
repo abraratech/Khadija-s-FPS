@@ -7,6 +7,57 @@
 // 3 = locked zombie spawn, unlocked after door purchase
 
 import * as THREE from 'three';
+function addGridDressingBox(context, name, x, y, z, w, h, d, color, options = {}) {
+  const mat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: options.opacity !== undefined && options.opacity < 1,
+    opacity: options.opacity ?? 1
+  });
+
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  mesh.name = name;
+  mesh.position.set(x, y, z);
+
+  if (options.rotationY) mesh.rotation.y = options.rotationY;
+  if (options.rotationZ) mesh.rotation.z = options.rotationZ;
+
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  mesh.frustumCulled = true;
+  mesh.userData.isMapDressing = true;
+  mesh.userData.noCollision = true;
+
+  context.scene.add(mesh);
+  context.mapMeshes.push(mesh);
+
+  return mesh;
+}
+
+function addGridBunkerDressing(context) {
+  // Cold bunker ceiling light strips.
+  addGridDressingBox(context, 'bunker_light_north', 0, 3.25, -21, 16, 0.08, 0.12, 0x66ccff);
+  addGridDressingBox(context, 'bunker_light_south', 0, 3.25, 21, 16, 0.08, 0.12, 0x66ccff);
+  addGridDressingBox(context, 'bunker_light_west', -21, 3.25, 0, 0.12, 0.08, 16, 0x66ccff);
+  addGridDressingBox(context, 'bunker_light_east', 21, 3.25, 0, 0.12, 0.08, 16, 0x66ccff);
+
+  // Subtle floor grime plates.
+  addGridDressingBox(context, 'bunker_grime_a', -12, 0.035, -12, 5.0, 0.025, 3.2, 0x111820, { opacity: 0.55, rotationY: 0.25 });
+  addGridDressingBox(context, 'bunker_grime_b', 12, 0.035, 12, 4.6, 0.025, 3.6, 0x10151a, { opacity: 0.50, rotationY: -0.35 });
+  addGridDressingBox(context, 'bunker_grime_c', -15, 0.035, 15, 3.8, 0.025, 2.8, 0x121a22, { opacity: 0.45, rotationY: 0.75 });
+  addGridDressingBox(context, 'bunker_grime_d', 15, 0.035, -15, 4.2, 0.025, 2.6, 0x0f151c, { opacity: 0.45, rotationY: -0.65 });
+
+  // Warning panels on wall surfaces.
+  addGridDressingBox(context, 'bunker_warning_panel_west', -27.08, 1.65, -6, 0.06, 0.75, 1.25, 0xffaa00);
+  addGridDressingBox(context, 'bunker_warning_panel_east', 27.08, 1.65, 6, 0.06, 0.75, 1.25, 0xffaa00);
+  addGridDressingBox(context, 'bunker_warning_panel_north', -6, 1.65, -27.08, 1.25, 0.75, 0.06, 0xffaa00);
+  addGridDressingBox(context, 'bunker_warning_panel_south', 6, 1.65, 27.08, 1.25, 0.75, 0.06, 0xffaa00);
+
+  // Dark accent trims.
+  addGridDressingBox(context, 'bunker_trim_north', 0, 2.75, -27.1, 28, 0.08, 0.05, 0x0a0d11);
+  addGridDressingBox(context, 'bunker_trim_south', 0, 2.75, 27.1, 28, 0.08, 0.05, 0x0a0d11);
+  addGridDressingBox(context, 'bunker_trim_west', -27.1, 2.75, 0, 0.05, 0.08, 28, 0x0a0d11);
+  addGridDressingBox(context, 'bunker_trim_east', 27.1, 2.75, 0, 0.05, 0.08, 28, 0x0a0d11);
+}
 import { createMapFloor, gridTileToWorld } from './map_helpers.js';
 
 export const GRID_BUNKER_LAYOUT = [
@@ -107,6 +158,8 @@ export function buildGridBunker(context) {
       }
     }
   }
+
+  addGridBunkerDressing(context);
 
   return {
     floorMesh,

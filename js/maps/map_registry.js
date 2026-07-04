@@ -1,88 +1,76 @@
 // js/maps/map_registry.js
-// Central map list for Khadija's Arena.
-// Game and preview tools should both read from this registry.
 
 export const MAP_IDS = Object.freeze({
-  GRID_BUNKER: "grid_bunker",
-  INDUSTRIAL_YARD: "industrial_yard",
-  PARKING_GARAGE: "parking_garage",
-  HOSPITAL_WING: "hospital_wing",
-  ROOFTOP_SITE: "rooftop_site"
+  GRID_BUNKER: 'grid_bunker',
+  INDUSTRIAL_YARD: 'industrial_yard',
+  NEON_DEPOT: 'neon_depot'
 });
 
-export const MAP_REGISTRY = Object.freeze([
-  {
+export const MAP_REGISTRY = Object.freeze({
+  [MAP_IDS.GRID_BUNKER]: {
     id: MAP_IDS.GRID_BUNKER,
-    name: "The Grid Bunker",
-    subtitle: "Classic close-quarters test arena",
-    description: "The original stable arena. Used as the safe fallback map while the new map system is built.",
-    status: "stable",
+    name: 'Grid Bunker',
+    subtitle: 'Cold Containment Bunker',
+    description: 'A tight bunker arena with gates, corridors, and classic survival flow.',
+    status: 'stable',
     playable: true,
-    legacyIndex: 0,
-    previewKey: "grid-bunker"
+    legacyIndex: 0
   },
-  {
+
+  [MAP_IDS.INDUSTRIAL_YARD]: {
     id: MAP_IDS.INDUSTRIAL_YARD,
-    name: "Industrial Yard",
-    subtitle: "Containers, barricades, traps",
-    description: "Single-floor combat yard with containers, cover, barricades, and electric traps.",
-    status: "stable",
+    name: 'Industrial Yard',
+    subtitle: 'Dusty Container Yard',
+    description: 'An open industrial arena with wider lanes, cover, traps, and warm lighting.',
+    status: 'stable',
     playable: true,
-    legacyIndex: 1,
-    previewKey: "industrial-yard"
+    legacyIndex: 3
   },
-  {
-    id: MAP_IDS.PARKING_GARAGE,
-    name: "Parking Garage",
-    subtitle: "Pillars, cars, dark lanes",
-    description: "Planned single-floor garage map with controlled vertical feel.",
-    status: "planned",
-    playable: false,
-    previewKey: "parking-garage"
-  },
-  {
-    id: MAP_IDS.HOSPITAL_WING,
-    name: "Hospital Wing",
-    subtitle: "Corridors, rooms, horror lighting",
-    description: "Planned single-floor horror-style corridor map.",
-    status: "planned",
-    playable: false,
-    previewKey: "hospital-wing"
-  },
-  {
-    id: MAP_IDS.ROOFTOP_SITE,
-    name: "Rooftop Site",
-    subtitle: "Construction props and skyline boundaries",
-    description: "Planned single-floor rooftop map with controlled vertical props.",
-    status: "planned",
-    playable: false,
-    previewKey: "rooftop-site"
+
+  [MAP_IDS.NEON_DEPOT]: {
+    id: MAP_IDS.NEON_DEPOT,
+    name: 'Neon Depot',
+    subtitle: 'Abandoned Transit Depot',
+    description: 'A neon-lit depot with open lanes, security gates, side barricades, and trap zones.',
+    status: 'new',
+    playable: true,
+    legacyIndex: 4
   }
-]);
+});
 
-export function normalizeMapId(value) {
-  const raw = String(value ?? "").trim();
+export const MAP_LIST = Object.freeze(Object.values(MAP_REGISTRY));
+export const MAPS = MAP_LIST;
 
-  if (!raw || raw === "0" || raw === MAP_IDS.GRID_BUNKER) {
-    return MAP_IDS.GRID_BUNKER;
+const LEGACY_INDEX_TO_ID = Object.freeze({
+  0: MAP_IDS.GRID_BUNKER,
+  1: MAP_IDS.GRID_BUNKER,
+  2: MAP_IDS.GRID_BUNKER,
+  3: MAP_IDS.INDUSTRIAL_YARD,
+  4: MAP_IDS.NEON_DEPOT
+});
+
+export function normalizeMapId(mapId) {
+  if (typeof mapId === 'number') {
+    return LEGACY_INDEX_TO_ID[mapId] || MAP_IDS.GRID_BUNKER;
   }
 
-  const found = MAP_REGISTRY.find((map) => map.id === raw);
-  if (found) return found.id;
+  if (typeof mapId === 'string') {
+    if (MAP_REGISTRY[mapId]) return mapId;
 
-  console.warn(`Unknown map id "${raw}", falling back to "${MAP_IDS.GRID_BUNKER}".`);
+    const maybeNumber = Number(mapId);
+    if (Number.isFinite(maybeNumber) && mapId.trim() !== '') {
+      return LEGACY_INDEX_TO_ID[maybeNumber] || MAP_IDS.GRID_BUNKER;
+    }
+  }
+
   return MAP_IDS.GRID_BUNKER;
 }
 
-export function getMapMeta(value) {
-  const id = normalizeMapId(value);
-  return MAP_REGISTRY.find((map) => map.id === id) || MAP_REGISTRY[0];
+export function getMapMeta(mapId) {
+  const normalized = normalizeMapId(mapId);
+  return MAP_REGISTRY[normalized] || MAP_REGISTRY[MAP_IDS.GRID_BUNKER];
 }
 
 export function getPlayableMaps() {
-  return MAP_REGISTRY.filter((map) => map.playable);
-}
-
-export function getAllMaps() {
-  return MAP_REGISTRY.slice();
+  return MAP_LIST.filter((map) => map.playable);
 }

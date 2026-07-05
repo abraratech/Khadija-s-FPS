@@ -62,6 +62,7 @@ const AUDIO_ROUTES = Object.freeze({
   },
   player: {
     hurt: 'hurt',
+    heartbeat: 'lowHealthHeartbeat',
     down: 'hurt'
   },
   enemy: {
@@ -75,25 +76,44 @@ const AUDIO_ROUTES = Object.freeze({
     equip: 'reload',
     reward: 'hit',
     warning: 'hurt',
-    waveStart: 'reload',
-    waveClear: 'hit'
+    waveStart: 'roundStart',
+    waveClear: 'roundClear'
   },
   world: {
-    woodBreak: 'hit',
-    plankRepair: 'hit',
+    woodBreak: 'woodPlankSnap',
+    plankRepair: 'hammerNailWood',
     doorOpen: 'hit',
-    trapActivate: 'hit',
-    mysteryStart: 'hit',
-    mysteryTick: 'shoot_pistol',
-    mysteryReady: 'reload',
-    mysteryTake: 'reload',
-    teddy: 'hit',
-    powerup: 'hit'
+    trapActivate: 'electricTrapHum',
+    trapHum: 'electricTrapHum',
+    mysteryStart: 'mysteryBoxOpen',
+    mysteryTick: 'rouletteSpin',
+    mysteryReady: 'boxGunChime',
+    mysteryTake: 'boxGunChime',
+    teddy: 'teddySqueak',
+    powerup: 'boxGunChime'
   }
 });
 
 const soundCooldowns = new Map();
 const missingSoundWarnings = new Set();
+
+const optionalSoundWarnings = new Set();
+
+const DEDICATED_SOUND_FILES = Object.freeze({
+  lowHealthHeartbeat: 'assets/sounds/heartbeat_low_health.mp3',
+  woodPlankSnap: 'assets/sounds/wood_plank_snap.mp3',
+  hammerNailWood: 'assets/sounds/hammer_nail_wood.mp3',
+  mysteryBoxOpen: 'assets/sounds/mystery_box_open.mp3',
+  rouletteSpin: 'assets/sounds/roulette_spin.mp3',
+  teddySqueak: 'assets/sounds/teddy_squeak.mp3',
+  boxGunChime: 'assets/sounds/box_gun_chime.mp3',
+  arcadeSparklePing: 'assets/sounds/arcade_sparkle_ping.mp3',
+  perkRetroJingle: 'assets/sounds/perk_retro_jingle.mp3',
+  electricTrapHum: 'assets/sounds/electric_trap_hum.mp3',
+  roundStart: 'assets/sounds/round_start.mp3',
+  roundClear: 'assets/sounds/round_clear.mp3'
+});
+
 
 function clamp01(value, fallback = 1.0) {
   const parsed = Number(value);
@@ -135,6 +155,51 @@ export async function loadSound(name, url) {
     console.error(`Failed to load sound [${name}]:`, error);
     return null;
   }
+}
+
+export async function loadOptionalSound(name, url) {
+  if (sounds[name]) return sounds[name];
+
+  try {
+    if (!audioCtx) {
+      if (AUDIO_DEBUG) console.warn(`⚠️ Cannot load optional "${name}" before AudioContext is initialized.`);
+      return null;
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (AUDIO_DEBUG && !optionalSoundWarnings.has(name)) {
+        optionalSoundWarnings.add(name);
+        console.warn(`Optional sound not found: ${name} at ${url}`);
+      }
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    sounds[name] = audioBuffer;
+    if (AUDIO_DEBUG) console.log(`🎵 Optional sound loaded: ${name}`);
+    return audioBuffer;
+  } catch (error) {
+    if (AUDIO_DEBUG && !optionalSoundWarnings.has(name)) {
+      optionalSoundWarnings.add(name);
+      console.warn(`Optional sound failed [${name}]:`, error);
+    }
+    return null;
+  }
+}
+
+function loadDedicatedSounds() {
+  Object.entries(DEDICATED_SOUND_FILES).forEach(([name, url]) => {
+    loadOptionalSound(name, url);
+  });
+}
+
+function playFallbackSequence(keys, volume = 1.0, options = {}) {
+  for (const key of keys) {
+    if (playSound(key, volume, true, options)) return true;
+  }
+  return false;
 }
 
 export function playSound(name, volume = 1.0, randomizePitch = false, options = {}) {
@@ -195,45 +260,105 @@ export function playSound(name, volume = 1.0, randomizePitch = false, options = 
   return true;
 }
 
-export function playWeaponSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
-  const soundName = resolveSoundName('weapon', keyOrName);
-  return playSound(soundName, volume * getRouteGain('weapon'), randomizePitch, {
+
+function getFallbackSoundsFor(name) {
+  switch (name) {
+    case 'lowHealthHeartbeat': return ['hurt'];
+    case 'woodPlankSnap': return ['hit'];
+    case 'hammerNailWood': return ['hit'];
+    case 'mysteryBoxOpen': return ['hit'];
+    case 'rouletteSpin': return ['shoot_pistol'];
+    case 'teddySqueak': return ['hit'];
+    case 'boxGunChime': return ['reload', 'hit'];
+    case 'arcadeSparklePing': return ['hit'];
+    case 'perkRetroJingle': return ['reload', 'hit'];
+    case 'electricTrapHum': return ['hit'];
+    case 'roundStart': return ['reload'];
+    case 'roundClear': return ['hit'];
+    default: return [];
+  }
+}
+
+function playRoutedSound(category, keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
+  const soundName = resolveSoundName(category, keyOrName);
+  const adjustedVolume = volume * getRouteGain(category);
+
+  if (sounds[soundName]) {
+    return playSound(soundName, adjustedVolume, randomizePitch, {
+      ...options,
+      category
+    });
+  }
+
+  const fallbackSounds = getFallbackSoundsFor(soundName);
+  for (const fallback of fallbackSounds) {
+    if (sounds[fallback]) {
+      return playSound(fallback, adjustedVolume, randomizePitch, {
+        ...options,
+        category,
+        cooldownKey: options.cooldownKey || soundName
+      });
+    }
+  }
+
+  return playSound(soundName, adjustedVolume, randomizePitch, {
     ...options,
-    category: 'weapon'
+    category
   });
+}
+
+
+export function playWeaponSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
+  return playRoutedSound('weapon', keyOrName, volume, randomizePitch, options);
 }
 
 export function playPlayerSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
-  const soundName = resolveSoundName('player', keyOrName);
-  return playSound(soundName, volume * getRouteGain('player'), randomizePitch, {
-    ...options,
-    category: 'player'
-  });
+  return playRoutedSound('player', keyOrName, volume, randomizePitch, options);
 }
 
 export function playEnemySound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
-  const soundName = resolveSoundName('enemy', keyOrName);
-  return playSound(soundName, volume * getRouteGain('enemy'), randomizePitch, {
-    ...options,
-    category: 'enemy'
-  });
+  return playRoutedSound('enemy', keyOrName, volume, randomizePitch, options);
 }
 
 export function playUISound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
-  const soundName = resolveSoundName('ui', keyOrName);
-  return playSound(soundName, volume * getRouteGain('ui'), randomizePitch, {
-    ...options,
-    category: 'ui'
-  });
+  return playRoutedSound('ui', keyOrName, volume, randomizePitch, options);
 }
 
 export function playWorldSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
-  const soundName = resolveSoundName('world', keyOrName);
-  return playSound(soundName, volume * getRouteGain('world'), randomizePitch, {
-    ...options,
-    category: 'world'
+  return playRoutedSound('world', keyOrName, volume, randomizePitch, options);
+}
+
+
+let heartbeatTimer = 0;
+
+export function updateLowHealthHeartbeat(playerState, dt = 0.016) {
+  if (!playerState?.alive || !audioCtx) {
+    heartbeatTimer = 0;
+    return;
+  }
+
+  const maxHealth = Math.max(1, Number(playerState.maxHealth) || 100);
+  const healthPct = Math.max(0, Math.min(1, (Number(playerState.health) || 0) / maxHealth));
+
+  if (healthPct > 0.32) {
+    heartbeatTimer = 0;
+    return;
+  }
+
+  const danger = 1 - (healthPct / 0.32);
+  const interval = Math.max(0.46, 1.05 - danger * 0.38);
+  heartbeatTimer -= dt;
+
+  if (heartbeatTimer > 0) return;
+  heartbeatTimer = interval;
+
+  playPlayerSound('heartbeat', 0.16 + danger * 0.22, false, {
+    cooldownKey: 'low_health_heartbeat',
+    cooldownMs: Math.round(interval * 820),
+    playbackRate: 0.88 + danger * 0.16
   });
 }
+
 
 // Called on the PLAY button click
 export function initAudio() {
@@ -248,4 +373,5 @@ export function initAudio() {
   loadSound('reload', 'assets/sounds/reload.mp3');
   loadSound('hit', 'assets/sounds/hit.mp3');
   loadSound('hurt', 'assets/sounds/hurt.mp3');
+  loadDedicatedSounds();
 }

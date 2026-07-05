@@ -162,7 +162,7 @@ export function damagePlayer(dmg, sourcePos = null) {
   updateHealthHUD(player.health, player.maxHealth); 
   triggerDamageFlash();
   addScreenShake(0.35);
-  playPlayerSound('hurt', 0.85, true, { cooldownKey: 'player_hurt', cooldownMs: 180 });
+  playPlayerSound('hurt', 0.55, true, { cooldownKey: 'player_hurt', cooldownMs: 320, pitchMin: 0.92, pitchMax: 1.04 });
   
   if (sourcePos) {
     const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);

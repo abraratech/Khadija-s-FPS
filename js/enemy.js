@@ -391,9 +391,11 @@ function announceWaveStart(waveNumber) {
   const briefing = getWaveBriefing(waveNumber);
   const color = isSpecialRound ? '#ff6633' : '#00d4ff';
 
-  playUISound(isSpecialRound ? 'warning' : 'waveStart', 0.5, false, {
+  playUISound(isSpecialRound ? 'warning' : 'waveStart', isSpecialRound ? 0.34 : 0.48, true, {
     cooldownKey: 'wave_start',
-    cooldownMs: 1200
+    cooldownMs: 1400,
+    pitchMin: isSpecialRound ? 0.86 : 0.96,
+    pitchMax: isSpecialRound ? 0.98 : 1.06
   });
 
   setTimeout(() => {
@@ -437,9 +439,11 @@ function completeCurrentWave() {
 
   flashWaveBanner("ROUND CLEAR", 2500);
   showStatusToast(`ROUND ${clearedWave} CLEAR · NEXT: ${getWaveBriefing(currentWave)}`, '#00d4ff', 2800);
-  playUISound('waveClear', 0.55, true, {
+  playUISound('waveClear', 0.62, true, {
     cooldownKey: 'wave_clear',
-    cooldownMs: 1600
+    cooldownMs: 1800,
+    pitchMin: 1.02,
+    pitchMax: 1.16
   });
 
   nextWaveTimeout = setTimeout(() => {
@@ -736,7 +740,7 @@ export function updateEnemies(dt) {
     if (player.pos.distanceTo(p.mesh.position) < 1.6) {
       flashWaveBanner(p.type.name, 2500);
       showStatusToast(p.type.name, '#ffaa00', 1600);
-      playWorldSound('powerup', 0.85, false, { cooldownKey: 'powerup_pickup', cooldownMs: 120 });
+      playWorldSound('powerup', 0.72, true, { cooldownKey: 'powerup_pickup', cooldownMs: 220, pitchMin: 1.04, pitchMax: 1.18 });
       if (p.type.name === 'MAX AMMO') giveMaxAmmo();
       if (p.type.name === 'INSTA-KILL') player.instaKillTimer = 15.0;
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
@@ -920,7 +924,7 @@ if (e.usingLod && e.lodMesh) {
         const plankToRemove = targetBarricade.planks[targetBarricade.currentPlanks];
         targetBarricade.plankGroup.remove(plankToRemove);
         updateBarricadeRepairGhost(targetBarricade);
-        playWorldSound('woodBreak', 0.55, true, { cooldownKey: 'barricade_break', cooldownMs: 90 });
+        playWorldSound('woodBreak', 0.72, true, { cooldownKey: 'barricade_break', cooldownMs: 260, pitchMin: 0.86, pitchMax: 1.08 });
 
         // If all planks are broken, strip out the wall bounding parameters entirely so hordes pass through!
         if (targetBarricade.currentPlanks <= 0) {

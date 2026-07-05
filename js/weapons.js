@@ -7,7 +7,7 @@ import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
 import { playWeaponSound, playWorldSound, playUISound } from './audio.js';
 import { ASSETS } from './main.js';
-import { getGameplayPointsForMap } from './maps/gameplay_points.js';
+import { getGameplayPointsForMap, getOrderedGameplayPointsForShop } from './maps/gameplay_points.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -20,6 +20,20 @@ export let muzzleT = 0;
 let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
+
+function getActiveShopDebugSummary() {
+  return activeShops.map((shop) => ({
+    type: shop.type,
+    weapon: shop.weaponKey || '',
+    x: Number(shop.pos?.x || 0).toFixed(1),
+    z: Number(shop.pos?.z || 0).toFixed(1),
+    wallMounted: Boolean(shop.wallMounted)
+  }));
+}
+
+if (typeof window !== 'undefined') {
+  window.KAShopPlacements = () => getActiveShopDebugSummary();
+}
 
 const MYSTERY_BOX_SPIN_TIME = 4.0;
 const MYSTERY_BOX_READY_TIME = 12.0;
@@ -173,9 +187,9 @@ function getCurrentGameplayPoints() {
 // Perk spawn pools are shared from js/maps/gameplay_points.js
 
 const SHOP_WALL_CLEARANCE = 0.95;
-const SHOP_MIN_SHOP_DISTANCE = 3.0;
+const SHOP_MIN_SHOP_DISTANCE = 4.25;
 const SHOP_MIN_PLAYER_DISTANCE = 7.0;
-const SHOP_MIN_FEATURE_DISTANCE = 2.25;
+const SHOP_MIN_FEATURE_DISTANCE = 2.75;
 
 // C4.5: current demo build is single-player only. One-time perks are hidden after use,
 // while wall buys stay active as ammo refill boards for the owned weapon.
@@ -191,16 +205,9 @@ function flatDistance(a, b) {
 }
 
 function shuffledCopy(list) {
-  const arr = list.slice();
-
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = tmp;
-  }
-
-  return arr;
+  // C8: keep deterministic order so authored gameplay-point priority matters.
+  // Random shuffling made shops feel scattered instead of intentionally placed.
+  return Array.isArray(list) ? list.slice() : [];
 }
 
 function cloneShopPoint(pos) {
@@ -271,9 +278,14 @@ function isShopSpawnSafe(pos, ignoreShop = null, options = {}) {
   return true;
 }
 
-function pickSafeShopSpawn(shop, spawnList) {
+function getOrderedShopCandidatePoints(type, spawnList) {
+  const ordered = getOrderedGameplayPointsForShop(currentMapId, type, spawnList);
+  return getShopCandidatePoints(ordered);
+}
+
+function pickSafeShopSpawn(shop, spawnList, type = shop?.type || null) {
   const currentPos = shop?.pos || null;
-  const candidates = shuffledCopy(getShopCandidatePoints(spawnList));
+  const candidates = shuffledCopy(getOrderedShopCandidatePoints(type, spawnList));
 
   // Pass 1: ideal pick. Different location, clear of walls/features/player/shops.
   for (const candidate of candidates) {
@@ -411,15 +423,8 @@ function isWallBuyPlacementSafe(placement, ignoreShop = null, options = {}) {
 }
 
 function getWallBuyCandidateOrder(type, spawnList) {
-  const candidates = getShopCandidatePoints(spawnList);
-
-  // Keep the two demo wall buys from fighting over the same first candidate.
-  // SMG uses the list in authored order; shotgun starts from the opposite end.
-  if (String(type || '').includes('SHOTGUN')) {
-    return candidates.reverse();
-  }
-
-  return candidates;
+  const tacticalType = String(type || '').includes('SHOTGUN') ? 'WALL_SHOTGUN' : 'WALL_SMG';
+  return getOrderedShopCandidatePoints(tacticalType, spawnList);
 }
 
 function pickSafeWallBuyPlacement(type, shop, spawnList) {
@@ -450,7 +455,7 @@ function pickSafeWallBuyPlacement(type, shop, spawnList) {
     || (() => {
       console.warn(`No safe wall-mounted spawn found for ${type || shop?.type || 'wall buy'}. Using floor fallback.`);
       return {
-        pos: pickSafeShopSpawn(shop, spawnList),
+        pos: pickSafeShopSpawn(shop, spawnList, type || shop?.type || null),
         rotationY: 0,
         wallMounted: false
       };
@@ -463,7 +468,7 @@ function getShopPlacement(type, shop, spawnList) {
   }
 
   return {
-    pos: pickSafeShopSpawn(shop, spawnList),
+    pos: pickSafeShopSpawn(shop, spawnList, type),
     rotationY: 0,
     wallMounted: false
   };
@@ -806,16 +811,18 @@ export function buildGun() {
 // ── SPAWN PROCEDURAL SHOPS ──
   const gameplayPoints = getCurrentGameplayPoints();
 
-  spawnShop('AMMO', pickSafeShopSpawn(null, gameplayPoints.AMMO_SPAWNS));
-  spawnShop('MYSTERY_BOX', pickSafeShopSpawn(null, gameplayPoints.BOX_SPAWNS));
-  spawnShop('HEALTH', pickSafeShopSpawn(null, gameplayPoints.HEALTH_SPAWNS));
-  spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS));
-  spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS)); // Juggernog
-  spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Speed Cola
+  spawnShop('AMMO', pickSafeShopSpawn(null, gameplayPoints.AMMO_SPAWNS, 'AMMO'));
+  spawnShop('MYSTERY_BOX', pickSafeShopSpawn(null, gameplayPoints.BOX_SPAWNS, 'MYSTERY_BOX'));
+  spawnShop('HEALTH', pickSafeShopSpawn(null, gameplayPoints.HEALTH_SPAWNS, 'HEALTH'));
+  spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS, 'UPGRADE'));
+  spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS, 'PERK_HEALTH')); // Juggernog
+  spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS, 'PERK_RELOAD')); // Speed Cola
 
   // ── WALL BUYS ──
   spawnShop('WALL_SMG', getShopPlacement('WALL_SMG', null, gameplayPoints.WALL_SPAWNS));
   spawnShop('WALL_SHOTGUN', getShopPlacement('WALL_SHOTGUN', null, gameplayPoints.WALL_SPAWNS));
+
+  console.table(getActiveShopDebugSummary());
   }
 
 function spawnShop(type, placementInput) {
@@ -962,7 +969,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         player.score += ECONOMY.BARRICADE_REPAIR_SCORE;
         updateScoreHUD(player.score);
         spawnFloatingScore(ECONOMY.BARRICADE_REPAIR_SCORE, false);
-        playWorldSound('plankRepair', 0.35, true, { cooldownKey: 'plank_repair', cooldownMs: 110 });
+        playWorldSound('plankRepair', 0.58, true, { cooldownKey: 'plank_repair', cooldownMs: 170, pitchMin: 0.92, pitchMax: 1.12 });
         showShopFeedback({
           title: 'BARRICADE REPAIRED',
           body: `+${ECONOMY.BARRICADE_REPAIR_SCORE} points · ${closestBarricade.currentPlanks}/${closestBarricade.maxPlanks} planks restored`,
@@ -1006,7 +1013,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
           closestTrap.field.visible = true;
           closestTrap.switchMesh.material.color.setHex(0x00ff00);
 
-          playWorldSound('trapActivate', 0.85, false, { cooldownKey: 'trap_activate', cooldownMs: 300 });
+          playWorldSound('trapActivate', 0.62, false, { cooldownKey: 'trap_activate', cooldownMs: 650 });
           showShopFeedback({
             title: 'TRAP ACTIVE',
             body: `Electric trap armed for ${ECONOMY.TRAP_DURATION}s`,
@@ -1093,7 +1100,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
                 durationMs: 0,
                 progress: 0
               });
-              playWorldSound('mysteryStart', 0.75, false, { cooldownKey: 'mystery_start', cooldownMs: 500 });
+              playWorldSound('mysteryStart', 0.76, true, { cooldownKey: 'mystery_start', cooldownMs: 650, pitchMin: 0.94, pitchMax: 1.04 });
             } else {
               showNotEnoughPoints(ECONOMY.MYSTERY_BOX_COST, 'Mystery Box');
             }
@@ -1129,7 +1136,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
             showStatusToast(`MYSTERY BOX: ${rolledDef.name}`, '#ffaa00', 1800);
 
             clearMysteryReadyWeapon(closestShop, { clearUnclaimed: true });
-            playUISound('equip', 0.75, false, { cooldownKey: 'mystery_take', cooldownMs: 400 });
+            playWorldSound('mysteryTake', 0.76, true, { cooldownKey: 'mystery_take', cooldownMs: 550, pitchMin: 1.02, pitchMax: 1.14 });
             
             // NEW: Instantly relocate the box after the player grabs the gun!
             relocateShop(closestShop, getCurrentGameplayPoints().BOX_SPAWNS);
@@ -1218,7 +1225,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
           if (player.score >= cost) {
             player.score -= cost;
             updateScoreHUD(player.score);
-            playUISound('confirm', 0.75, false, { cooldownKey: 'shop_confirm', cooldownMs: 150 }); 
+            playUISound('confirm', 0.48, true, { cooldownKey: 'shop_confirm', cooldownMs: 220, pitchMin: 1.04, pitchMax: 1.14 }); 
             
             if (isWallBuy) {
               if (hasWallWeapon) {
@@ -1252,15 +1259,18 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
               updateHealthHUD(player.health, player.maxHealth);
               showStatusToast('JUGGERNOG ACTIVE: MAX HEALTH 250', '#ff3333', 1900);
               showShopFeedback({ title: 'JUGGERNOG ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
+              playUISound('perkRetroJingle', 0.78, false, { cooldownKey: 'perk_purchase', cooldownMs: 900 });
             }
             else if (closestShop.type === 'PERK_RELOAD') {
               player.reloadMult = 0.5;
               showStatusToast('SPEED COLA ACTIVE: FASTER RELOAD', '#00ff88', 1900);
               showShopFeedback({ title: 'SPEED COLA ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
+              playUISound('perkRetroJingle', 0.78, false, { cooldownKey: 'perk_purchase', cooldownMs: 900 });
             }
 			else if (closestShop.type === 'UPGRADE') {
               showStatusToast('PACK-A-PUNCH COMPLETE', '#ff66ff', 1900);
               showShopFeedback({ title: 'PACK-A-PUNCH COMPLETE', body: `${cost} points spent · damage, ammo, reload improved`, tone: 'ready', durationMs: 2000 });
+              playUISound('arcadeSparklePing', 0.82, true, { cooldownKey: 'upgrade_complete', cooldownMs: 900, pitchMin: 1.08, pitchMax: 1.22 });
               const upgKey = activeW.key + "_UPG";
               const upgDef = WEAPON_DEFS[upgKey];
               camera.remove(activeW.meshGroup);

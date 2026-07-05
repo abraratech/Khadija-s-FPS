@@ -4,7 +4,7 @@ import { player, updatePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensit
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops } from './weapons.js';
-import { initAudio, setMasterVolume, getMasterVolumePercent } from './audio.js';
+import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 
 const canvas = document.getElementById('c');
@@ -810,6 +810,7 @@ const frameStart = performance.now();
 let mark = frameStart;
 
 updatePlayer(dt, keys, mdx, mdy);
+updateLowHealthHeartbeat(player, dt);
 mdx = 0; mdy = 0;
 const playerMs = performance.now() - mark;
 mark = performance.now();

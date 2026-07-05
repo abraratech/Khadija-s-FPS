@@ -3,20 +3,43 @@ import * as THREE from 'three';
 import { scene } from './map.js';
 
 // ── POOL SIZES (Tweak these based on performance needs) ──
-const MAX_DECALS = 150;
-const MAX_BLOOD = 60;
-const MAX_SHELLS = 40;
-const MAX_SMOKE = 30;
+const MAX_DECALS = 110;
+const MAX_BLOOD = 48;
+const MAX_SHELLS = 28;
+const MAX_SMOKE = 22;
+const MAX_SPARKS = 52;
 
 // ── THE RING BUFFERS ──
 const pools = {
   decals: { items: [], index: 0 },
   blood: { items: [], index: 0 },
   shells: { items: [], index: 0 },
-  smoke: { items: [], index: 0 }
+  smoke: { items: [], index: 0 },
+  sparks: { items: [], index: 0 }
 };
 
 let initialized = false;
+let softSmokeTexture = null;
+
+function getSoftSmokeTexture() {
+  if (softSmokeTexture) return softSmokeTexture;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0.0, 'rgba(255,255,255,0.42)');
+  grad.addColorStop(0.35, 'rgba(220,220,220,0.22)');
+  grad.addColorStop(0.72, 'rgba(160,160,160,0.08)');
+  grad.addColorStop(1.0, 'rgba(160,160,160,0.0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 64, 64);
+
+  softSmokeTexture = new THREE.CanvasTexture(canvas);
+  softSmokeTexture.needsUpdate = true;
+  return softSmokeTexture;
+}
 
 // Pre-builds all particle meshes ONCE at startup and hides them
 export function initParticles() {
@@ -24,7 +47,7 @@ export function initParticles() {
 
   // 1. Setup Decal Pool (Bullet holes)
   const decalGeo = new THREE.PlaneGeometry(0.15, 0.15);
-  const decalMat = new THREE.MeshBasicMaterial({ color: 0x050505, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+  const decalMat = new THREE.MeshBasicMaterial({ color: 0x050505, transparent: true, opacity: 0.72, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, side: THREE.DoubleSide });
   for (let i = 0; i < MAX_DECALS; i++) {
     const mesh = new THREE.Mesh(decalGeo, decalMat);
     mesh.visible = false;
@@ -54,13 +77,30 @@ export function initParticles() {
   }
 
   // 4. Setup Smoke Pool (Muzzle smoke)
-  const smokeGeo = new THREE.PlaneGeometry(0.2, 0.2);
-  const smokeMat = new THREE.MeshBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0.5, depthWrite: false });
+  // Use a soft radial sprite instead of a flat white square plane.
+  const smokeMat = new THREE.SpriteMaterial({
+    map: getSoftSmokeTexture(),
+    color: 0xd8d8d8,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    depthTest: true
+  });
   for (let i = 0; i < MAX_SMOKE; i++) {
-    const mesh = new THREE.Mesh(smokeGeo, smokeMat.clone()); // Clone mat so opacity can fade independently
+    const mesh = new THREE.Sprite(smokeMat.clone()); // Clone mat so opacity can fade independently
     mesh.visible = false;
     scene.add(mesh);
-    pools.smoke.items.push({ mesh, life: 0, vel: new THREE.Vector3() });
+    pools.smoke.items.push({ mesh, life: 0, vel: new THREE.Vector3(), baseLife: 0.45, startScale: 0.18 });
+  }
+
+  // 5. Setup Spark Pool (wall / metal impact feedback)
+  const sparkGeo = new THREE.BoxGeometry(0.025, 0.025, 0.025);
+  const sparkMat = new THREE.MeshBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.95, depthWrite: false });
+  for (let i = 0; i < MAX_SPARKS; i++) {
+    const mesh = new THREE.Mesh(sparkGeo, sparkMat.clone());
+    mesh.visible = false;
+    scene.add(mesh);
+    pools.sparks.items.push({ mesh, life: 0, vel: new THREE.Vector3(), baseLife: 0.22 });
   }
 
   initialized = true;
@@ -75,33 +115,45 @@ export function spawnBulletHole(pos, normal) {
   const pool = pools.decals;
   const mesh = pool.items[pool.index];
   
-  // Snap to wall and align with the wall's normal facing
-  mesh.position.copy(pos);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+  const safeNormal = normal && typeof normal.clone === 'function'
+    ? normal.clone().normalize()
+    : new THREE.Vector3(0, 1, 0);
+
+  // Snap just above the wall surface and align with the wall normal.
+  mesh.position.copy(pos).addScaledVector(safeNormal, 0.012);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), safeNormal);
+  mesh.rotateZ(Math.random() * Math.PI * 2);
   mesh.visible = true;
 
   // Move the ring buffer index forward, looping back to 0 if at the end
   pool.index = (pool.index + 1) % MAX_DECALS;
 }
 
-export function spawnBloodBurst(pos) {
+export function spawnBloodBurst(pos, intensity = 1, isHeadshot = false) {
   if (!initialized) initParticles();
-  
-  // Spawn 3 blood droplets per hit
-  for (let i = 0; i < 3; i++) {
+
+  const burstPower = Math.max(0.75, Math.min(2.2, Number(intensity) || 1));
+  const dropletCount = Math.min(MAX_BLOOD, isHeadshot ? 5 : Math.ceil(3 * burstPower));
+
+  for (let i = 0; i < dropletCount; i++) {
     const pool = pools.blood;
     const item = pool.items[pool.index];
-    
+
     item.mesh.position.copy(pos);
-    item.mesh.scale.set(1, 1, 1);
+    item.mesh.scale.setScalar((isHeadshot ? 1.18 : 1.0) * burstPower);
     // Random outward trajectory
-    item.vel.set((Math.random() - 0.5) * 4, Math.random() * 3 + 2, (Math.random() - 0.5) * 4);
-    item.life = 1.0; // 1 second lifespan
+    item.vel.set(
+      (Math.random() - 0.5) * 4.2 * burstPower,
+      (Math.random() * 3 + 2) * burstPower,
+      (Math.random() - 0.5) * 4.2 * burstPower
+    );
+    item.life = isHeadshot ? 1.1 : 0.9;
     item.mesh.visible = true;
 
     pool.index = (pool.index + 1) % MAX_BLOOD;
   }
 }
+
 
 export function spawnShell(pos, camDir) {
   if (!initialized) initParticles();
@@ -115,28 +167,60 @@ export function spawnShell(pos, camDir) {
   item.vel.copy(right).multiplyScalar(2.0 + Math.random()).add(new THREE.Vector3(0, 3 + Math.random(), 0));
   item.rotVel.set(Math.random() * 10, Math.random() * 10, Math.random() * 10);
   
-  item.life = 2.0; 
+  item.life = 1.35; 
   item.mesh.visible = true;
 
   pool.index = (pool.index + 1) % MAX_SHELLS;
 }
 
-export function spawnGunSmoke(pos, dir) {
+export function spawnGunSmoke(pos, dir, power = 1) {
   if (!initialized) initParticles();
-  
+
+  const smokePower = Math.max(0.45, Math.min(1.35, Number(power) || 1));
   const pool = pools.smoke;
   const item = pool.items[pool.index];
-  
+
   item.mesh.position.copy(pos);
-  item.mesh.material.opacity = 0.5;
-  item.mesh.scale.set(1, 1, 1);
-  item.vel.copy(dir).multiplyScalar(0.5).add(new THREE.Vector3(0, 0.5, 0)); 
-  
-  item.life = 0.6; 
+  item.mesh.material.opacity = 0.16 * smokePower;
+  item.startScale = 0.12 + smokePower * 0.055;
+  item.mesh.scale.setScalar(item.startScale);
+  item.vel.copy(dir).multiplyScalar(0.32).add(new THREE.Vector3(0, 0.22 * smokePower, 0));
+
+  item.baseLife = 0.26 + smokePower * 0.08;
+  item.life = item.baseLife;
   item.mesh.visible = true;
 
   pool.index = (pool.index + 1) % MAX_SMOKE;
 }
+
+export function spawnImpactSpark(pos, normal = null, power = 1) {
+  if (!initialized) initParticles();
+
+  const sparkPower = Math.max(0.45, Math.min(1.35, Number(power) || 1));
+  const count = Math.min(MAX_SPARKS, Math.ceil(2 * sparkPower));
+  const pushDir = normal && typeof normal.clone === 'function'
+    ? normal.clone().normalize()
+    : new THREE.Vector3(0, 1, 0);
+
+  for (let i = 0; i < count; i++) {
+    const pool = pools.sparks;
+    const item = pool.items[pool.index];
+
+    item.mesh.position.copy(pos).addScaledVector(pushDir, 0.025);
+    item.mesh.scale.setScalar(0.45 + Math.random() * 0.45 * sparkPower);
+    item.mesh.material.opacity = 0.68;
+    item.vel.copy(pushDir).multiplyScalar(0.85 + Math.random() * 1.15);
+    item.vel.x += (Math.random() - 0.5) * 2.4 * sparkPower;
+    item.vel.y += Math.random() * 1.6 * sparkPower;
+    item.vel.z += (Math.random() - 0.5) * 2.4 * sparkPower;
+    item.baseLife = 0.10 + Math.random() * 0.08;
+    item.life = item.baseLife;
+    item.mesh.visible = true;
+
+    pool.index = (pool.index + 1) % MAX_SPARKS;
+  }
+}
+
 
 // ── THE UPDATE LOOP (Called in tick) ──
 export function updateParticles(dt) {
@@ -178,8 +262,19 @@ export function updateParticles(dt) {
     if (item.life > 0) {
       item.life -= dt;
       item.mesh.position.addScaledVector(item.vel, dt);
-      item.mesh.scale.addScalar(dt * 3.0); // Expand
-      item.mesh.material.opacity = Math.max(0, (item.life / 0.6) * 0.5); // Fade out
+      item.mesh.scale.addScalar(dt * 0.42); // Gentle expansion without a square card popping on screen
+      item.mesh.material.opacity = Math.max(0, (item.life / Math.max(0.001, item.baseLife)) * 0.18); // Fade out
+      if (item.life <= 0) item.mesh.visible = false;
+    }
+  });
+
+  // Update Sparks
+  pools.sparks.items.forEach(item => {
+    if (item.life > 0) {
+      item.life -= dt;
+      item.vel.y -= 8.0 * dt;
+      item.mesh.position.addScaledVector(item.vel, dt);
+      item.mesh.material.opacity = Math.max(0, item.life / Math.max(0.001, item.baseLife));
       if (item.life <= 0) item.mesh.visible = false;
     }
   });
@@ -192,4 +287,5 @@ export function clearAllDecals() {
   pools.blood.items.forEach(i => i.mesh.visible = false);
   pools.shells.items.forEach(i => i.mesh.visible = false);
   pools.smoke.items.forEach(i => i.mesh.visible = false);
+  pools.sparks.items.forEach(i => i.mesh.visible = false);
 }

@@ -6,7 +6,7 @@ import { player, damagePlayer } from './player.js';
 import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore, showStatusToast } from './ui.js';
 import { spawnBloodBurst } from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
-import { playSound } from './audio.js';
+import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './audio.js';
 import { pushOut } from './utils.js';
 import { difficultyMultiplier, ASSETS } from './main.js';
 import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion} from './actors/procedural_zombie.js';
@@ -15,6 +15,14 @@ export const activeEnemies = [];
 const activePowerups = [];
 const groundRay = new THREE.Raycaster();
 const groundRayDir = new THREE.Vector3(0, -1, 0);
+const _audioCamDir = new THREE.Vector3();
+const _audioToEnemy = new THREE.Vector3();
+const _audioRight = new THREE.Vector3();
+const _worldUp = new THREE.Vector3(0, 1, 0);
+const _visualCandidates = [];
+const ENEMY_GROUND_SAMPLE_NEAR = 0.055;
+const ENEMY_GROUND_SAMPLE_FAR = 0.13;
+
 
 // ── OPTIMIZATION: STRICT 3D MESH POOLING ──
 const MAX_ZOMBIES = 40;
@@ -42,7 +50,7 @@ function getZombieMaterial(config, baseMaterial) {
     const newMat = baseMaterial.clone();
     
     // Kill the shiny plastic look globally
-    newMat.metalness = config.name === "GOLIATH" ? 0.2 : 0.0;
+    newMat.metalness = config.name === "GOLIATH" ? 0.2 : (config.name === "BRUTE" ? 0.08 : 0.0);
     newMat.roughness = 1.0; 
     newMat.transparent = false;
     newMat.depthWrite = true;
@@ -110,12 +118,20 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
   const dist = player.pos.distanceTo(ePos);
   if (dist > 18) return; 
   
-  const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y = 0; camDir.normalize();
-  const toEnemy = new THREE.Vector3().subVectors(ePos, player.pos); toEnemy.y = 0; toEnemy.normalize();
-  const rightVec = new THREE.Vector3().crossVectors(camDir, new THREE.Vector3(0, 1, 0)).normalize();
-  const panX = toEnemy.dot(rightVec);
+  camera.getWorldDirection(_audioCamDir);
+  _audioCamDir.y = 0;
+  _audioCamDir.normalize();
+
+  _audioToEnemy.subVectors(ePos, player.pos);
+  _audioToEnemy.y = 0;
+  _audioToEnemy.normalize();
+
+  _audioRight.crossVectors(_audioCamDir, _worldUp).normalize();
+  const panX = _audioToEnemy.dot(_audioRight);
   
-  const vol = Math.max(0, 1 - (dist / 18)) * (type === "GOLIATH" ? 1.5 : 0.6);
+  const vol = Math.max(0, 1 - (dist / 18)) * ((type === "GOLIATH" ? 1.1 : (type === "BRUTE" ? 0.62 : 0.38))) * getMasterVolume();
+  if (vol <= 0.001) return;
+
   const gain = audioCtx.createGain();
   const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
 
@@ -125,16 +141,16 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
   if (isFootstep) {
     const source = audioCtx.createBufferSource(); source.buffer = noiseBuffer;
     const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
-    filter.frequency.value = type === "GOLIATH" ? 300 : 800; 
+    filter.frequency.value = (type === "GOLIATH" || type === "BRUTE") ? 300 : 800; 
     source.connect(filter); filter.connect(gain);
     gain.gain.setValueAtTime(vol, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
     source.start();
   } else {
     const osc = audioCtx.createOscillator(); osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(type === "GOLIATH" ? 30 : 60, audioCtx.currentTime);
+    osc.frequency.setValueAtTime((type === "GOLIATH" || type === "BRUTE") ? 30 : 60, audioCtx.currentTime);
     const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(type === "GOLIATH" ? 100 : 200, audioCtx.currentTime);
+    filter.frequency.setValueAtTime((type === "GOLIATH" || type === "BRUTE") ? 100 : 200, audioCtx.currentTime);
     filter.frequency.linearRampToValueAtTime(40, audioCtx.currentTime + 0.5);
     osc.connect(filter); filter.connect(gain);
     gain.gain.setValueAtTime(vol * 0.8, audioCtx.currentTime);
@@ -144,18 +160,90 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
 }
 
 // ── WAVE SYSTEM ──
-export let currentWave = 1; let zombiesToSpawnThisRound = 0; let zombiesSpawnedSoFar = 0; let goliathsToSpawn = 0; let spawnTimer = 0;
+export let currentWave = 1;
+let zombiesToSpawnThisRound = 0;
+let zombiesSpawnedSoFar = 0;
+let goliathsToSpawn = 0;
+let spawnTimer = 0;
+let nextWaveTimeout = null;
+
 export let isSpecialRound = false;
 let campWarningTimer = 0; // ◄── THIS IS THE MISSING VARIABLE!
+let announcedTypesThisWave = new Set();
+let seenVariantTypesThisRun = new Set();
 
 const ENEMY_TYPES = {
-  SHAMBLER: { name: "SHAMBLER", speed: 2.25, maxHealth: 100, damage: 15, attackCooldown: 1.4, attackRange: 1.4, colRadius: 0.45, color: 0x446644, scale: new THREE.Vector3(1, 1, 1) },
-  CRAWLER:  { name: "CRAWLER", speed: 2.15, maxHealth: 85, damage: 10, attackCooldown: 1.25, attackRange: 1.05, colRadius: 0.36, color: 0x667a3a, scale: new THREE.Vector3(0.95, 0.62, 0.95) },
-  RUNNER:   { name: "RUNNER", speed: 7.25, maxHealth: 65, damage: 9, attackCooldown: 0.9, attackRange: 1.35, colRadius: 0.40, color: 0x883333, scale: new THREE.Vector3(0.85, 1.05, 0.85) },
-  GOLIATH:  { name: "GOLIATH", speed: 1.45, maxHealth: 1300, damage: 40, attackCooldown: 2.35, attackRange: 3.0, colRadius: 1.20, color: 0x1a1a1a, scale: new THREE.Vector3(1.8, 1.8, 1.8) },
-  EXPLODER: { name: "EXPLODER", speed: 3.8, maxHealth: 70, damage: 42, attackCooldown: 0, attackRange: 2.25, colRadius: 0.50, color: 0xff4400, scale: new THREE.Vector3(1.15, 1.15, 1.15) },
-  RANGED:   { name: "RANGED", speed: 1.85, maxHealth: 80, damage: 18, attackCooldown: 2.7, attackRange: 12.0, colRadius: 0.40, color: 0x00ffff, scale: new THREE.Vector3(0.8, 1.2, 0.8) }
+  SHAMBLER: {
+    name: "SHAMBLER", label: "Walker", role: "standard",
+    speed: 2.25, maxHealth: 100, damage: 15, attackCooldown: 1.4, attackRange: 1.4, colRadius: 0.45,
+    color: 0x446644, radarColor: '#ff3333', scale: new THREE.Vector3(1, 1, 1),
+    killScore: 50, headshotScore: 100
+  },
+  CRAWLER:  {
+    name: "CRAWLER", label: "Crawler", role: "low profile",
+    speed: 2.15, maxHealth: 85, damage: 10, attackCooldown: 1.25, attackRange: 1.05, colRadius: 0.36,
+    color: 0x667a3a, radarColor: '#d6ff33', scale: new THREE.Vector3(0.95, 0.62, 0.95),
+    killScore: 65, headshotScore: 115
+  },
+  RUNNER:   {
+    name: "RUNNER", label: "Runner", role: "fast pressure",
+    speed: 7.25, maxHealth: 65, damage: 9, attackCooldown: 0.9, attackRange: 1.35, colRadius: 0.40,
+    color: 0x883333, radarColor: '#ff6600', scale: new THREE.Vector3(0.85, 1.05, 0.85),
+    killScore: 75, headshotScore: 125
+  },
+  BRUTE:    {
+    name: "BRUTE", label: "Brute", role: "tank",
+    speed: 1.9, maxHealth: 285, damage: 24, attackCooldown: 1.75, attackRange: 1.8, colRadius: 0.66,
+    color: 0x4b275f, radarColor: '#aa55ff', scale: new THREE.Vector3(1.28, 1.28, 1.28),
+    killScore: 145, headshotScore: 225,
+    announce: 'BRUTE INCOMING'
+  },
+  GOLIATH:  {
+    name: "GOLIATH", label: "Goliath", role: "elite boss",
+    speed: 1.45, maxHealth: 1300, damage: 40, attackCooldown: 2.35, attackRange: 3.0, colRadius: 1.20,
+    color: 0x1a1a1a, radarColor: '#dd00ff', scale: new THREE.Vector3(1.8, 1.8, 1.8),
+    killScore: 200, headshotScore: 350, bossBounty: 1500,
+    announce: 'GOLIATH INBOUND'
+  },
+  EXPLODER: {
+    name: "EXPLODER", label: "Exploder", role: "suicide blast",
+    speed: 3.8, maxHealth: 70, damage: 42, attackCooldown: 0, attackRange: 2.25, colRadius: 0.50,
+    color: 0xff4400, radarColor: '#ffcc00', scale: new THREE.Vector3(1.15, 1.15, 1.15),
+    killScore: 95, headshotScore: 150,
+    announce: 'EXPLODER NEARBY'
+  },
+  RANGED:   {
+    name: "RANGED", label: "Spitter", role: "ranged pressure",
+    speed: 1.85, maxHealth: 80, damage: 18, attackCooldown: 2.7, attackRange: 12.0, colRadius: 0.40,
+    color: 0x00ffff, radarColor: '#00ffff', scale: new THREE.Vector3(0.8, 1.2, 0.8),
+    killScore: 110, headshotScore: 175,
+    announce: 'SPITTER ACTIVE'
+  }
 };
+
+const ENEMY_TYPE_BY_NAME = Object.freeze(
+  Object.values(ENEMY_TYPES).reduce((lookup, config) => {
+    lookup[config.name] = config;
+    return lookup;
+  }, {})
+);
+
+
+export function getEnemyTypeMeta(typeName) {
+  return ENEMY_TYPE_BY_NAME[typeName] || ENEMY_TYPES.SHAMBLER;
+}
+
+export function getEnemyPointReward(enemy, isHeadshot = false) {
+  const config = getEnemyTypeMeta(enemy?.type);
+
+  return {
+    label: config.label || config.name,
+    basePoints: isHeadshot ? (config.headshotScore || 100) : (config.killScore || 50),
+    bonusPoints: config.bossBounty || 0,
+    toast: config.name === 'GOLIATH' ? 'GOLIATH ELIMINATED' : `${config.label || config.name} eliminated`,
+    color: config.radarColor || '#ffaa00'
+  };
+}
 
 const POWERUP_TYPES = [
   { name: 'MAX AMMO', color: 0x00ff00 }, { name: 'INSTA-KILL', color: 0xffaa00 }, { name: 'DOUBLE POINTS', color: 0xffff00 }, { name: 'NUKE', color: 0xff0000 }
@@ -254,8 +342,15 @@ zombiePool.push(enemyInstance);
 
 export function initEnemies() {
   initPools();
+
+  if (nextWaveTimeout) {
+    clearTimeout(nextWaveTimeout);
+    nextWaveTimeout = null;
+  }
+
   actorManager.clear();
   campWarningTimer = 0;
+  seenVariantTypesThisRun = new Set();
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
     e.mesh.visible = false;
@@ -272,84 +367,254 @@ export function initEnemies() {
   startWave(currentWave);
 }
 
+function getDifficultyScalar() {
+  const scalar = Number(difficultyMultiplier);
+  return Number.isFinite(scalar) && scalar > 0 ? scalar : 1;
+}
+
+function getWaveBriefing(waveNumber) {
+  if (waveNumber > 0 && waveNumber % 5 === 0) {
+    return 'Swarm round: fast enemies, lighter tanks, guaranteed max ammo at the end.';
+  }
+
+  if (waveNumber === 1) return 'Walkers only. Build points and learn the route.';
+  if (waveNumber === 2) return 'Crawlers added. Watch low angles.';
+  if (waveNumber === 3) return 'Runners start testing your movement.';
+  if (waveNumber === 4) return 'First heavy pressure. Brutes may appear.';
+  if (waveNumber < 7) return 'Mixed horde. Prioritize runners and exploders.';
+  if (waveNumber < 10) return 'Elite pressure rising. Save traps for heavy enemies.';
+
+  return 'High threat wave. Control space, use traps, and keep moving.';
+}
+
+function announceWaveStart(waveNumber) {
+  const briefing = getWaveBriefing(waveNumber);
+  const color = isSpecialRound ? '#ff6633' : '#00d4ff';
+
+  playUISound(isSpecialRound ? 'warning' : 'waveStart', 0.5, false, {
+    cooldownKey: 'wave_start',
+    cooldownMs: 1200
+  });
+
+  setTimeout(() => {
+    if (!player.alive || currentWave !== waveNumber) return;
+    showStatusToast(briefing, color, isSpecialRound ? 3200 : 2600);
+  }, 650);
+}
+
 function startWave(waveNumber) {
   zombiesSpawnedSoFar = 0;
   spawnTimer = 0;
+  nextWaveTimeout = null;
+  announcedTypesThisWave = new Set();
   isSpecialRound = (waveNumber > 0 && waveNumber % 5 === 0);
 
   // Instantly shift the map lighting.
   toggleSwarmLighting(isSpecialRound);
 
+  const diff = getDifficultyScalar();
+
   if (isSpecialRound) {
     goliathsToSpawn = 0;
-    zombiesToSpawnThisRound = Math.min(34, 6 + Math.floor(waveNumber * 2.0));
+    zombiesToSpawnThisRound = Math.min(30, Math.round((7 + waveNumber * 1.65) * diff));
     flashWaveBanner(`SWARM ROUND ${waveNumber}`);
   } else {
-    // Delay heavy enemies a little and cap them so early/mid waves stay fair.
-    goliathsToSpawn = waveNumber >= 7 ? Math.min(2, Math.floor((waveNumber - 4) / 5)) : 0;
-    zombiesToSpawnThisRound = Math.min(34, 5 + Math.floor(waveNumber * 1.8) + goliathsToSpawn);
+    // Heavy enemies are now staged more clearly so they do not stack unfairly.
+    goliathsToSpawn = waveNumber >= 8 ? Math.min(2, 1 + Math.floor((waveNumber - 8) / 8)) : 0;
+    zombiesToSpawnThisRound = Math.min(32, Math.round((5 + waveNumber * 1.65) * diff) + goliathsToSpawn);
     flashWaveBanner(`ROUND ${waveNumber}`);
   }
 
+  announceWaveStart(waveNumber);
   updateRoundHUD(waveNumber);
 }
 
-function getSpawnInterval() {
-  if (isSpecialRound) return Math.max(0.72, 0.95 - currentWave * 0.02);
+function completeCurrentWave() {
+  if (nextWaveTimeout) return;
 
-  // Slower early-wave entry, faster pressure later.
-  return Math.max(0.58, 1.35 - currentWave * 0.07);
+  const clearedWave = currentWave;
+  currentWave++;
+
+  flashWaveBanner("ROUND CLEAR", 2500);
+  showStatusToast(`ROUND ${clearedWave} CLEAR · NEXT: ${getWaveBriefing(currentWave)}`, '#00d4ff', 2800);
+  playUISound('waveClear', 0.55, true, {
+    cooldownKey: 'wave_clear',
+    cooldownMs: 1600
+  });
+
+  nextWaveTimeout = setTimeout(() => {
+    nextWaveTimeout = null;
+    if (player.alive) startWave(currentWave);
+  }, 5000);
+}
+
+function getSpawnInterval() {
+  if (isSpecialRound) {
+    return Math.max(0.78, 1.05 - currentWave * 0.018);
+  }
+
+  // Smoother pacing after C1 variety: slightly slower ramp, fewer sudden spikes.
+  return Math.max(0.62, 1.42 - currentWave * 0.065);
 }
 
 function getActiveZombieCap() {
   if (isSpecialRound) {
-    return Math.min(22, 8 + Math.floor(currentWave * 1.4));
+    return Math.min(18, 7 + Math.floor(currentWave * 1.1));
   }
 
-  return Math.min(24, 6 + Math.floor(currentWave * 1.6));
+  return Math.min(22, 6 + Math.floor(currentWave * 1.45));
+}
+
+function getSpawnMixForWave(wave = currentWave) {
+  if (isSpecialRound) {
+    return [
+      [ENEMY_TYPES.RUNNER, 0.46],
+      [ENEMY_TYPES.CRAWLER, 0.27],
+      [ENEMY_TYPES.SHAMBLER, 0.20],
+      [ENEMY_TYPES.EXPLODER, wave >= 10 ? 0.07 : 0]
+    ];
+  }
+
+  if (wave < 2) {
+    return [[ENEMY_TYPES.SHAMBLER, 1]];
+  }
+
+  if (wave === 2) {
+    return [
+      [ENEMY_TYPES.SHAMBLER, 0.80],
+      [ENEMY_TYPES.CRAWLER, 0.20]
+    ];
+  }
+
+  if (wave === 3) {
+    return [
+      [ENEMY_TYPES.SHAMBLER, 0.67],
+      [ENEMY_TYPES.CRAWLER, 0.18],
+      [ENEMY_TYPES.RUNNER, 0.15]
+    ];
+  }
+
+  const runnerChance = Math.min(0.22, 0.06 + wave * 0.014);
+  const crawlerChance = Math.min(0.18, 0.10 + wave * 0.008);
+  const exploderChance = wave >= 4 ? Math.min(0.10, 0.025 + wave * 0.006) : 0;
+  const rangedChance = wave >= 5 ? Math.min(0.08, 0.018 + wave * 0.005) : 0;
+  const bruteChance = wave >= 4 ? Math.min(0.12, 0.025 + wave * 0.006) : 0;
+
+  return [
+    [ENEMY_TYPES.SHAMBLER, Math.max(0.30, 1 - runnerChance - crawlerChance - exploderChance - rangedChance - bruteChance)],
+    [ENEMY_TYPES.CRAWLER, crawlerChance],
+    [ENEMY_TYPES.RUNNER, runnerChance],
+    [ENEMY_TYPES.BRUTE, bruteChance],
+    [ENEMY_TYPES.EXPLODER, exploderChance],
+    [ENEMY_TYPES.RANGED, rangedChance]
+  ];
+}
+
+function rollWeightedEnemy(mix) {
+  const total = mix.reduce((sum, [, weight]) => sum + Math.max(0, weight || 0), 0);
+  if (total <= 0) return ENEMY_TYPES.SHAMBLER;
+
+  let r = Math.random() * total;
+
+  for (const [config, weight] of mix) {
+    r -= Math.max(0, weight || 0);
+    if (r <= 0) return config;
+  }
+
+  return mix[mix.length - 1]?.[0] || ENEMY_TYPES.SHAMBLER;
+}
+
+function getLivingEnemyCounts() {
+  const counts = {};
+
+  activeEnemies.forEach((e) => {
+    if (!e?.alive || e.dyingT >= 0) return;
+    counts[e.type] = (counts[e.type] || 0) + 1;
+  });
+
+  return counts;
+}
+
+function getMaxActiveForType(typeName) {
+  if (typeName === "GOLIATH") return 1;
+  if (typeName === "BRUTE") return currentWave < 8 ? 1 : 2;
+  if (typeName === "RANGED") return currentWave < 9 ? 1 : 2;
+  if (typeName === "EXPLODER") return isSpecialRound ? (currentWave >= 10 ? 2 : 1) : (currentWave < 8 ? 1 : 2);
+  if (typeName === "RUNNER") return isSpecialRound ? Math.min(8, 3 + Math.floor(currentWave / 3)) : Math.min(5, 1 + Math.floor(currentWave / 3));
+
+  return Infinity;
+}
+
+function canSpawnType(config, counts = getLivingEnemyCounts()) {
+  if (!config?.name) return true;
+  return (counts[config.name] || 0) < getMaxActiveForType(config.name);
 }
 
 function pickEnemyTypeConfig() {
-  if (isSpecialRound) {
-    return ENEMY_TYPES.RUNNER;
-  }
+  const counts = getLivingEnemyCounts();
 
-  if (goliathsToSpawn > 0) {
+  if (goliathsToSpawn > 0 && canSpawnType(ENEMY_TYPES.GOLIATH, counts)) {
     goliathsToSpawn--;
     return ENEMY_TYPES.GOLIATH;
   }
 
-  if (currentWave < 2) {
+  const mix = getSpawnMixForWave(currentWave).filter(([config, weight]) => {
+    return weight > 0 && canSpawnType(config, counts);
+  });
+
+  if (mix.length === 0) {
     return ENEMY_TYPES.SHAMBLER;
   }
 
-  const r = Math.random();
+  return rollWeightedEnemy(mix);
+}
 
-  if (currentWave === 2) {
-    if (r < 0.18) return ENEMY_TYPES.CRAWLER;
-    return ENEMY_TYPES.SHAMBLER;
+function getWaveSpeedBonus(config) {
+  const wave = Math.max(0, currentWave - 1);
+
+  if (config.name === "RUNNER") return Math.min(0.62, wave * 0.050);
+  if (config.name === "CRAWLER") return Math.min(0.45, wave * 0.045);
+  if (config.name === "BRUTE") return Math.min(0.30, wave * 0.030);
+  if (config.name === "GOLIATH") return Math.min(0.22, wave * 0.018);
+  if (config.name === "RANGED") return Math.min(0.28, wave * 0.028);
+  if (config.name === "EXPLODER") return Math.min(0.42, wave * 0.040);
+
+  return Math.min(0.55, wave * 0.055);
+}
+
+function getEnemyVisualMotionSpeed(e) {
+  if (!e) return 1.0;
+
+  if (e.type === "RUNNER") return 1.35;
+  if (e.type === "CRAWLER") return 0.65;
+  if (e.type === "BRUTE") return 0.78;
+  if (e.type === "GOLIATH") return 0.58;
+  if (e.type === "EXPLODER") return 1.05;
+  if (e.type === "RANGED") return 0.82;
+
+  return 1.0;
+}
+
+function announceEnemyVariant(config) {
+  if (!config?.announce || announcedTypesThisWave.has(config.name)) return;
+
+  const isFirstSightThisRun = !seenVariantTypesThisRun.has(config.name);
+  announcedTypesThisWave.add(config.name);
+  seenVariantTypesThisRun.add(config.name);
+
+  const message = isFirstSightThisRun
+    ? `${config.label.toUpperCase()} DETECTED · ${String(config.role || 'threat').toUpperCase()}`
+    : config.announce;
+
+  showStatusToast(message, config.radarColor || '#ffaa00', isFirstSightThisRun ? 2300 : 1600);
+  playUISound('warning', config.name === "GOLIATH" ? 0.75 : 0.42, true, {
+    cooldownKey: `enemy_variant_${config.name}`,
+    cooldownMs: 1500
+  });
+
+  if (config.name === "GOLIATH") {
+    flashWaveBanner('GOLIATH INBOUND', 1800);
   }
-
-  const rangedChance = currentWave >= 4 ? Math.min(0.10, 0.03 + currentWave * 0.008) : 0;
-  const exploderChance = currentWave >= 3 ? Math.min(0.14, 0.05 + currentWave * 0.010) : 0;
-  const crawlerChance = Math.min(0.22, 0.12 + currentWave * 0.012);
-  const runnerChance = Math.min(0.22, 0.08 + currentWave * 0.018);
-
-  let threshold = 0;
-
-  threshold += rangedChance;
-  if (r < threshold) return ENEMY_TYPES.RANGED;
-
-  threshold += exploderChance;
-  if (r < threshold) return ENEMY_TYPES.EXPLODER;
-
-  threshold += crawlerChance;
-  if (r < threshold) return ENEMY_TYPES.CRAWLER;
-
-  threshold += runnerChance;
-  if (r < threshold) return ENEMY_TYPES.RUNNER;
-
-  return ENEMY_TYPES.SHAMBLER;
 }
 
 function spawnZombie() {
@@ -362,7 +627,7 @@ function spawnZombie() {
   recycled.type = config.name;
   recycled.health = config.maxHealth;
   recycled.maxHealth = config.maxHealth;
-  recycled.speed = config.speed + (Math.random() - 0.5) * 0.4 + (currentWave * 0.1);
+  recycled.speed = config.speed + (Math.random() - 0.5) * 0.32 + getWaveSpeedBonus(config);
   recycled.damage = config.damage;
   recycled.attackRate = config.attackCooldown;
   recycled.aiTimer = Math.random() * 0.15;
@@ -373,9 +638,14 @@ function spawnZombie() {
   recycled.hitReactT = 0;
   recycled.hitReactDir = 1;
   recycled.dyingT = -1;
-  recycled.groundUpdateTimer = Math.random() * 0.1;
+  recycled.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
+  recycled.cachedGroundY = 0;
   recycled.alive = true;
   recycled.originalScale.copy(config.scale);
+  recycled.scoreReward = config.killScore || 50;
+  recycled.headshotReward = config.headshotScore || 100;
+  recycled.bossBounty = config.bossBounty || 0;
+  recycled.role = config.role || 'standard';
 
   if (recycled.mixer && ASSETS.enemies.zombie && ASSETS.enemies.zombie.animations.length > 0) {
     recycled.mixer.stopAllAction();
@@ -411,10 +681,7 @@ recycled.mesh.traverse(child => {
   actorManager.register(recycled);
   zombiesSpawnedSoFar++;
 
-  if (config.name === "GOLIATH") {
-    showStatusToast('GOLIATH ENTERED THE ARENA', '#dd00ff', 2200);
-    flashWaveBanner('GOLIATH INBOUND', 1800);
-  }
+  announceEnemyVariant(config);
 }
 
 const _eToP = new THREE.Vector3();
@@ -450,7 +717,10 @@ export function updateEnemies(dt) {
     if (p.life > 0) {
       p.mesh.position.addScaledVector(p.dir, dt * 14.0);
       p.life -= dt;
-      if (player.pos.distanceTo(p.mesh.position) < 1.0) {
+      const pdx = player.pos.x - p.mesh.position.x;
+      const pdy = player.pos.y - p.mesh.position.y;
+      const pdz = player.pos.z - p.mesh.position.z;
+      if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
         damagePlayer(20, p.mesh.position);
         p.life = 0; p.mesh.visible = false;
       }
@@ -466,7 +736,7 @@ export function updateEnemies(dt) {
     if (player.pos.distanceTo(p.mesh.position) < 1.6) {
       flashWaveBanner(p.type.name, 2500);
       showStatusToast(p.type.name, '#ffaa00', 1600);
-      playSound('hit', 1.0, false);
+      playWorldSound('powerup', 0.85, false, { cooldownKey: 'powerup_pickup', cooldownMs: 120 });
       if (p.type.name === 'MAX AMMO') giveMaxAmmo();
       if (p.type.name === 'INSTA-KILL') player.instaKillTimer = 15.0;
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
@@ -497,29 +767,48 @@ if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
 }
 
 // Update procedural visual counters and optional detailed visuals.
+// C5: avoid allocating/filtering/sorting every frame when GLB visuals are disabled.
 detailedVisualCount = 0;
 proceduralVisualCount = 0;
 
-const visualCandidates = activeEnemies.filter(e => e.alive && e.dyingT < 0);
+if (DETAILED_VISUAL_BUDGET > 0) {
+  _visualCandidates.length = 0;
 
-for (const e of visualCandidates) {
-  e._visualDist = Math.hypot(
-    player.pos.x - e.mesh.position.x,
-    player.pos.z - e.mesh.position.z
-  );
-  e._useFullVisual = false;
-}
+  for (let vi = 0; vi < activeEnemies.length; vi++) {
+    const candidate = activeEnemies[vi];
+    if (!candidate?.alive || candidate.dyingT >= 0) continue;
 
-visualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+    candidate._visualDist = Math.hypot(
+      player.pos.x - candidate.mesh.position.x,
+      player.pos.z - candidate.mesh.position.z
+    );
+    candidate._useFullVisual = false;
+    _visualCandidates.push(candidate);
+  }
 
-let detailedSlots = DETAILED_VISUAL_BUDGET;
+  _visualCandidates.sort((a, b) => a._visualDist - b._visualDist);
 
-for (const e of visualCandidates) {
-  if (detailedSlots > 0 && e._visualDist < DETAILED_VISUAL_DISTANCE) {
-    e._useFullVisual = true;
-    detailedSlots--;
-    detailedVisualCount++;
-  } else {
+  let detailedSlots = DETAILED_VISUAL_BUDGET;
+
+  for (const candidate of _visualCandidates) {
+    if (detailedSlots > 0 && candidate._visualDist < DETAILED_VISUAL_DISTANCE) {
+      candidate._useFullVisual = true;
+      detailedSlots--;
+      detailedVisualCount++;
+    } else {
+      proceduralVisualCount++;
+    }
+  }
+} else {
+  for (let vi = 0; vi < activeEnemies.length; vi++) {
+    const candidate = activeEnemies[vi];
+    if (!candidate?.alive || candidate.dyingT >= 0) continue;
+
+    candidate._visualDist = Math.hypot(
+      player.pos.x - candidate.mesh.position.x,
+      player.pos.z - candidate.mesh.position.z
+    );
+    candidate._useFullVisual = false;
     proceduralVisualCount++;
   }
 }
@@ -559,8 +848,7 @@ for (let i = activeEnemies.length - 1; i >= 0; i--) {
         activeEnemies.splice(i, 1);
         
         if (zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 0) {
-          currentWave++; flashWaveBanner("ROUND CLEAR", 2500);
-          setTimeout(() => { if (player.alive) startWave(currentWave); }, 5000);
+          completeCurrentWave();
         }
       }
       continue;
@@ -590,7 +878,7 @@ if (e.usingLod && e.lodMesh) {
   updateProceduralZombieMotion(
     e.lodMesh,
     visualAnimTime,
-    e.type === "RUNNER" ? 1.35 : (e.type === "CRAWLER" ? 0.65 : 1.0),
+    getEnemyVisualMotionSpeed(e),
     {
       hitReactT: e.hitReactT,
       hitReactDir: e.hitReactDir,
@@ -606,7 +894,7 @@ if (e.usingLod && e.lodMesh) {
 
     // ── CPU OPTIMIZATION: Only animate skeletons if close ──
 	if (e.mixer && e._useFullVisual) {
-	  e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : 1.0;
+	  e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : (e.type === "BRUTE" || e.type === "GOLIATH" ? 0.75 : 1.0);
 	  e.mixer.update(dt);
 	}
 	
@@ -632,7 +920,7 @@ if (e.usingLod && e.lodMesh) {
         const plankToRemove = targetBarricade.planks[targetBarricade.currentPlanks];
         targetBarricade.plankGroup.remove(plankToRemove);
         updateBarricadeRepairGhost(targetBarricade);
-        playSound('hit', 0.35, true); // Temporary wood-break proxy; avoids player hurt sound.
+        playWorldSound('woodBreak', 0.55, true, { cooldownKey: 'barricade_break', cooldownMs: 90 });
 
         // If all planks are broken, strip out the wall bounding parameters entirely so hordes pass through!
         if (targetBarricade.currentPlanks <= 0) {
@@ -680,25 +968,31 @@ if (e.usingLod && e.lodMesh) {
       e.mesh.position.z += moveZ * e.speed * dt;
 
       // ── HEIGHT SAMPLING (Look-Ahead Stair Snap) ──
-      let currentGroundY = 0;
-      // We push the look-ahead to 0.8 so they spot the next step slightly earlier
-      const aheadX = e.mesh.position.x + (moveX * 0.8);
-      const aheadZ = e.mesh.position.z + (moveZ * 0.8);
-      groundRay.near = 0;
-groundRay.far = 10;
+      // C5: raycasting every enemy every frame is expensive. Cache ground height
+      // briefly, sampling faster near the player / on vertical gaps for stairs.
+      let currentGroundY = Number.isFinite(e.cachedGroundY) ? e.cachedGroundY : 0;
+      e.groundUpdateTimer = Math.max(0, (e.groundUpdateTimer || 0) - dt);
 
-groundRay.ray.origin.set(
-    aheadX,
-    e.mesh.position.y + 2.0,
-    aheadZ
-);
+      const sampleDelay = (horizontalDist < 8 || trueVerticalDist > 1.8)
+        ? ENEMY_GROUND_SAMPLE_NEAR
+        : ENEMY_GROUND_SAMPLE_FAR;
 
-groundRay.ray.direction.copy(groundRayDir);
+      if (e.groundUpdateTimer <= 0) {
+        e.groundUpdateTimer = sampleDelay + Math.random() * 0.025;
 
-const hits = groundRay.intersectObjects(mapMeshes, false);
-      
-      if (hits.length > 0) { currentGroundY = hits[0].point.y; }
-      
+        // We push the look-ahead to 0.8 so they spot the next step slightly earlier
+        const aheadX = e.mesh.position.x + (moveX * 0.8);
+        const aheadZ = e.mesh.position.z + (moveZ * 0.8);
+        groundRay.near = 0;
+        groundRay.far = 10;
+        groundRay.ray.origin.set(aheadX, e.mesh.position.y + 2.0, aheadZ);
+        groundRay.ray.direction.copy(groundRayDir);
+
+        const hits = groundRay.intersectObjects(mapMeshes, false);
+        currentGroundY = hits.length > 0 ? hits[0].point.y : 0;
+        e.cachedGroundY = currentGroundY;
+      }
+
       // Snap up instantly to conquer stairs, drop smoothly if falling
       if (currentGroundY > e.mesh.position.y) {
         e.mesh.position.y = currentGroundY; 
@@ -727,7 +1021,7 @@ const hits = groundRay.intersectObjects(mapMeshes, false);
         p.dir.subVectors(player.pos, p.mesh.position).normalize();
         p.life = 2.5; p.mesh.visible = true;
         pool.index = (pool.index + 1) % MAX_PROJECTILES;
-        playSound('shoot_pistol', 0.3, true); 
+        playEnemySound('ranged', 0.32, true, { cooldownKey: 'ranged_enemy_shot', cooldownMs: 120 }); 
       } 
 else {
         damagePlayer(e.damage, e.mesh.position);
@@ -742,8 +1036,8 @@ else {
     campWarningTimer += dt;
     if (campWarningTimer > 4.0) { // 4 seconds of standing on a box
       damagePlayer(15, null);
-      import('./ui.js').then(({ flashWaveBanner }) => flashWaveBanner("WARNING: TOXIC SPORES! KEEP MOVING!", 1000));
-      playSound('hurt', 0.5, false);
+      flashWaveBanner("WARNING: TOXIC SPORES! KEEP MOVING!", 1000);
+      playEnemySound('spore', 0.45, false, { cooldownKey: 'toxic_spores', cooldownMs: 700 });
       campWarningTimer = 3.0; // Ticks damage every 1 second until they jump down
     }
   } else {
@@ -758,7 +1052,7 @@ export function killEnemy(e) {
   
   if (e.type === "EXPLODER") {
     addScreenShake(0.6); 
-    playSound('shoot_shotgun', 1.0, true); 
+    playEnemySound('exploder', 1.0, true, { cooldownKey: 'enemy_exploder', cooldownMs: 120 }); 
     
     const pool = explosionPool;
     const ex = pool.items[pool.index];

@@ -162,10 +162,122 @@ const NEON_DEPOT_POINTS = {
   ]
 };
 
+const PARKING_GARAGE_POINTS = {
+  BOX_SPAWNS: [
+    v(-34, -18),
+    v(34, 18),
+    v(-12, 12),
+    v(12, -12),
+    v(-30, 4),
+    v(30, -4)
+  ],
+
+  WALL_SPAWNS: [
+    v(-38, 24),
+    v(38, -24),
+    v(-14, 31),
+    v(14, -31),
+    v(-38, -6),
+    v(38, 6)
+  ],
+
+  AMMO_SPAWNS: [
+    v(-34, -8),
+    v(34, 8),
+    v(-10, 28),
+    v(10, -28),
+    v(-32, 2),
+    v(32, -2)
+  ],
+
+  HEALTH_SPAWNS: [
+    v(-36, 18),
+    v(36, -18),
+    v(-24, 30),
+    v(24, -30)
+  ],
+
+  UPGRADE_SPAWNS: [
+    v(-12, 0),
+    v(12, 0),
+    v(-8, 23),
+    v(8, -23)
+  ],
+
+  PERK_HEALTH_SPAWNS: [
+    v(-34, 28),
+    v(34, -28),
+    v(-8, -28)
+  ],
+
+  PERK_RELOAD_SPAWNS: [
+    v(-38, -22),
+    v(38, 22),
+    v(8, 28)
+  ]
+};
+
+const HOSPITAL_WING_POINTS = {
+  BOX_SPAWNS: [
+    v(-36, 12),
+    v(36, -12),
+    v(-18, -18),
+    v(18, 18),
+    v(-8, 2),
+    v(24, -2)
+  ],
+
+  WALL_SPAWNS: [
+    v(-39, 5),
+    v(-24, 24),
+    v(-24, -24),
+    v(39, -5),
+    v(24, 24),
+    v(24, -24)
+  ],
+
+  AMMO_SPAWNS: [
+    v(-32, -14),
+    v(-14, 2),
+    v(14, -2),
+    v(32, 14),
+    v(-16, 24),
+    v(16, -24)
+  ],
+
+  HEALTH_SPAWNS: [
+    v(-34, 24),
+    v(-34, -24),
+    v(34, 24),
+    v(34, -24)
+  ],
+
+  UPGRADE_SPAWNS: [
+    v(-30, 0),
+    v(30, 0),
+    v(-6, 22),
+    v(6, -22)
+  ],
+
+  PERK_HEALTH_SPAWNS: [
+    v(-38, 28),
+    v(30, -28),
+    v(-8, -22)
+  ],
+
+  PERK_RELOAD_SPAWNS: [
+    v(-30, 28),
+    v(38, -28),
+    v(8, 22)
+  ]
+};
+
 export const MAP_GAMEPLAY_POINTS = {
   [MAP_IDS.GRID_BUNKER]: GRID_BUNKER_POINTS,
   [MAP_IDS.INDUSTRIAL_YARD]: INDUSTRIAL_YARD_POINTS,
-  [MAP_IDS.NEON_DEPOT]: NEON_DEPOT_POINTS
+  [MAP_IDS.NEON_DEPOT]: NEON_DEPOT_POINTS,
+  [MAP_IDS.PARKING_GARAGE]: PARKING_GARAGE_POINTS,
+  [MAP_IDS.HOSPITAL_WING]: HOSPITAL_WING_POINTS
 };
 
 export function getGameplayPointsForMap(mapId) {
@@ -234,6 +346,45 @@ export function getGameplayPointGroups(mapId) {
       height: 0.14
     }
   ];
+}
+
+
+export const MAP_GAMEPLAY_FLOW = Object.freeze({
+  [MAP_IDS.GRID_BUNKER]: {
+    role: 'Classic survival baseline',
+    shopFlow: 'central + corners',
+    pressure: 'medium',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.INDUSTRIAL_YARD]: {
+    role: 'Open movement / long lanes',
+    shopFlow: 'outer lane rotation',
+    pressure: 'medium+',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.NEON_DEPOT]: {
+    role: 'Readable neon routes',
+    shopFlow: 'cross-lane rotation',
+    pressure: 'medium+',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.PARKING_GARAGE]: {
+    role: 'Cover rhythm / corner pressure',
+    shopFlow: 'pillars + gate routes',
+    pressure: 'high',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.HOSPITAL_WING]: {
+    role: 'Horror corridors / quarantine pressure',
+    shopFlow: 'corridor + ward rooms',
+    pressure: 'high',
+    recommendedDifficulty: 'normal'
+  }
+});
+
+export function getGameplayFlowForMap(mapId) {
+  const normalizedId = normalizeMapId(mapId);
+  return MAP_GAMEPLAY_FLOW[normalizedId] || MAP_GAMEPLAY_FLOW[MAP_IDS.GRID_BUNKER];
 }
 
 // Backward-compatible default exports for older code.

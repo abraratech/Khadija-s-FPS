@@ -1,15 +1,21 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
-import { player, updatePlayer, EYE_H } from './player.js';
+import { player, updatePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
-import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap } from './ui.js';
+import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops } from './weapons.js';
-import { initAudio } from './audio.js';
+import { initAudio, setMasterVolume, getMasterVolumePercent } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 
 const canvas = document.getElementById('c');
 renderer.info.autoReset = false;
 let usePostProcessing = true;
+const _minimapCamDir = new THREE.Vector3();
+
+function setLockHintVisible(visible) {
+  const lockHint = document.getElementById('lock-hint');
+  if (lockHint) lockHint.style.display = visible ? 'block' : 'none';
+}
 
 function syncGraphicsQualityControls() {
   const currentValue = getGraphicsQuality();
@@ -54,6 +60,185 @@ function initGraphicsQualityControls() {
   syncGraphicsQualityControls();
 }
 
+let performanceStatsEnabled = localStorage.getItem('ka_performance_stats') === 'on';
+
+function setPerformanceStatsEnabled(enabled) {
+  performanceStatsEnabled = enabled === true;
+
+  try {
+    localStorage.setItem('ka_performance_stats', performanceStatsEnabled ? 'on' : 'off');
+  } catch {
+    // Ignore storage failures in private browsing / restricted modes.
+  }
+
+  const panel = document.getElementById('performance-stats-panel');
+  if (panel) {
+    panel.style.display = performanceStatsEnabled ? 'block' : 'none';
+  }
+
+  return performanceStatsEnabled;
+}
+
+function syncCoreSettingsControls() {
+  const volumePercent = getMasterVolumePercent();
+  const damageValue = getDamageIndicatorsEnabled() ? 'on' : 'off';
+  const perfValue = performanceStatsEnabled ? 'on' : 'off';
+  const mouseSensitivity = getMouseSensitivityPercent();
+  const baseFov = getBaseFOV();
+  const adsFov = getADSFOV();
+
+  [
+    document.getElementById('master-volume-slider'),
+    document.getElementById('pause-master-volume-slider')
+  ].forEach((slider) => {
+    if (slider && slider.value !== String(volumePercent)) {
+      slider.value = String(volumePercent);
+    }
+  });
+
+  [
+    document.getElementById('master-volume-current'),
+    document.getElementById('pause-master-volume-current')
+  ].forEach((label) => {
+    if (label) label.textContent = `${volumePercent}%`;
+  });
+
+  [
+    document.getElementById('mouse-sensitivity-slider'),
+    document.getElementById('pause-mouse-sensitivity-slider')
+  ].forEach((slider) => {
+    if (slider && slider.value !== String(mouseSensitivity)) {
+      slider.value = String(mouseSensitivity);
+    }
+  });
+
+  [
+    document.getElementById('mouse-sensitivity-current'),
+    document.getElementById('pause-mouse-sensitivity-current')
+  ].forEach((label) => {
+    if (label) label.textContent = `${mouseSensitivity}%`;
+  });
+
+  [
+    document.getElementById('fov-slider'),
+    document.getElementById('pause-fov-slider')
+  ].forEach((slider) => {
+    if (slider && slider.value !== String(baseFov)) {
+      slider.value = String(baseFov);
+    }
+  });
+
+  [
+    document.getElementById('fov-current'),
+    document.getElementById('pause-fov-current')
+  ].forEach((label) => {
+    if (label) label.textContent = `${baseFov}°`;
+  });
+
+  const adsLabel = document.getElementById('pause-ads-fov-current');
+  if (adsLabel) adsLabel.textContent = `${adsFov}° ADS`;
+
+  [
+    document.getElementById('damage-indicators-select'),
+    document.getElementById('pause-damage-indicators-select')
+  ].forEach((select) => {
+    if (select && select.value !== damageValue) {
+      select.value = damageValue;
+    }
+  });
+
+  [
+    document.getElementById('performance-stats-select'),
+    document.getElementById('pause-performance-stats-select')
+  ].forEach((select) => {
+    if (select && select.value !== perfValue) {
+      select.value = perfValue;
+    }
+  });
+}
+
+function bindCoreSettingsControls() {
+  const volumeSliders = [
+    document.getElementById('master-volume-slider'),
+    document.getElementById('pause-master-volume-slider')
+  ];
+
+  volumeSliders.forEach((slider) => {
+    if (!slider) return;
+
+    slider.addEventListener('input', () => {
+      setMasterVolume(Number(slider.value));
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('mouse-sensitivity-slider'),
+    document.getElementById('pause-mouse-sensitivity-slider')
+  ].forEach((slider) => {
+    if (!slider) return;
+
+    slider.addEventListener('input', () => {
+      setMouseSensitivityPercent(Number(slider.value));
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('fov-slider'),
+    document.getElementById('pause-fov-slider')
+  ].forEach((slider) => {
+    if (!slider) return;
+
+    slider.addEventListener('input', () => {
+      setBaseFOV(Number(slider.value));
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('damage-indicators-select'),
+    document.getElementById('pause-damage-indicators-select')
+  ].forEach((select) => {
+    if (!select) return;
+
+    select.addEventListener('change', () => {
+      setDamageIndicatorsEnabled(select.value !== 'off');
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('performance-stats-select'),
+    document.getElementById('pause-performance-stats-select')
+  ].forEach((select) => {
+    if (!select) return;
+
+    select.addEventListener('change', () => {
+      setPerformanceStatsEnabled(select.value === 'on');
+      syncCoreSettingsControls();
+    });
+  });
+
+  setPerformanceStatsEnabled(performanceStatsEnabled);
+  syncCoreSettingsControls();
+}
+
+function updatePerformanceStatsPanel(stats) {
+  if (!performanceStatsEnabled) return;
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+
+  setText('perf-fps', stats.fps);
+  setText('perf-frame-ms', `${stats.frameMs} ms`);
+  setText('perf-worst-ms', `${stats.worstFrameMs} ms`);
+  setText('perf-enemies', stats.enemies);
+  setText('perf-draw-calls', stats.drawCalls);
+}
+
 function updatePauseSummary() {
   const mapName = currentMapMeta?.name || 'Grid Bunker';
 
@@ -62,6 +247,9 @@ function updatePauseSummary() {
 
   const pauseGraphicsLabel = document.getElementById('pause-graphics-label');
   if (pauseGraphicsLabel) pauseGraphicsLabel.textContent = getGraphicsQualityLabel().toUpperCase();
+
+  const pauseFovLabel = document.getElementById('pause-fov-label');
+  if (pauseFovLabel) pauseFovLabel.textContent = `${getBaseFOV()}° / ADS ${getADSFOV()}°`;
 
   const pauseWaveLabel = document.getElementById('pause-wave-label');
   if (pauseWaveLabel) pauseWaveLabel.textContent = String(currentWave);
@@ -77,7 +265,9 @@ function updatePauseSummary() {
 }
 
 function showPauseScreen() {
+  setLockHintVisible(false);
   syncGraphicsQualityControls();
+  syncCoreSettingsControls();
   updatePauseSummary();
 
   const pauseScreen = document.getElementById('pause-screen');
@@ -107,6 +297,7 @@ function updateDeathStats() {
 }
 
 function showDeathScreen() {
+  setLockHintVisible(false);
   updateDeathStats();
 
   const deathScreen = document.getElementById('death-screen');
@@ -119,7 +310,7 @@ function hideDeathScreen() {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'F4') {
+  if (DEV_MODE && e.code === 'F4') {
     e.preventDefault();
     usePostProcessing = !usePostProcessing;
     console.log("Post Processing:", usePostProcessing ? "ON" : "OFF");
@@ -135,7 +326,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 initGraphicsQualityControls();
-console.log(`Graphics quality loaded: ${getGraphicsQualityLabel()} | Press F6 to cycle.`);
+bindCoreSettingsControls();
+console.log(`Khadija's Arena static ES-module demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle.`);
 
 function renderGameFrame() {
   renderer.info.reset();
@@ -148,9 +340,10 @@ function renderGameFrame() {
 }
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// ════════════ DEVELOPER DEBUG MODE ════════════
-export const DEV_MODE = false; 
-// ══════════════════════════════════════════════
+// ════════════ DEMO SAFETY ════════════
+// Keep disabled for public/demo builds. When true, testing cheats add points and enable the nuke hotkey.
+export const DEV_MODE = false;
+// ══════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════
 const keys = {};
@@ -205,29 +398,42 @@ window.addEventListener('contextmenu', e => e.preventDefault());
 
 document.addEventListener('pointerlockchange', () => {
   if (isMobile) return;
+
   locked = document.pointerLockElement === canvas;
-  document.getElementById('lock-hint').style.display = locked ? 'none' : 'block';
-  
-  if (!locked) { 
-    player.isADS = false; player.isSprinting = false; keys['MousedownLeft'] = false; 
-    
-    if (gs === 'playing' && player.alive) {
-      gs = 'paused';
-      showPauseScreen();
-    }
+
+  if (locked) {
+    setLockHintVisible(false);
+    return;
   }
+
+  player.isADS = false;
+  player.isSprinting = false;
+  keys['MousedownLeft'] = false;
+
+  if (gs === 'playing' && player.alive) {
+    gs = 'paused';
+    showPauseScreen();
+    return;
+  }
+
+  // Only show the click hint during real gameplay, not over pause/menu/death screens.
+  setLockHintVisible(gs === 'playing' && player.alive);
 });
 
 // ── PAUSE MENU BUTTON LISTENERS ──
 document.getElementById('resume-btn').addEventListener('click', () => {
-	  resetFrameStats();
+  resetFrameStats();
+  setLockHintVisible(false);
   hidePauseScreen();
   gs = 'playing';
-  if (!isMobile) canvas.requestPointerLock();
+
+  if (!isMobile) {
+    canvas.requestPointerLock();
+  }
 });
 
 document.getElementById('quit-btn').addEventListener('click', () => {
-  window.location.reload(); 
+  returnToMenu('pause');
 });
 
 canvas.addEventListener('click', () => { 
@@ -305,6 +511,245 @@ let highScore = localStorage.getItem('fps_hi_score') || 0;
 let highWave = localStorage.getItem('fps_hi_wave') || 1;
 export let difficultyMultiplier = 1.0;
 
+let deathScreenTimer = null;
+let gameLoopStarted = false;
+let runTransitionInProgress = false;
+
+function ensureGameLoopStarted() {
+  if (gameLoopStarted) return;
+  gameLoopStarted = true;
+  requestAnimationFrame(tick);
+}
+
+function clearDeathScreenTimer() {
+  if (deathScreenTimer) {
+    clearTimeout(deathScreenTimer);
+    deathScreenTimer = null;
+  }
+}
+
+function scheduleDeathScreen() {
+  clearDeathScreenTimer();
+  deathScreenTimer = setTimeout(() => {
+    deathScreenTimer = null;
+    if (gs === 'dead' && !player.alive) {
+      showDeathScreen();
+    }
+  }, 700);
+}
+
+function updateMenuBestStats() {
+  const hiScoreEl = document.getElementById('hi-score');
+  if (hiScoreEl) hiScoreEl.textContent = highScore;
+
+  const hiWaveEl = document.getElementById('hi-wave');
+  if (hiWaveEl) hiWaveEl.textContent = highWave;
+}
+
+function saveRunRecords() {
+  const score = Number(player.score || 0);
+  const wave = Number(currentWave || 1);
+
+  if (score > Number(highScore || 0)) {
+    highScore = score;
+    localStorage.setItem('fps_hi_score', highScore);
+  }
+
+  if (wave > Number(highWave || 1)) {
+    highWave = wave;
+    localStorage.setItem('fps_hi_wave', highWave);
+  }
+
+  updateMenuBestStats();
+}
+
+function clearInputState() {
+  Object.keys(keys).forEach((key) => {
+    keys[key] = false;
+  });
+
+  mdx = 0;
+  mdy = 0;
+  pendingShot = false;
+  player.isADS = false;
+  player.isSprinting = false;
+}
+
+function removeActiveWeaponMesh() {
+  const activeW = getActiveWeapon();
+  if (activeW?.meshGroup?.parent) {
+    camera.remove(activeW.meshGroup);
+  }
+}
+
+function resetPlayerRunState() {
+  clearInputState();
+
+  player.vel.set(0, 0, 0);
+  player.yaw = Math.random() * Math.PI * 2;
+  player.pitch = 0;
+  player.onGround = false;
+
+  player.health = 100;
+  player.maxHealth = 100;
+  player.reloadMult = 1.0;
+
+  player.kills = 0;
+  player.score = 0;
+  player.instaKillTimer = 0;
+  player.doublePointsTimer = 0;
+
+  player.alive = true;
+}
+
+function placePlayerAtRandomSpawn() {
+  const playerStartPool = playerSpawnPoints.length > 0 ? playerSpawnPoints : spawnPoints;
+
+  if (playerStartPool && playerStartPool.length > 0) {
+    const sp = playerStartPool[Math.floor(Math.random() * playerStartPool.length)];
+    player.pos.set(sp.x, EYE_H, sp.z);
+  } else {
+    player.pos.set(0, EYE_H, 15);
+  }
+
+  camera.position.copy(player.pos);
+}
+
+function applyDevModeScore() {
+  if (!DEV_MODE) return;
+
+  player.score = 999999;
+  console.log("DEV MODE ACTIVE: Infinite Points & Nuke Hotkey ('0') Enabled!");
+}
+
+function syncHudFromPlayer() {
+  const active = getActiveWeapon();
+
+  updateHealthHUD(player.health, player.maxHealth);
+  if (active) updateAmmoHUD(active.ammo, active.reserve);
+  updateKillsHUD(player.kills);
+  updateScoreHUD(player.score);
+}
+
+function setGameChromeVisible(isPlaying) {
+  const menu = document.getElementById('menu');
+  const hud = document.getElementById('hud');
+  const mobileUI = document.getElementById('mobile-ui');
+
+  if (menu) menu.style.display = isPlaying ? 'none' : 'flex';
+  if (hud) hud.style.display = isPlaying ? 'block' : 'none';
+
+  if (mobileUI) {
+    mobileUI.style.display = isPlaying && isMobile ? 'block' : 'none';
+  }
+}
+
+function showMenuScreen(name = 'home') {
+  const screenNames = ['home', 'map', 'difficulty', 'settings'];
+  const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
+  const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
+  const activeIndex = Math.max(0, screenNames.indexOf(name));
+
+  screens.forEach((screen) => {
+    screen.classList.toggle('active', screen.dataset.menuScreen === name);
+  });
+
+  steps.forEach((step, index) => {
+    step.classList.toggle('active', step.dataset.stepDot === name);
+    step.classList.toggle('done', index < activeIndex);
+  });
+}
+
+async function enterGameplayPresentation() {
+  if (isMobile) {
+    try {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+
+      if (screen.orientation && screen.orientation.lock) {
+        await screen.orientation.lock('landscape');
+      }
+    } catch (err) {
+      console.warn("Fullscreen or orientation lock failed:", err);
+    }
+  } else {
+    canvas.requestPointerLock();
+  }
+}
+
+async function beginRun({ fromRespawn = false } = {}) {
+  if (runTransitionInProgress) return;
+
+  runTransitionInProgress = true;
+
+  try {
+    clearDeathScreenTimer();
+    clearInputState();
+    resetCombatStatusHUD();
+    hidePauseScreen();
+    hideDeathScreen();
+    setLockHintVisible(false);
+    resetFrameStats();
+
+    setGameChromeVisible(true);
+    resetPlayerRunState();
+
+    const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
+    buildMap(chosenMap);
+
+    difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
+
+    placePlayerAtRandomSpawn();
+
+    scene.add(camera);
+    initAudio();
+
+    buildGun();
+    resetGunState();
+    initEnemies();
+    clearAllDecals();
+
+    applyDevModeScore();
+    syncHudFromPlayer();
+
+    gs = 'playing';
+    showStatusToast('SURVIVE THE WAVE · E INTERACT · R RELOAD · Q SWITCH', '#00d4ff', 3200);
+    await enterGameplayPresentation();
+    ensureGameLoopStarted();
+
+    if (fromRespawn) {
+      console.log("Arena restarted.");
+    }
+  } finally {
+    runTransitionInProgress = false;
+  }
+}
+
+function returnToMenu(source = 'pause') {
+  saveRunRecords();
+  clearDeathScreenTimer();
+  clearInputState();
+  removeActiveWeaponMesh();
+
+  gs = 'menu';
+  player.alive = false;
+
+  if (!isMobile && document.pointerLockElement) {
+    document.exitPointerLock();
+  }
+
+  resetCombatStatusHUD();
+  hidePauseScreen();
+  hideDeathScreen();
+  setLockHintVisible(false);
+  setGameChromeVisible(false);
+  showMenuScreen('home');
+
+  console.log(`Returned to menu from ${source}.`);
+}
+
+
 // ── MAIN MENU SIZES SLIDER LOGIC ──
 const sizeSlider = document.getElementById('btn-size-slider');
 const savedSize = localStorage.getItem('mobile_btn_size') || '60';
@@ -321,8 +766,7 @@ if (sizeSlider) {
   });
 }
 
-document.getElementById('hi-score').textContent = highScore;
-document.getElementById('hi-wave').textContent = highWave;
+updateMenuBestStats();
 
 function tick(t = 0) {
   requestAnimationFrame(tick);
@@ -394,26 +838,18 @@ const effectsMs = performance.now() - mark;
 
     if (!player.alive && gs === 'playing') {
     gs = 'dead';
-
-    if (player.score > highScore) { 
-      highScore = player.score; 
-      localStorage.setItem('fps_hi_score', highScore); 
-    }
-
-    if (currentWave > highWave) { 
-      highWave = currentWave; 
-      localStorage.setItem('fps_hi_wave', highWave); 
-    }
-
+    clearInputState();
+    saveRunRecords();
+    resetCombatStatusHUD();
     updateDeathStats();
-    setTimeout(showDeathScreen, 700);
+    scheduleDeathScreen();
   }
   
 mark = performance.now();
 
-const camDir = new THREE.Vector3();
-camera.getWorldDirection(camDir);
-updateMinimap(player.pos, camDir, getActiveEnemies());
+_minimapCamDir.set(0, 0, -1);
+camera.getWorldDirection(_minimapCamDir);
+updateMinimap(player.pos, _minimapCamDir, getActiveEnemies());
 applyScreenShake(dt); 
 
 const minimapMs = performance.now() - mark;
@@ -425,7 +861,8 @@ renderGameFrame();
 const renderMs = performance.now() - renderStart;
 const frameMs = performance.now() - frameStart;
 
-devConsole.update({
+if (typeof devConsole !== 'undefined' && devConsole?.update) {
+  devConsole.update({
     fps: Math.round(smoothFps),
 	instantFps: Math.round(instantFps),
 	frameMs: frameMs.toFixed(2),
@@ -451,137 +888,30 @@ devConsole.update({
     triangles: renderer.info.render.triangles,
     gpuGeometries: renderer.info.memory.geometries,
     gpuTextures: renderer.info.memory.textures
+  });
+}
+
+updatePerformanceStatsPanel({
+  fps: Math.round(smoothFps),
+  frameMs: frameMs.toFixed(2),
+  worstFrameMs: worstFrameMs.toFixed(2),
+  enemies: getActiveEnemies().length,
+  drawCalls: renderer.info.render.calls
 });
 }
 
 // ════════════ INIT / RESPAWN ════════════
 
-document.getElementById('start-btn').addEventListener('click', async () => {
-	  resetFrameStats();
-  document.getElementById('menu').style.display = 'none';
-  document.getElementById('hud').style.display = 'block';
-  
-  // ── PROCEDURAL MAP GENERATION (Synchronous) ──
-  const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
-  buildMap(chosenMap);
-  
-  difficultyMultiplier = parseFloat(document.getElementById('diff-select').value) || 1.0;
-  
-  const playerStartPool = playerSpawnPoints.length > 0 ? playerSpawnPoints : spawnPoints;
-
-  if (playerStartPool && playerStartPool.length > 0) {
-    const sp = playerStartPool[Math.floor(Math.random() * playerStartPool.length)];
-    player.pos.set(sp.x, EYE_H, sp.z);
-  } else {
-    player.pos.set(0, EYE_H, 15);
-  }
-
-  if (isMobile) {
-    gs = 'playing'; 
-    try {
-      if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
-      if (screen.orientation && screen.orientation.lock) {
-        await screen.orientation.lock('landscape');
-      }
-    } catch (err) {
-      console.warn("Fullscreen or orientation lock failed:", err);
-    }
-  } else {
-    canvas.requestPointerLock();
-  }
-  
-  scene.add(camera); 
-  initAudio();
-  
-	buildGun(); 
-	resetGunState();
-
-	initEnemies();
-	clearAllDecals();
-
-	if (DEV_MODE) {
-    player.score = 999999;
-    console.log("DEV MODE ACTIVE: Infinite Points & Nuke Hotkey ('0') Enabled!");
-  }
-  
-  updateHealthHUD(player.health); 
-  updateAmmoHUD(getActiveWeapon().ammo, getActiveWeapon().reserve); 
-  updateKillsHUD(player.kills);
-  updateScoreHUD(player.score);
-  
-  gs = 'playing'; 
-  requestAnimationFrame(tick); 
+document.getElementById('start-btn').addEventListener('click', () => {
+  beginRun();
 });
 
-async function respawnPlayer() {
-	  resetFrameStats();
-  const activeW = getActiveWeapon();
-  if (activeW && activeW.meshGroup) {
-    camera.remove(activeW.meshGroup);
-  }
+document.getElementById('respawn-btn').addEventListener('click', () => {
+  beginRun({ fromRespawn: true });
+});
 
-  // ── PROCEDURAL MAP GENERATION (Synchronous) ──
-  const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
-  buildMap(chosenMap);
-  
-  const playerStartPool = playerSpawnPoints.length > 0 ? playerSpawnPoints : spawnPoints;
-
-  if (playerStartPool && playerStartPool.length > 0) {
-    const sp = playerStartPool[Math.floor(Math.random() * playerStartPool.length)];
-    player.pos.set(sp.x, EYE_H, sp.z);
-  } else {
-    player.pos.set(0, EYE_H, 15); 
-  }
-  
-  player.vel.set(0, 0, 0); 
-  player.yaw = Math.random() * Math.PI * 2; 
-  player.health = 100; 
-  player.maxHealth = 100;   
-  player.reloadMult = 1.0;  
-  player.kills = 0; 
-  player.score = 0; 
-  player.instaKillTimer = 0;
-  player.doublePointsTimer = 0;
-  player.alive = true; 
-  
-  buildGun(); 
-  resetGunState();
-  initEnemies(); 
-  clearAllDecals();
-  
-  if (DEV_MODE) player.score = 999999;
-  
-  updateHealthHUD(player.health, player.maxHealth); 
-  updateAmmoHUD(getActiveWeapon().ammo, getActiveWeapon().reserve); 
-  updateKillsHUD(player.kills);
-  updateScoreHUD(player.score); 
-  
-  document.getElementById('damage-flash').style.opacity = '0';
-  hideDeathScreen();
-  
-  if (isMobile) {
-    try {
-      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen();
-      }
-      if (screen.orientation && screen.orientation.lock) {
-        await screen.orientation.lock('landscape');
-      }
-    } catch (err) {
-      console.warn("Fullscreen/Orientation lock failed on respawn:", err);
-    }
-  } else {
-    canvas.requestPointerLock();
-  }
-  
-  gs = 'playing'; 
-}
-
-document.getElementById('respawn-btn').addEventListener('click', respawnPlayer);
 document.getElementById('death-quit-btn').addEventListener('click', () => {
-  window.location.reload(); 
+  returnToMenu('death');
 });
 
 // ════════════ MOBILE TOUCH ENGINE ════════════
@@ -685,8 +1015,9 @@ if (isMobile) {
         const dy = touch.clientY - lastLook.y;
         lastLook = { x: touch.clientX, y: touch.clientY };
 
-        player.yaw -= dx * 0.007; 
-        player.pitch -= dy * 0.007;
+        const touchSensitivity = 0.007 * getMouseSensitivityMultiplier();
+        player.yaw -= dx * touchSensitivity; 
+        player.pitch -= dy * touchSensitivity;
         player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
       }
     }

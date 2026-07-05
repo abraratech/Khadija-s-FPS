@@ -2,18 +2,138 @@
 import * as THREE from 'three';
 import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId, updateBarricadeRepairGhost } from './map.js';
 import { player } from './player.js';
-import { activeEnemies, killEnemy } from './enemy.js';
-import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast } from './ui.js';
-import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke } from './particles.js'; 
-import { playSound } from './audio.js';
+import { activeEnemies, killEnemy, getEnemyPointReward } from './enemy.js';
+import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast, updateCombatStatusHUD, showShopFeedback, updateShopFeedbackProgress, hideShopFeedback } from './ui.js';
+import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
+import { playWeaponSound, playWorldSound, playUISound } from './audio.js';
 import { ASSETS } from './main.js';
 import { getGameplayPointsForMap } from './maps/gameplay_points.js';
 
 const ray = new THREE.Raycaster();
+const _shotTargets = [];
+const _rayHits = [];
+const _centerShotOffset = new THREE.Vector2(0, 0);
+const _pelletShotOffset = new THREE.Vector2();
+const _surfaceNormal = new THREE.Vector3();
+const _surfaceNormalMatrix = new THREE.Matrix3();
 export let muzzleT = 0;
 let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
+
+const MYSTERY_BOX_SPIN_TIME = 4.0;
+const MYSTERY_BOX_READY_TIME = 12.0;
+const MYSTERY_BOX_FEEDBACK_RANGE = 3.15;
+const INTERACTION_COOLDOWN_MS = 280;
+let lastInteractionUseAt = 0;
+
+function isPlayerNearShop(shop, range = MYSTERY_BOX_FEEDBACK_RANGE) {
+  if (!shop?.pos || !player?.pos) return false;
+  return flatDistance(player.pos, shop.pos) <= range;
+}
+
+function isMysteryFeedbackCurrentlyShowing() {
+  const title = document.getElementById('shop-feedback-title')?.textContent || '';
+  return title === 'MYSTERY BOX' ||
+    title === 'MYSTERY BOX READY' ||
+    title === 'MYSTERY BOX CLOSED' ||
+    title === 'MYSTERY BOX MOVED' ||
+    title === 'TEDDY BEAR';
+}
+
+function hideMysteryFeedbackForShop(shop) {
+  if (shop) shop._mysteryFeedbackVisible = false;
+
+  // Do not accidentally hide normal shop messages, trap messages, or purchase feedback.
+  if (isMysteryFeedbackCurrentlyShowing()) {
+    hideShopFeedback();
+  }
+}
+
+function showMysteryFeedbackIfNear(shop, payload) {
+  if (!isPlayerNearShop(shop)) {
+    hideMysteryFeedbackForShop(shop);
+    return false;
+  }
+
+  shop._mysteryFeedbackVisible = true;
+  showShopFeedback(payload);
+  return true;
+}
+
+function updateMysteryFeedbackIfNear(shop, progress, body, fallbackPayload) {
+  if (!isPlayerNearShop(shop)) {
+    hideMysteryFeedbackForShop(shop);
+    return false;
+  }
+
+  if (!shop._mysteryFeedbackVisible || !isMysteryFeedbackCurrentlyShowing()) {
+    showMysteryFeedbackIfNear(shop, fallbackPayload);
+  } else {
+    updateShopFeedbackProgress(progress, body);
+  }
+
+  return true;
+}
+
+function shouldHandleInteraction(pressed, cooldownMs = INTERACTION_COOLDOWN_MS) {
+  if (!pressed) return false;
+  const now = performance.now();
+  if (now - lastInteractionUseAt < cooldownMs) return false;
+  lastInteractionUseAt = now;
+  return true;
+}
+
+function clearMysteryReadyWeapon(shop, options = {}) {
+  if (!shop || shop.type !== 'MYSTERY_BOX') return;
+
+  const previousKey = shop.finalWeapon?.key || null;
+
+  if (options.rememberUnclaimed && previousKey) {
+    shop.lastUnclaimedWeaponKey = previousKey;
+  } else if (options.clearUnclaimed) {
+    shop.lastUnclaimedWeaponKey = null;
+  }
+
+  if (shop.spinMesh) {
+    shop.spinMesh.clear();
+  }
+
+  shop.finalWeapon = null;
+  shop.timer = 0;
+  shop.cycleTimer = 0;
+  shop.state = 'IDLE';
+  hideMysteryFeedbackForShop(shop);
+}
+
+function showNotEnoughPoints(cost, label = 'Purchase') {
+  const have = Math.max(0, player.score || 0);
+  const need = Math.max(0, cost - have);
+  setInteractionPrompt(true, `NOT ENOUGH POINTS! NEED ${need} MORE`);
+  showStatusToast(`NEED ${need} MORE PTS`, '#ffaa00', 1100);
+  showShopFeedback({
+    title: 'NOT ENOUGH POINTS',
+    body: `${label}: ${cost} required · You have ${have}`,
+    tone: 'warning',
+    durationMs: 2200
+  });
+}
+
+function showBlockedShopFeedback(title, body) {
+  showStatusToast(title, '#ffaa00', 1000);
+  showShopFeedback({ title, body, tone: 'warning', durationMs: 2100 });
+}
+
+function describeShopSignal(pos) {
+  if (!pos || !player?.pos) return 'New box signal detected nearby.';
+  const dx = pos.x - player.pos.x;
+  const dz = pos.z - player.pos.z;
+  const distance = Math.max(1, Math.round(Math.sqrt(dx * dx + dz * dz)));
+  const eastWest = Math.abs(dx) > 6 ? (dx > 0 ? 'east' : 'west') : '';
+  const northSouth = Math.abs(dz) > 6 ? (dz > 0 ? 'south' : 'north') : '';
+  const direction = [northSouth, eastWest].filter(Boolean).join('-') || 'nearby';
+  return `New signal ${direction.toUpperCase()} · approx. ${distance}m away`;
+}
 
 // ── ECONOMY / INTERACTION TUNING ──
 // Centralized so future balancing does not require hunting magic numbers.
@@ -23,18 +143,18 @@ const ECONOMY = Object.freeze({
   MYSTERY_BOX_COST: 950,
 
   WALL_WEAPON_COSTS: {
-    SMG: 1200,
-    SHOTGUN: 1500
+    SMG: 1150,
+    SHOTGUN: 1650
   },
 
   WALL_AMMO_COSTS: {
-    SMG: 450,
-    SHOTGUN: 500
+    SMG: 425,
+    SHOTGUN: 575
   },
 
-  AMMO_COST: 500,
+  AMMO_COST: 525,
   HEALTH_COST: 400,
-  UPGRADE_COST: 4500,
+  UPGRADE_COST: 4200,
   PERK_HEALTH_COST: 2500,
   PERK_RELOAD_COST: 3000,
 
@@ -56,6 +176,12 @@ const SHOP_WALL_CLEARANCE = 0.95;
 const SHOP_MIN_SHOP_DISTANCE = 3.0;
 const SHOP_MIN_PLAYER_DISTANCE = 7.0;
 const SHOP_MIN_FEATURE_DISTANCE = 2.25;
+
+// C4.5: current demo build is single-player only. One-time perks are hidden after use,
+// while wall buys stay active as ammo refill boards for the owned weapon.
+const SINGLE_PLAYER_SHOP_CLEANUP = true;
+const WALL_BUY_MOUNT_OFFSET = 0.18;
+const WALL_BUY_MIN_WALL_LENGTH = 2.8;
 
 function flatDistance(a, b) {
   if (!a || !b) return Infinity;
@@ -179,54 +305,239 @@ function pickSafeShopSpawn(shop, spawnList) {
   return new THREE.Vector3(0, 0.4, 0);
 }
 
-// ── UNIVERSAL SHOP RELOCATOR ──
-function relocateShop(shop, spawnList) {
-  const nextPos = pickSafeShopSpawn(shop, spawnList);
+function getWallWidth(wall) {
+  return Math.abs((wall?.maxX ?? 0) - (wall?.minX ?? 0));
+}
 
+function getWallDepth(wall) {
+  return Math.abs((wall?.maxZ ?? 0) - (wall?.minZ ?? 0));
+}
+
+function clampToWallSpan(value, min, max, margin = 1.35) {
+  if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max)) return 0;
+  if (max - min <= margin * 2) return (min + max) / 2;
+  return Math.max(min + margin, Math.min(max - margin, value));
+}
+
+function isWallBuyWallCandidate(wall) {
+  if (!wall) return false;
+  if (wall.isBarricade || wall.isDoor || wall.ref?.isDoor) return false;
+  if (!Number.isFinite(wall.minX) || !Number.isFinite(wall.maxX) || !Number.isFinite(wall.minZ) || !Number.isFinite(wall.maxZ)) return false;
+
+  const length = Math.max(getWallWidth(wall), getWallDepth(wall));
+  return length >= WALL_BUY_MIN_WALL_LENGTH;
+}
+
+function distancePointToWallBounds(pos, wall) {
+  const x = Math.max(wall.minX, Math.min(wall.maxX, pos.x));
+  const z = Math.max(wall.minZ, Math.min(wall.maxZ, pos.z));
+  return Math.hypot(pos.x - x, pos.z - z);
+}
+
+function makeWallBuyPlacementFromWall(candidate, wall) {
+  // C4.5 hotfix: grid maps use many square wall blocks, so choosing only by
+  // "wide vs deep" can mount one board on the wrong face and hide it from view.
+  // Pick the closest face to the curated wall-buy point instead.
+  const xOnWall = clampToWallSpan(candidate.x, wall.minX, wall.maxX);
+  const zOnWall = clampToWallSpan(candidate.z, wall.minZ, wall.maxZ);
+
+  const faceOptions = [
+    {
+      dist: Math.abs(candidate.z - wall.maxZ),
+      pos: new THREE.Vector3(xOnWall, 0.4, wall.maxZ + WALL_BUY_MOUNT_OFFSET),
+      rotationY: 0
+    },
+    {
+      dist: Math.abs(candidate.z - wall.minZ),
+      pos: new THREE.Vector3(xOnWall, 0.4, wall.minZ - WALL_BUY_MOUNT_OFFSET),
+      rotationY: Math.PI
+    },
+    {
+      dist: Math.abs(candidate.x - wall.maxX),
+      pos: new THREE.Vector3(wall.maxX + WALL_BUY_MOUNT_OFFSET, 0.4, zOnWall),
+      rotationY: Math.PI / 2
+    },
+    {
+      dist: Math.abs(candidate.x - wall.minX),
+      pos: new THREE.Vector3(wall.minX - WALL_BUY_MOUNT_OFFSET, 0.4, zOnWall),
+      rotationY: -Math.PI / 2
+    }
+  ].sort((a, b) => a.dist - b.dist);
+
+  const best = faceOptions[0];
+
+  return {
+    pos: best.pos,
+    rotationY: best.rotationY,
+    wallMounted: true
+  };
+}
+
+function isWallBuyPlacementSafe(placement, ignoreShop = null, options = {}) {
+  const pos = placement?.pos;
+  if (!pos) return false;
+
+  const minShopDistance = options.relaxedShopSpacing ? 1.25 : SHOP_MIN_SHOP_DISTANCE;
+
+  for (const shop of activeShops) {
+    if (!shop || shop === ignoreShop) continue;
+
+    // In tight maps, a wall buy may be near another shop, but it should never
+    // overlap another wall-buy board. This guarantees both SMG and shotgun boards spawn.
+    const otherIsWallBuy = String(shop.type || '').startsWith('WALL_');
+    const requiredDistance = options.relaxedShopSpacing && !otherIsWallBuy ? 0.85 : minShopDistance;
+
+    if (flatDistance(pos, shop.pos) < requiredDistance) return false;
+  }
+
+  if (!options.ignorePlayer && player?.pos) {
+    if (flatDistance(pos, player.pos) < SHOP_MIN_PLAYER_DISTANCE) return false;
+  }
+
+  for (const d of doors) {
+    if (d?.pos && flatDistance(pos, d.pos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  for (const b of barricades) {
+    if (b?.pos && flatDistance(pos, b.pos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  for (const t of traps) {
+    const trapPos = t?.center || t?.pos;
+    if (trapPos && flatDistance(pos, trapPos) < SHOP_MIN_FEATURE_DISTANCE) return false;
+  }
+
+  return true;
+}
+
+function getWallBuyCandidateOrder(type, spawnList) {
+  const candidates = getShopCandidatePoints(spawnList);
+
+  // Keep the two demo wall buys from fighting over the same first candidate.
+  // SMG uses the list in authored order; shotgun starts from the opposite end.
+  if (String(type || '').includes('SHOTGUN')) {
+    return candidates.reverse();
+  }
+
+  return candidates;
+}
+
+function pickSafeWallBuyPlacement(type, shop, spawnList) {
+  const candidates = getWallBuyCandidateOrder(type, spawnList);
+  const mountableWalls = walls
+    .filter(isWallBuyWallCandidate)
+    .sort((a, b) => Math.max(getWallWidth(b), getWallDepth(b)) - Math.max(getWallWidth(a), getWallDepth(a)));
+
+  const tryCandidates = (options = {}) => {
+    for (const candidate of candidates) {
+      const nearbyWalls = mountableWalls
+        .map((wall) => ({ wall, dist: distancePointToWallBounds(candidate, wall) }))
+        .sort((a, b) => a.dist - b.dist);
+
+      for (const { wall } of nearbyWalls) {
+        const placement = makeWallBuyPlacementFromWall(candidate, wall);
+        if (shop?.pos && flatDistance(placement.pos, shop.pos) < 1.0) continue;
+        if (isWallBuyPlacementSafe(placement, shop, options)) return placement;
+      }
+    }
+
+    return null;
+  };
+
+  return tryCandidates()
+    || tryCandidates({ ignorePlayer: true })
+    || tryCandidates({ ignorePlayer: true, relaxedShopSpacing: true })
+    || (() => {
+      console.warn(`No safe wall-mounted spawn found for ${type || shop?.type || 'wall buy'}. Using floor fallback.`);
+      return {
+        pos: pickSafeShopSpawn(shop, spawnList),
+        rotationY: 0,
+        wallMounted: false
+      };
+    })();
+}
+
+function getShopPlacement(type, shop, spawnList) {
+  if (type?.startsWith?.('WALL_')) {
+    return pickSafeWallBuyPlacement(type, shop, spawnList);
+  }
+
+  return {
+    pos: pickSafeShopSpawn(shop, spawnList),
+    rotationY: 0,
+    wallMounted: false
+  };
+}
+
+function normalizeShopPlacement(placement) {
+  if (placement?.pos) {
+    return {
+      pos: placement.pos.clone(),
+      rotationY: Number.isFinite(placement.rotationY) ? placement.rotationY : 0,
+      wallMounted: Boolean(placement.wallMounted)
+    };
+  }
+
+  return {
+    pos: placement?.clone ? placement.clone() : new THREE.Vector3(0, 0.4, 0),
+    rotationY: 0,
+    wallMounted: false
+  };
+}
+
+function removeShop(shop) {
+  if (!shop) return;
   scene.remove(shop.mesh);
   const idx = activeShops.indexOf(shop);
   if (idx > -1) activeShops.splice(idx, 1);
+}
 
-  spawnShop(shop.type, nextPos);
+// ── UNIVERSAL SHOP RELOCATOR ──
+function relocateShop(shop, spawnList) {
+  const nextPlacement = getShopPlacement(shop.type, shop, spawnList);
+
+  removeShop(shop);
+
+  return spawnShop(shop.type, nextPlacement);
 }
 
 // ── WEAPON DEFINITIONS ──
 export const WEAPON_DEFS = {
   PISTOL: { 
-    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 22, maxAmmo: 8, fireRate: 0.25, isAutomatic: false, reloadDuration: 1.2, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: false, 
-    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), null, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)) 
+    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 24, maxAmmo: 10, fireRate: 0.24, isAutomatic: false, reloadDuration: 1.15, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.005, -0.135, -0.235), isUpgraded: false, 
+    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), null, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), { left: new THREE.Vector3(0.06, -0.012, 0.082), right: new THREE.Vector3(-0.01, -0.075, 0.18), leftScale: new THREE.Vector3(1.0, 1.0, 1.65), hideRight: true }) 
   },
   PISTOL_UPG: { 
-    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 55, maxAmmo: 20, fireRate: 0.15, isAutomatic: true, reloadDuration: 0.9, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: true, 
-    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), 0xffaa00, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0)) 
+    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 58, maxAmmo: 24, fireRate: 0.14, isAutomatic: true, reloadDuration: 0.85, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.005, -0.135, -0.235), isUpgraded: true, 
+    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), 0xffaa00, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), { left: new THREE.Vector3(0.06, -0.012, 0.082), right: new THREE.Vector3(-0.01, -0.075, 0.18), leftScale: new THREE.Vector3(1.0, 1.0, 1.65), hideRight: true }) 
   },
   RIFLE: { 
-    key: "RIFLE", name: "Assault Rifle", shootSound: 'shoot_rifle', damage: 40, maxAmmo: 30, fireRate: 0.12, isAutomatic: true, reloadDuration: 1.8, recoilZ: 0.06, recoilY: 0.03, cameraKick: 0.025, 
-    basePos: new THREE.Vector3(0.22, -0.14, -0.32), adsPos: new THREE.Vector3(0.0, -0.11, -0.22), isUpgraded: false, 
+    key: "RIFLE", name: "Assault Rifle", shootSound: 'shoot_rifle', damage: 38, maxAmmo: 32, fireRate: 0.115, isAutomatic: true, reloadDuration: 1.75, recoilZ: 0.06, recoilY: 0.03, cameraKick: 0.025, 
+    basePos: new THREE.Vector3(0.255, -0.175, -0.405), adsPos: new THREE.Vector3(-0.006, -0.125, -0.245), isUpgraded: false, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.rifle, 
       new THREE.Vector3(0.0015, 0.0015, 0.0015), 
       null, 
       new THREE.Vector3(0, 0, 0), 
       new THREE.Vector3(0, 0, -0.15),
-      { left: new THREE.Vector3(-0.04, -0.05, -0.2), right: new THREE.Vector3(0.02, -0.08, 0.05) }
+      { left: new THREE.Vector3(-0.055, -0.055, -0.155), right: new THREE.Vector3(0.018, -0.082, 0.015) }
     ) 
   },
   RIFLE_UPG: { 
-    key: "RIFLE_UPG", name: "Khadija's Fury", shootSound: 'shoot_rifle', damage: 95, maxAmmo: 60, fireRate: 0.09, isAutomatic: true, reloadDuration: 1.3, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.015, 
-    basePos: new THREE.Vector3(0.22, -0.14, -0.32), adsPos: new THREE.Vector3(0.0, -0.11, -0.22), isUpgraded: true, 
+    key: "RIFLE_UPG", name: "Khadija's Fury", shootSound: 'shoot_rifle', damage: 88, maxAmmo: 64, fireRate: 0.085, isAutomatic: true, reloadDuration: 1.25, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.015, 
+    basePos: new THREE.Vector3(0.255, -0.175, -0.405), adsPos: new THREE.Vector3(-0.006, -0.125, -0.245), isUpgraded: true, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.rifle, 
       new THREE.Vector3(0.0015, 0.0015, 0.0015), 
       0xff0044, 
       new THREE.Vector3(0, 0, 0), 
       new THREE.Vector3(0, 0, -0.15),
-      { left: new THREE.Vector3(-0.04, -0.05, -0.2), right: new THREE.Vector3(0.02, -0.08, 0.05) }
+      { left: new THREE.Vector3(-0.055, -0.055, -0.155), right: new THREE.Vector3(0.018, -0.082, 0.015) }
     ) 
   },
   SMG: { 
-    key: "SMG", name: "Tactical SMG", shootSound: 'shoot_rifle', damage: 22, maxAmmo: 40, fireRate: 0.08, isAutomatic: true, reloadDuration: 1.4, recoilZ: 0.03, recoilY: 0.015, cameraKick: 0.015, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(0.0, -0.1, -0.2), isUpgraded: false, 
+    key: "SMG", name: "Tactical SMG", shootSound: 'shoot_rifle', damage: 20, maxAmmo: 45, fireRate: 0.07, isAutomatic: true, reloadDuration: 1.35, recoilZ: 0.03, recoilY: 0.015, cameraKick: 0.015, 
+    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(-0.004, -0.124, -0.232), isUpgraded: false, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.smg, 
       new THREE.Vector3(0.11, 0.11, 0.11), 
@@ -237,8 +548,8 @@ export const WEAPON_DEFS = {
     ) 
   },
   SMG_UPG: { 
-    key: "SMG_UPG", name: "The Shredder", shootSound: 'shoot_rifle', damage: 45, maxAmmo: 75, fireRate: 0.05, isAutomatic: true, reloadDuration: 1.0, recoilZ: 0.02, recoilY: 0.01, cameraKick: 0.01, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(0.0, -0.1, -0.2), isUpgraded: true, 
+    key: "SMG_UPG", name: "The Shredder", shootSound: 'shoot_rifle', damage: 38, maxAmmo: 90, fireRate: 0.05, isAutomatic: true, reloadDuration: 0.95, recoilZ: 0.02, recoilY: 0.01, cameraKick: 0.01, 
+    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(-0.004, -0.124, -0.232), isUpgraded: true, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.smg, 
       new THREE.Vector3(0.11, 0.11, 0.11), 
@@ -249,30 +560,130 @@ export const WEAPON_DEFS = {
     ) 
   },
   SHOTGUN: { 
-    key: "SHOTGUN", name: "Pump Shotgun", shootSound: 'shoot_shotgun', damage: 35, maxAmmo: 7, fireRate: 0.85, isAutomatic: false, reloadDuration: 2.2, recoilZ: 0.15, recoilY: 0.05, cameraKick: 0.05, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.3), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: false, 
+    key: "SHOTGUN", name: "Pump Shotgun", shootSound: 'shoot_shotgun', damage: 28, maxAmmo: 8, fireRate: 0.82, isAutomatic: false, reloadDuration: 2.05, recoilZ: 0.15, recoilY: 0.05, cameraKick: 0.05, 
+    basePos: new THREE.Vector3(0.24, -0.19, -0.43), adsPos: new THREE.Vector3(0.0, -0.145, -0.285), isUpgraded: false, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.shotgun, 
       new THREE.Vector3(0.0009, 0.0009, 0.0009), 
       null, 
       new THREE.Vector3(0, Math.PI, 0), 
       new THREE.Vector3(0, -0.05, -0.15), 
-      { left: new THREE.Vector3(-0.03, -0.04, -0.15), right: new THREE.Vector3(0.02, -0.08, 0.05) }
+      { left: new THREE.Vector3(-0.06, -0.05, -0.2), right: new THREE.Vector3(0.018, -0.082, -0.005) }
     ) 
   },
   SHOTGUN_UPG: { 
-    key: "SHOTGUN_UPG", name: "The Boomstick", shootSound: 'shoot_shotgun', damage: 70, maxAmmo: 14, fireRate: 0.50, isAutomatic: true, reloadDuration: 1.6, recoilZ: 0.12, recoilY: 0.04, cameraKick: 0.04, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.3), adsPos: new THREE.Vector3(0.0, -0.12, -0.25), isUpgraded: true, 
+    key: "SHOTGUN_UPG", name: "The Boomstick", shootSound: 'shoot_shotgun', damage: 48, maxAmmo: 16, fireRate: 0.54, isAutomatic: true, reloadDuration: 1.45, recoilZ: 0.12, recoilY: 0.04, cameraKick: 0.04, 
+    basePos: new THREE.Vector3(0.24, -0.19, -0.43), adsPos: new THREE.Vector3(0.0, -0.145, -0.285), isUpgraded: true, 
     buildMesh: () => clone3DAsset(
       ASSETS.weapons.shotgun, 
       new THREE.Vector3(0.0009, 0.0009, 0.0009), 
       0xaa00ff, 
       new THREE.Vector3(0, Math.PI, 0), 
       new THREE.Vector3(0, -0.05, -0.15),
-      { left: new THREE.Vector3(-0.03, -0.04, -0.15), right: new THREE.Vector3(0.02, -0.08, 0.05) }
+      { left: new THREE.Vector3(-0.06, -0.05, -0.2), right: new THREE.Vector3(0.018, -0.082, -0.005) }
     ) 
   }
 };
+
+// ── C4 WEAPON BALANCE / UPGRADE TUNING ──
+// Damage falloff and reserve tuning keep every weapon useful without letting one gun dominate.
+const WEAPON_BALANCE = Object.freeze({
+  PISTOL: { reserveMags: 5, falloffStart: 20, falloffEnd: 36, minDamageScale: 0.62, headshotMult: 2.35, pellets: 1, upgradedPellets: 1 },
+  RIFLE: { reserveMags: 4, falloffStart: 34, falloffEnd: 58, minDamageScale: 0.76, headshotMult: 2.10, pellets: 1, upgradedPellets: 1 },
+  SMG: { reserveMags: 4, falloffStart: 17, falloffEnd: 34, minDamageScale: 0.56, headshotMult: 1.85, pellets: 1, upgradedPellets: 1 },
+  SHOTGUN: { reserveMags: 4, falloffStart: 6.5, falloffEnd: 18, minDamageScale: 0.30, headshotMult: 1.45, pellets: 9, upgradedPellets: 12, pelletSpread: 0.052, upgradedPelletSpread: 0.044 }
+});
+
+const MYSTERY_BOX_WEAPON_POOL = Object.freeze([
+  { key: 'SMG', weight: 0.42 },
+  { key: 'RIFLE', weight: 0.34 },
+  { key: 'SHOTGUN', weight: 0.24 }
+]);
+
+function getWeaponFamily(weapon) {
+  return String(weapon?.key || '').replace('_UPG', '');
+}
+
+function getWeaponBalance(weapon) {
+  return WEAPON_BALANCE[getWeaponFamily(weapon)] || WEAPON_BALANCE.PISTOL;
+}
+
+function getReserveAmmoForWeapon(weapon) {
+  const balance = getWeaponBalance(weapon);
+  return Math.max(weapon.maxAmmo, Math.round(weapon.maxAmmo * balance.reserveMags));
+}
+
+function refillWeaponAmmo(weapon) {
+  if (!weapon) return;
+  weapon.ammo = weapon.maxAmmo;
+  weapon.reserve = getReserveAmmoForWeapon(weapon);
+}
+
+function isWeaponAmmoFull(weapon) {
+  return Boolean(weapon) &&
+    weapon.ammo >= weapon.maxAmmo &&
+    weapon.reserve >= getReserveAmmoForWeapon(weapon);
+}
+
+function createWeaponInstance(def) {
+  const instance = {
+    ...def,
+    ammo: def.maxAmmo,
+    reserve: getReserveAmmoForWeapon(def),
+    reloading: false,
+    reloadT: 0,
+    meshGroup: def.buildMesh()
+  };
+
+  return instance;
+}
+
+function rollMysteryWeaponKey(excludeKey = null) {
+  const allowedPool = MYSTERY_BOX_WEAPON_POOL.filter((item) => {
+    return !excludeKey || item.key !== excludeKey;
+  });
+
+  const pool = allowedPool.length > 0 ? allowedPool : MYSTERY_BOX_WEAPON_POOL;
+  const totalWeight = pool.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const item of pool) {
+    roll -= item.weight;
+    if (roll <= 0) return item.key;
+  }
+
+  return pool[pool.length - 1]?.key || 'RIFLE';
+}
+
+function getPreviewWeaponKey() {
+  return MYSTERY_BOX_WEAPON_POOL[Math.floor(Math.random() * MYSTERY_BOX_WEAPON_POOL.length)]?.key || 'RIFLE';
+}
+
+function getShotgunPelletCount(weapon) {
+  const balance = getWeaponBalance(weapon);
+  return weapon?.isUpgraded ? balance.upgradedPellets : balance.pellets;
+}
+
+function getShotgunPelletSpread(weapon, feel) {
+  const balance = getWeaponBalance(weapon);
+  if (weapon?.isUpgraded) return balance.upgradedPelletSpread || balance.pelletSpread || feel.pelletSpread || 0.048;
+  return balance.pelletSpread || feel.pelletSpread || 0.048;
+}
+
+function getDamageDistanceScale(weapon, point) {
+  const balance = getWeaponBalance(weapon);
+  const distance = getHitFxDistance(point);
+
+  if (distance <= balance.falloffStart) return 1;
+  if (distance >= balance.falloffEnd) return balance.minDamageScale;
+
+  const t = (distance - balance.falloffStart) / Math.max(0.001, balance.falloffEnd - balance.falloffStart);
+  return THREE.MathUtils.lerp(1, balance.minDamageScale, t);
+}
+
+function getHeadshotMultiplier(weapon) {
+  return getWeaponBalance(weapon).headshotMult || 2.0;
+}
 
 // ── 3D CLONING ENGINE ──
 function clone3DAsset(originalScene, scaleVec, upgradeGlowColor = null, rotationOffset = null, positionOffset = null, handOffsets = null, forceCenter = false) {
@@ -332,12 +743,34 @@ function clone3DAsset(originalScene, scaleVec, upgradeGlowColor = null, rotation
   const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.08), skinMat);
   const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.08), skinMat);
 
+  leftHand.userData.isProceduralHand = true;
+  rightHand.userData.isProceduralHand = true;
+
   if (handOffsets) {
     leftHand.position.copy(handOffsets.left);
     rightHand.position.copy(handOffsets.right);
+    if (handOffsets.leftScale) leftHand.scale.copy(handOffsets.leftScale);
+    if (handOffsets.rightScale) rightHand.scale.copy(handOffsets.rightScale);
   } else {
     leftHand.position.set(0.06, -0.02, 0.1);    
     rightHand.position.set(-0.02, -0.06, 0.25); 
+  }
+
+  // Short pistol viewmodels can reveal a detached procedural hand during sprint bob.
+  // Long guns keep both hands; pistol can keep its normal hand and hide it only while sprinting.
+  if (handOffsets?.hideLeft === true) {
+    leftHand.visible = false;
+  }
+
+  if (handOffsets?.hideRight === true) {
+    rightHand.visible = false;
+  }
+
+  leftHand.userData.defaultVisible = leftHand.visible;
+  rightHand.userData.defaultVisible = rightHand.visible;
+
+  if (handOffsets?.hideHandsWhileSprinting === true) {
+    group.userData.hideProceduralHandsWhileSprinting = true;
   }
 
   group.add(leftHand, rightHand);
@@ -345,6 +778,19 @@ function clone3DAsset(originalScene, scaleVec, upgradeGlowColor = null, rotation
 }
 
 export function getActiveWeapon() { return player.inventory[player.currentWeaponIdx]; }
+
+function updateProceduralHandVisibility(weapon) {
+  const group = weapon?.meshGroup;
+  if (!group) return;
+
+  const hideSprintHands = Boolean(group.userData.hideProceduralHandsWhileSprinting && player.isSprinting && !player.isADS);
+
+  group.traverse((child) => {
+    if (!child?.userData?.isProceduralHand) return;
+    const defaultVisible = child.userData.defaultVisible !== false;
+    child.visible = hideSprintHands ? false : defaultVisible;
+  });
+}
 
 // ── INITIALIZE PROCEDURAL MAP SHOPS ──
 export function buildGun() {
@@ -354,7 +800,7 @@ export function buildGun() {
   activeShops.length = 0;
 
   const pistolDef = WEAPON_DEFS.PISTOL;
-  player.inventory.push({ ...pistolDef, ammo: pistolDef.maxAmmo, reserve: pistolDef.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: pistolDef.buildMesh() });
+  player.inventory.push(createWeaponInstance(pistolDef));
   equipWeapon(0);
 
 // ── SPAWN PROCEDURAL SHOPS ──
@@ -368,13 +814,21 @@ export function buildGun() {
   spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Speed Cola
 
   // ── WALL BUYS ──
-  spawnShop('WALL_SMG', pickSafeShopSpawn(null, gameplayPoints.WALL_SPAWNS));
-  spawnShop('WALL_SHOTGUN', pickSafeShopSpawn(null, gameplayPoints.WALL_SPAWNS));
+  spawnShop('WALL_SMG', getShopPlacement('WALL_SMG', null, gameplayPoints.WALL_SPAWNS));
+  spawnShop('WALL_SHOTGUN', getShopPlacement('WALL_SHOTGUN', null, gameplayPoints.WALL_SPAWNS));
   }
 
-function spawnShop(type, position) {
+function spawnShop(type, placementInput) {
+  const placement = normalizeShopPlacement(placementInput);
+  const position = placement.pos;
   const g = new THREE.Group();
-  let shopData = { type: type, mesh: g, pos: position.clone() };
+  let shopData = {
+    type: type,
+    mesh: g,
+    pos: position.clone(),
+    wallMounted: placement.wallMounted,
+    rotationY: placement.rotationY
+  };
   
   if (type === 'AMMO') {
     const crateMat = new THREE.MeshStandardMaterial({ color: 0x225522, roughness: 0.8 });
@@ -389,6 +843,8 @@ function spawnShop(type, position) {
     shopData.timer = 0;
     shopData.cycleTimer = 0;
     shopData.finalWeapon = null;
+    shopData.lastUnclaimedWeaponKey = null;
+    shopData._mysteryFeedbackVisible = false;
     shopData.spinMesh = new THREE.Group();
     shopData.spinMesh.position.set(0, 1.2, 0); // Float above the box
     g.add(shopData.spinMesh);
@@ -411,11 +867,16 @@ function spawnShop(type, position) {
  } else if (type.startsWith('WALL_')) {
     const wKey = type.split('_')[1]; // Extracts "SMG" or "SHOTGUN"
     const board = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 0.2), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+    const mountY = placement.wallMounted ? 1.18 : 0.6;
+
+    if (placement.wallMounted) {
+      board.name = `${wKey}_wall_buy_board`;
+    }
     
     // Recycle the Mystery Box hologram to make a "Chalk Outline"
     const chalkMesh = getHologramMesh(wKey);
     chalkMesh.position.z = 0.15; 
-    chalkMesh.position.y = 0.6;
+    chalkMesh.position.y = mountY;
     chalkMesh.scale.z = 0.001; // Flatten it completely against the blackboard!
     
     chalkMesh.traverse(child => {
@@ -424,13 +885,15 @@ function spawnShop(type, position) {
       }
     });
 
-    board.position.y = 0.6; 
+    board.position.y = mountY;
     g.add(board, chalkMesh);
+    g.rotation.y = placement.rotationY;
     shopData.weaponKey = wKey; // Save what weapon this wall holds
   }
   
   g.position.copy(position); scene.add(g);
   activeShops.push(shopData);
+  return shopData;
 }
 
 function announceWeaponEquipped(weapon) {
@@ -446,7 +909,7 @@ function equipWeapon(idx) {
   const active = getActiveWeapon();
   active.meshGroup.visible = true;
   camera.add(active.meshGroup);
-    updateAmmoHUD(active.ammo, active.reserve);
+    updateAmmoHUD(active.ammo, active.reserve, active.maxAmmo);
   updateWeaponNameHUD(active.name);
 
   if (player.alive) {
@@ -486,7 +949,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
 
       setInteractionPrompt(true, `Press [E] to repair barricade (+${ECONOMY.BARRICADE_REPAIR_SCORE} PTS)`);
 
-      if (checkInteractionPressed) {
+      if (shouldHandleInteraction(checkInteractionPressed)) {
         closestBarricade.cooldown = ECONOMY.BARRICADE_REPAIR_COOLDOWN;
 
         // Add plank back physically
@@ -499,7 +962,13 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         player.score += ECONOMY.BARRICADE_REPAIR_SCORE;
         updateScoreHUD(player.score);
         spawnFloatingScore(ECONOMY.BARRICADE_REPAIR_SCORE, false);
-        playSound('hit', 0.22, true); // Temporary plank-repair tap; avoids weapon reload sound.
+        playWorldSound('plankRepair', 0.35, true, { cooldownKey: 'plank_repair', cooldownMs: 110 });
+        showShopFeedback({
+          title: 'BARRICADE REPAIRED',
+          body: `+${ECONOMY.BARRICADE_REPAIR_SCORE} points · ${closestBarricade.currentPlanks}/${closestBarricade.maxPlanks} planks restored`,
+          tone: 'ready',
+          durationMs: 1300
+        });
 
         // Re-engage mathematical collision wall if it was previously wide open
         if (closestBarricade.currentPlanks === 1 && !walls.includes(closestBarricade.wallTracker)) {
@@ -527,7 +996,7 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
     if (closestTrap.state === 'READY') {
       setInteractionPrompt(true, `Press [E] to activate Electric Trap [${ECONOMY.TRAP_COST} PTS]`);
 
-      if (checkInteractionPressed) {
+      if (shouldHandleInteraction(checkInteractionPressed)) {
         if (player.score >= ECONOMY.TRAP_COST) {
           player.score -= ECONOMY.TRAP_COST;
           updateScoreHUD(player.score);
@@ -537,9 +1006,16 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
           closestTrap.field.visible = true;
           closestTrap.switchMesh.material.color.setHex(0x00ff00);
 
-          playSound('hit', 1.0, false);
+          playWorldSound('trapActivate', 0.85, false, { cooldownKey: 'trap_activate', cooldownMs: 300 });
+          showShopFeedback({
+            title: 'TRAP ACTIVE',
+            body: `Electric trap armed for ${ECONOMY.TRAP_DURATION}s`,
+            tone: 'ready',
+            durationMs: 1800,
+            progress: 1
+          });
         } else {
-          setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
+          showNotEnoughPoints(ECONOMY.TRAP_COST, 'Electric Trap');
         }
       }
     } else if (closestTrap.state === 'ACTIVE') {
@@ -578,13 +1054,19 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       } else {
         setInteractionPrompt(true, `Press [E] to open energy gate [${doorCost} PTS]`);
         
-        if (checkInteractionPressed) {
+        if (shouldHandleInteraction(checkInteractionPressed)) {
           if (player.score >= doorCost) {
             player.score -= doorCost; updateScoreHUD(player.score);
             openDoor(closestInteractable.data);
-            playSound('hit', 1.0, false); 
+            playWorldSound('doorOpen', 0.75, false, { cooldownKey: 'door_open', cooldownMs: 300 });
+            showShopFeedback({
+              title: 'ENERGY GATE OPENED',
+              body: `${doorCost} points spent · new route unlocked`,
+              tone: 'ready',
+              durationMs: 1800
+            }); 
           } else {
-            setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
+            showNotEnoughPoints(doorCost, 'Energy Gate');
           }
         }
       }
@@ -597,49 +1079,85 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       if (closestShop.type === 'MYSTERY_BOX') {
         if (closestShop.state === 'IDLE') {
           setInteractionPrompt(true, `Press [E] to buy Mystery Box [${ECONOMY.MYSTERY_BOX_COST} PTS]`);
-          if (checkInteractionPressed) {
+          if (shouldHandleInteraction(checkInteractionPressed)) {
             if (player.score >= ECONOMY.MYSTERY_BOX_COST) {
 			  player.score -= ECONOMY.MYSTERY_BOX_COST;
 			  updateScoreHUD(player.score);
 			  closestShop.state = 'SPINNING';
-              closestShop.timer = 4.0; // Spin duration
+              closestShop.timer = MYSTERY_BOX_SPIN_TIME;
               showStatusToast('MYSTERY BOX SPINNING...', '#ffaa00', 1500);
-              playSound('hit', 0.8, false);
+              showMysteryFeedbackIfNear(closestShop, {
+                title: 'MYSTERY BOX',
+                body: 'Rolling weapon... stay close.',
+                tone: 'mystery',
+                durationMs: 0,
+                progress: 0
+              });
+              playWorldSound('mysteryStart', 0.75, false, { cooldownKey: 'mystery_start', cooldownMs: 500 });
             } else {
-              setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
+              showNotEnoughPoints(ECONOMY.MYSTERY_BOX_COST, 'Mystery Box');
             }
           }
         } 
         else if (closestShop.state === 'READY') {
-          setInteractionPrompt(true, `Press [E] to take ${closestShop.finalWeapon.name}`);
-          if (checkInteractionPressed) {
+          const readyTimeLeft = Math.max(0, Math.ceil(closestShop.timer || 0));
+          setInteractionPrompt(true, `Press [E] to take ${closestShop.finalWeapon.name} (${readyTimeLeft}s)`);
+          updateMysteryFeedbackIfNear(
+            closestShop,
+            (closestShop.timer || 0) / MYSTERY_BOX_READY_TIME,
+            `${closestShop.finalWeapon.name} ready · ${readyTimeLeft}s left`,
+            {
+              title: 'MYSTERY BOX READY',
+              body: `${closestShop.finalWeapon.name} ready · ${readyTimeLeft}s left`,
+              tone: 'ready',
+              durationMs: 0,
+              progress: (closestShop.timer || 0) / MYSTERY_BOX_READY_TIME
+            }
+          );
+          if (shouldHandleInteraction(checkInteractionPressed)) {
             const rolledDef = closestShop.finalWeapon;
             const existingGunIdx = player.inventory.findIndex(w => w.key === rolledDef.key || w.key === rolledDef.key + "_UPG");
             
             if (existingGunIdx !== -1) {
-              player.inventory[existingGunIdx].ammo = player.inventory[existingGunIdx].maxAmmo;
-              player.inventory[existingGunIdx].reserve = player.inventory[existingGunIdx].maxAmmo * 3;
+              refillWeaponAmmo(player.inventory[existingGunIdx]);
               equipWeapon(existingGunIdx);
             } else {
-              player.inventory.push({ ...rolledDef, ammo: rolledDef.maxAmmo, reserve: rolledDef.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: rolledDef.buildMesh() });
+              player.inventory.push(createWeaponInstance(rolledDef));
               equipWeapon(player.inventory.length - 1);
             }
             
             showStatusToast(`MYSTERY BOX: ${rolledDef.name}`, '#ffaa00', 1800);
 
-			closestShop.spinMesh.clear();
-            closestShop.state = 'IDLE';
-            playSound('reload', 0.8, false);
+            clearMysteryReadyWeapon(closestShop, { clearUnclaimed: true });
+            playUISound('equip', 0.75, false, { cooldownKey: 'mystery_take', cooldownMs: 400 });
             
             // NEW: Instantly relocate the box after the player grabs the gun!
             relocateShop(closestShop, getCurrentGameplayPoints().BOX_SPAWNS);
           }
         } 
+        else if (closestShop.state === 'SPINNING') {
+          const spinLeft = Math.max(0, Math.ceil(closestShop.timer || 0));
+          setInteractionPrompt(true, `Mystery Box rolling... (${spinLeft}s)`);
+          updateMysteryFeedbackIfNear(
+            closestShop,
+            1 - ((closestShop.timer || 0) / MYSTERY_BOX_SPIN_TIME),
+            `Rolling weapon... ${spinLeft}s`,
+            {
+              title: 'MYSTERY BOX',
+              body: `Rolling weapon... ${spinLeft}s`,
+              tone: 'mystery',
+              durationMs: 0,
+              progress: 1 - ((closestShop.timer || 0) / MYSTERY_BOX_SPIN_TIME)
+            }
+          );
+        }
+        else if (closestShop.state === 'TEDDY') {
+          setInteractionPrompt(true, `Mystery Box moving...`);
+        }
         else {
-          // Currently SPINNING - disable prompts
           setInteractionPrompt(false);
         }
-        
+
         return; 
       }
 
@@ -648,10 +1166,14 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       let cost = 0; let shopName = "";
       const isWallBuy = closestShop.type.startsWith('WALL_');
       let hasWallWeapon = false;
+      let wallWeaponIdx = -1;
+      let ownedWallWeapon = null;
 
             // Dynamically check if they already own the Wall-Buy weapon
       if (isWallBuy) {
-        hasWallWeapon = player.inventory.some(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
+        wallWeaponIdx = player.inventory.findIndex(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
+        hasWallWeapon = wallWeaponIdx !== -1;
+        ownedWallWeapon = hasWallWeapon ? player.inventory[wallWeaponIdx] : null;
 
         const wallWeaponCost = ECONOMY.WALL_WEAPON_COSTS[closestShop.weaponKey] ?? 1200;
         const wallAmmoCost = ECONOMY.WALL_AMMO_COSTS[closestShop.weaponKey] ?? 450;
@@ -665,75 +1187,106 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       else if (closestShop.type === 'PERK_HEALTH') { cost = ECONOMY.PERK_HEALTH_COST; shopName = "Juggernog"; }
       else if (closestShop.type === 'PERK_RELOAD') { cost = ECONOMY.PERK_RELOAD_COST; shopName = "Speed Cola"; }
 
-      if (closestShop.type === 'HEALTH' && player.health >= player.maxHealth) { setInteractionPrompt(true, `HEALTH IS ALREADY FULL!`); } 
-      else if (closestShop.type === 'UPGRADE' && activeW.isUpgraded) { setInteractionPrompt(true, `WEAPON ALREADY UPGRADED!`); } 
-      else if (closestShop.type === 'PERK_HEALTH' && player.maxHealth >= 250) { setInteractionPrompt(true, `ALREADY HAVE JUGGERNOG!`); } 
-      else if (closestShop.type === 'PERK_RELOAD' && player.reloadMult <= 0.5) { setInteractionPrompt(true, `ALREADY HAVE SPEED COLA!`); } 
+      if (closestShop.type === 'HEALTH' && player.health >= player.maxHealth) {
+        setInteractionPrompt(true, `HEALTH IS ALREADY FULL!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('HEALTH FULL', 'Medkit unavailable because your health is already full.');
+      }
+      else if (closestShop.type === 'AMMO' && isWeaponAmmoFull(activeW)) {
+        setInteractionPrompt(true, `AMMO IS ALREADY FULL!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('AMMO FULL', `${activeW.name} already has maximum ammo.`);
+      }
+      else if (isWallBuy && hasWallWeapon && isWeaponAmmoFull(ownedWallWeapon)) {
+        setInteractionPrompt(true, `${closestShop.weaponKey} AMMO IS ALREADY FULL!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('WALL AMMO FULL', `${ownedWallWeapon.name} already has maximum ammo.`);
+      } 
+      else if (closestShop.type === 'UPGRADE' && activeW.isUpgraded) {
+        setInteractionPrompt(true, `WEAPON ALREADY UPGRADED!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('ALREADY UPGRADED', `${activeW.name} is already Pack-a-Punched.`);
+      } 
+      else if (closestShop.type === 'PERK_HEALTH' && player.maxHealth >= 250) {
+        setInteractionPrompt(true, `ALREADY HAVE JUGGERNOG!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('JUGGERNOG ACTIVE', 'Max health perk is already active.');
+      } 
+      else if (closestShop.type === 'PERK_RELOAD' && player.reloadMult <= 0.5) {
+        setInteractionPrompt(true, `ALREADY HAVE SPEED COLA!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('SPEED COLA ACTIVE', 'Fast reload perk is already active.');
+      } 
       else {
         setInteractionPrompt(true, `Press [E] to buy ${shopName} [${cost} PTS]`);
         
-        if (checkInteractionPressed) {
+        if (shouldHandleInteraction(checkInteractionPressed)) {
           if (player.score >= cost) {
             player.score -= cost;
             updateScoreHUD(player.score);
-            playSound('hit', 0.8, false); 
+            playUISound('confirm', 0.75, false, { cooldownKey: 'shop_confirm', cooldownMs: 150 }); 
             
             if (isWallBuy) {
               if (hasWallWeapon) {
-                const wIdx = player.inventory.findIndex(w => w.key === closestShop.weaponKey || w.key === closestShop.weaponKey + "_UPG");
-                player.inventory[wIdx].ammo = player.inventory[wIdx].maxAmmo;
-                player.inventory[wIdx].reserve = player.inventory[wIdx].maxAmmo * 3;
-                equipWeapon(wIdx);
+                refillWeaponAmmo(player.inventory[wallWeaponIdx]);
+                equipWeapon(wallWeaponIdx);
                 showStatusToast(`${closestShop.weaponKey} AMMO REFILLED`, '#00ff88', 1500);
+                showShopFeedback({ title: 'WALL AMMO REFILLED', body: `${cost} points spent · ${player.inventory[wallWeaponIdx].name}`, tone: 'ready', durationMs: 1700 });
               } else {
                 const def = WEAPON_DEFS[closestShop.weaponKey];
-                player.inventory.push({ ...def, ammo: def.maxAmmo, reserve: def.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: def.buildMesh() });
+                player.inventory.push(createWeaponInstance(def));
                 equipWeapon(player.inventory.length - 1);
                 showStatusToast(`BOUGHT ${def.name}`, '#00d4ff', 1600);
+                showShopFeedback({ title: 'WALL BUY COMPLETE', body: `${def.name} purchased · ${cost} points spent`, tone: 'ready', durationMs: 1800 });
               }
             }
             else if (closestShop.type === 'AMMO') {
-              activeW.ammo = activeW.maxAmmo; activeW.reserve = activeW.maxAmmo * 3;
-              updateAmmoHUD(activeW.ammo, activeW.reserve);
+              refillWeaponAmmo(activeW);
+              updateAmmoHUD(activeW.ammo, activeW.reserve, activeW.maxAmmo);
               showStatusToast('AMMO REFILLED', '#00ff88', 1500);
+              showShopFeedback({ title: 'AMMO REFILLED', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
             }
             else if (closestShop.type === 'HEALTH') {
               player.health = player.maxHealth;
               updateHealthHUD(player.health, player.maxHealth);
               showStatusToast('HEALTH RESTORED', '#ff5555', 1500);
+              showShopFeedback({ title: 'HEALTH RESTORED', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
             }
             else if (closestShop.type === 'PERK_HEALTH') {
               player.maxHealth = 250;
               player.health = 250;
               updateHealthHUD(player.health, player.maxHealth);
               showStatusToast('JUGGERNOG ACTIVE: MAX HEALTH 250', '#ff3333', 1900);
+              showShopFeedback({ title: 'JUGGERNOG ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
             }
             else if (closestShop.type === 'PERK_RELOAD') {
               player.reloadMult = 0.5;
               showStatusToast('SPEED COLA ACTIVE: FASTER RELOAD', '#00ff88', 1900);
+              showShopFeedback({ title: 'SPEED COLA ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
             }
 			else if (closestShop.type === 'UPGRADE') {
               showStatusToast('PACK-A-PUNCH COMPLETE', '#ff66ff', 1900);
+              showShopFeedback({ title: 'PACK-A-PUNCH COMPLETE', body: `${cost} points spent · damage, ammo, reload improved`, tone: 'ready', durationMs: 2000 });
               const upgKey = activeW.key + "_UPG";
               const upgDef = WEAPON_DEFS[upgKey];
               camera.remove(activeW.meshGroup);
-              player.inventory[player.currentWeaponIdx] = { 
-                ...upgDef, ammo: upgDef.maxAmmo, reserve: upgDef.maxAmmo * 3, reloading: false, reloadT: 0, meshGroup: upgDef.buildMesh() 
-              };
+              player.inventory[player.currentWeaponIdx] = createWeaponInstance(upgDef);
               equipWeapon(player.currentWeaponIdx);
             }
             
-// ── INSTANTLY RELOCATE SHOPS AFTER USE ──
+// ── SHOP POST-USE CLEANUP / RELOCATION ──
             const gameplayPoints = getCurrentGameplayPoints();
 
-            if (isWallBuy) relocateShop(closestShop, gameplayPoints.WALL_SPAWNS);
+            if (isWallBuy) {
+              // Wall buys should stay mounted on the same wall so the owned weapon can buy ammo later.
+            }
             else if (closestShop.type === 'AMMO') relocateShop(closestShop, gameplayPoints.AMMO_SPAWNS);
             else if (closestShop.type === 'HEALTH') relocateShop(closestShop, gameplayPoints.HEALTH_SPAWNS);
             else if (closestShop.type === 'UPGRADE') relocateShop(closestShop, gameplayPoints.UPGRADE_SPAWNS);
-            else if (closestShop.type === 'PERK_HEALTH') relocateShop(closestShop, gameplayPoints.PERK_HEALTH_SPAWNS);
-            else if (closestShop.type === 'PERK_RELOAD') relocateShop(closestShop, gameplayPoints.PERK_RELOAD_SPAWNS);
+            else if (closestShop.type === 'PERK_HEALTH') {
+              if (SINGLE_PLAYER_SHOP_CLEANUP) removeShop(closestShop);
+              else relocateShop(closestShop, gameplayPoints.PERK_HEALTH_SPAWNS);
+            }
+            else if (closestShop.type === 'PERK_RELOAD') {
+              if (SINGLE_PLAYER_SHOP_CLEANUP) removeShop(closestShop);
+              else relocateShop(closestShop, gameplayPoints.PERK_RELOAD_SPAWNS);
+            }
           } else {
-            setInteractionPrompt(true, `NOT ENOUGH POINTS!`);
+            showNotEnoughPoints(cost, shopName);
           }
         }
       }
@@ -742,157 +1295,409 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
 }
 
 export function giveMaxAmmo() {
-  player.inventory.forEach(w => { w.ammo = w.maxAmmo; w.reserve = w.maxAmmo * 3; });
+  player.inventory.forEach(refillWeaponAmmo);
   const active = getActiveWeapon();
-  updateAmmoHUD(active.ammo, active.reserve);
+  updateAmmoHUD(active.ammo, active.reserve, active.maxAmmo);
 }
 
-export function resetGunState() { fireCooldown = 0; buildGun(); document.getElementById('reload-wrap').style.display = 'none'; }
+// ── C3 WEAPON FEEL / FEEDBACK TUNING ──
+// Visual-only tuning: keeps damage/economy/wave balance intact.
+const WEAPON_FEEL = Object.freeze({
+  PISTOL: {
+    screenShake: 0.065, cameraKick: 0.018, yawKick: 0.010, gunPitch: -0.060, gunRoll: 0.020,
+    recoilZ: 0.055, recoilY: 0.020, muzzleIntensity: 4.2, muzzleTime: 0.070, flashTime: 0.040, flashScale: 0.95,
+    smokePower: 0.82, soundVolume: 0.58, pitchMin: 0.98, pitchMax: 1.08, crosshairBase: 15, crosshairKick: 16, impactPower: 0.85, adsRecoilMultiplier: 0.62
+  },
+  RIFLE: {
+    screenShake: 0.075, cameraKick: 0.020, yawKick: 0.012, gunPitch: -0.050, gunRoll: 0.014,
+    recoilZ: 0.060, recoilY: 0.026, muzzleIntensity: 4.8, muzzleTime: 0.072, flashTime: 0.038, flashScale: 1.05,
+    smokePower: 0.95, soundVolume: 0.62, pitchMin: 0.94, pitchMax: 1.05, crosshairBase: 17, crosshairKick: 18, impactPower: 1.0, adsRecoilMultiplier: 0.58
+  },
+  SMG: {
+    screenShake: 0.042, cameraKick: 0.010, yawKick: 0.018, gunPitch: -0.030, gunRoll: 0.018,
+    recoilZ: 0.030, recoilY: 0.014, muzzleIntensity: 3.7, muzzleTime: 0.052, flashTime: 0.030, flashScale: 0.82,
+    smokePower: 0.68, soundVolume: 0.47, pitchMin: 1.06, pitchMax: 1.22, crosshairBase: 19, crosshairKick: 13, impactPower: 0.72, adsRecoilMultiplier: 0.52
+  },
+  SHOTGUN: {
+    screenShake: 0.19, cameraKick: 0.048, yawKick: 0.020, gunPitch: -0.125, gunRoll: 0.035,
+    recoilZ: 0.150, recoilY: 0.050, muzzleIntensity: 7.2, muzzleTime: 0.105, flashTime: 0.055, flashScale: 1.45,
+    smokePower: 1.55, soundVolume: 1.0, pitchMin: 0.86, pitchMax: 0.98, crosshairBase: 28, crosshairKick: 24, impactPower: 1.55, adsRecoilMultiplier: 0.64, pelletSpread: 0.048
+  }
+});
+
+let _lastDryFireAt = 0;
+
+function getWeaponFeel(weapon) {
+  const family = getWeaponFamily(weapon);
+  const base = WEAPON_FEEL[family] || WEAPON_FEEL.PISTOL;
+
+  if (!weapon?.isUpgraded) return base;
+
+  return {
+    ...base,
+    screenShake: base.screenShake * 0.86,
+    cameraKick: base.cameraKick * 0.80,
+    yawKick: base.yawKick * 0.85,
+    gunPitch: base.gunPitch * 0.82,
+    gunRoll: base.gunRoll * 0.85,
+    recoilZ: base.recoilZ * 0.82,
+    recoilY: base.recoilY * 0.82,
+    muzzleIntensity: base.muzzleIntensity * 1.18,
+    flashScale: base.flashScale * 1.10,
+    smokePower: base.smokePower * 0.85,
+    soundVolume: Math.min(1, base.soundVolume * 0.96),
+    crosshairKick: base.crosshairKick * 0.86,
+    impactPower: base.impactPower * 1.12
+  };
+}
+
+function isShotgunWeapon(weapon) {
+  return getWeaponFamily(weapon) === 'SHOTGUN';
+}
+
+function triggerDryFireFeedback(weapon) {
+  const now = performance.now();
+  if (now - _lastDryFireAt < 420) return;
+  _lastDryFireAt = now;
+
+  showStatusToast((weapon?.reserve || 0) <= 0 ? 'NO AMMO' : 'RELOAD', '#ff5533', 700);
+  playUISound('warning', 0.18, true, { cooldownKey: 'dry_fire_warning', cooldownMs: 380, pitchMin: 1.1, pitchMax: 1.25 });
+}
+
+function playShotSound(weapon, feel) {
+  playWeaponSound(weapon.shootSound, feel.soundVolume, true, {
+    cooldownKey: `weapon_${weapon.key}`,
+    cooldownMs: isShotgunWeapon(weapon) ? 70 : 16,
+    pitchMin: feel.pitchMin,
+    pitchMax: feel.pitchMax
+  });
+}
+
+function applyShotCameraAndGunKick(weapon, feel) {
+  const adsMultiplier = player.isADS ? (feel.adsRecoilMultiplier ?? 0.62) : 1.0;
+
+  addScreenShake(feel.screenShake * adsMultiplier);
+
+  _recoilZ += feel.recoilZ * adsMultiplier;
+  _recoilY += feel.recoilY * adsMultiplier;
+  _recoilPitch += feel.gunPitch * adsMultiplier;
+  _recoilYaw += (Math.random() - 0.5) * feel.yawKick * adsMultiplier;
+  _recoilRoll += (Math.random() - 0.5) * feel.gunRoll * adsMultiplier;
+
+  player.pitch += feel.cameraKick * adsMultiplier;
+  player.yaw += (Math.random() - 0.5) * feel.yawKick * 0.45 * adsMultiplier;
+}
+
+function triggerMuzzleFeedback(weapon, feel, dir) {
+  muzzleT = feel.muzzleTime;
+  muzzleLight.intensity = feel.muzzleIntensity;
+  muzzleLight.color.setHex(weapon.isUpgraded ? 0xdd00ff : 0xffaa00);
+
+  flashVisibleT = feel.flashTime;
+  const flashMesh = weapon.meshGroup.getObjectByName('muzzleFlashMesh');
+
+  if (!flashMesh) {
+    const fallbackTip = player.pos.clone().addScaledVector(dir, 0.75);
+    spawnGunSmoke(fallbackTip, dir, feel.smokePower);
+    return;
+  }
+
+  flashMesh.visible = true;
+  flashMesh.rotation.z = Math.random() * Math.PI * 2;
+  flashMesh.scale.setScalar(feel.flashScale * (0.82 + Math.random() * 0.36));
+
+  const worldTipPos = new THREE.Vector3();
+  flashMesh.getWorldPosition(worldTipPos);
+  spawnGunSmoke(worldTipPos, dir, feel.smokePower);
+}
+
+function playHitConfirmFeedback({ headshot = false, killed = false, weapon = null } = {}) {
+  showHitMarker({ headshot, kill: killed });
+
+  const hitVolume = killed ? 0.50 : (headshot ? 0.45 : 0.33);
+  const cooldownKey = killed ? 'bullet_kill_confirm' : (headshot ? 'bullet_head_confirm' : 'bullet_body_confirm');
+
+  playWeaponSound('hit', hitVolume, true, {
+    cooldownKey,
+    cooldownMs: isShotgunWeapon(weapon) ? 42 : 20,
+    pitchMin: headshot ? 1.12 : 0.96,
+    pitchMax: killed ? 1.28 : 1.12
+  });
+}
+
+function getHitFxDistance(pos) {
+  if (!pos || !player?.pos || typeof player.pos.distanceTo !== 'function') return 0;
+  return player.pos.distanceTo(pos);
+}
+
+function getWorldSurfaceNormal(hit) {
+  if (hit.face?.normal && typeof hit.face.normal.copy === 'function') {
+    _surfaceNormal.copy(hit.face.normal);
+  } else {
+    _surfaceNormal.set(0, 1, 0);
+  }
+
+  _surfaceNormalMatrix.getNormalMatrix(hit.object.matrixWorld);
+  return _surfaceNormal.applyMatrix3(_surfaceNormalMatrix).normalize();
+}
+
+function buildShotTargets() {
+  _shotTargets.length = 0;
+
+  for (let i = 0; i < activeEnemies.length; i++) {
+    const enemy = activeEnemies[i];
+    if (enemy?.mesh) _shotTargets.push(enemy.mesh);
+  }
+
+  for (let i = 0; i < mapMeshes.length; i++) {
+    _shotTargets.push(mapMeshes[i]);
+  }
+
+  return _shotTargets;
+}
+
+function castFromCamera(offset, targets) {
+  _rayHits.length = 0;
+  ray.setFromCamera(offset, camera);
+  ray.intersectObjects(targets, true, _rayHits);
+
+  const hit = _rayHits.length > 0 ? _rayHits[0] : null;
+  _rayHits.length = 0;
+  return hit;
+}
+
+export function resetGunState() {
+  fireCooldown = 0;
+  muzzleT = 0;
+  flashVisibleT = 0;
+  lastInteractionUseAt = 0;
+  _lastDryFireAt = 0;
+  _recoilZ = 0;
+  _recoilY = 0;
+  _recoilPitch = 0;
+  _recoilYaw = 0;
+  _recoilRoll = 0;
+  bobT = 0;
+
+  hideShopFeedback();
+  setInteractionPrompt(false);
+
+  const reloadWrap = document.getElementById('reload-wrap');
+  if (reloadWrap) reloadWrap.style.display = 'none';
+
+  const reloadBar = document.getElementById('reload-bar');
+  if (reloadBar) reloadBar.style.width = '0%';
+
+  const active = getActiveWeapon();
+  if (active) {
+    active.reloading = false;
+    active.reloadT = 0;
+
+    const flashMesh = active.meshGroup?.getObjectByName?.("muzzleFlashMesh");
+    if (flashMesh) flashMesh.visible = false;
+  }
+}
 
 // ── SHOOTING SYSTEM ──
 export function shoot() {
   const w = getActiveWeapon();
   if (!player.alive || w.reloading || fireCooldown > 0) return;
-  if (w.ammo <= 0) {
-    if (w.reserve <= 0) {
-      showStatusToast('NO AMMO', '#ff5533', 900);
-    }
 
+  if (w.ammo <= 0) {
+    triggerDryFireFeedback(w);
     startReload();
     return;
   }
-  
-  w.ammo--; updateAmmoHUD(w.ammo, w.reserve); fireCooldown = w.fireRate;
-  playSound(w.shootSound, w.name.includes("Pump") ? 1.0 : 0.6, true); 
-  const shake = w.name.includes("Pump") ? 0.20 : (w.isUpgraded ? 0.12 : 0.05);
-  addScreenShake(shake);
-  
-  const dir = new THREE.Vector3(); camera.getWorldDirection(dir); spawnShell(player.pos, dir);
 
-  muzzleT = 0.09; muzzleLight.intensity = w.name.includes("Pump") ? 7.0 : 4.5;
-  muzzleLight.color.setHex(w.isUpgraded ? 0xdd00ff : 0xffaa00); 
+  const feel = getWeaponFeel(w);
 
-  flashVisibleT = 0.04; 
-  const flashMesh = w.meshGroup.getObjectByName("muzzleFlashMesh");
-  if (flashMesh) {
-    flashMesh.visible = true;
-    const worldTipPos = new THREE.Vector3(); flashMesh.getWorldPosition(worldTipPos); spawnGunSmoke(worldTipPos, dir);
-  }
-  
-  _recoilZ += w.recoilZ; _recoilY += w.recoilY; player.pitch += w.cameraKick; player.yaw += (Math.random() - 0.5) * w.cameraKick * 0.5;
+  w.ammo--;
+  updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
+  fireCooldown = w.fireRate;
 
-// We map the active enemies and check recursively (true) to bypass the laggy array rebuilding!
-  const enemyGroups = activeEnemies.map(e => e.mesh);
-  const hitTargets = [...enemyGroups, ...mapMeshes];
-  
-  // ── SHOTGUN BUG FIX: Check by key instead of name! ──
-  if (w.key.includes("SHOTGUN")) {
-    const pelletCount = w.isUpgraded ? 12 : 8; 
+  playShotSound(w, feel);
+
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  spawnShell(player.pos, dir);
+
+  triggerMuzzleFeedback(w, feel, dir);
+  applyShotCameraAndGunKick(w, feel);
+
+  // C5: reuse raycast arrays/vectors instead of allocating new arrays every shot.
+  const hitTargets = buildShotTargets();
+  const shotContext = { weapon: w, feel, scoredEnemies: new Set() };
+
+  if (isShotgunWeapon(w)) {
+    const pelletCount = getShotgunPelletCount(w);
+    const pelletSpread = getShotgunPelletSpread(w, feel);
+
     for (let i = 0; i < pelletCount; i++) {
-      const spread = new THREE.Vector2((Math.random() - 0.5) * 0.045, (Math.random() - 0.5) * 0.045);
-      ray.setFromCamera(spread, camera);
-      // The 'true' flag tells the engine to check inside the models automatically!
-      const hits = ray.intersectObjects(hitTargets, true);
-      if (hits.length) processHit(hits[0]);
+      _pelletShotOffset.set(
+        (Math.random() - 0.5) * pelletSpread,
+        (Math.random() - 0.5) * pelletSpread
+      );
+
+      const hit = castFromCamera(_pelletShotOffset, hitTargets);
+      if (hit) processHit(hit, shotContext);
     }
   } else {
-    ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const hits = ray.intersectObjects(hitTargets, true);
-    if (hits.length) processHit(hits[0]);
+    const hit = castFromCamera(_centerShotOffset, hitTargets);
+    if (hit) processHit(hit, shotContext);
   }
-  
+
   if (w.ammo <= 0) startReload();
 }
 
-function processHit(hit) {
+
+function processHit(hit, shotContext = {}) {
   const e = hit.object.userData.eRef;
-  
+  const w = shotContext.weapon || getActiveWeapon();
+  const feel = shotContext.feel || getWeaponFeel(w);
+
   if (e && e.alive) {
     let hs = hit.object.userData.isHead;
-    
+
     // GLTF HEIGHT-BASED HEADSHOT DETECTION
     if (!hs) {
       const hitHeight = hit.point.y - e.mesh.position.y;
-      const headThreshold = e.type === "GOLIATH" ? 3.8 : (e.type === "CRAWLER" ? 0.95 : 2.00);
+      const headThreshold = e.type === 'GOLIATH' ? 3.8 : (e.type === 'CRAWLER' ? 0.95 : 2.00);
       if (hitHeight > headThreshold) {
         hs = true;
       }
     }
 
-    const w = getActiveWeapon();
-    const baseDamage = w.damage; 
+    const baseDamage = w.damage;
     const isInstaKill = player.instaKillTimer > 0;
-    
-const finalDamage = isInstaKill ? 9999 : (hs ? baseDamage * 3 : baseDamage);
-    e.health -= finalDamage; 
+    const damageScale = getDamageDistanceScale(w, hit.point);
+    const headshotMult = getHeadshotMultiplier(w);
+    const finalDamage = isInstaKill
+      ? 9999
+      : Math.max(1, Math.round(baseDamage * damageScale * (hs ? headshotMult : 1)));
+    const wasHealth = e.health;
+    const killed = wasHealth > 0 && wasHealth - finalDamage <= 0;
+
+    e.health -= finalDamage;
     e.hitReactT = hs ? 0.18 : 0.13;
     e.hitReactDir = hit.point.x < e.mesh.position.x ? 1 : -1;
-    
-    // ── ECONOMY FIX: 10 points for hits, bonus points only on KILL ──
-    let pointsAwarded = 10; // Standard non-lethal hit
-    if (e.health <= 0) {
-      pointsAwarded = hs ? 100 : 50; // 100 for Headshot Kill, 50 for Body Kill
-    }
-    
-    if (player.doublePointsTimer > 0) pointsAwarded *= 2; 
-    
-    player.score = (player.score || 0) + pointsAwarded; 
-    spawnFloatingScore(pointsAwarded, e.health <= 0 && hs); // Only show gold text on Headshot Kill
-    updateScoreHUD(player.score);
 
-    showHitMarker(); playSound('hit', 0.4, true); spawnBloodBurst(hit.point);
-    
-    if (e.health <= 0) {
-       if (e.type === "GOLIATH") {
-        let bossBounty = 1700;
+    // C4: shotgun pellets can hit the same enemy multiple times, but point farming should stay sane.
+    const alreadyScoredThisShot = shotContext.scoredEnemies?.has(e);
+    if (!alreadyScoredThisShot) shotContext.scoredEnemies?.add(e);
+
+    const killReward = killed ? getEnemyPointReward(e, hs) : null;
+    let pointsAwarded = killReward ? killReward.basePoints : (alreadyScoredThisShot ? 0 : 10);
+
+    if (player.doublePointsTimer > 0) pointsAwarded *= 2;
+
+    if (pointsAwarded > 0) {
+      player.score = (player.score || 0) + pointsAwarded;
+      const killScoreLabel = killReward
+        ? (hs ? `${killReward.label.toUpperCase()} HEADSHOT` : killReward.label.toUpperCase())
+        : '';
+
+      spawnFloatingScore(pointsAwarded, killed && hs, killScoreLabel);
+      updateScoreHUD(player.score);
+    }
+
+    playHitConfirmFeedback({ headshot: hs, killed, weapon: w });
+
+    const fxDistance = getHitFxDistance(hit.point);
+    const bloodDistanceScale = fxDistance > 30 ? 0 : (fxDistance > 20 ? 0.45 : 1.0);
+    if (bloodDistanceScale > 0) {
+      spawnBloodBurst(hit.point, (killed ? 1.45 : (hs ? 1.22 : 1.0)) * bloodDistanceScale, hs);
+    }
+
+    if (killed) {
+      if (killReward?.bonusPoints > 0) {
+        let bossBounty = killReward.bonusPoints;
         if (player.doublePointsTimer > 0) bossBounty *= 2;
 
         player.score += bossBounty;
         updateScoreHUD(player.score);
-        spawnFloatingScore(bossBounty, false);
-        showStatusToast('GOLIATH ELIMINATED', '#dd00ff', 1800);
+        spawnFloatingScore(bossBounty, false, 'ELITE BOUNTY');
+      }
+
+      if (killReward && e.type !== 'SHAMBLER') {
+        showStatusToast(killReward.toast, killReward.color, e.type === 'GOLIATH' ? 1800 : 1000);
+      } else if (hs) {
+        showStatusToast('HEADSHOT KILL', '#ff5533', 650);
       }
 
       killEnemy(e);
-	  }
+    }
   } else if (!e) {
-    spawnBulletHole(hit.point, hit.face.normal);
+    const normal = getWorldSurfaceNormal(hit);
+    const fxDistance = getHitFxDistance(hit.point);
+
+    // Keep distant hits readable through the screen hit marker/audio, but avoid
+    // far world particles blooming into large square cards on walls or props.
+    if (fxDistance <= 34) {
+      spawnBulletHole(hit.point, normal);
+    }
+
+    if (fxDistance <= 22) {
+      const sparkDistanceScale = Math.max(0.35, 1 - fxDistance / 28);
+      spawnImpactSpark(hit.point, normal, feel.impactPower * sparkDistanceScale);
+    }
   }
 }
+
 
 export function startReload() {
   const w = getActiveWeapon();
   if (w.reloading || w.ammo === w.maxAmmo || w.reserve <= 0) return;
-  playSound('reload', 0.8, false); 
-  w.reloading = true; 
-  w.reloadT = w.reloadDuration * player.reloadMult; 
-  document.getElementById('reload-wrap').style.display = 'block';
+
+  playWeaponSound('reload', 0.78, false, { cooldownKey: `reload_start_${w.key}`, cooldownMs: 120 });
+  w.reloading = true;
+  w.reloadT = w.reloadDuration * player.reloadMult;
+
+  const reloadWrap = document.getElementById('reload-wrap');
+  if (reloadWrap) reloadWrap.style.display = 'block';
 }
 
 export function processReloadTick(dt) {
   const w = getActiveWeapon();
   if (!w || !w.reloading) return;
+
   w.reloadT -= dt;
   const totalReloadTime = w.reloadDuration * player.reloadMult;
-  document.getElementById('reload-bar').style.width = Math.min(100, (1 - w.reloadT / totalReloadTime) * 100) + '%';
+  const reloadBar = document.getElementById('reload-bar');
+  if (reloadBar) reloadBar.style.width = Math.min(100, (1 - w.reloadT / totalReloadTime) * 100) + '%';
+
   if (w.reloadT <= 0) {
-    const need = w.maxAmmo - w.ammo; const give = Math.min(need, w.reserve);
-    w.ammo += give; w.reserve -= give; w.reloading = false; 
-    document.getElementById('reload-wrap').style.display = 'none'; updateAmmoHUD(w.ammo, w.reserve);
+    const need = w.maxAmmo - w.ammo;
+    const give = Math.min(need, w.reserve);
+    w.ammo += give;
+    w.reserve -= give;
+    w.reloading = false;
+
+    const reloadWrap = document.getElementById('reload-wrap');
+    if (reloadWrap) reloadWrap.style.display = 'none';
+
+    updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
+    playUISound('equip', 0.12, true, { cooldownKey: 'reload_complete_tick', cooldownMs: 160, pitchMin: 1.05, pitchMax: 1.15 });
   }
 }
 
-let _recoilZ = 0, _recoilY = 0, bobT = 0; 
+
+let _recoilZ = 0, _recoilY = 0, _recoilPitch = 0, _recoilYaw = 0, _recoilRoll = 0, bobT = 0; 
 const _currentGunTarget = new THREE.Vector3();
+const _gunPoseTarget = new THREE.Vector3();
 
 export function updateGun(dt, keys, isMoving) {
-  if (player.instaKillTimer > 0) player.instaKillTimer -= dt;
-  if (player.doublePointsTimer > 0) player.doublePointsTimer -= dt;
+  if (player.instaKillTimer > 0) player.instaKillTimer = Math.max(0, player.instaKillTimer - dt);
+  if (player.doublePointsTimer > 0) player.doublePointsTimer = Math.max(0, player.doublePointsTimer - dt);
 
-  const w = getActiveWeapon(); if (!w) return;
+  const w = getActiveWeapon();
+  updateCombatStatusHUD(player, w);
+  if (!w) return;
+
+  updateProceduralHandVisibility(w);
+
   if (fireCooldown > 0) fireCooldown -= dt;
 
-  const targetPos = player.isADS ? w.adsPos.clone() : w.basePos.clone();
+  const targetPos = _gunPoseTarget.copy(player.isADS ? w.adsPos : w.basePos);
   const targetRot = new THREE.Vector3(0, 0, 0);
 
   if (w.reloading) {
@@ -921,17 +1726,22 @@ export function updateGun(dt, keys, isMoving) {
   }
 
   _currentGunTarget.lerp(targetPos, dt * 12);
-  _recoilZ += (0 - _recoilZ) * 12 * dt; 
+  _recoilZ += (0 - _recoilZ) * 12 * dt;
   _recoilY += (0 - _recoilY) * 12 * dt;
+  _recoilPitch += (0 - _recoilPitch) * 13 * dt;
+  _recoilYaw += (0 - _recoilYaw) * 13 * dt;
+  _recoilRoll += (0 - _recoilRoll) * 13 * dt;
   w.meshGroup.position.set(_currentGunTarget.x, _currentGunTarget.y + _recoilY, _currentGunTarget.z + _recoilZ);
 
-  w.meshGroup.rotation.x += (targetRot.x - w.meshGroup.rotation.x) * 15 * dt;
-  w.meshGroup.rotation.y += (targetRot.y - w.meshGroup.rotation.y) * 15 * dt;
-  w.meshGroup.rotation.z += (targetRot.z - w.meshGroup.rotation.z) * 15 * dt;
+  w.meshGroup.rotation.x += ((targetRot.x + _recoilPitch) - w.meshGroup.rotation.x) * 15 * dt;
+  w.meshGroup.rotation.y += ((targetRot.y + _recoilYaw) - w.meshGroup.rotation.y) * 15 * dt;
+  w.meshGroup.rotation.z += ((targetRot.z + _recoilRoll) - w.meshGroup.rotation.z) * 15 * dt;
 
-  if (muzzleT > 0) { 
-    muzzleT -= dt; muzzleLight.intensity = Math.max(0, (muzzleT / 0.09) * 4.5);
-    if (muzzleT <= 0) muzzleLight.intensity = 0; 
+  if (muzzleT > 0) {
+    const feel = getWeaponFeel(w);
+    muzzleT -= dt;
+    muzzleLight.intensity = Math.max(0, (muzzleT / Math.max(0.001, feel.muzzleTime)) * feel.muzzleIntensity);
+    if (muzzleT <= 0) muzzleLight.intensity = 0;
   }
   if (flashVisibleT > 0) {
     flashVisibleT -= dt;
@@ -947,19 +1757,42 @@ export function updateGun(dt, keys, isMoving) {
 
 function updateCrosshair(dt, isMoving) {
   const chUI = document.getElementById('crosshair');
-  if (player.isADS) { chUI.style.opacity = '0'; return; }
+  if (!chUI) return;
+
+  if (player.isADS) {
+    chUI.style.opacity = '0';
+    return;
+  }
+
   chUI.style.opacity = '1';
-  let targetGap = getActiveWeapon()?.name.includes("Pump") ? 28 : 15; 
-  if (player.isSprinting && isMoving) targetGap += 15; else if (isMoving) targetGap += 7;
-  if (muzzleT > 0) targetGap += 18; 
-  let currentGap = parseFloat(getComputedStyle(chUI).getPropertyValue('--gap')) || 15;
-  currentGap += (targetGap - currentGap) * dt * 15; chUI.style.setProperty('--gap', currentGap + 'px');
+
+  const activeWeapon = getActiveWeapon();
+  const feel = getWeaponFeel(activeWeapon);
+  let targetGap = feel.crosshairBase;
+
+  if (player.isSprinting && isMoving) targetGap += 15;
+  else if (isMoving) targetGap += 7;
+
+  if (muzzleT > 0) targetGap += feel.crosshairKick;
+
+  let currentGap = parseFloat(getComputedStyle(chUI).getPropertyValue('--gap')) || feel.crosshairBase;
+  currentGap += (targetGap - currentGap) * dt * 15;
+  chUI.style.setProperty('--gap', currentGap + 'px');
+
+  chUI.classList.toggle('crosshair-firing', muzzleT > 0);
+  chUI.classList.toggle('crosshair-shotgun', isShotgunWeapon(activeWeapon));
+  chUI.classList.toggle('crosshair-upgraded', Boolean(activeWeapon?.isUpgraded));
 }
+
 
 // ── MYSTERY BOX ANIMATION SYSTEM ──
 export function updateShops(dt) {
   activeShops.forEach(shop => {
     if (shop.type === 'MYSTERY_BOX') {
+      if (['SPINNING', 'READY', 'TEDDY'].includes(shop.state) && !isPlayerNearShop(shop)) {
+        hideMysteryFeedbackForShop(shop);
+      }
+
       if (shop.state === 'SPINNING') {
         shop.timer -= dt;
         shop.cycleTimer -= dt;
@@ -973,10 +1806,9 @@ export function updateShops(dt) {
           shop.cycleTimer = 0.12;
           shop.spinMesh.clear();
           
-          const wKeys = ["RIFLE", "SMG", "SHOTGUN"];
-          const randKey = wKeys[Math.floor(Math.random() * wKeys.length)];
+          const randKey = getPreviewWeaponKey();
           shop.spinMesh.add(getHologramMesh(randKey));
-          playSound('shoot_pistol', 0.05, false); 
+          playWorldSound('mysteryTick', 0.045, false, { cooldownKey: 'mystery_tick', cooldownMs: 80 }); 
         }
         
         // When the 4 second spin ends, roll for a gun or a Teddy Bear
@@ -988,23 +1820,38 @@ export function updateShops(dt) {
             shop.spinMesh.clear();
             shop.spinMesh.add(getTeddyMesh());
             showStatusToast('TEDDY BEAR! BOX MOVING...', '#ff66ff', 2200);
-            playSound('hit', 0.35, true); // Temporary teddy-box sting; avoids player hurt sound.
+            showMysteryFeedbackIfNear(shop, {
+              title: 'TEDDY BEAR',
+              body: 'Refund incoming · box is relocating',
+              tone: 'mystery',
+              durationMs: 0,
+              progress: 1
+            });
+            playWorldSound('teddy', 0.55, true, { cooldownKey: 'mystery_teddy', cooldownMs: 500 });
           } else {
             // Roll a final weapon
             shop.state = 'READY';
-            shop.timer = 12.0; 
+            shop.timer = MYSTERY_BOX_READY_TIME; 
             shop.spinMesh.clear();
             
-            const wKeys = ["RIFLE", "SMG", "SHOTGUN"];
-            const finalKey = wKeys[Math.floor(Math.random() * wKeys.length)];
+            const finalKey = rollMysteryWeaponKey(shop.lastUnclaimedWeaponKey);
             shop.finalWeapon = WEAPON_DEFS[finalKey];
+            shop.lastUnclaimedWeaponKey = finalKey;
             
             const finalMesh = getHologramMesh(finalKey);
             finalMesh.traverse((child) => {
               if (child.isMesh) child.material = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.5 });
             });
             shop.spinMesh.add(finalMesh);
-            playSound('reload', 1.0, false); 
+            showStatusToast(`${shop.finalWeapon.name} READY`, '#ffaa00', 1600);
+            showMysteryFeedbackIfNear(shop, {
+              title: 'MYSTERY BOX READY',
+              body: `${shop.finalWeapon.name} ready · press [E] before it expires`,
+              tone: 'ready',
+              durationMs: 0,
+              progress: 1
+            });
+            playWorldSound('mysteryReady', 0.75, false, { cooldownKey: 'mystery_ready', cooldownMs: 500 }); 
           }
         }
       } 
@@ -1024,8 +1871,18 @@ export function updateShops(dt) {
             });
           });
           
+          clearMysteryReadyWeapon(shop, { clearUnclaimed: true });
+
           // Move the Mystery Box using the same safe relocation system as every other shop.
-          relocateShop(shop, getCurrentGameplayPoints().BOX_SPAWNS);
+          const movedBox = relocateShop(shop, getCurrentGameplayPoints().BOX_SPAWNS);
+          if (movedBox?.pos) {
+            showMysteryFeedbackIfNear(movedBox, {
+              title: 'MYSTERY BOX MOVED',
+              body: describeShopSignal(movedBox.pos),
+              tone: 'mystery',
+              durationMs: 2400
+            });
+          }
         }
       }
       else if (shop.state === 'READY') {
@@ -1034,8 +1891,13 @@ export function updateShops(dt) {
         shop.spinMesh.position.y = 1.2 + Math.sin(Date.now() * 0.003) * 0.1;
         
         if (shop.timer <= 0) {
-          shop.state = 'IDLE'; 
-          shop.spinMesh.clear();
+          clearMysteryReadyWeapon(shop, { rememberUnclaimed: true });
+          showMysteryFeedbackIfNear(shop, {
+            title: 'MYSTERY BOX CLOSED',
+            body: 'The weapon timed out. Next roll will avoid the skipped weapon.',
+            tone: 'warning',
+            durationMs: 1800
+          });
         }
       }
     }

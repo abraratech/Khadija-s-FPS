@@ -928,6 +928,10 @@ export function updateProceduralZombieStyle(group, config = {}) {
     eyeColor = 0xff2222;
     accentColor = 0x6cff5e;
   }
+  else if (typeName === "BRUTE") {
+    eyeColor = 0xaa55ff;
+    accentColor = 0xcc88ff;
+  }
   else if (typeName === "GOLIATH") {
     eyeColor = 0xffaa00;
     accentColor = 0xffaa00;
@@ -978,14 +982,14 @@ export function updateProceduralZombieStyle(group, config = {}) {
   parts.rangedAntenna.visible = typeName === "RANGED";
   parts.runnerSpikeA.visible = typeName === "RUNNER";
   parts.runnerSpikeB.visible = typeName === "RUNNER";
-  parts.goliathChestPlate.visible = typeName === "GOLIATH";
-  parts.goliathShoulderLeft.visible = typeName === "GOLIATH";
+  parts.goliathChestPlate.visible = typeName === "GOLIATH" || typeName === "BRUTE";
+  parts.goliathShoulderLeft.visible = typeName === "GOLIATH" || typeName === "BRUTE";
   parts.goliathShoulderRight.visible = typeName === "GOLIATH";
   parts.toxicChestNode.visible = typeName !== "GOLIATH";
   parts.ribA.visible = typeName !== "GOLIATH";
   parts.ribB.visible = typeName !== "GOLIATH";
   parts.ribC.visible = typeName !== "GOLIATH";
-  parts.rightArmBone.visible = typeName !== "GOLIATH";
+  parts.rightArmBone.visible = typeName !== "GOLIATH" && typeName !== "BRUTE";
 
   if (typeName === "RUNNER") {
     group.userData.motionSpeed = 1.45;
@@ -997,6 +1001,19 @@ export function updateProceduralZombieStyle(group, config = {}) {
     setPartScale(parts.rightArm, 0.78, 1.14, 0.78);
     setPartScale(parts.leftLeg, 0.76, 1.22, 0.76);
     setPartScale(parts.rightLeg, 0.76, 1.22, 0.76);
+  }
+
+  else if (typeName === "BRUTE") {
+    group.userData.motionSpeed = 0.78;
+    group.userData.motionPower = 0.78;
+    setPartScale(parts.torso, 1.16, 1.08, 1.10);
+    setPartScale(parts.pelvis, 1.10, 1.00, 1.06);
+    setPartScale(parts.neck, 1.05, 1.00, 1.05);
+    setPartScale(parts.head, 1.06, 1.00, 1.06);
+    setPartScale(parts.leftArm, 1.18, 1.12, 1.14);
+    setPartScale(parts.rightArm, 1.12, 1.08, 1.10);
+    setPartScale(parts.leftLeg, 1.06, 1.04, 1.06);
+    setPartScale(parts.rightLeg, 1.06, 1.04, 1.06);
   }
 
   else if (typeName === "GOLIATH") {
@@ -1143,6 +1160,13 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
     parts.rightLeg.rotation.x -= death * 0.45;
     group.position.y -= death * 0.18;
     group.rotation.z += death * 0.22;
+  }
+
+  if (typeName === "BRUTE") {
+    parts.leftArm.rotation.x -= 0.12;
+    parts.rightArm.rotation.x -= 0.10;
+    parts.head.rotation.y += Math.sin(slowT * 1.2) * 0.035;
+    group.rotation.z *= 0.62;
   }
 
   if (typeName === "GOLIATH") {

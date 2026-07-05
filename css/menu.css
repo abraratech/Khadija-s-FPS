@@ -28,14 +28,14 @@
 
 /* ── DEATH ── */
 #death-screen {
-  display:none; position:fixed; inset:0; z-index:50;
-  background:rgba(0,0,0,0.85); backdrop-filter:blur(6px);
+  display:none; position:fixed; inset:0; z-index:100;
+  background:rgba(0,0,0,0.88); backdrop-filter:blur(6px);
   flex-direction:column; align-items:center; justify-content:center; gap:12px;
-  pointer-events:all;
+  pointer-events:all; padding:24px; overflow:auto;
 }
-#death-title { font-size:52px; font-weight:900; color:#ff3322; letter-spacing:5px; text-shadow:0 0 30px #ff332288; }
+#death-title { font-size:clamp(42px, 7vw, 58px); font-weight:900; color:#ff3322; letter-spacing:5px; text-shadow:0 0 30px #ff332288; }
 #death-sub { font-size:13px; color:rgba(255,255,255,0.4); letter-spacing:3px; text-transform:uppercase; }
-#final-kills { font-size:64px; font-weight:900; color:#fff; line-height:1; text-shadow:0 0 20px #00d4ff66; }
+#final-kills { font-size:clamp(52px, 8vw, 72px); font-weight:900; color:#fff; line-height:1; text-shadow:0 0 20px #00d4ff66; }
 #respawn-btn {
   margin-top:8px; padding:14px 44px;
   background:#00d4ff; color:#000; border:none;
@@ -149,6 +149,60 @@
     radial-gradient(circle at 70% 35%, rgba(255,170,0,0.18), transparent 28%),
     #15140f;
   background-size: 100% 100%, 18px 18px, 18px 18px, 100% 100%, 100% 100%;
+}
+
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb {
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.09) 0 3px, transparent 3px 32px),
+    repeating-linear-gradient(0deg, rgba(255,170,0,0.10) 0 2px, transparent 2px 36px),
+    radial-gradient(circle at 30% 35%, rgba(255,170,0,0.18), transparent 26%),
+    radial-gradient(circle at 70% 68%, rgba(0,212,255,0.16), transparent 30%),
+    #171a20;
+}
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb::before {
+  width: 58px;
+  height: 12px;
+  left: 18px;
+  top: 28px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb::after {
+  width: 34px;
+  height: 42px;
+  right: 22px;
+  bottom: 18px;
+  background: rgba(255, 170, 0, 0.24);
+}
+
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb {
+  background:
+    linear-gradient(90deg, transparent 0 21%, rgba(210,245,235,0.22) 21% 24%, transparent 24% 76%, rgba(210,245,235,0.18) 76% 79%, transparent 79%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.055) 0 3px, transparent 3px 30px),
+    radial-gradient(circle at 28% 32%, rgba(80,255,210,0.16), transparent 24%),
+    radial-gradient(circle at 72% 66%, rgba(255,60,60,0.13), transparent 28%),
+    #101919;
+}
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb::before {
+  width: 58px;
+  height: 14px;
+  left: 20px;
+  top: 30px;
+  background: rgba(210, 245, 235, 0.20);
+  box-shadow: 0 0 12px rgba(120, 255, 220, 0.22);
+}
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb::after {
+  width: 38px;
+  height: 38px;
+  right: 22px;
+  bottom: 20px;
+  background: rgba(255, 60, 60, 0.22);
+  box-shadow: 0 0 12px rgba(255, 60, 60, 0.18);
 }
 
 .menu-map-thumb::before,
@@ -478,4 +532,77 @@
   background: #ff2200;
   border-color: #ff2200;
   color: #fff;
+}
+
+/* ── B5 MAP ROTATION / IDENTITY CLEANUP ── */
+.ka-map-card[data-map] {
+  position: relative;
+}
+
+.ka-map-card[data-map]::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  pointer-events: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.ka-map-card[data-map].selected::after {
+  border-color: rgba(34, 255, 136, 0.42);
+  box-shadow: inset 0 0 18px rgba(34, 255, 136, 0.07);
+}
+
+#ka-preview-recommend {
+  color: #170c00;
+  background: #ffaa00;
+  border-color: #ffaa00;
+}
+
+#ka-brief-desc {
+  min-height: 42px;
+}
+
+.ka-map-card[data-map="grid_bunker"] .ka-map-tag.stable {
+  background: #22ff88;
+  color: #00140a;
+}
+
+.ka-map-card[data-map="industrial_yard"] .ka-map-tag.stable {
+  background: #ffaa00;
+  color: #180c00;
+}
+
+.ka-map-card[data-map="neon_depot"] .ka-map-tag.stable {
+  background: #00d4ff;
+  color: #001018;
+}
+
+.ka-map-card[data-map="parking_garage"] .ka-map-tag.stable {
+  background: #d6dce8;
+  color: #101217;
+}
+
+.ka-map-card[data-map="hospital_wing"] .ka-map-tag.stable {
+  background: #ff5555;
+  color: #180000;
+}
+
+.ka-map-card[data-map="hospital_wing"].selected,
+.ka-map-card[data-map="parking_garage"].selected {
+  box-shadow: inset 0 0 20px rgba(255,255,255,0.055), 0 0 18px rgba(0,212,255,0.10);
+}
+
+
+/* ── D1 FINAL DEMO FLOW POLISH ── */
+#pause-screen button,
+#death-screen button {
+  min-height: 48px;
+}
+
+@media (max-height: 760px) {
+  #death-screen {
+    justify-content: flex-start;
+  }
 }

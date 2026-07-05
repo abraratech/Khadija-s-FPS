@@ -2,13 +2,50 @@
 import * as THREE from 'three';
 import { camera, addScreenShake, mapMeshes } from './map.js';
 import { updateHealthHUD, triggerDamageFlash, spawnDirectionalIndicator } from './ui.js';
-import { playSound } from './audio.js';
+import { playPlayerSound } from './audio.js';
 import { pushOut } from './utils.js';
 
 export const EYE_H = 1.75;
 const P_RADIUS = 0.42;
 const GRAVITY = -22;
 const JUMP_F = 7.5;
+
+// ── D4 SETTINGS: COMFORT / LOOK FEEL ──
+const BASE_LOOK_SENS = 0.0017;
+const DEFAULT_MOUSE_SENSITIVITY = 100;
+const DEFAULT_BASE_FOV = 82;
+const MOUSE_SENSITIVITY_KEY = 'ka_mouse_sensitivity';
+const PLAYER_FOV_KEY = 'ka_player_fov';
+
+function clampNumber(value, min, max, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function readStoredNumber(key, min, max, fallback) {
+  try {
+    return clampNumber(localStorage.getItem(key), min, max, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function saveStoredNumber(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // Ignore storage failures in private/private-browsing modes.
+  }
+}
+
+function computeAdsFov(baseFov) {
+  // Keep ADS useful at both narrow and wide base FOV values.
+  return clampNumber(Math.round(baseFov - 27), 48, 62, 55);
+}
+
+const initialBaseFOV = readStoredNumber(PLAYER_FOV_KEY, 70, 100, DEFAULT_BASE_FOV);
+const initialMouseSensitivity = readStoredNumber(MOUSE_SENSITIVITY_KEY, 50, 150, DEFAULT_MOUSE_SENSITIVITY);
 
 export const player = {
   pos: new THREE.Vector3(3, EYE_H, 10),
@@ -23,21 +60,24 @@ export const player = {
   instaKillTimer: 0, doublePointsTimer: 0,
   inventory: [], currentWeaponIdx: 0,
   baseSpeed: 9.5, sprintSpeed: 15.0, adsSpeed: 4.5,
-  baseFOV: 82, adsFOV: 55,
-  isSSprint: false, isADS: false
+  baseFOV: initialBaseFOV, adsFOV: computeAdsFov(initialBaseFOV),
+  lookSensitivityPercent: initialMouseSensitivity,
+  isSprinting: false, isADS: false
 };
 
 const _fwd = new THREE.Vector3();
 const _rt = new THREE.Vector3();
 const _mv = new THREE.Vector3();
+const groundRay = new THREE.Raycaster();
+const groundRayDir = new THREE.Vector3(0, -1, 0);
 
 export function updatePlayer(dt, keys, mdx, mdy) {
   if (!player.alive) return;
 
   // ── MOUSE LOOK ──
-  const SENS = 0.0017;
-  player.yaw -= mdx * SENS; 
-  player.pitch -= mdy * SENS;
+  const sens = getMouseLookSensitivity();
+  player.yaw -= mdx * sens; 
+  player.pitch -= mdy * sens;
   player.pitch = Math.max(-1.54, Math.min(1.54, player.pitch));
   
   camera.rotation.order = 'YXZ';
@@ -74,7 +114,7 @@ export function updatePlayer(dt, keys, mdx, mdy) {
   }
 
 // ── PROCEDURAL PHYSICS (MULTISTORY WITH ANTI-TUNNELING SUB-STEPPING) ──
-  const STEPS = 3; 
+  const STEPS = dt > 0.032 ? 3 : 2; 
   const stepDt = dt / STEPS;
   
   for (let i = 0; i < STEPS; i++) {
@@ -88,8 +128,11 @@ export function updatePlayer(dt, keys, mdx, mdy) {
 
   // 1. Raycast straight down to find the highest floor/crate under the player
   let groundY = EYE_H; 
-  const downRay = new THREE.Raycaster(new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z), new THREE.Vector3(0, -1, 0), 0, 50);
-  const hits = downRay.intersectObjects(mapMeshes);
+  groundRay.near = 0;
+  groundRay.far = 50;
+  groundRay.ray.origin.set(player.pos.x, player.pos.y + 1, player.pos.z);
+  groundRay.ray.direction.copy(groundRayDir);
+  const hits = groundRay.intersectObjects(mapMeshes, false);
   
   if (hits.length > 0) {
     // Snap ground level to the top of whatever block we are standing on
@@ -119,11 +162,50 @@ export function damagePlayer(dmg, sourcePos = null) {
   updateHealthHUD(player.health, player.maxHealth); 
   triggerDamageFlash();
   addScreenShake(0.35);
-  playSound('hurt', 0.9, true);
+  playPlayerSound('hurt', 0.85, true, { cooldownKey: 'player_hurt', cooldownMs: 180 });
   
   if (sourcePos) {
     const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);
     spawnDirectionalIndicator(sourcePos, player.pos, camDir);
   }
   if (player.health <= 0) { player.alive = false; document.exitPointerLock(); }
+}
+export function getMouseSensitivityPercent() {
+  return Math.round(player.lookSensitivityPercent || DEFAULT_MOUSE_SENSITIVITY);
+}
+
+export function getMouseSensitivityMultiplier() {
+  return getMouseSensitivityPercent() / DEFAULT_MOUSE_SENSITIVITY;
+}
+
+export function getMouseLookSensitivity() {
+  return BASE_LOOK_SENS * getMouseSensitivityMultiplier();
+}
+
+export function setMouseSensitivityPercent(value) {
+  const next = Math.round(clampNumber(value, 50, 150, DEFAULT_MOUSE_SENSITIVITY));
+  player.lookSensitivityPercent = next;
+  saveStoredNumber(MOUSE_SENSITIVITY_KEY, next);
+  return next;
+}
+
+export function getBaseFOV() {
+  return Math.round(player.baseFOV || DEFAULT_BASE_FOV);
+}
+
+export function getADSFOV() {
+  return Math.round(player.adsFOV || computeAdsFov(getBaseFOV()));
+}
+
+export function setBaseFOV(value) {
+  const next = Math.round(clampNumber(value, 70, 100, DEFAULT_BASE_FOV));
+  player.baseFOV = next;
+  player.adsFOV = computeAdsFov(next);
+
+  saveStoredNumber(PLAYER_FOV_KEY, next);
+
+  camera.fov = player.isADS ? player.adsFOV : player.baseFOV;
+  camera.updateProjectionMatrix();
+
+  return next;
 }

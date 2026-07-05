@@ -4,6 +4,8 @@ import { MAP_IDS, getMapMeta, normalizeMapId } from './maps/map_registry.js';
 import { buildGridBunker } from './maps/grid_bunker.js';
 import { buildIndustrialYard } from './maps/industrial_yard.js';
 import { buildNeonDepot } from './maps/neon_depot.js';
+import { buildParkingGarage } from './maps/parking_garage.js';
+import { buildHospitalWing } from './maps/hospital_wing.js';
 import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -82,9 +84,9 @@ scene.add(dirLight);
 // Each map can now control its fog, lighting, clear color, and bloom mood.
 const MAP_ENVIRONMENTS = {
   [MAP_IDS.GRID_BUNKER]: {
-  name: "Cold Bunker",
+  name: "Grid Bunker - Classic",
   fogColor: 0x07101a,
-  fogDensity: 0.026,
+  fogDensity: 0.024,
   clearColor: 0x03070c,
 
   ambientColor: 0xc8e4ff,
@@ -100,7 +102,7 @@ const MAP_ENVIRONMENTS = {
 },
 
   [MAP_IDS.INDUSTRIAL_YARD]: {
-  name: "Dusty Yard",
+  name: "Industrial Yard - Dust",
   fogColor: 0x241207,
   fogDensity: 0.014,
   clearColor: 0x100604,
@@ -117,7 +119,7 @@ const MAP_ENVIRONMENTS = {
   bloomThreshold: 0.92
   },
   [MAP_IDS.NEON_DEPOT]: {
-  name: "Neon Depot",
+  name: "Neon Depot - Pulse",
   fogColor: 0x061018,
   fogDensity: 0.018,
   clearColor: 0x03070b,
@@ -129,14 +131,54 @@ const MAP_ENVIRONMENTS = {
   dirIntensity: 1.08,
   dirPosition: new THREE.Vector3(-16, 34, 24),
 
-  bloomStrength: 0.68,
-  bloomRadius: 0.30,
-  bloomThreshold: 0.86
+  bloomStrength: 0.64,
+  bloomRadius: 0.28,
+  bloomThreshold: 0.87
+  },
+
+  [MAP_IDS.PARKING_GARAGE]: {
+  name: "Parking Garage - Concrete",
+  fogColor: 0x0c0f14,
+  fogDensity: 0.017,
+  clearColor: 0x030405,
+
+  ambientColor: 0xbfc8d4,
+  ambientIntensity: 1.28,
+
+  dirColor: 0xffd895,
+  dirIntensity: 0.88,
+  dirPosition: new THREE.Vector3(18, 32, -20),
+
+  bloomStrength: 0.48,
+  bloomRadius: 0.22,
+  bloomThreshold: 0.89
+  },
+
+  [MAP_IDS.HOSPITAL_WING]: {
+  name: "Hospital Wing - Code Red",
+  fogColor: 0x050b0b,
+  fogDensity: 0.025,
+  clearColor: 0x010404,
+
+  ambientColor: 0xc8fff1,
+  ambientIntensity: 1.10,
+
+  dirColor: 0x92ffe8,
+  dirIntensity: 0.55,
+  dirPosition: new THREE.Vector3(-18, 28, 18),
+
+  bloomStrength: 0.56,
+  bloomRadius: 0.26,
+  bloomThreshold: 0.88
   }
 };
 
 const DEFAULT_MAP_ENVIRONMENT = MAP_ENVIRONMENTS[MAP_IDS.GRID_BUNKER];
 let activeMapEnvironment = DEFAULT_MAP_ENVIRONMENT;
+
+export function getActiveMapEnvironmentName() {
+  return activeMapEnvironment?.name || DEFAULT_MAP_ENVIRONMENT.name;
+}
 
 // ── GRAPHICS QUALITY PROFILES ──
 // Auto: chooses a safe starting profile, then can downgrade during gameplay if FPS is weak.
@@ -183,6 +225,8 @@ const GRAPHICS_QUALITY_ORDER = ["auto", "low", "medium", "high"];
 let autoResolvedGraphicsQuality = null;
 let autoTuneTimer = 0;
 let autoTuneCooldown = 0;
+let autoFpsStableTimer = 0;
+let autoFpsWeakTimer = 0;
 
 function normalizeGraphicsMode(mode) {
   if (mode === "auto") return "auto";
@@ -196,15 +240,25 @@ function guessAutoGraphicsQuality() {
   const memory = navigator.deviceMemory || 4;
   const dpr = window.devicePixelRatio || 1;
 
-  if (isMobileDevice || cores <= 4 || memory <= 4 || dpr > 2.25) {
+  // C5 hotfix: the first auto pick was too conservative. A desktop with
+  // normal/high CPU capacity should not be locked to Low just because DPR or
+  // browser-reported memory looks modest. Start sane, then let FPS promote or
+  // demote during play.
+  if (isMobileDevice) return "low";
+
+  if (cores <= 4 && memory <= 4 && dpr > 1.6) {
     return "low";
   }
 
-  if (cores >= 8 && memory >= 8 && dpr <= 1.6) {
+  if (cores >= 8 && memory >= 8 && dpr <= 2.25) {
     return "high";
   }
 
-  return "medium";
+  if (cores >= 6 || memory >= 4) {
+    return "medium";
+  }
+
+  return "low";
 }
 
 function resolveGraphicsQuality(mode = graphicsQuality) {
@@ -256,6 +310,8 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
       autoResolvedGraphicsQuality = guessAutoGraphicsQuality();
       autoTuneTimer = 0;
       autoTuneCooldown = 0;
+      autoFpsStableTimer = 0;
+      autoFpsWeakTimer = 0;
     }
   } else {
     autoResolvedGraphicsQuality = null;
@@ -299,6 +355,23 @@ export function cycleGraphicsQuality() {
   return applyGraphicsQuality(GRAPHICS_QUALITY_ORDER[nextIndex]);
 }
 
+function getNextHigherGraphicsQuality(mode) {
+  if (mode === "low") return "medium";
+  if (mode === "medium") return "high";
+  return mode;
+}
+
+function getNextLowerGraphicsQuality(mode) {
+  if (mode === "high") return "medium";
+  if (mode === "medium") return "low";
+  return mode;
+}
+
+function resetAutoFpsTuningTimers() {
+  autoFpsStableTimer = 0;
+  autoFpsWeakTimer = 0;
+}
+
 export function autoTuneGraphicsFromFps(fps, dt = 0) {
   if (graphicsQuality !== "auto") return false;
   if (!Number.isFinite(fps) || dt <= 0) return false;
@@ -306,18 +379,34 @@ export function autoTuneGraphicsFromFps(fps, dt = 0) {
   autoTuneTimer += dt;
   autoTuneCooldown = Math.max(0, autoTuneCooldown - dt);
 
-  if (autoTuneTimer < 8 || autoTuneCooldown > 0) {
+  if (autoTuneTimer < 6 || autoTuneCooldown > 0) {
     return false;
   }
 
   const currentEffective = resolveGraphicsQuality("auto");
+  const upgradeThreshold = currentEffective === "low" ? 54 : 58;
+  const downgradeThreshold = currentEffective === "high" ? 42 : 34;
+
+  if (fps >= upgradeThreshold) {
+    autoFpsStableTimer += dt;
+  } else {
+    autoFpsStableTimer = Math.max(0, autoFpsStableTimer - dt * 1.5);
+  }
+
+  if (fps <= downgradeThreshold) {
+    autoFpsWeakTimer += dt;
+  } else {
+    autoFpsWeakTimer = Math.max(0, autoFpsWeakTimer - dt * 2.0);
+  }
+
   let nextEffective = currentEffective;
 
-  // Auto only downgrades during combat to avoid distracting visual upgrades mid-fight.
-  if (fps < 36 && currentEffective === "medium") {
-    nextEffective = "low";
-  } else if (fps < 42 && currentEffective === "high") {
-    nextEffective = "medium";
+  // Downgrade quickly when FPS is clearly weak, but allow Auto to recover upward
+  // when performance stays healthy. This fixes Auto getting stuck on Low.
+  if (autoFpsWeakTimer >= 2.5) {
+    nextEffective = getNextLowerGraphicsQuality(currentEffective);
+  } else if (autoFpsStableTimer >= (currentEffective === "low" ? 8 : 14)) {
+    nextEffective = getNextHigherGraphicsQuality(currentEffective);
   }
 
   if (nextEffective === currentEffective) {
@@ -326,10 +415,11 @@ export function autoTuneGraphicsFromFps(fps, dt = 0) {
 
   autoResolvedGraphicsQuality = nextEffective;
   autoTuneTimer = 0;
-  autoTuneCooldown = 12;
+  autoTuneCooldown = nextEffective === "high" ? 18 : 12;
+  resetAutoFpsTuningTimers();
 
   applyGraphicsQuality("auto", { silent: true });
-  console.log(`Auto graphics adjusted to: ${nextEffective}`);
+  console.log(`Auto graphics adjusted to: ${nextEffective} at ${Math.round(fps)} FPS`);
 
   return true;
 }
@@ -338,6 +428,7 @@ export function autoTuneGraphicsFromFps(fps, dt = 0) {
 window.KASetGraphicsQuality = applyGraphicsQuality;
 window.KAGetGraphicsQuality = getGraphicsQuality;
 window.KAGetEffectiveGraphicsQuality = getEffectiveGraphicsQuality;
+window.KARecheckGraphicsQuality = () => applyGraphicsQuality("auto", { repickAuto: true });
 
 // Apply saved graphics quality after graphicsQuality and helper functions exist.
 applyGraphicsQuality(graphicsQuality, { silent: true });
@@ -594,7 +685,9 @@ export function spawnTrap(x, z, width, isZAxis = false) {
 const MAP_BUILDERS = {
   [MAP_IDS.GRID_BUNKER]: buildGridBunker,
   [MAP_IDS.INDUSTRIAL_YARD]: buildIndustrialYard,
-  [MAP_IDS.NEON_DEPOT]: buildNeonDepot
+  [MAP_IDS.NEON_DEPOT]: buildNeonDepot,
+  [MAP_IDS.PARKING_GARAGE]: buildParkingGarage,
+  [MAP_IDS.HOSPITAL_WING]: buildHospitalWing
 };
 
 export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {

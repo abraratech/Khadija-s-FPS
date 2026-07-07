@@ -57,7 +57,13 @@ const AUDIO_ROUTES = Object.freeze({
     rifle: 'shoot_rifle',
     smg: 'shoot_rifle',
     shotgun: 'shoot_shotgun',
+    sniper: 'shoot_sniper',
     reload: 'reload',
+    reload_pistol: 'reload_pistol',
+    reload_smg: 'reload_smg',
+    reload_rifle: 'reload_rifle',
+    reload_shotgun: 'reload_shotgun',
+    reload_sniper: 'reload_sniper',
     hit: 'hit'
   },
   player: {
@@ -111,7 +117,13 @@ const DEDICATED_SOUND_FILES = Object.freeze({
   perkRetroJingle: 'assets/sounds/perk_retro_jingle.mp3',
   electricTrapHum: 'assets/sounds/electric_trap_hum.mp3',
   roundStart: 'assets/sounds/round_start.mp3',
-  roundClear: 'assets/sounds/round_clear.mp3'
+  roundClear: 'assets/sounds/round_clear.mp3',
+  shoot_sniper: 'assets/sounds/shoot_sniper.mp3',
+  reload_pistol: 'assets/sounds/reload_pistol.mp3',
+  reload_smg: 'assets/sounds/reload_smg.mp3',
+  reload_rifle: 'assets/sounds/reload_rifle.mp3',
+  reload_shotgun: 'assets/sounds/reload_shotgun.mp3',
+  reload_sniper: 'assets/sounds/reload_sniper.mp3'
 });
 
 
@@ -245,12 +257,12 @@ export function playSound(name, volume = 1.0, randomizePitch = false, options = 
 
   const explicitPlaybackRate = Number(options.playbackRate);
   if (Number.isFinite(explicitPlaybackRate) && explicitPlaybackRate > 0) {
-    source.playbackRate.value = Math.max(0.35, Math.min(2.5, explicitPlaybackRate));
+    source.playbackRate.value = Math.max(0.35, Math.min(3.2, explicitPlaybackRate));
   } else if (randomizePitch) {
     const minPitch = Number.isFinite(Number(options.pitchMin)) ? Number(options.pitchMin) : 0.9;
     const maxPitch = Number.isFinite(Number(options.pitchMax)) ? Number(options.pitchMax) : 1.1;
     const lo = Math.max(0.35, Math.min(minPitch, maxPitch));
-    const hi = Math.min(2.5, Math.max(minPitch, maxPitch));
+    const hi = Math.min(3.2, Math.max(minPitch, maxPitch));
     source.playbackRate.value = lo + Math.random() * Math.max(0.001, hi - lo);
   }
 
@@ -275,6 +287,13 @@ function getFallbackSoundsFor(name) {
     case 'electricTrapHum': return ['hit'];
     case 'roundStart': return [];
     case 'roundClear': return ['hit'];
+    case 'shoot_sniper': return ['shoot_rifle'];
+    case 'reload_pistol':
+    case 'reload_smg':
+    case 'reload_rifle':
+    case 'reload_shotgun':
+    case 'reload_sniper':
+      return ['reload'];
     default: return [];
   }
 }
@@ -310,6 +329,44 @@ function playRoutedSound(category, keyOrName, volume = 1.0, randomizePitch = fal
 
 export function playWeaponSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
   return playRoutedSound('weapon', keyOrName, volume, randomizePitch, options);
+}
+
+const RELOAD_SOUND_BY_FAMILY = Object.freeze({
+  PISTOL: 'reload_pistol',
+  SMG: 'reload_smg',
+  RIFLE: 'reload_rifle',
+  SHOTGUN: 'reload_shotgun',
+  SNIPER: 'reload_sniper'
+});
+
+export function playWeaponReloadSound(
+  weaponFamily,
+  targetDuration,
+  volume = 0.78,
+  options = {}
+) {
+  const family = String(weaponFamily || 'PISTOL')
+    .replace('_UPG', '')
+    .toUpperCase();
+
+  const soundName = RELOAD_SOUND_BY_FAMILY[family] || 'reload';
+  const safeTargetDuration = Math.max(0.20, Number(targetDuration) || 1.0);
+
+  // Use the decoded file's real duration. Therefore a clip that is a few
+  // hundredths longer/shorter still lands its final mechanical click at the
+  // end of the actual in-game reload animation.
+  const dedicatedBuffer = sounds[soundName];
+  const fallbackBuffer = sounds.reload;
+  const selectedBuffer = dedicatedBuffer || fallbackBuffer;
+  const playbackRate = selectedBuffer?.duration
+    ? selectedBuffer.duration / safeTargetDuration
+    : 1.0;
+
+  return playRoutedSound('weapon', soundName, volume, false, {
+    ...options,
+    playbackRate,
+    cooldownKey: options.cooldownKey || `reload_${family}`
+  });
 }
 
 export function playPlayerSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {

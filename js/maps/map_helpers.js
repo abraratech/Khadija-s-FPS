@@ -1,6 +1,7 @@
 // js/maps/map_helpers.js
 // Shared map-building helpers.
-// Future maps should use these instead of duplicating floor/wall/grid logic.
+// C10.6 adds explicit player-support metadata so authored climbable surfaces
+// can be distinguished from walls, fixtures, signs, and decorative geometry.
 
 import * as THREE from 'three';
 
@@ -25,7 +26,8 @@ export function createMapFloor(context, options) {
   const {
     width,
     depth,
-    material
+    material,
+    supportTag = 'floor'
   } = options;
 
   const floorGeo = new THREE.PlaneGeometry(width, depth);
@@ -33,6 +35,9 @@ export function createMapFloor(context, options) {
 
   floorMesh.rotation.x = -Math.PI / 2;
   floorMesh.frustumCulled = false;
+  floorMesh.userData.playerClimbable = true;
+  floorMesh.userData.playerNonWalkable = false;
+  floorMesh.userData.supportTag = supportTag;
 
   scene.add(floorMesh);
   mapMeshes.push(floorMesh);
@@ -56,7 +61,10 @@ export function createMapBlock(context, options) {
     z,
     colorOrMap,
     isWall = true,
-    isDoor = false
+    isDoor = false,
+    playerClimbable = false,
+    playerNonWalkable = false,
+    supportTag = isDoor ? 'door' : 'block'
   } = options;
 
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -84,6 +92,9 @@ export function createMapBlock(context, options) {
 
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, y, z);
+  mesh.userData.playerClimbable = playerClimbable === true;
+  mesh.userData.playerNonWalkable = playerNonWalkable === true || isDoor === true;
+  mesh.userData.supportTag = String(supportTag || 'block');
 
   scene.add(mesh);
   mapMeshes.push(mesh);
@@ -95,6 +106,9 @@ export function createMapBlock(context, options) {
     minZ: z - d / 2,
     maxZ: z + d / 2,
     isDoor,
+    playerClimbable: mesh.userData.playerClimbable,
+    playerNonWalkable: mesh.userData.playerNonWalkable,
+    supportTag: mesh.userData.supportTag,
     mesh,
     pos: new THREE.Vector3(x, 0, z)
   };

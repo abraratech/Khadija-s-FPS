@@ -5,13 +5,18 @@ import { player } from './player.js';
 import { activeEnemies, killEnemy, getEnemyPointReward, currentWave } from './enemy.js';
 import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast, updateCombatStatusHUD, showShopFeedback, updateShopFeedbackProgress, hideShopFeedback } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
-import { playWeaponSound, playWorldSound, playUISound } from './audio.js';
+import { playWeaponSound, playWeaponReloadSound, playWorldSound, playUISound } from './audio.js';
 import { getGameplayPointsForMap } from './maps/gameplay_points.js';
 import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './weapons/pistol.js';
 import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './weapons/smg.js';
 import { createProceduralRifleMesh, updateProceduralRifleReloadParts, resetProceduralRifleParts, updateProceduralRifleFireParts } from './weapons/rifle.js';
 import { createProceduralShotgunMesh, updateProceduralShotgunReloadParts, resetProceduralShotgunParts, updateProceduralShotgunFireParts } from './weapons/shotgun.js';
 import { createProceduralSniperMesh, updateProceduralSniperReloadParts, resetProceduralSniperParts, updateProceduralSniperFireParts } from './weapons/sniper.js';
+import {
+  recordDirectorShot,
+  recordDirectorHit,
+  recordDirectorKill
+} from './ai_director.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -705,12 +710,12 @@ export const WEAPON_DEFS = {
     buildMesh: () => buildShotgunViewmodel(true) 
   },
   SNIPER: {
-    key: "SNIPER", name: "Longshot Sniper", shootSound: 'shoot_rifle', damage: 155, maxAmmo: 5, fireRate: 1.15, isAutomatic: false, reloadDuration: 2.40, recoilZ: 0.20, recoilY: 0.07, cameraKick: 0.075,
+    key: "SNIPER", name: "Longshot Sniper", shootSound: 'shoot_sniper', damage: 155, maxAmmo: 5, fireRate: 1.15, isAutomatic: false, reloadDuration: 2.40, recoilZ: 0.20, recoilY: 0.07, cameraKick: 0.075,
     basePos: new THREE.Vector3(0.285, -0.245, -0.790), adsPos: new THREE.Vector3(0.000, -0.190, -0.760), baseRot: new THREE.Vector3(-0.052, -0.085, 0.026), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false,
     buildMesh: () => buildSniperViewmodel(false)
   },
   SNIPER_UPG: {
-    key: "SNIPER_UPG", name: "Khadija's Judgment", shootSound: 'shoot_rifle', damage: 320, maxAmmo: 10, fireRate: 0.92, isAutomatic: false, reloadDuration: 1.85, recoilZ: 0.16, recoilY: 0.055, cameraKick: 0.060,
+    key: "SNIPER_UPG", name: "Khadija's Judgment", shootSound: 'shoot_sniper', damage: 320, maxAmmo: 10, fireRate: 0.92, isAutomatic: false, reloadDuration: 1.85, recoilZ: 0.16, recoilY: 0.055, cameraKick: 0.060,
     basePos: new THREE.Vector3(0.285, -0.245, -0.790), adsPos: new THREE.Vector3(0.000, -0.190, -0.760), baseRot: new THREE.Vector3(-0.052, -0.085, 0.026), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true,
     buildMesh: () => buildSniperViewmodel(true)
   }
@@ -1613,6 +1618,11 @@ export function shoot() {
   updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
   fireCooldown = w.fireRate;
 
+  recordDirectorShot({
+    weaponFamily: getWeaponFamily(w),
+    isADS: player.isADS
+  });
+
   playShotSound(w, feel);
 
   const dir = new THREE.Vector3();
@@ -1624,7 +1634,7 @@ export function shoot() {
 
   // C5: reuse raycast arrays/vectors instead of allocating new arrays every shot.
   const hitTargets = buildShotTargets();
-  const shotContext = { weapon: w, feel, scoredEnemies: new Set() };
+  const shotContext = { weapon: w, feel, scoredEnemies: new Set(), directorHitRegistered: false };
 
   if (isShotgunWeapon(w)) {
     const pelletCount = getShotgunPelletCount(w);
@@ -1676,7 +1686,12 @@ function processHit(hit, shotContext = {}) {
     const killed = wasHealth > 0 && wasHealth - finalDamage <= 0;
 
     e.health -= finalDamage;
-    e.hitReactT = hs ? 0.18 : 0.13;
+
+    const heavyStaggerScale = e.type === 'GOLIATH'
+      ? 0.48
+      : (e.type === 'BRUTE' ? 0.68 : 1.0);
+
+    e.hitReactT = (hs ? 0.24 : 0.17) * heavyStaggerScale;
     e.hitReactDir = hit.point.x < e.mesh.position.x ? 1 : -1;
 
     // C4: shotgun pellets can hit the same enemy multiple times, but point farming should stay sane.
@@ -1701,6 +1716,19 @@ function processHit(hit, shotContext = {}) {
     playHitConfirmFeedback({ headshot: hs, killed, weapon: w });
 
     const fxDistance = getHitFxDistance(hit.point);
+
+    // Register at most one successful hit per trigger pull. This keeps shotgun
+    // pellets from inflating the director's accuracy model.
+    if (!shotContext.directorHitRegistered) {
+      shotContext.directorHitRegistered = true;
+      recordDirectorHit({
+        distance: fxDistance,
+        headshot: hs,
+        enemyType: e.type,
+        weaponFamily: getWeaponFamily(w)
+      });
+    }
+
     const bloodDistanceScale = fxDistance > 30 ? 0 : (fxDistance > 20 ? 0.45 : 1.0);
     if (bloodDistanceScale > 0) {
       spawnBloodBurst(hit.point, (killed ? 1.45 : (hs ? 1.22 : 1.0)) * bloodDistanceScale, hs);
@@ -1721,6 +1749,12 @@ function processHit(hit, shotContext = {}) {
       } else if (hs) {
         showStatusToast('HEADSHOT KILL', '#ff5533', 650);
       }
+
+      recordDirectorKill({
+        enemyType: e.type,
+        weaponFamily: getWeaponFamily(w),
+        headshot: hs
+      });
 
       killEnemy(e);
     }
@@ -1746,9 +1780,20 @@ export function startReload() {
   const w = getActiveWeapon();
   if (w.reloading || w.ammo === w.maxAmmo || w.reserve <= 0) return;
 
-  playWeaponSound('reload', 0.78, false, { cooldownKey: `reload_start_${w.key}`, cooldownMs: 120 });
+  const totalReloadDuration = w.reloadDuration * player.reloadMult;
+
+  playWeaponReloadSound(
+    getWeaponFamily(w),
+    totalReloadDuration,
+    0.78,
+    {
+      cooldownKey: `reload_start_${w.key}`,
+      cooldownMs: 120
+    }
+  );
+
   w.reloading = true;
-  w.reloadT = w.reloadDuration * player.reloadMult;
+  w.reloadT = totalReloadDuration;
 
   const reloadWrap = document.getElementById('reload-wrap');
   if (reloadWrap) reloadWrap.style.display = 'block';

@@ -1081,6 +1081,14 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   const typeName = group.userData.typeName ?? "SHAMBLER";
   const hitReactT = Math.max(0, state.hitReactT ?? 0);
   const hitReactDir = state.hitReactDir ?? 1;
+  const attackT = Math.max(0, state.attackT ?? 0);
+  const attackDuration = Math.max(0.05, state.attackDuration ?? 0.30);
+  const attackProgress = attackT > 0
+    ? 1 - Math.min(1, attackT / attackDuration)
+    : 0;
+  const attackPulse = attackT > 0
+    ? Math.sin(attackProgress * Math.PI)
+    : 0;
   const deathT = state.deathT ?? -1;
 
   const t = timeSeconds * 7.0 * speed * typeSpeed + phase;
@@ -1132,13 +1140,54 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
     group.position.y -= 0.24;
     parts.torso.rotation.x += 0.82;
     parts.head.rotation.x -= 0.30;
-    parts.leftArm.rotation.x -= 1.02;
-    parts.rightArm.rotation.x -= 1.02;
-    parts.leftArm.position.y -= 0.06;
-    parts.rightArm.position.y -= 0.06;
+
+    // C10.5: crawlers brace and pull themselves forward. The former negative
+    // X rotation placed both arms behind the back for most of the walk cycle.
+    parts.leftArm.rotation.x += 0.88 + walkOpp * 0.10;
+    parts.rightArm.rotation.x += 0.88 + walk * 0.10;
+    parts.leftArm.rotation.z += 0.12;
+    parts.rightArm.rotation.z -= 0.12;
+    parts.leftArm.position.y -= 0.08;
+    parts.rightArm.position.y -= 0.08;
+    parts.leftArm.position.z -= 0.08;
+    parts.rightArm.position.z -= 0.08;
+
     parts.leftLeg.rotation.x += 0.48;
     parts.rightLeg.rotation.x += 0.48;
     group.rotation.z += walk * 0.050 * power;
+  }
+
+  if (attackPulse > 0) {
+    if (typeName === "CRAWLER") {
+      // Forward brace and hand contact: both hands reach beyond the face while
+      // the torso compresses toward the target, then recoil cleanly.
+      parts.torso.position.z -= 0.13 * attackPulse;
+      parts.torso.position.y -= 0.06 * attackPulse;
+      parts.head.position.z -= 0.16 * attackPulse;
+      parts.head.rotation.x += 0.22 * attackPulse;
+
+      parts.leftArm.rotation.x += 0.72 * attackPulse;
+      parts.rightArm.rotation.x += 0.72 * attackPulse;
+      parts.leftArm.rotation.z += 0.10 * attackPulse;
+      parts.rightArm.rotation.z -= 0.10 * attackPulse;
+      parts.leftArm.position.z -= 0.26 * attackPulse;
+      parts.rightArm.position.z -= 0.26 * attackPulse;
+      parts.leftArm.position.y += 0.05 * attackPulse;
+      parts.rightArm.position.y += 0.05 * attackPulse;
+
+      parts.leftLeg.rotation.x -= 0.12 * attackPulse;
+      parts.rightLeg.rotation.x -= 0.12 * attackPulse;
+      group.position.y -= 0.05 * attackPulse;
+    } else if (typeName === "RANGED") {
+      parts.rightArm.rotation.x += 0.52 * attackPulse;
+      parts.rightArm.position.z -= 0.12 * attackPulse;
+      parts.head.rotation.x -= 0.08 * attackPulse;
+    } else {
+      parts.leftArm.rotation.x += 0.42 * attackPulse;
+      parts.rightArm.rotation.x += 0.42 * attackPulse;
+      parts.torso.position.z -= 0.07 * attackPulse;
+      parts.head.position.z -= 0.05 * attackPulse;
+    }
   }
 
   if (hitReactT > 0) {

@@ -1,14 +1,82 @@
 // js/player.js
 import * as THREE from 'three';
-import { camera, addScreenShake, mapMeshes } from './map.js';
+import { camera, addScreenShake, mapMeshes, currentMapId } from './map.js';
 import { updateHealthHUD, triggerDamageFlash, spawnDirectionalIndicator } from './ui.js';
 import { playPlayerSound } from './audio.js';
 import { pushOut } from './utils.js';
+import { recordDirectorDamage } from './ai_director.js';
 
 export const EYE_H = 1.75;
 const P_RADIUS = 0.42;
 const GRAVITY = -22;
 const JUMP_F = 7.5;
+
+// C10.6 — Explicit authored support rules.
+// Parking Garage and Hospital Wing use a strict whitelist. Floors and selected
+// low cover are climbable; walls, pillars, cabinets, lights, signs, and doors
+// are not player platforms.
+const STRICT_SUPPORT_MAPS = new Set([
+  'parking_garage',
+  'hospital_wing'
+]);
+
+const MAP_MAX_WALKABLE_SUPPORT_Y = Object.freeze({
+  parking_garage: 1.65,
+  hospital_wing: 1.55
+});
+
+function readGroundSupport(hit) {
+  const object = hit?.object;
+  const pointY = Number(hit?.point?.y);
+
+  if (!object || !Number.isFinite(pointY)) return null;
+
+  const strictMap = STRICT_SUPPORT_MAPS.has(currentMapId);
+  const authoredClimbable = object.userData?.playerClimbable === true;
+  const nonWalkable = Boolean(
+    object.userData?.isMapDressing ||
+    object.userData?.playerNonWalkable
+  );
+  const maxSupportY = MAP_MAX_WALKABLE_SUPPORT_Y[currentMapId];
+
+  if (nonWalkable) return null;
+  if (strictMap && !authoredClimbable) return null;
+
+  if (Number.isFinite(maxSupportY) && pointY > maxSupportY) {
+    return null;
+  }
+
+  return {
+    object,
+    pointY,
+    strictMap,
+    authorized: authoredClimbable || !strictMap,
+    tag: String(object.userData?.supportTag || object.name || 'surface')
+  };
+}
+
+function updatePlayerSupportState(support) {
+  const target = player.supportSurface;
+
+  if (!support) {
+    target.authorized = true;
+    target.strictMap = STRICT_SUPPORT_MAPS.has(currentMapId);
+    target.tag = 'world_floor';
+    target.type = 'floor';
+    target.pointY = 0;
+    target.elevated = false;
+    target.meshName = '';
+    return;
+  }
+
+  target.authorized = support.authorized;
+  target.strictMap = support.strictMap;
+  target.tag = support.tag;
+  target.type = support.pointY > 0.55 ? 'climbable' : 'floor';
+  target.pointY = support.pointY;
+  target.elevated = support.pointY > 0.55;
+  target.meshName = String(support.object?.name || '');
+}
 
 // ── D4 SETTINGS: COMFORT / LOOK FEEL ──
 const BASE_LOOK_SENS = 0.0017;
@@ -62,7 +130,16 @@ export const player = {
   baseSpeed: 9.5, sprintSpeed: 15.0, adsSpeed: 4.5,
   baseFOV: initialBaseFOV, adsFOV: computeAdsFov(initialBaseFOV), currentADSFOV: null,
   lookSensitivityPercent: initialMouseSensitivity,
-  isSprinting: false, isADS: false
+  isSprinting: false, isADS: false,
+  supportSurface: {
+    authorized: true,
+    strictMap: false,
+    tag: 'world_floor',
+    type: 'floor',
+    pointY: 0,
+    elevated: false,
+    meshName: ''
+  }
 };
 
 const _fwd = new THREE.Vector3();
@@ -134,10 +211,18 @@ export function updatePlayer(dt, keys, mdx, mdy) {
   groundRay.ray.origin.set(player.pos.x, player.pos.y + 1, player.pos.z);
   groundRay.ray.direction.copy(groundRayDir);
   const hits = groundRay.intersectObjects(mapMeshes, false);
-  
-  if (hits.length > 0) {
-    // Snap ground level to the top of whatever block we are standing on
-    groundY = hits[0].point.y + EYE_H;
+  let groundSupport = null;
+
+  for (const hit of hits) {
+    groundSupport = readGroundSupport(hit);
+    if (groundSupport) break;
+  }
+
+  updatePlayerSupportState(groundSupport);
+
+  if (groundSupport) {
+    // Only explicit gameplay supports can hold the player on strict maps.
+    groundY = groundSupport.pointY + EYE_H;
   }
 
   // 2. Gravity and Jump snapping
@@ -156,8 +241,19 @@ export function updatePlayer(dt, keys, mdx, mdy) {
   camera.position.copy(player.pos);
 }
 
-export function damagePlayer(dmg, sourcePos = null) {
+export function damagePlayer(dmg, sourcePos = null, sourceType = 'UNKNOWN') {
   if (!player.alive || player.health <= 0) return;
+
+  const appliedDamage = Math.min(
+    Math.max(0, Number(dmg) || 0),
+    Math.max(0, Number(player.health) || 0)
+  );
+
+  recordDirectorDamage({
+    amount: appliedDamage,
+    enemyType: sourceType
+  });
+
   player.health = Math.max(0, player.health - dmg);
   
   updateHealthHUD(player.health, player.maxHealth); 
@@ -210,4 +306,13 @@ export function setBaseFOV(value) {
   camera.updateProjectionMatrix();
 
   return next;
+}
+
+
+export function getPlayerSupportSnapshot() {
+  return { ...player.supportSurface };
+}
+
+if (typeof window !== 'undefined') {
+  window.KAGetPlayerSupport = getPlayerSupportSnapshot;
 }

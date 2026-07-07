@@ -1,7 +1,7 @@
 // js/enemy.js
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost } from './map.js';
+import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, currentMapId, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost } from './map.js';
 import { player, damagePlayer } from './player.js';
 import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore, showStatusToast } from './ui.js';
 import { spawnBloodBurst } from './particles.js';
@@ -10,6 +10,28 @@ import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './
 import { pushOut } from './utils.js';
 import { difficultyMultiplier, ASSETS } from './main.js';
 import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion} from './actors/procedural_zombie.js';
+import {
+  beginAIDirectorWave,
+  completeAIDirectorWave,
+  adaptEnemySpawnMix,
+  getAIDirectorTuning,
+  assignEnemyDirectorRole,
+  getDirectorPursuitTarget
+} from './ai_director.js';
+import {
+  registerSquadEnemy,
+  getSquadPursuitTarget,
+  recordSquadEnemyDeath
+} from './ai_squad.js';
+import {
+  registerNavigationEnemy,
+  getReliableNavigationTarget,
+  recordNavigationEnemyRemoved
+} from './ai_navigation.js';
+import {
+  getAIExploitSnapshot,
+  recordAIExploitRangedResponse
+} from './ai_exploit.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -20,8 +42,21 @@ const _audioToEnemy = new THREE.Vector3();
 const _audioRight = new THREE.Vector3();
 const _worldUp = new THREE.Vector3(0, 1, 0);
 const _visualCandidates = [];
+const rangedSightRay = new THREE.Raycaster();
+const rangedSightOrigin = new THREE.Vector3();
+const rangedSightDirection = new THREE.Vector3();
+const rangedSightTarget = new THREE.Vector3();
+const rangedSightHits = [];
 const ENEMY_GROUND_SAMPLE_NEAR = 0.055;
 const ENEMY_GROUND_SAMPLE_FAR = 0.13;
+
+// ── C10 ENEMY / ROUND PACING ──
+const NORMAL_WAVE_LEAD_IN = 0.65;
+const SPECIAL_WAVE_LEAD_IN = 0.35;
+const EARLY_SPAWN_PLAYER_CLEARANCE = 11.0;
+const LATE_SPAWN_PLAYER_CLEARANCE = 7.5;
+const SPAWN_ENEMY_CLEARANCE = 2.1;
+let meleeDamageGraceT = 0;
 
 
 // ── OPTIMIZATION: STRICT 3D MESH POOLING ──
@@ -254,7 +289,7 @@ function initPools() {
 
   for (let i = 0; i < MAX_PROJECTILES; i++) {
     const pMesh = new THREE.Mesh(projGeo, projMat); pMesh.visible = false; scene.add(pMesh);
-    projectilePool.items.push({ mesh: pMesh, dir: new THREE.Vector3(), life: 0 });
+    projectilePool.items.push({ mesh: pMesh, dir: new THREE.Vector3(), life: 0, elevatedResponse: false });
   }
   for (let i = 0; i < MAX_EXPLOSIONS; i++) {
     const eMesh = new THREE.Mesh(expGeo, expMat.clone()); eMesh.visible = false; scene.add(eMesh);
@@ -283,7 +318,13 @@ const enemyInstance = {
   walkT: 0,
   hitReactT: 0,
   hitReactDir: 1,
+  attackAnimT: 0,
+  attackAnimDuration: 0.30,
+  rangedLosTimer: 0,
+  rangedHasLos: false,
   dyingT: -1,
+  cachedGroundY: 0,
+  groundUpdateTimer: 0,
   alive: false,
   mixer: null,
   originalScale: new THREE.Vector3(1,1,1)
@@ -350,6 +391,7 @@ export function initEnemies() {
 
   actorManager.clear();
   campWarningTimer = 0;
+  meleeDamageGraceT = 0;
   seenVariantTypesThisRun = new Set();
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
@@ -406,10 +448,12 @@ function announceWaveStart(waveNumber) {
 
 function startWave(waveNumber) {
   zombiesSpawnedSoFar = 0;
-  spawnTimer = 0;
   nextWaveTimeout = null;
   announcedTypesThisWave = new Set();
   isSpecialRound = (waveNumber > 0 && waveNumber % 5 === 0);
+  spawnTimer = isSpecialRound ? -SPECIAL_WAVE_LEAD_IN : -NORMAL_WAVE_LEAD_IN;
+  meleeDamageGraceT = 0;
+  beginAIDirectorWave(waveNumber);
 
   // Instantly shift the map lighting.
   toggleSwarmLighting(isSpecialRound);
@@ -435,6 +479,11 @@ function completeCurrentWave() {
   if (nextWaveTimeout) return;
 
   const clearedWave = currentWave;
+  const directorResult = completeAIDirectorWave(clearedWave, {
+    health: player.health,
+    maxHealth: player.maxHealth
+  });
+
   currentWave++;
 
   flashWaveBanner("ROUND CLEAR", 2500);
@@ -446,6 +495,13 @@ function completeCurrentWave() {
     pitchMax: 1.16
   });
 
+  if (directorResult?.announcement) {
+    setTimeout(() => {
+      if (!player.alive) return;
+      showStatusToast(directorResult.announcement, '#ff66ff', 2300);
+    }, 2850);
+  }
+
   nextWaveTimeout = setTimeout(() => {
     nextWaveTimeout = null;
     if (player.alive) startWave(currentWave);
@@ -453,23 +509,52 @@ function completeCurrentWave() {
 }
 
 function getSpawnInterval() {
+  let baseInterval;
+
   if (isSpecialRound) {
-    return Math.max(0.78, 1.05 - currentWave * 0.018);
+    baseInterval = Math.max(0.84, 1.12 - currentWave * 0.015);
+  } else if (currentWave <= 1) {
+    baseInterval = 1.70;
+  } else if (currentWave === 2) {
+    baseInterval = 1.55;
+  } else if (currentWave === 3) {
+    baseInterval = 1.38;
+  } else if (currentWave === 4) {
+    baseInterval = 1.22;
+  } else {
+    baseInterval = Math.max(0.72, 1.18 - (currentWave - 4) * 0.045);
   }
 
-  // Smoother pacing after C1 variety: slightly slower ramp, fewer sudden spikes.
-  return Math.max(0.62, 1.42 - currentWave * 0.065);
+  return baseInterval * getAIDirectorTuning().spawnIntervalScale;
 }
 
 function getActiveZombieCap() {
+  let baseCap;
+
   if (isSpecialRound) {
-    return Math.min(18, 7 + Math.floor(currentWave * 1.1));
+    baseCap = Math.min(16, 6 + Math.floor(currentWave * 0.85));
+  } else if (currentWave <= 1) {
+    baseCap = 4;
+  } else if (currentWave === 2) {
+    baseCap = 5;
+  } else if (currentWave === 3) {
+    baseCap = 7;
+  } else if (currentWave === 4) {
+    baseCap = 8;
+  } else {
+    baseCap = Math.min(20, 8 + Math.floor((currentWave - 4) * 1.05));
   }
 
-  return Math.min(22, 6 + Math.floor(currentWave * 1.45));
+  return Math.min(22, baseCap + getAIDirectorTuning().activeCapBonus);
 }
 
-function getSpawnMixForWave(wave = currentWave) {
+function getMeleeDamageGrace() {
+  if (currentWave <= 3) return 0.42;
+  if (currentWave <= 7) return 0.34;
+  return 0.28;
+}
+
+function getBaseSpawnMixForWave(wave = currentWave) {
   if (isSpecialRound) {
     return [
       [ENEMY_TYPES.RUNNER, 0.46],
@@ -512,6 +597,13 @@ function getSpawnMixForWave(wave = currentWave) {
     [ENEMY_TYPES.EXPLODER, exploderChance],
     [ENEMY_TYPES.RANGED, rangedChance]
   ];
+}
+
+function getSpawnMixForWave(wave = currentWave) {
+  return adaptEnemySpawnMix(
+    getBaseSpawnMixForWave(wave),
+    { wave, isSpecialRound }
+  );
 }
 
 function rollWeightedEnemy(mix) {
@@ -621,6 +713,95 @@ function announceEnemyVariant(config) {
   }
 }
 
+function getSpawnPlayerClearance() {
+  if (currentWave <= 3) return EARLY_SPAWN_PLAYER_CLEARANCE;
+  if (currentWave <= 7) return 9.0;
+  return LATE_SPAWN_PLAYER_CLEARANCE;
+}
+
+function getNearestLivingEnemyDistanceSq(x, z) {
+  let nearestSq = Infinity;
+
+  for (const enemy of activeEnemies) {
+    if (!enemy?.alive || enemy.dyingT >= 0) continue;
+
+    const dx = x - enemy.mesh.position.x;
+    const dz = z - enemy.mesh.position.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq < nearestSq) nearestSq = distSq;
+  }
+
+  return nearestSq;
+}
+
+function pickSafeEnemySpawnPoint() {
+  if (spawnPoints.length === 0) return null;
+
+  const playerClearance = getSpawnPlayerClearance();
+  const playerClearanceSq = playerClearance * playerClearance;
+  const enemyClearanceSq = SPAWN_ENEMY_CLEARANCE * SPAWN_ENEMY_CLEARANCE;
+  const safeCandidates = [];
+
+  let bestFallback = spawnPoints[0];
+  let bestFallbackScore = -Infinity;
+
+  for (const point of spawnPoints) {
+    if (!point) continue;
+
+    const dx = point.x - player.pos.x;
+    const dz = point.z - player.pos.z;
+    const playerDistSq = dx * dx + dz * dz;
+    const enemyDistSq = getNearestLivingEnemyDistanceSq(point.x, point.z);
+    const score = Math.sqrt(playerDistSq) + Math.min(8, Math.sqrt(enemyDistSq)) * 0.35 + Math.random() * 0.65;
+
+    if (score > bestFallbackScore) {
+      bestFallbackScore = score;
+      bestFallback = point;
+    }
+
+    if (playerDistSq >= playerClearanceSq && enemyDistSq >= enemyClearanceSq) {
+      safeCandidates.push(point);
+    }
+  }
+
+  if (safeCandidates.length > 0) {
+    return safeCandidates[Math.floor(Math.random() * safeCandidates.length)];
+  }
+
+  return bestFallback;
+}
+
+function applyEnemySeparation(enemy, enemyIndex, dt) {
+  if (!enemy?.alive || enemy.dyingT >= 0) return;
+
+  for (let j = 0; j < activeEnemies.length; j++) {
+    if (j === enemyIndex) continue;
+
+    const other = activeEnemies[j];
+    if (!other?.alive || other.dyingT >= 0) continue;
+
+    let dx = enemy.mesh.position.x - other.mesh.position.x;
+    let dz = enemy.mesh.position.z - other.mesh.position.z;
+    let distSq = dx * dx + dz * dz;
+
+    const desired = enemy.colRadius + other.colRadius + 0.10;
+    if (distSq >= desired * desired) continue;
+
+    if (distSq < 0.0001) {
+      dx = enemyIndex % 2 === 0 ? 0.01 : -0.01;
+      dz = enemyIndex % 3 === 0 ? 0.01 : -0.01;
+      distSq = dx * dx + dz * dz;
+    }
+
+    const dist = Math.sqrt(distSq);
+    const overlap = desired - dist;
+    const correction = Math.min(0.075, overlap * 0.34) * Math.min(1, dt * 12);
+
+    enemy.mesh.position.x += (dx / dist) * correction;
+    enemy.mesh.position.z += (dz / dist) * correction;
+  }
+}
+
 function spawnZombie() {
   if (zombiePool.length === 0) return; 
 
@@ -631,7 +812,13 @@ function spawnZombie() {
   recycled.type = config.name;
   recycled.health = config.maxHealth;
   recycled.maxHealth = config.maxHealth;
-  recycled.speed = config.speed + (Math.random() - 0.5) * 0.32 + getWaveSpeedBonus(config);
+  const directorTuning = getAIDirectorTuning();
+  recycled.speed = (
+    config.speed +
+    (Math.random() - 0.5) * 0.32 +
+    getWaveSpeedBonus(config)
+  ) * directorTuning.speedScale;
+  recycled.directorRole = assignEnemyDirectorRole(config.name);
   recycled.damage = config.damage;
   recycled.attackRate = config.attackCooldown;
   recycled.aiTimer = Math.random() * 0.15;
@@ -641,6 +828,10 @@ function spawnZombie() {
   recycled.walkT = Math.random() * Math.PI * 2;
   recycled.hitReactT = 0;
   recycled.hitReactDir = 1;
+  recycled.attackAnimT = 0;
+  recycled.attackAnimDuration = config.name === 'CRAWLER' ? 0.46 : 0.30;
+  recycled.rangedLosTimer = Math.random() * 0.12;
+  recycled.rangedHasLos = false;
   recycled.dyingT = -1;
   recycled.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
   recycled.cachedGroundY = 0;
@@ -673,15 +864,22 @@ recycled.mesh.traverse(child => {
   }
 });
 
-  if (spawnPoints.length > 0) {
-    const sp = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
-    recycled.mesh.position.set(sp.x + (Math.random() - 0.5) * 2, 0, sp.z + (Math.random() - 0.5) * 2);
+  const spawnPoint = pickSafeEnemySpawnPoint();
+
+  if (spawnPoint) {
+    recycled.mesh.position.set(
+      spawnPoint.x + (Math.random() - 0.5) * 1.15,
+      0,
+      spawnPoint.z + (Math.random() - 0.5) * 1.15
+    );
   } else {
     recycled.mesh.position.set(0, 0, 0); 
   }
 
   updateProceduralZombieStyle(recycled.lodMesh, config);
   activeEnemies.push(recycled);
+  registerSquadEnemy(recycled);
+  registerNavigationEnemy(recycled);
   actorManager.register(recycled);
   zombiesSpawnedSoFar++;
 
@@ -689,10 +887,87 @@ recycled.mesh.traverse(child => {
 }
 
 const _eToP = new THREE.Vector3();
+const _directorMoveTarget = { x: 0, z: 0 };
+const _squadMoveTarget = { x: 0, z: 0 };
+const _navigationMoveTarget = { x: 0, z: 0 };
+
+function hasRangedLineOfSight(enemy) {
+  rangedSightOrigin.set(
+    enemy.mesh.position.x,
+    enemy.mesh.position.y + 1.18,
+    enemy.mesh.position.z
+  );
+  rangedSightTarget.set(
+    player.pos.x,
+    player.pos.y - 0.10,
+    player.pos.z
+  );
+  rangedSightDirection.subVectors(rangedSightTarget, rangedSightOrigin);
+
+  const distance = rangedSightDirection.length();
+  if (distance <= 0.3) return true;
+
+  rangedSightDirection.multiplyScalar(1 / distance);
+  rangedSightRay.near = 0.15;
+  rangedSightRay.far = Math.max(0.15, distance - 0.25);
+  rangedSightRay.ray.origin.copy(rangedSightOrigin);
+  rangedSightRay.ray.direction.copy(rangedSightDirection);
+
+  rangedSightHits.length = 0;
+  rangedSightRay.intersectObjects(mapMeshes, false, rangedSightHits);
+
+  for (const hit of rangedSightHits) {
+    const object = hit?.object;
+    if (!object) continue;
+
+    if (
+      object.userData?.isMapDressing ||
+      object.userData?.playerNonBlockingProjectile
+    ) {
+      continue;
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+function canRangedAttackPlayer(enemy, horizontalDist, verticalDist, dt) {
+  if (enemy.type !== 'RANGED') return false;
+
+  const tuning = getAIDirectorTuning();
+  const elevationResponse = Math.max(
+    0,
+    Number(tuning.rangedElevationResponse) || 0
+  );
+  const maxHorizontal = enemy.attackRange + elevationResponse * 3.0;
+  const maxVertical = 2.2 + elevationResponse * 4.2;
+
+  if (
+    horizontalDist > maxHorizontal ||
+    verticalDist > maxVertical
+  ) {
+    return false;
+  }
+
+  enemy.rangedLosTimer = Math.max(
+    0,
+    (enemy.rangedLosTimer || 0) - dt
+  );
+
+  if (enemy.rangedLosTimer <= 0) {
+    enemy.rangedLosTimer = 0.12 + Math.random() * 0.08;
+    enemy.rangedHasLos = hasRangedLineOfSight(enemy);
+  }
+
+  return enemy.rangedHasLos === true;
+}
 
 export function updateEnemies(dt) {
   if (!player.alive) return;
-	let currentlyCamping = false; // ◄── ADD THIS FLAG
+
+  meleeDamageGraceT = Math.max(0, meleeDamageGraceT - dt);
   // ── ELECTRIC TRAP LOGIC ──
   traps.forEach(t => {
     if (t.state === 'ACTIVE') {
@@ -725,7 +1000,11 @@ export function updateEnemies(dt) {
       const pdy = player.pos.y - p.mesh.position.y;
       const pdz = player.pos.z - p.mesh.position.z;
       if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
-        damagePlayer(20, p.mesh.position);
+        damagePlayer(20, p.mesh.position, 'RANGED');
+        if (p.elevatedResponse) {
+          recordAIExploitRangedResponse({ hit: true });
+        }
+        p.elevatedResponse = false;
         p.life = 0; p.mesh.visible = false;
       }
       if (p.life <= 0) p.mesh.visible = false;
@@ -822,6 +1101,7 @@ const visualAnimTime = performance.now() * 0.001;
 for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
     e.hitReactT = Math.max(0, (e.hitReactT || 0) - dt);
+    e.attackAnimT = Math.max(0, (e.attackAnimT || 0) - dt);
 
     if (e.dyingT >= 0) {
       e.dyingT += dt; 
@@ -832,6 +1112,8 @@ for (let i = activeEnemies.length - 1; i >= 0; i--) {
         updateProceduralZombieMotion(e.lodMesh, visualAnimTime, 0.0, {
           hitReactT: 0,
           hitReactDir: e.hitReactDir || 1,
+          attackT: 0,
+          attackDuration: e.attackAnimDuration || 0.30,
           deathT: e.dyingT
         });
       }
@@ -886,15 +1168,14 @@ if (e.usingLod && e.lodMesh) {
     {
       hitReactT: e.hitReactT,
       hitReactDir: e.hitReactDir,
+      attackT: e.attackAnimT,
+      attackDuration: e.attackAnimDuration || 0.30,
       deathT: e.dyingT
     }
   );
 }
-    // ── ANTI-CAMPING DETECTION ──
-    // If zombie is right under you, but the height gap proves you are on a box (not a balcony)
-    if (horizontalDist <= 2.2 && trueVerticalDist > 1.8 && trueVerticalDist < 4.5) {
-      currentlyCamping = true;
-    }
+    // Reachability/perch state is measured centrally by ai_exploit.js.
+    // Valid authored elevated cover receives ranged counterplay, not spores.
 
     // ── CPU OPTIMIZATION: Only animate skeletons if close ──
 	if (e.mixer && e._useFullVisual) {
@@ -935,17 +1216,53 @@ if (e.usingLod && e.lodMesh) {
       continue; // Skip standard player movement calculations this frame
     }
 
+    getDirectorPursuitTarget(e, player, _directorMoveTarget);
+    getSquadPursuitTarget(
+      e,
+      player,
+      _directorMoveTarget,
+      traps,
+      _squadMoveTarget
+    );
+
+    getReliableNavigationTarget(
+      e,
+      player,
+      _squadMoveTarget,
+      walls,
+      traps,
+      _navigationMoveTarget,
+      dt
+    );
+
     if (horizontalDist > 0.1) {
-      e.mesh.lookAt(player.pos.x, e.mesh.position.y, player.pos.z);
+      e.mesh.lookAt(_navigationMoveTarget.x, e.mesh.position.y, _navigationMoveTarget.z);
     }
 
+    const rangedCanAttack = canRangedAttackPlayer(
+      e,
+      horizontalDist,
+      trueVerticalDist,
+      dt
+    );
+
 // ── MOVEMENT & STAIRWAY ROUTING ENGINE ──
-    if (horizontalDist > e.attackRange || trueVerticalDist > 1.8) {
+    if (
+      !rangedCanAttack &&
+      (horizontalDist > e.attackRange || trueVerticalDist > 1.8)
+    ) {
       const oldWalk = e.walkT;
-      e.walkT += dt * e.speed * 3.5;
+      const heavyEnemy = e.type === "BRUTE" || e.type === "GOLIATH";
+      const hitMoveScale = e.hitReactT > 0 ? (heavyEnemy ? 0.72 : 0.42) : 1.0;
+      const moveSpeed = e.speed * hitMoveScale;
+      e.walkT += dt * moveSpeed * 3.5;
       
-      let moveX = _eToP.x / (horizontalDist || 1);
-      let moveZ = _eToP.z / (horizontalDist || 1);
+      const moveTargetX = _navigationMoveTarget.x - e.mesh.position.x;
+      const moveTargetZ = _navigationMoveTarget.z - e.mesh.position.z;
+      const moveTargetDistance = Math.max(0.001, Math.hypot(moveTargetX, moveTargetZ));
+
+      let moveX = moveTargetX / moveTargetDistance;
+      let moveZ = moveTargetZ / moveTargetDistance;
 
       // ── THE MULTISTORY NAV-MESH FIX ──
       // If player is upstairs (Y > 4) and zombie is down below, route them to the steps!
@@ -968,8 +1285,8 @@ if (e.usingLod && e.lodMesh) {
         }
       }
 
-      e.mesh.position.x += moveX * e.speed * dt;
-      e.mesh.position.z += moveZ * e.speed * dt;
+      e.mesh.position.x += moveX * moveSpeed * dt;
+      e.mesh.position.z += moveZ * moveSpeed * dt;
 
       // ── HEIGHT SAMPLING (Look-Ahead Stair Snap) ──
       // C5: raycasting every enemy every frame is expensive. Cache ground height
@@ -1010,47 +1327,96 @@ if (e.usingLod && e.lodMesh) {
       if (Math.random() < 0.005) playSpatialZombieSound(e.mesh.position, e.type, false);
     }
 
+    // Keep close enemies from occupying the same point and forming an unreadable pile.
+    applyEnemySeparation(e, i, dt);
+    pushOut(e.mesh.position, e.colRadius);
+
     // ── ATTACK AND RANGE VALIDATION ──
     e.atkCD -= dt;
-    if (horizontalDist <= e.attackRange && trueVerticalDist <= 1.8 && e.atkCD <= 0 && player.alive) {
-      e.atkCD = e.attackRate; 
-      
+
+    const canAttackNow = e.type === 'RANGED'
+      ? rangedCanAttack
+      : (
+        horizontalDist <= e.attackRange &&
+        trueVerticalDist <= 1.8
+      );
+
+    if (canAttackNow && e.atkCD <= 0 && player.alive) {
       if (e.type === "EXPLODER") {
-        killEnemy(e); 
-      } 
+        e.atkCD = e.attackRate;
+        e.attackAnimT = 0.26;
+        e.attackAnimDuration = 0.26;
+        killEnemy(e);
+      }
       else if (e.type === "RANGED") {
+        e.atkCD = e.attackRate;
+        e.attackAnimT = 0.30;
+        e.attackAnimDuration = 0.30;
+
         const pool = projectilePool;
         const p = pool.items[pool.index];
-        p.mesh.position.copy(e.mesh.position); p.mesh.position.y += 1.2;
+        p.mesh.position.copy(e.mesh.position);
+        p.mesh.position.y += 1.2;
         p.dir.subVectors(player.pos, p.mesh.position).normalize();
-        p.life = 2.5; p.mesh.visible = true;
+        p.life = 2.5;
+        p.elevatedResponse = trueVerticalDist > 1.8;
+        p.mesh.visible = true;
         pool.index = (pool.index + 1) % MAX_PROJECTILES;
-        playEnemySound('ranged', 0.32, true, { cooldownKey: 'ranged_enemy_shot', cooldownMs: 120 }); 
-      } 
-else {
-        damagePlayer(e.damage, e.mesh.position);
-        e.mesh.position.x += (_eToP.x / (horizontalDist || 1)) * 0.15; 
-        e.mesh.position.z += (_eToP.z / (horizontalDist || 1)) * 0.15;
+
+        if (p.elevatedResponse) {
+          recordAIExploitRangedResponse({ hit: false });
+        }
+
+        playEnemySound('ranged', 0.32, true, {
+          cooldownKey: 'ranged_enemy_shot',
+          cooldownMs: 120
+        });
+      }
+      else if (meleeDamageGraceT <= 0) {
+        e.atkCD = e.attackRate;
+        meleeDamageGraceT = getMeleeDamageGrace();
+        e.attackAnimDuration = e.type === 'CRAWLER' ? 0.46 : 0.32;
+        e.attackAnimT = e.attackAnimDuration;
+
+        damagePlayer(e.damage, e.mesh.position, e.type);
+
+        e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
+        e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
+        pushOut(e.mesh.position, e.colRadius);
+      } else {
+        e.attackAnimDuration = e.type === 'CRAWLER' ? 0.24 : 0.18;
+        e.attackAnimT = Math.max(e.attackAnimT, e.attackAnimDuration);
+        e.atkCD = Math.min(e.attackRate, 0.12 + Math.random() * 0.10);
       }
     }
   } // <-- End of activeEnemies loop
 
-  // ── PUNISH CAMPERS ──
-  if (currentlyCamping) {
+  // ── LAST-RESORT EXPLOIT FALLBACK ──
+  const exploit = getAIExploitSnapshot();
+
+  if (exploit.toxicPunishEligible) {
     campWarningTimer += dt;
-    if (campWarningTimer > 4.0) { // 4 seconds of standing on a box
-      damagePlayer(15, null);
-      flashWaveBanner("WARNING: TOXIC SPORES! KEEP MOVING!", 1000);
-      playEnemySound('spore', 0.16, true, { cooldownKey: 'toxic_spores', cooldownMs: 1100, pitchMin: 0.72, pitchMax: 0.90 });
-      campWarningTimer = 3.0; // Ticks damage every 1 second until they jump down
+
+    if (campWarningTimer > 4.0) {
+      damagePlayer(15, null, 'SPORE');
+      flashWaveBanner("WARNING: TOXIC SPORES! MOVE TO VALID GROUND!", 1000);
+      playEnemySound('spore', 0.16, true, {
+        cooldownKey: 'toxic_spores',
+        cooldownMs: 1100,
+        pitchMin: 0.72,
+        pitchMax: 0.90
+      });
+      campWarningTimer = 3.0;
     }
   } else {
-    campWarningTimer = Math.max(0, campWarningTimer - dt * 1.5); // Rapidly cools down when moving
+    campWarningTimer = Math.max(0, campWarningTimer - dt * 1.5);
   }
 } // <-- End of updateEnemies function
 
 export function killEnemy(e) {
   if (!e.alive) return;
+  recordSquadEnemyDeath(e);
+  recordNavigationEnemyRemoved(e);
   e.alive = false; e.dyingT = 0; 
   spawnBloodBurst(e.mesh.position);
   
@@ -1065,7 +1431,7 @@ export function killEnemy(e) {
     ex.life = 0.3; ex.mesh.visible = true;
     pool.index = (pool.index + 1) % MAX_EXPLOSIONS;
     
-    if (player.pos.distanceTo(e.mesh.position) < 5.0) damagePlayer(e.damage, e.mesh.position);
+    if (player.pos.distanceTo(e.mesh.position) < 5.0) damagePlayer(e.damage, e.mesh.position, 'EXPLODER');
   }
   
 player.kills++; updateKillsHUD(player.kills);

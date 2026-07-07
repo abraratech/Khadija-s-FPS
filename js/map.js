@@ -520,7 +520,18 @@ let floorMesh = null;
 // Grid Bunker layout has moved to js/maps/grid_bunker.js
 // Compatibility wrapper.
 // Actual block creation now lives in js/maps/map_helpers.js.
-function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false) {
+function spawnBlock(
+  w,
+  h,
+  d,
+  x,
+  y,
+  z,
+  colorOrMap,
+  isWall = true,
+  isDoor = false,
+  supportOptions = {}
+) {
   return createMapBlock(
     {
       scene,
@@ -536,7 +547,8 @@ function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false)
       z,
       colorOrMap,
       isWall,
-      isDoor
+      isDoor,
+      ...supportOptions
     }
   );
 }

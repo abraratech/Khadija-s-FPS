@@ -6,6 +6,16 @@ import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, update
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
+import {
+  resetAIDirectorRun,
+  endAIDirectorRun,
+  updateAIDirector,
+  bindAIDirectorDebugHotkey
+} from './ai_director.js';
+import {
+  bindAIMemoryControls,
+  refreshAIMemoryControls
+} from './ai_memory.js';
 
 const canvas = document.getElementById('c');
 renderer.info.autoReset = false;
@@ -327,7 +337,9 @@ window.addEventListener('keydown', (e) => {
 
 initGraphicsQualityControls();
 bindCoreSettingsControls();
-console.log(`Khadija's Arena static ES-module demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle.`);
+bindAIMemoryControls();
+bindAIDirectorDebugHotkey();
+console.log(`Khadija's Arena static ES-module demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle · F7 AI Director.`);
 
 function renderGameFrame() {
   renderer.info.reset();
@@ -705,6 +717,11 @@ async function beginRun({ fromRespawn = false } = {}) {
 
     difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
 
+    resetAIDirectorRun({
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier
+    });
+
     placePlayerAtRandomSpawn();
 
     scene.add(camera);
@@ -733,6 +750,8 @@ async function beginRun({ fromRespawn = false } = {}) {
 
 function returnToMenu(source = 'pause') {
   saveRunRecords();
+  endAIDirectorRun();
+  refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
   removeActiveWeaponMesh();
@@ -816,6 +835,14 @@ let mark = frameStart;
 
 updatePlayer(dt, keys, mdx, mdy);
 updateLowHealthHeartbeat(player, dt);
+
+updateAIDirector(dt, {
+  player,
+  activeWeapon: getActiveWeapon(),
+  enemies: getActiveEnemies(),
+  wave: currentWave
+});
+
 mdx = 0; mdy = 0;
 const playerMs = performance.now() - mark;
 mark = performance.now();
@@ -843,6 +870,8 @@ processReloadTick(dt);
 const effectsMs = performance.now() - mark;
 
     if (!player.alive && gs === 'playing') {
+    endAIDirectorRun();
+    refreshAIMemoryControls();
     gs = 'dead';
     clearInputState();
     saveRunRecords();

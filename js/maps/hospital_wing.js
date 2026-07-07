@@ -122,7 +122,21 @@ function addTreatmentBed(context, spawnBlock, x, z, rotY = 0, color = 0x6c8480) 
   const w = isSideways ? 1.6 : 3.4;
   const d = isSideways ? 3.4 : 1.6;
 
-  const bed = spawnBlock(w, 0.72, d, x, 0.36, z, color, true, false);
+  const bed = spawnBlock(
+    w,
+    0.72,
+    d,
+    x,
+    0.36,
+    z,
+    color,
+    true,
+    false,
+    {
+      playerClimbable: true,
+      supportTag: 'treatment_bed'
+    }
+  );
 
   const railMat = new THREE.MeshStandardMaterial({
     color: 0xd6eee9,
@@ -148,7 +162,11 @@ function addCurtain(context, spawnBlock, x, z, rotY = 0) {
     z,
     0x1e5c55,
     true,
-    false
+    false,
+    {
+      playerNonWalkable: true,
+      supportTag: 'curtain'
+    }
   );
 
   curtain.mesh.material.transparent = true;
@@ -168,7 +186,11 @@ function addSupplyCart(context, spawnBlock, x, z, rotY = 0) {
     z,
     0x46524f,
     true,
-    false
+    false,
+    {
+      playerClimbable: true,
+      supportTag: 'supply_cart'
+    }
   );
 
   const handleMat = new THREE.MeshStandardMaterial({ color: 0xd9eee9, metalness: 0.55, roughness: 0.35 });
@@ -259,10 +281,22 @@ export function buildHospitalWing(context) {
   doors.push(quarantineDoor);
 
   // Reception / nurse stations and sturdy cover.
-  spawnBlock(7.0, 1.05, 2.0, -34, 0.52, 0, deskColor, true, false);
-  spawnBlock(7.0, 1.05, 2.0, 34, 0.52, 0, deskColor, true, false);
-  spawnBlock(3.0, 1.1, 2.8, -9, 0.55, 24, 0x5f685f, true, false);
-  spawnBlock(3.0, 1.1, 2.8, 9, 0.55, -24, 0x5f685f, true, false);
+  spawnBlock(7.0, 1.05, 2.0, -34, 0.52, 0, deskColor, true, false, {
+    playerClimbable: true,
+    supportTag: 'nurse_station'
+  });
+  spawnBlock(7.0, 1.05, 2.0, 34, 0.52, 0, deskColor, true, false, {
+    playerClimbable: true,
+    supportTag: 'nurse_station'
+  });
+  spawnBlock(3.0, 1.1, 2.8, -9, 0.55, 24, 0x5f685f, true, false, {
+    playerClimbable: true,
+    supportTag: 'ward_desk'
+  });
+  spawnBlock(3.0, 1.1, 2.8, 9, 0.55, -24, 0x5f685f, true, false, {
+    playerClimbable: true,
+    supportTag: 'ward_desk'
+  });
 
   // New B4 cover: small supply carts that break sightlines without choking the main route.
   addSupplyCart({ scene, mapMeshes }, spawnBlock, -12, 14, Math.PI / 2);
@@ -273,10 +307,22 @@ export function buildHospitalWing(context) {
   // Wall cabinets add room detail while keeping lanes open.
   // B4 visual hotfix: y must stay near the floor; previous cabinet calls accidentally used Z values as Y,
   // which made a few cabinet blocks appear high in the sky.
-  spawnBlock(3.4, 1.6, 0.55, -40, 0.8, 28, cabinetColor, true, false);
-  spawnBlock(3.4, 1.6, 0.55, 40, 0.8, -28, cabinetColor, true, false);
-  spawnBlock(0.55, 1.6, 3.4, -4, 0.8, 24, cabinetColor, true, false);
-  spawnBlock(0.55, 1.6, 3.4, 4, 0.8, -24, cabinetColor, true, false);
+  spawnBlock(3.4, 1.6, 0.55, -40, 0.8, 28, cabinetColor, true, false, {
+    playerNonWalkable: true,
+    supportTag: 'wall_cabinet'
+  });
+  spawnBlock(3.4, 1.6, 0.55, 40, 0.8, -28, cabinetColor, true, false, {
+    playerNonWalkable: true,
+    supportTag: 'wall_cabinet'
+  });
+  spawnBlock(0.55, 1.6, 3.4, -4, 0.8, 24, cabinetColor, true, false, {
+    playerNonWalkable: true,
+    supportTag: 'wall_cabinet'
+  });
+  spawnBlock(0.55, 1.6, 3.4, 4, 0.8, -24, cabinetColor, true, false, {
+    playerNonWalkable: true,
+    supportTag: 'wall_cabinet'
+  });
 
   // Treatment beds. These create cover but are placed away from spawn/shop/trap points.
   addTreatmentBed({ scene, mapMeshes }, spawnBlock, -38, 20, 0, 0x6c8480);

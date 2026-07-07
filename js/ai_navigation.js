@@ -22,6 +22,9 @@ const NAV_STUCK_ROLE_RESET = 1.65;
 const NAV_STUCK_SEVERE = 2.75;
 const NAV_ROLE_PENALTY = 4.0;
 const NAV_MAX_WALL_CHECKS = 140;
+const NAV_CONTACT_REFRESH_MIN = 0.16;
+const NAV_CONTACT_REFRESH_MAX = 0.26;
+const NAV_CONTACT_ANGLE_OFFSETS = Object.freeze([0, 0.55, -0.55, 1.05, -1.05]);
 
 const MAP_ROUTE_ANCHORS = Object.freeze({
   grid_bunker: Object.freeze([
@@ -67,7 +70,9 @@ const state = {
   roleResetRequests: 0,
   trapDetours: 0,
   anchorDetours: 0,
-  wallCornerDetours: 0
+  wallCornerDetours: 0,
+  contactApproachEnemies: 0,
+  cornerContactOverrides: 0
 };
 
 function clamp(value, min = 0, max = 1) {
@@ -94,6 +99,114 @@ function getContactOverrideDistance(enemy) {
   if (enemy?.type === 'EXPLODER') return Math.max(4.00, attackRange + 1.25);
 
   return Math.max(3.15, attackRange + 1.05);
+}
+
+
+function getContactStandOff(enemy) {
+  const attackRange = Math.max(0.8, Number(enemy?.attackRange) || 1.4);
+
+  if (enemy?.type === 'GOLIATH') return clamp(attackRange * 0.78, 1.9, 2.55);
+  if (enemy?.type === 'BRUTE') return clamp(attackRange * 0.74, 1.15, 1.48);
+  if (enemy?.type === 'EXPLODER') return clamp(attackRange * 0.76, 1.35, 1.80);
+
+  return clamp(attackRange * 0.72, 0.72, 1.12);
+}
+
+function pathCrossesActiveTrap(enemy, x1, z1, x2, z2, traps) {
+  if (!enemy?.trapAware || !Array.isArray(traps)) return false;
+
+  for (const trap of traps) {
+    const bounds = getTrapBounds(trap);
+    if (bounds && segmentIntersectsBounds(x1, z1, x2, z2, bounds)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function refreshPlayerContactTarget(enemy, playerState, walls) {
+  const ex = Number(enemy?.mesh?.position?.x) || 0;
+  const ez = Number(enemy?.mesh?.position?.z) || 0;
+  const feetY = Number(enemy?.mesh?.position?.y) || 0;
+  const px = Number(playerState?.pos?.x) || 0;
+  const pz = Number(playerState?.pos?.z) || 0;
+  const radius = getContactStandOff(enemy);
+  const baseAngle = Math.atan2(ez - pz, ex - px);
+  const clearance = clamp((Number(enemy?.colRadius) || 0.45) * 0.45, 0.16, 0.30);
+
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const offset of NAV_CONTACT_ANGLE_OFFSETS) {
+    const angle = baseAngle + offset;
+    const x = px + Math.cos(angle) * radius;
+    const z = pz + Math.sin(angle) * radius;
+
+    if (!isCandidateOpen(x, z, walls || [], feetY, clearance)) continue;
+    if (!pathIsClear(ex, ez, x, z, walls || [], feetY, clearance)) continue;
+
+    const score = flatDistance(ex, ez, x, z) + Math.abs(offset) * 0.72;
+    if (score < bestScore) {
+      bestScore = score;
+      best = { x, z, offset };
+    }
+  }
+
+  enemy.navContactRefreshTimer = NAV_CONTACT_REFRESH_MIN +
+    Math.random() * (NAV_CONTACT_REFRESH_MAX - NAV_CONTACT_REFRESH_MIN);
+  enemy.navContactPlayerX = px;
+  enemy.navContactPlayerZ = pz;
+
+  if (!best) {
+    enemy.navContactTargetValid = false;
+    enemy.navUsingContactTarget = false;
+    enemy.navCornerContactOverride = false;
+    return false;
+  }
+
+  enemy.navContactTarget.x = best.x;
+  enemy.navContactTarget.z = best.z;
+  enemy.navContactTargetValid = true;
+  enemy.navUsingContactTarget = true;
+  enemy.navCornerContactOverride = Math.abs(best.offset) > 0.01;
+  return true;
+}
+
+function getPlayerContactTarget(enemy, playerState, walls, out, dt = 0) {
+  if (!enemy || enemy.type === 'RANGED') return false;
+
+  ensureEnemyNavigationState(enemy);
+  enemy.navContactRefreshTimer = Math.max(
+    0,
+    Number(enemy.navContactRefreshTimer || 0) - clamp(dt, 0, 0.05)
+  );
+
+  const px = Number(playerState?.pos?.x) || 0;
+  const pz = Number(playerState?.pos?.z) || 0;
+  const lastPlayerX = Number(enemy.navContactPlayerX);
+  const lastPlayerZ = Number(enemy.navContactPlayerZ);
+  const playerMoved = flatDistance(
+    px,
+    pz,
+    Number.isFinite(lastPlayerX) ? lastPlayerX : px,
+    Number.isFinite(lastPlayerZ) ? lastPlayerZ : pz
+  ) > 0.45;
+
+  if (
+    enemy.navContactRefreshTimer <= 0 ||
+    playerMoved ||
+    !enemy.navContactTargetValid
+  ) {
+    refreshPlayerContactTarget(enemy, playerState, walls || []);
+  }
+
+  if (!enemy.navContactTargetValid) return false;
+
+  out.x = enemy.navContactTarget.x;
+  out.z = enemy.navContactTarget.z;
+  enemy.navUsingContactTarget = true;
+  return true;
 }
 
 function pointInsideExpandedWall(x, z, wall, padding = NAV_CLEARANCE, feetY = 0) {
@@ -417,6 +530,13 @@ function ensureEnemyNavigationState(enemy) {
   if (!Number.isFinite(enemy.navLastX)) enemy.navLastX = Number(enemy.mesh?.position?.x) || 0;
   if (!Number.isFinite(enemy.navLastZ)) enemy.navLastZ = Number(enemy.mesh?.position?.z) || 0;
   if (!Number.isFinite(enemy.navLastTargetDistance)) enemy.navLastTargetDistance = Infinity;
+  if (!Number.isFinite(enemy.navContactRefreshTimer)) enemy.navContactRefreshTimer = 0;
+  if (!Number.isFinite(enemy.navContactPlayerX)) enemy.navContactPlayerX = Number(enemy.mesh?.position?.x) || 0;
+  if (!Number.isFinite(enemy.navContactPlayerZ)) enemy.navContactPlayerZ = Number(enemy.mesh?.position?.z) || 0;
+  if (!enemy.navContactTarget) enemy.navContactTarget = { x: 0, z: 0 };
+  if (typeof enemy.navContactTargetValid !== 'boolean') enemy.navContactTargetValid = false;
+  if (typeof enemy.navUsingContactTarget !== 'boolean') enemy.navUsingContactTarget = false;
+  if (typeof enemy.navCornerContactOverride !== 'boolean') enemy.navCornerContactOverride = false;
   if (!enemy.navWaypoint) enemy.navWaypoint = { x: 0, z: 0, active: false, type: 'none' };
   if (!Number.isFinite(enemy.navRecoverySide)) {
     enemy.navRecoverySide = Number(enemy.squadSeed) < 0.5 ? -1 : 1;
@@ -604,6 +724,8 @@ export function resetAINavigationRun({ mapId = 'grid_bunker' } = {}) {
   state.trapDetours = 0;
   state.anchorDetours = 0;
   state.wallCornerDetours = 0;
+  state.contactApproachEnemies = 0;
+  state.cornerContactOverrides = 0;
 }
 
 export function endAINavigationRun() {
@@ -612,6 +734,8 @@ export function endAINavigationRun() {
   state.detouringEnemies = 0;
   state.recoveringEnemies = 0;
   state.stuckEnemies = 0;
+  state.contactApproachEnemies = 0;
+  state.cornerContactOverrides = 0;
 }
 
 export function beginAINavigationWave(waveNumber) {
@@ -620,6 +744,8 @@ export function beginAINavigationWave(waveNumber) {
   state.detouringEnemies = 0;
   state.recoveringEnemies = 0;
   state.stuckEnemies = 0;
+  state.contactApproachEnemies = 0;
+  state.cornerContactOverrides = 0;
 }
 
 export function registerNavigationEnemy(enemy) {
@@ -636,6 +762,13 @@ export function registerNavigationEnemy(enemy) {
   enemy.navLastX = Number(enemy.mesh?.position?.x) || 0;
   enemy.navLastZ = Number(enemy.mesh?.position?.z) || 0;
   enemy.navLastTargetDistance = Infinity;
+  enemy.navContactRefreshTimer = 0;
+  enemy.navContactPlayerX = Number(enemy.mesh?.position?.x) || 0;
+  enemy.navContactPlayerZ = Number(enemy.mesh?.position?.z) || 0;
+  enemy.navContactTarget = { x: 0, z: 0 };
+  enemy.navContactTargetValid = false;
+  enemy.navUsingContactTarget = false;
+  enemy.navCornerContactOverride = false;
   enemy.navRecoverySide = Number(enemy.squadSeed) < 0.5 ? -1 : 1;
   enemy.navWaypoint = {
     x: 0,
@@ -673,23 +806,39 @@ export function getReliableNavigationTarget(
   const ez = Number(enemy.mesh.position.z) || 0;
   const feetY = Number(enemy.mesh.position.y) || 0;
   const playerDistance = flatDistance(ex, ez, fallbackX, fallbackZ);
+  const desiredTracksPlayer = flatDistance(out.x, out.z, fallbackX, fallbackZ) <= 0.85;
   const directPressureRequested = Boolean(
     enemy.type !== 'RANGED' &&
     (
+      desiredTracksPlayer ||
       enemy.squadDirectPressure ||
       enemy.formationDirectPressure ||
       playerDistance <= getContactOverrideDistance(enemy)
     )
   );
-  const hasDirectPath = directPressureRequested && pathIsClear(
-    ex,
-    ez,
-    fallbackX,
-    fallbackZ,
+
+  enemy.navUsingContactTarget = false;
+  enemy.navCornerContactOverride = false;
+
+  const hasContactTarget = directPressureRequested && getPlayerContactTarget(
+    enemy,
+    playerState,
     walls || [],
-    feetY,
-    0.34
+    out,
+    dt
   );
+  const hasDirectPath = directPressureRequested &&
+    hasContactTarget &&
+    !pathCrossesActiveTrap(enemy, ex, ez, out.x, out.z, traps || []) &&
+    pathIsClear(
+      ex,
+      ez,
+      out.x,
+      out.z,
+      walls || [],
+      feetY,
+      clamp((Number(enemy.colRadius) || 0.45) * 0.45, 0.16, 0.30)
+    );
 
   if (hasDirectPath) {
     // A stale flank/recovery waypoint can otherwise pull a melee enemy away
@@ -734,6 +883,9 @@ export function recordNavigationEnemyRemoved(enemy) {
   enemy.navWaypoint && (enemy.navWaypoint.active = false);
   enemy.navNeedsRoleReset = false;
   enemy.navRecoveryTimer = 0;
+  enemy.navContactTargetValid = false;
+  enemy.navUsingContactTarget = false;
+  enemy.navCornerContactOverride = false;
 }
 
 export function updateAINavigationDebug(enemies) {
@@ -743,6 +895,8 @@ export function updateAINavigationDebug(enemies) {
   let detouring = 0;
   let recovering = 0;
   let stuck = 0;
+  let contactApproach = 0;
+  let cornerContact = 0;
 
   for (const enemy of enemies) {
     if (!enemy?.alive || enemy.dyingT >= 0) continue;
@@ -750,8 +904,12 @@ export function updateAINavigationDebug(enemies) {
     if (enemy.navWaypoint?.active) detouring++;
     if ((enemy.navRecoveryTimer || 0) > 0) recovering++;
     if ((enemy.navStuckTime || 0) >= NAV_STUCK_START) stuck++;
+    if (enemy.navUsingContactTarget) contactApproach++;
+    if (enemy.navCornerContactOverride) cornerContact++;
   }
 
+  state.contactApproachEnemies = contactApproach;
+  state.cornerContactOverrides = cornerContact;
   state.plannedEnemies = planned;
   state.detouringEnemies = detouring;
   state.recoveringEnemies = recovering;
@@ -770,7 +928,9 @@ export function getAINavigationSnapshot() {
     roleResetRequests: state.roleResetRequests,
     trapDetours: state.trapDetours,
     anchorDetours: state.anchorDetours,
-    wallCornerDetours: state.wallCornerDetours
+    wallCornerDetours: state.wallCornerDetours,
+    contactApproachEnemies: state.contactApproachEnemies,
+    cornerContactOverrides: state.cornerContactOverrides
   };
 }
 

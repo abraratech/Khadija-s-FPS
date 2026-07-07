@@ -307,6 +307,22 @@
         linear-gradient(0deg, rgba(0,229,255,0.14), rgba(255,59,213,0.16)),
         #071018;
     }
+
+    .ka-map-shot.reactor-courtyard {
+      background:
+        radial-gradient(circle at 50% 48%, rgba(25,216,255,0.34), transparent 15%),
+        radial-gradient(circle at 24% 28%, rgba(255,138,34,0.24), transparent 13%),
+        radial-gradient(circle at 76% 72%, rgba(25,216,255,0.20), transparent 14%),
+        linear-gradient(90deg, transparent 0 12%, rgba(120,145,160,0.20) 12% 15%, transparent 15% 85%, rgba(120,145,160,0.20) 85% 88%, transparent 88%),
+        repeating-linear-gradient(0deg, rgba(255,204,34,0.07) 0 2px, transparent 2px 46px),
+        linear-gradient(135deg, #172127, #071015 62%, #1c1209);
+    }
+    .ka-map-thumb.reactor-courtyard {
+      background:
+        radial-gradient(circle at 50% 50%, rgba(25,216,255,0.58) 0 10px, transparent 11px),
+        linear-gradient(90deg, rgba(255,138,34,0.24) 0 9px, transparent 9px 38px, rgba(25,216,255,0.24) 38px 47px, transparent 47px),
+        #111a20;
+    }
     .ka-settings-layout {
       display: grid;
       grid-template-columns: 0.85fr 1.15fr;
@@ -567,6 +583,12 @@
       <div id="objective-progress" class="objective-progress">0/25</div>
     </div>
 
+    <div id="map-system-panel" class="map-system-panel" aria-live="polite" style="display:none;">
+      <div class="map-system-kicker">REACTOR SYSTEMS</div>
+      <div class="map-system-row"><span>STEAM VENTS</span><b id="map-system-hazard">IDLE</b></div>
+      <div class="map-system-row"><span>COOLANT OVERRIDE</span><b id="map-system-defense">READY</b></div>
+    </div>
+
     <div class="challenge-panel-wrap">
       <div class="challenge-panel-title">RUN CHALLENGES</div>
       <div id="challenge-panel" class="challenge-panel" aria-live="polite"></div>
@@ -647,6 +669,7 @@
         <option value="neon_depot">Neon Depot</option>
         <option value="parking_garage">Parking Garage</option>
         <option value="hospital_wing">Hospital Wing</option>
+        <option value="reactor_courtyard">Reactor Courtyard</option>
       </select>
       <select id="diff-select" aria-label="Difficulty Select" style="display:none;">
         <option value="0.75">Easy</option>
@@ -663,14 +686,14 @@
               <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
               <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
               <div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-achievements">0</span> achievements</small></div>
-              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>PROGRESSION BUNDLE</b></div>
+              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>MAP EXPANSION</b></div>
             </div>
           </div>
           <div class="ka-mode-stack">
             <button class="ka-mode-card active" type="button" data-next-screen="map">
               <span class="ka-card-kicker">Mode</span>
               <strong>Single Player</strong>
-              <small>Wave survival with procedural weapons and procedural zombies. Choose from five arenas, pick a difficulty, then deploy.</small>
+              <small>Wave survival with procedural weapons and procedural zombies. Choose from six arenas, pick a difficulty, then deploy.</small>
             </button>
             <button class="ka-mode-card locked" type="button" aria-disabled="true">
               <span class="ka-card-kicker">Coming soon</span>
@@ -692,6 +715,7 @@
             <div class="ka-map-shot neon-depot" data-preview-shot="neon_depot"></div>
             <div class="ka-map-shot parking-garage" data-preview-shot="parking_garage"></div>
             <div class="ka-map-shot hospital-wing" data-preview-shot="hospital_wing"></div>
+            <div class="ka-map-shot reactor-courtyard" data-preview-shot="reactor_courtyard"></div>
             <div class="ka-preview-overlay">
               <div class="ka-preview-title" id="ka-preview-title">The Grid Bunker</div>
               <div class="ka-preview-meta">
@@ -747,6 +771,14 @@
                 <span class="ka-map-tag stable">Playable</span>
                 <strong>Hospital Wing</strong>
                 <small>Horror corridor ward with treatment rooms, quarantine gate flow, and locked pressure.</small>
+              </div>
+            </button>
+            <button class="ka-map-card" type="button" data-map="reactor_courtyard">
+              <div class="ka-map-thumb reactor-courtyard"></div>
+              <div>
+                <span class="ka-map-tag stable">New</span>
+                <strong>Reactor Courtyard</strong>
+                <small>Single-floor coolant yard with randomized contract zones, steam vents, and a purchasable reactor defense.</small>
               </div>
             </button>
           </div>
@@ -1033,6 +1065,17 @@
             nav: 'Corridor',
             recommend: 'Normal / Hard',
             brief: 'Dark corridor survival with treatment rooms, quarantine gate pressure, and tighter horror pacing.'
+          },
+          reactor_courtyard: {
+            title: 'Reactor Courtyard',
+            status: 'Playable',
+            size: 'Large single level',
+            style: 'Hazard control',
+            spawns: 'Outer ring',
+            risk: 'High',
+            nav: 'Open-medium',
+            recommend: 'Normal / Hard',
+            brief: 'Broad reactor lanes with randomized containment zones, warning-based steam vents, and a coolant override defense.'
           }
         };
 

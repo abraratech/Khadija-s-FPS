@@ -164,6 +164,9 @@ export function buildGridBunker(context) {
   return {
     floorMesh,
     rows: gridRows,
-    cols: gridCols
+    cols: gridCols,
+    width: gridCols * tileSize,
+    depth: gridRows * tileSize,
+    navigationCellSize: Math.max(2.0, tileSize * 0.5)
   };
 }

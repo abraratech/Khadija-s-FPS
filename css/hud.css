@@ -728,3 +728,59 @@
   .challenge-panel-wrap { display: none; }
   .run-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
 }
+
+/* ── C12 MAP GAMEPLAY SYSTEMS ── */
+.map-system-panel {
+  position: absolute;
+  top: 145px;
+  right: 20px;
+  width: 232px;
+  z-index: 11;
+  padding: 9px 11px;
+  border: 1px solid rgba(25,216,255,0.42);
+  border-radius: 10px;
+  background: rgba(2,14,20,0.76);
+  color: #fff;
+  font-family: ui-monospace, Consolas, monospace;
+  text-shadow: 1px 1px 2px #000;
+  pointer-events: none;
+  box-shadow: 0 0 15px rgba(25,216,255,0.08);
+}
+.map-system-kicker {
+  margin-bottom: 6px;
+  color: #19d8ff;
+  font-size: 9px;
+  font-weight: 1000;
+  letter-spacing: 1.7px;
+}
+.map-system-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  color: rgba(255,255,255,0.64);
+  font-size: 9px;
+  font-weight: 800;
+}
+.map-system-row b { color: #fff; text-align: right; }
+.map-system-panel.hazard-warning {
+  border-color: rgba(255,170,0,0.72);
+  box-shadow: 0 0 17px rgba(255,170,0,0.17);
+}
+.map-system-panel.hazard-warning #map-system-hazard { color: #ffaa00; }
+.map-system-panel.hazard-active {
+  border-color: rgba(255,68,34,0.78);
+  box-shadow: 0 0 20px rgba(255,68,34,0.22);
+}
+.map-system-panel.hazard-active #map-system-hazard { color: #ff6644; }
+.map-system-panel.defense-active #map-system-defense { color: #22ffdd; }
+
+@media (max-width: 760px) {
+  .map-system-panel {
+    top: 132px;
+    right: 8px;
+    width: 205px;
+    transform: scale(.78);
+    transform-origin: top right;
+  }
+}

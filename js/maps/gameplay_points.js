@@ -275,6 +275,62 @@ const HOSPITAL_WING_POINTS = {
 };
 
 
+
+const REACTOR_COURTYARD_POINTS = {
+  BOX_SPAWNS: [
+    v(-35, 22),
+    v(35, -22),
+    v(-30, -24),
+    v(30, 24),
+    v(0, 29),
+    v(0, -29)
+  ],
+
+  WALL_SPAWNS: [
+    v(-40, 12),
+    v(40, -12),
+    v(-18, 31),
+    v(18, -31),
+    v(-34, -6),
+    v(34, 6)
+  ],
+
+  AMMO_SPAWNS: [
+    v(-24, 0),
+    v(24, 0),
+    v(-6, 27),
+    v(6, -27),
+    v(-32, 25),
+    v(32, -25)
+  ],
+
+  HEALTH_SPAWNS: [
+    v(-36, -25),
+    v(36, 25),
+    v(-28, 24),
+    v(28, -24)
+  ],
+
+  UPGRADE_SPAWNS: [
+    v(-13, -13),
+    v(13, 13),
+    v(-13, 13),
+    v(13, -13)
+  ],
+
+  PERK_HEALTH_SPAWNS: [
+    v(-38, 26),
+    v(38, -26),
+    v(-22, -27)
+  ],
+
+  PERK_RELOAD_SPAWNS: [
+    v(38, 26),
+    v(-38, -26),
+    v(22, 27)
+  ]
+};
+
 // C8: deterministic shop spawn order. These slots make shops feel authored instead
 // of randomly scattered. The safe-placement code in weapons.js still validates the
 // final position against walls, doors, barricades, traps, and player distance.
@@ -320,6 +376,16 @@ export const MAP_SHOP_SPAWN_ORDER = Object.freeze({
     WALL_SHOTGUN: ['WALL_SPAWNS', 1, 3, 5]
   },
   [MAP_IDS.HOSPITAL_WING]: {
+    MYSTERY_BOX: ['BOX_SPAWNS', 0, 1, 2, 3, 4, 5],
+    AMMO: ['AMMO_SPAWNS', 0, 1, 2, 3, 4, 5],
+    HEALTH: ['HEALTH_SPAWNS', 0, 1, 2, 3],
+    UPGRADE: ['UPGRADE_SPAWNS', 0, 1, 2, 3],
+    PERK_HEALTH: ['PERK_HEALTH_SPAWNS', 0, 1, 2],
+    PERK_RELOAD: ['PERK_RELOAD_SPAWNS', 0, 1, 2],
+    WALL_SMG: ['WALL_SPAWNS', 0, 2, 4],
+    WALL_SHOTGUN: ['WALL_SPAWNS', 1, 3, 5]
+  },
+  [MAP_IDS.REACTOR_COURTYARD]: {
     MYSTERY_BOX: ['BOX_SPAWNS', 0, 1, 2, 3, 4, 5],
     AMMO: ['AMMO_SPAWNS', 0, 1, 2, 3, 4, 5],
     HEALTH: ['HEALTH_SPAWNS', 0, 1, 2, 3],
@@ -376,7 +442,8 @@ export const MAP_GAMEPLAY_POINTS = {
   [MAP_IDS.INDUSTRIAL_YARD]: INDUSTRIAL_YARD_POINTS,
   [MAP_IDS.NEON_DEPOT]: NEON_DEPOT_POINTS,
   [MAP_IDS.PARKING_GARAGE]: PARKING_GARAGE_POINTS,
-  [MAP_IDS.HOSPITAL_WING]: HOSPITAL_WING_POINTS
+  [MAP_IDS.HOSPITAL_WING]: HOSPITAL_WING_POINTS,
+  [MAP_IDS.REACTOR_COURTYARD]: REACTOR_COURTYARD_POINTS
 };
 
 export function getGameplayPointsForMap(mapId) {
@@ -476,6 +543,12 @@ export const MAP_GAMEPLAY_FLOW = Object.freeze({
   [MAP_IDS.HOSPITAL_WING]: {
     role: 'Horror corridors / quarantine pressure',
     shopFlow: 'corridor anchors + ward-room rewards',
+    pressure: 'high',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.REACTOR_COURTYARD]: {
+    role: 'Hazard control / broad containment lanes',
+    shopFlow: 'outer resource loop + central upgrade risk',
     pressure: 'high',
     recommendedDifficulty: 'normal'
   }

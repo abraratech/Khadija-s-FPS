@@ -719,9 +719,27 @@ function getBaseSpawnMixForWave(wave = currentWave) {
   ];
 }
 
+function applyMapSpawnPressure(mix, wave = currentWave) {
+  if (currentMapId !== 'reactor_courtyard' || isSpecialRound) return mix;
+
+  const adjustments = {
+    CRAWLER: wave >= 2 ? 0.018 : 0,
+    EXPLODER: wave >= 4 ? 0.016 : 0,
+    RANGED: wave >= 5 ? 0.012 : 0
+  };
+  const totalAdded = Object.values(adjustments).reduce((sum, value) => sum + value, 0);
+
+  return mix.map(([config, weight]) => {
+    if (config?.name === 'SHAMBLER') {
+      return [config, Math.max(0.20, Number(weight || 0) - totalAdded)];
+    }
+    return [config, Number(weight || 0) + (adjustments[config?.name] || 0)];
+  });
+}
+
 function getSpawnMixForWave(wave = currentWave) {
   return adaptEnemySpawnMix(
-    getBaseSpawnMixForWave(wave),
+    applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
     { wave, isSpecialRound }
   );
 }
@@ -1802,7 +1820,7 @@ export function killEnemy(e, context = {}) {
   recordProgressionKill({ headshot });
   recordRunKill({ headshot });
   recordChallengeKill({ headshot, enemyType: e.type });
-  recordObjectiveKill({ headshot, distance, enemyType: e.type });
+  recordObjectiveKill({ headshot, distance, enemyType: e.type, position: e.mesh.position });
   announceC11Events();
 
   cancelEnemyAttack(e, 'ENEMY REMOVED');

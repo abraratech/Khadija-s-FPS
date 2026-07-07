@@ -3,6 +3,7 @@ import { getProgressionSnapshot, getActivePerkChips, getWeaponUpgradeTier, consu
 import { getObjectiveSnapshot } from './objectives.js';
 import { getChallengesSnapshot } from './challenges.js';
 import { getRunSummarySnapshot } from './run_summary.js';
+import { getMapGameplaySnapshot, getMapGameplayMinimapMarkers } from './map_gameplay.js';
 
 
 // ════════════ HUD HELPERS ════════════
@@ -463,6 +464,31 @@ function updateProgressionPanels() {
       return `<div class="challenge-row ${challenge.completed ? 'complete' : ''}"><span>${escapeHtml(challenge.label)}</span><b>${escapeHtml(status)}</b></div>`;
     }).join('');
   }
+
+  const mapGameplay = getMapGameplaySnapshot();
+  const mapPanel = document.getElementById('map-system-panel');
+
+  if (mapPanel) {
+    mapPanel.style.display = mapGameplay.active ? 'block' : 'none';
+
+    if (mapGameplay.active) {
+      const ventLabel = mapGameplay.ventPhase === 'ACTIVE'
+        ? `ACTIVE ${Math.ceil(mapGameplay.ventTimer)}s`
+        : (mapGameplay.ventPhase === 'WARNING'
+          ? `WARNING ${Math.ceil(mapGameplay.ventTimer)}s`
+          : `IDLE ${Math.ceil(Math.max(0, mapGameplay.ventTimer))}s`);
+
+      const defenseLabel = mapGameplay.defenseState === 'READY'
+        ? `READY · ${mapGameplay.defenseCost} PTS`
+        : `${mapGameplay.defenseState} ${Math.ceil(Math.max(0, mapGameplay.defenseTimer))}s`;
+
+      setText('map-system-hazard', ventLabel);
+      setText('map-system-defense', defenseLabel);
+      mapPanel.classList.toggle('hazard-active', mapGameplay.ventPhase === 'ACTIVE');
+      mapPanel.classList.toggle('hazard-warning', mapGameplay.ventPhase === 'WARNING');
+      mapPanel.classList.toggle('defense-active', mapGameplay.defenseState === 'ACTIVE');
+    }
+  }
 }
 
 export function renderRunSummaryScreen() {
@@ -610,6 +636,11 @@ export function resetCombatStatusHUD() {
   if (objectivePanel) objectivePanel.classList.remove('complete');
   const challengePanel = document.getElementById('challenge-panel');
   if (challengePanel) challengePanel.innerHTML = '';
+  const mapSystemPanel = document.getElementById('map-system-panel');
+  if (mapSystemPanel) {
+    mapSystemPanel.style.display = 'none';
+    mapSystemPanel.classList.remove('hazard-active', 'hazard-warning', 'defense-active');
+  }
 
   uiTimers.hitT = 0;
   uiTimers.dmgFlashT = 0;
@@ -695,6 +726,30 @@ export function updateMinimap(playerPos, camDir, enemies) {
     ctx.arc(blipX, blipY, blipRadius, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  // C12 map objectives, hazards, and defensive systems.
+  for (const marker of getMapGameplayMinimapMarkers()) {
+    const dx = marker.x - playerPos.x;
+    const dz = marker.z - playerPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > radarRange) continue;
+
+    const angle = Math.atan2(dx, dz) - camAngle;
+    const radarDist = (dist / radarRange) * ((w / 2) - 10);
+    const markerX = cx - Math.sin(angle) * radarDist;
+    const markerY = cy - Math.cos(angle) * radarDist;
+
+    ctx.strokeStyle = marker.color || '#00d4ff';
+    ctx.lineWidth = marker.type === 'HAZARD' ? 2.5 : 1.8;
+    ctx.beginPath();
+    ctx.arc(markerX, markerY, marker.radius || 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (marker.type === 'DEFENSE') {
+      ctx.fillStyle = marker.color || '#22ff88';
+      ctx.fillRect(markerX - 2, markerY - 2, 4, 4);
+    }
+  }
 
   // Draw Player Icon (Center triangle pointing UP)
   ctx.fillStyle = '#00ff66';

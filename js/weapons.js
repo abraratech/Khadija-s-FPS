@@ -7,6 +7,11 @@ import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
 import { playWeaponSound, playWeaponReloadSound, playWorldSound, playUISound } from './audio.js';
 import { getGameplayPointsForMap } from './maps/gameplay_points.js';
+import {
+  getClosestMapGameplayInteractable,
+  getMapGameplayInteractionPrompt,
+  activateMapGameplayInteractable
+} from './map_gameplay.js';
 import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './weapons/pistol.js';
 import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './weapons/smg.js';
 import { createProceduralRifleMesh, updateProceduralRifleReloadParts, resetProceduralRifleParts, updateProceduralRifleFireParts } from './weapons/rifle.js';
@@ -1089,6 +1094,49 @@ export function cycleWeapon() {
 
 export function checkWorldInteractions(checkInteractionPressed = false) {
   if (!player.alive) return;
+
+  // ── C12 MAP-SPECIFIC DEFENSIVE SYSTEM ──
+  const mapInteractable = getClosestMapGameplayInteractable(player.pos, 2.8);
+
+  if (mapInteractable) {
+    setInteractionPrompt(true, getMapGameplayInteractionPrompt(mapInteractable));
+
+    if (
+      mapInteractable.state === 'READY' &&
+      shouldHandleInteraction(checkInteractionPressed)
+    ) {
+      const cost = Number(mapInteractable.cost) || 0;
+
+      if (player.score >= cost) {
+        const result = activateMapGameplayInteractable(mapInteractable);
+
+        if (result.success) {
+          player.score -= cost;
+          updateScoreHUD(player.score);
+          recordProgressionPurchase(cost, 'MAP_DEFENSE');
+          recordRunPointsSpent(cost);
+          playWorldSound('trapActivate', 0.68, false, {
+            cooldownKey: 'reactor_override',
+            cooldownMs: 900,
+            pitchMin: 0.84,
+            pitchMax: 0.96
+          });
+          showShopFeedback({
+            title: result.title || 'MAP DEFENSE ACTIVE',
+            body: result.body || 'Defensive system activated.',
+            tone: 'ready',
+            durationMs: 2100,
+            progress: 1
+          });
+          showStatusToast(result.title || 'DEFENSE ACTIVE', '#00ddff', 1700);
+        }
+      } else {
+        showNotEnoughPoints(cost, 'Coolant Override');
+      }
+    }
+
+    return;
+  }
 
 // ── REPAIRABLE BARRICADE INTERACTION TRACKER (PASTE HERE) ──
   let closestBarricade = null;

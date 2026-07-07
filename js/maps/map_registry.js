@@ -5,7 +5,8 @@ export const MAP_IDS = Object.freeze({
   INDUSTRIAL_YARD: 'industrial_yard',
   NEON_DEPOT: 'neon_depot',
   PARKING_GARAGE: 'parking_garage',
-  HOSPITAL_WING: 'hospital_wing'
+  HOSPITAL_WING: 'hospital_wing',
+  REACTOR_COURTYARD: 'reactor_courtyard'
 });
 
 export const MAP_REGISTRY = Object.freeze({
@@ -92,7 +93,25 @@ export const MAP_REGISTRY = Object.freeze({
     spawnProfile: 'outer + locked',
     previewSize: 'emergency ward',
     accentColor: '#ff5555'
+  },
+
+  [MAP_IDS.REACTOR_COURTYARD]: {
+    id: MAP_IDS.REACTOR_COURTYARD,
+    name: 'Reactor Courtyard',
+    subtitle: 'Containment Cooling Yard',
+    description: 'Single-floor reactor yard with broad combat lanes, randomized containment contracts, steam hazards, and a coolant override defense.',
+    status: 'stable',
+    playable: true,
+    legacyIndex: 7,
+    rotationRole: 'Hazard control',
+    recommendedDifficulty: 'normal',
+    difficultyFeel: 'high',
+    navigation: 'open-medium',
+    spawnProfile: 'outer ring',
+    previewSize: 'large single level',
+    accentColor: '#19d8ff'
   }
+
 });
 
 export const MAP_LIST = Object.freeze(Object.values(MAP_REGISTRY));
@@ -105,7 +124,8 @@ const LEGACY_INDEX_TO_ID = Object.freeze({
   3: MAP_IDS.INDUSTRIAL_YARD,
   4: MAP_IDS.NEON_DEPOT,
   5: MAP_IDS.PARKING_GARAGE,
-  6: MAP_IDS.HOSPITAL_WING
+  6: MAP_IDS.HOSPITAL_WING,
+  7: MAP_IDS.REACTOR_COURTYARD
 });
 
 export function normalizeMapId(mapId) {

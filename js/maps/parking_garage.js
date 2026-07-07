@@ -90,21 +90,7 @@ function addParkingCar(context, spawnBlock, x, z, rotY, color) {
   const bodyWidth = isSideways ? 2.05 : 4.2;
   const bodyDepth = isSideways ? 4.2 : 2.05;
 
-  const body = spawnBlock(
-    bodyWidth,
-    1.05,
-    bodyDepth,
-    x,
-    0.52,
-    z,
-    color,
-    true,
-    false,
-    {
-      playerClimbable: true,
-      supportTag: 'parked_car'
-    }
-  );
+  const body = spawnBlock(bodyWidth, 1.05, bodyDepth, x, 0.52, z, color, true, false);
 
   const roofMat = new THREE.MeshStandardMaterial({
     color,
@@ -286,21 +272,7 @@ export function buildParkingGarage(context) {
     [-24, 8, 1.0, 8],
     [24, -8, 1.0, 8]
   ].forEach(([x, z, w, d]) => {
-    spawnBlock(
-      w,
-      0.85,
-      d,
-      x,
-      0.42,
-      z,
-      0x3a424b,
-      true,
-      false,
-      {
-        playerClimbable: true,
-        supportTag: 'wheel_stop'
-      }
-    );
+    spawnBlock(w, 0.85, d, x, 0.42, z, 0x3a424b, true, false);
   });
 
   // Parked cars used as combat cover. Spacing keeps player/trap markers clear.
@@ -386,5 +358,5 @@ export function buildParkingGarage(context) {
     [-12, 31]
   ].forEach(([x, z]) => addPoint(lockedSpawnPoints, x, z));
 
-  return { floorMesh };
+  return { floorMesh, width: 84, depth: 72, navigationCellSize: 2.5 };
 }

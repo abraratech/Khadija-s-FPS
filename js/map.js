@@ -6,6 +6,8 @@ import { buildIndustrialYard } from './maps/industrial_yard.js';
 import { buildNeonDepot } from './maps/neon_depot.js';
 import { buildParkingGarage } from './maps/parking_garage.js';
 import { buildHospitalWing } from './maps/hospital_wing.js';
+import { buildReactorCourtyard } from './maps/reactor_courtyard.js';
+import { configureMapValidation } from './map_validation.js';
 import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -170,6 +172,24 @@ const MAP_ENVIRONMENTS = {
   bloomStrength: 0.56,
   bloomRadius: 0.26,
   bloomThreshold: 0.88
+  },
+
+  [MAP_IDS.REACTOR_COURTYARD]: {
+  name: "Reactor Courtyard - Coolant Surge",
+  fogColor: 0x071116,
+  fogDensity: 0.016,
+  clearColor: 0x020609,
+
+  ambientColor: 0xbbeeff,
+  ambientIntensity: 1.30,
+
+  dirColor: 0xffb060,
+  dirIntensity: 1.02,
+  dirPosition: new THREE.Vector3(22, 34, -18),
+
+  bloomStrength: 0.60,
+  bloomRadius: 0.27,
+  bloomThreshold: 0.87
   }
 };
 
@@ -520,18 +540,7 @@ let floorMesh = null;
 // Grid Bunker layout has moved to js/maps/grid_bunker.js
 // Compatibility wrapper.
 // Actual block creation now lives in js/maps/map_helpers.js.
-function spawnBlock(
-  w,
-  h,
-  d,
-  x,
-  y,
-  z,
-  colorOrMap,
-  isWall = true,
-  isDoor = false,
-  supportOptions = {}
-) {
+function spawnBlock(w, h, d, x, y, z, colorOrMap, isWall = true, isDoor = false) {
   return createMapBlock(
     {
       scene,
@@ -547,8 +556,7 @@ function spawnBlock(
       z,
       colorOrMap,
       isWall,
-      isDoor,
-      ...supportOptions
+      isDoor
     }
   );
 }
@@ -699,7 +707,8 @@ const MAP_BUILDERS = {
   [MAP_IDS.INDUSTRIAL_YARD]: buildIndustrialYard,
   [MAP_IDS.NEON_DEPOT]: buildNeonDepot,
   [MAP_IDS.PARKING_GARAGE]: buildParkingGarage,
-  [MAP_IDS.HOSPITAL_WING]: buildHospitalWing
+  [MAP_IDS.HOSPITAL_WING]: buildHospitalWing,
+  [MAP_IDS.REACTOR_COURTYARD]: buildReactorCourtyard
 };
 
 export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
@@ -758,6 +767,18 @@ export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
 	});
 
   floorMesh = result?.floorMesh || null;
+
+  configureMapValidation({
+    mapId: currentMapId,
+    walls,
+    spawnPoints,
+    playerSpawnPoints,
+    lockedSpawnPoints,
+    width: result?.width || 80,
+    depth: result?.depth || 80,
+    navigationCellSize: result?.navigationCellSize || 2.5,
+    hasUnlockRoute: doors.length > 0
+  });
 }
 export let shakeIntensity = 0;
 export function addScreenShake(amount) { shakeIntensity = Math.min(shakeIntensity + amount, 0.5); }

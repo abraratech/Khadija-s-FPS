@@ -1,11 +1,17 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
-import { player, updatePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
+import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
+import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
-import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat } from './audio.js';
+import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
+import {
+  resetMapGameplay,
+  endMapGameplay,
+  updateMapGameplay,
+  consumeMapGameplayEvents
+} from './map_gameplay.js';
 import {
   resetAIDirectorRun,
   endAIDirectorRun,
@@ -745,6 +751,7 @@ async function beginRun({ fromRespawn = false } = {}) {
     resetPlayerRunState();
 
     const chosenMap = document.getElementById('map-select')?.value || "grid_bunker";
+    endMapGameplay();
     buildMap(chosenMap);
 
     difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
@@ -755,6 +762,7 @@ async function beginRun({ fromRespawn = false } = {}) {
     });
     resetProgressionRun({ mapId: chosenMap, difficulty: difficultyMultiplier });
     resetObjectivesRun({ mapId: chosenMap });
+    resetMapGameplay({ mapId: chosenMap, scene });
     resetChallengesRun();
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
 
@@ -788,6 +796,7 @@ function returnToMenu(source = 'pause') {
   finalizeCurrentRun(source);
   saveRunRecords();
   endAIDirectorRun();
+  endMapGameplay();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -884,6 +893,23 @@ mdx = 0; mdy = 0;
 const playerMs = performance.now() - mark;
 mark = performance.now();
 
+updateMapGameplay(dt, {
+  player,
+  enemies: getActiveEnemies(),
+  damagePlayer,
+  killEnemy
+});
+
+for (const event of consumeMapGameplayEvents()) {
+  showStatusToast(event.text, event.color || '#ffaa00', event.duration || 1400);
+  playUISound('warning', event.type === 'VENT_ACTIVE' ? 0.20 : 0.14, true, {
+    cooldownKey: `map_gameplay_${event.type}`,
+    cooldownMs: 800,
+    pitchMin: event.type === 'VENT_ACTIVE' ? 0.70 : 0.88,
+    pitchMax: event.type === 'VENT_ACTIVE' ? 0.82 : 1.02
+  });
+}
+
 updateEnemies(dt);
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
@@ -909,6 +935,7 @@ const effectsMs = performance.now() - mark;
     if (!player.alive && gs === 'playing') {
     endAIDirectorRun();
     finalizeCurrentRun('DEATH');
+    endMapGameplay();
     refreshAIMemoryControls();
     gs = 'dead';
     clearInputState();

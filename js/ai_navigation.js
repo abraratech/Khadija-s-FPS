@@ -86,6 +86,16 @@ function flatDistance(ax, az, bx, bz) {
   return Math.sqrt(flatDistanceSq(ax, az, bx, bz));
 }
 
+function getContactOverrideDistance(enemy) {
+  const attackRange = Math.max(0.8, Number(enemy?.attackRange) || 1.4);
+
+  if (enemy?.type === 'GOLIATH') return Math.max(4.25, attackRange + 1.05);
+  if (enemy?.type === 'BRUTE') return Math.max(3.65, attackRange + 1.10);
+  if (enemy?.type === 'EXPLODER') return Math.max(4.00, attackRange + 1.25);
+
+  return Math.max(3.15, attackRange + 1.05);
+}
+
 function pointInsideExpandedWall(x, z, wall, padding = NAV_CLEARANCE, feetY = 0) {
   if (!wall) return false;
 
@@ -658,12 +668,43 @@ export function getReliableNavigationTarget(
   }
 
   ensureEnemyNavigationState(enemy);
-  updateProgressState(enemy, clamp(dt, 0, 0.05), out);
-
-  enemy.navReplanTimer -= clamp(dt, 0, 0.05);
 
   const ex = Number(enemy.mesh.position.x) || 0;
   const ez = Number(enemy.mesh.position.z) || 0;
+  const feetY = Number(enemy.mesh.position.y) || 0;
+  const playerDistance = flatDistance(ex, ez, fallbackX, fallbackZ);
+  const directPressureRequested = Boolean(
+    enemy.type !== 'RANGED' &&
+    (
+      enemy.squadDirectPressure ||
+      enemy.formationDirectPressure ||
+      playerDistance <= getContactOverrideDistance(enemy)
+    )
+  );
+  const hasDirectPath = directPressureRequested && pathIsClear(
+    ex,
+    ez,
+    fallbackX,
+    fallbackZ,
+    walls || [],
+    feetY,
+    0.34
+  );
+
+  if (hasDirectPath) {
+    // A stale flank/recovery waypoint can otherwise pull a melee enemy away
+    // after the player stops. Direct contact wins whenever the path is clear.
+    enemy.navWaypoint.active = false;
+    enemy.navWaypointTTL = 0;
+    enemy.navRecoveryTimer = 0;
+    enemy.navStuckTime = Math.max(0, enemy.navStuckTime - clamp(dt, 0, 0.05) * 2.5);
+    enemy.navLastTargetDistance = playerDistance;
+    return out;
+  }
+
+  updateProgressState(enemy, clamp(dt, 0, 0.05), out);
+
+  enemy.navReplanTimer -= clamp(dt, 0, 0.05);
 
   if (
     enemy.navWaypoint.active &&

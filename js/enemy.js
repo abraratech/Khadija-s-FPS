@@ -835,6 +835,23 @@ function pickSafeEnemySpawnPoint() {
 function applyEnemySeparation(enemy, enemyIndex, dt) {
   if (!enemy?.alive || enemy.dyingT >= 0) return;
 
+  const playerDx = enemy.mesh.position.x - player.pos.x;
+  const playerDz = enemy.mesh.position.z - player.pos.z;
+  const playerDistance = Math.hypot(playerDx, playerDz);
+  const contactDistance = Math.max(
+    1.25,
+    Number(enemy.attackRange) || 1.4
+  ) + 0.48;
+  const closeToContact = (
+    enemy.type !== 'RANGED' &&
+    playerDistance <= contactDistance
+  );
+  const attackCommitted = (
+    enemy.attackState === 'QUEUED' ||
+    enemy.attackState === 'WINDUP' ||
+    enemy.attackState === 'RECOVERY'
+  );
+
   for (let j = 0; j < activeEnemies.length; j++) {
     if (j === enemyIndex) continue;
 
@@ -856,10 +873,28 @@ function applyEnemySeparation(enemy, enemyIndex, dt) {
 
     const dist = Math.sqrt(distSq);
     const overlap = desired - dist;
-    const correction = Math.min(0.075, overlap * 0.34) * Math.min(1, dt * 12);
+    const correctionCap = closeToContact
+      ? (attackCommitted ? 0.012 : 0.028)
+      : 0.075;
+    const correction = Math.min(correctionCap, overlap * 0.34) * Math.min(1, dt * 12);
 
-    enemy.mesh.position.x += (dx / dist) * correction;
-    enemy.mesh.position.z += (dz / dist) * correction;
+    let correctionX = (dx / dist) * correction;
+    let correctionZ = (dz / dist) * correction;
+
+    if (closeToContact && playerDistance > 0.001) {
+      const radialX = playerDx / playerDistance;
+      const radialZ = playerDz / playerDistance;
+      const radialComponent = correctionX * radialX + correctionZ * radialZ;
+
+      // Keep most separation tangential near the player. Full radial repulsion
+      // was pushing committed attackers back out of attack range and creating
+      // the visible approach/retreat loop.
+      correctionX -= radialX * radialComponent * 0.86;
+      correctionZ -= radialZ * radialComponent * 0.86;
+    }
+
+    enemy.mesh.position.x += correctionX;
+    enemy.mesh.position.z += correctionZ;
   }
 }
 

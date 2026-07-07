@@ -302,7 +302,13 @@ export function recordArchetypeAttackCommitted(enemy, kind = 'NONE') {
     enemy.spitterRepositionDuration = SPITTER_REPOSITION_DURATION;
     enemy.spitterRepositionT = SPITTER_REPOSITION_DURATION;
     enemy.spitterRepositionCount = finite(enemy.spitterRepositionCount) + 1;
-    enemy.spitterRepositionSide *= -1;
+
+    // Keep the relocation readable without producing a mechanical
+    // left-right-left-right metronome on every shot.
+    if (Math.random() < 0.72) {
+      enemy.spitterRepositionSide *= -1;
+    }
+
     state.spitterRepositions++;
     setEnemyEvent(enemy, 'SPITTER_REPOSITION', 0.40);
   }

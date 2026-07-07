@@ -15,6 +15,9 @@ const HEAT_DECAY_INTERVAL = 2.2;
 const HEAT_CELL_SIZE = 8;
 const MAX_HEAT_CELLS = 72;
 
+// C10.9.1 — direct pursuit/contact reliability.
+const PLAYER_STATIONARY_SPEED = 0.42;
+
 const state = {
   runActive: false,
   active: false,
@@ -38,13 +41,38 @@ const state = {
   lastLivingCount: 0,
   lastLivingSignature: '',
   forceReassign: true,
-  roleRefreshTimer: 0
+  roleRefreshTimer: 0,
+  playerStationaryT: 0,
+  directPressureEnemies: 0
 };
 
 function clamp(value, min = 0, max = 1) {
   const n = Number(value);
   if (!Number.isFinite(n)) return min;
   return Math.max(min, Math.min(max, n));
+}
+
+function finite(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function getDirectPressureDistance(enemy) {
+  const attackRange = Math.max(0.8, finite(enemy?.attackRange, 1.4));
+
+  if (enemy?.type === 'GOLIATH') return Math.max(4.25, attackRange + 1.05);
+  if (enemy?.type === 'BRUTE') return Math.max(3.65, attackRange + 1.10);
+  if (enemy?.type === 'EXPLODER') return Math.max(4.00, attackRange + 1.25);
+
+  return Math.max(3.15, attackRange + 1.05);
+}
+
+function getStationaryCollapseDistance(enemy) {
+  if (enemy?.type === 'GOLIATH') return 8.2;
+  if (enemy?.type === 'BRUTE') return 7.4;
+  if (enemy?.type === 'EXPLODER') return 7.0;
+  if (enemy?.type === 'RUNNER') return 7.2;
+  return 6.4;
 }
 
 function heatKey(x, z) {
@@ -265,9 +293,20 @@ function updateRouteMemory(dt, playerState) {
     const safeDt = Math.max(0.001, dt);
     const vx = (x - state.lastPlayerX) / safeDt;
     const vz = (z - state.lastPlayerZ) / safeDt;
+    const speed = Math.hypot(vx, vz);
 
-    state.routeVX = state.routeVX * 0.76 + vx * 0.24;
-    state.routeVZ = state.routeVZ * 0.76 + vz * 0.24;
+    if (speed < PLAYER_STATIONARY_SPEED) {
+      state.playerStationaryT += safeDt;
+
+      // Old route memory must decay quickly when the player stops. Otherwise
+      // BLOCKER/INTERCEPT roles continue chasing an imaginary future position.
+      state.routeVX *= 0.48;
+      state.routeVZ *= 0.48;
+    } else {
+      state.playerStationaryT = 0;
+      state.routeVX = state.routeVX * 0.76 + vx * 0.24;
+      state.routeVZ = state.routeVZ * 0.76 + vz * 0.24;
+    }
   }
 
   state.lastPlayerX = x;
@@ -373,6 +412,8 @@ export function resetAISquadRun({ mapId = 'unknown' } = {}) {
   state.lastLivingSignature = '';
   state.forceReassign = true;
   state.roleRefreshTimer = 0;
+  state.playerStationaryT = 0;
+  state.directPressureEnemies = 0;
 }
 
 export function endAISquadRun() {
@@ -382,6 +423,8 @@ export function endAISquadRun() {
   state.lastLivingCount = 0;
   state.lastLivingSignature = '';
   state.forceReassign = true;
+  state.playerStationaryT = 0;
+  state.directPressureEnemies = 0;
 }
 
 export function beginAISquadWave(waveNumber) {
@@ -399,6 +442,7 @@ export function registerSquadEnemy(enemy) {
   enemy.squadSlot = -1;
   enemy.squadEpoch = -1;
   enemy.trapAware = false;
+  enemy.squadDirectPressure = false;
   state.forceReassign = true;
 }
 
@@ -410,6 +454,7 @@ export function updateAISquad(dt, context = {}) {
   const tuning = context.tuning || {};
   const enemies = context.enemies || [];
 
+  state.directPressureEnemies = 0;
   state.wave = Math.max(1, Number(context.wave) || state.wave);
   state.assignmentTimer -= safeDt;
   state.roleRefreshTimer -= safeDt;
@@ -491,11 +536,45 @@ export function getSquadPursuitTarget(
   if (!Number.isFinite(out.z)) out.z = playerZ;
 
   if (!state.active || !enemy?.alive) {
+    if (enemy) enemy.squadDirectPressure = false;
     return out;
   }
 
   const role = String(enemy.squadRole || 'DIRECT');
   const distToPlayer = Math.hypot(playerX - enemyX, playerZ - enemyZ);
+  const playerGroundSpeed = Math.hypot(
+    finite(playerState?.vel?.x),
+    finite(playerState?.vel?.z)
+  );
+  const playerStationary = Boolean(
+    playerGroundSpeed < PLAYER_STATIONARY_SPEED ||
+    state.playerStationaryT >= 0.18
+  );
+  const attackCommitted = (
+    enemy.attackState === 'QUEUED' ||
+    enemy.attackState === 'WINDUP' ||
+    enemy.attackState === 'RECOVERY'
+  );
+  const forceDirectPressure = Boolean(
+    enemy.type !== 'RANGED' &&
+    (
+      attackCommitted ||
+      distToPlayer <= getDirectPressureDistance(enemy) ||
+      (
+        playerStationary &&
+        distToPlayer <= getStationaryCollapseDistance(enemy)
+      )
+    )
+  );
+
+  enemy.squadDirectPressure = forceDirectPressure;
+
+  if (forceDirectPressure) {
+    out.x = playerX;
+    out.z = playerZ;
+    state.directPressureEnemies++;
+    return out;
+  }
 
   let routeVX = state.routeVX;
   let routeVZ = state.routeVZ;
@@ -517,13 +596,27 @@ export function getSquadPursuitTarget(
   const sideZ = forwardX;
 
   if (role === 'INTERCEPT') {
-    const lead = 0.22 + state.intensity * 0.42;
-    out.x = playerX + routeVX * lead;
-    out.z = playerZ + routeVZ * lead;
+    if (routeSpeed > 0.55 && playerGroundSpeed > PLAYER_STATIONARY_SPEED) {
+      const lead = 0.22 + state.intensity * 0.42;
+      out.x = playerX + routeVX * lead;
+      out.z = playerZ + routeVZ * lead;
+    } else {
+      out.x = playerX;
+      out.z = playerZ;
+    }
   } else if (role === 'BLOCKER') {
-    const ahead = 3.2 + state.intensity * 3.0;
-    out.x = playerX + forwardX * ahead;
-    out.z = playerZ + forwardZ * ahead;
+    if (
+      routeSpeed > 0.65 &&
+      playerGroundSpeed > PLAYER_STATIONARY_SPEED &&
+      distToPlayer > 5.2
+    ) {
+      const ahead = 3.2 + state.intensity * 3.0;
+      out.x = playerX + forwardX * ahead;
+      out.z = playerZ + forwardZ * ahead;
+    } else {
+      out.x = playerX;
+      out.z = playerZ;
+    }
   } else if (role === 'FLANK_LEFT' || role === 'FLANK_RIGHT') {
     if (distToPlayer > 4.0) {
       const sign = role === 'FLANK_LEFT' ? 1 : -1;
@@ -587,7 +680,10 @@ export function getAISquadSnapshot() {
     playerHeatCells: state.playerHeat.size,
     deathHeatCells: state.deathHeat.size,
     hotspot: state.hotspot ? { ...state.hotspot } : null,
-    trapAwareEnemies: state.trapAvoidanceAssignments
+    trapAwareEnemies: state.trapAvoidanceAssignments,
+    routeSpeed: Math.hypot(state.routeVX, state.routeVZ),
+    playerStationaryT: state.playerStationaryT,
+    directPressureEnemies: state.directPressureEnemies
   };
 }
 

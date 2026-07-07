@@ -20,6 +20,12 @@ const YIELD_DURATION = 0.82;
 const PERFORMANCE_BUDGET_MS = 1.65;
 const MAX_NEIGHBOR_CHECKS = 280;
 
+// C10.9.1 — close-contact reliability. Formation offsets are useful while
+// approaching, but melee enemies must collapse into direct pressure near a
+// stationary player instead of orbiting around lane targets.
+const PLAYER_STATIONARY_SPEED = 0.42;
+const CLOSE_REPULSE_CAP = 0.16;
+
 const state = {
   runActive: false,
   active: false,
@@ -50,7 +56,9 @@ const state = {
   averageUpdateMs: 0,
   overBudgetCount: 0,
   updateCount: 0,
-  congestionPressure: 0
+  congestionPressure: 0,
+  directPressureIds: new Set(),
+  stationaryCollapseIds: new Set()
 };
 
 function clamp(value, min = 0, max = 1) {
@@ -62,6 +70,57 @@ function clamp(value, min = 0, max = 1) {
 function finite(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function getPlayerGroundSpeed(playerState) {
+  return Math.hypot(
+    finite(playerState?.vel?.x),
+    finite(playerState?.vel?.z)
+  );
+}
+
+function isMeleePressureEnemy(enemy) {
+  return Boolean(enemy && enemy.type !== 'RANGED');
+}
+
+function getDirectPressureDistance(enemy) {
+  const attackRange = Math.max(0.8, finite(enemy?.attackRange, 1.4));
+
+  if (enemy?.type === 'GOLIATH') return Math.max(4.25, attackRange + 1.05);
+  if (enemy?.type === 'BRUTE') return Math.max(3.65, attackRange + 1.10);
+  if (enemy?.type === 'EXPLODER') return Math.max(4.00, attackRange + 1.25);
+
+  return Math.max(3.15, attackRange + 1.05);
+}
+
+function getStationaryCollapseDistance(enemy) {
+  if (enemy?.type === 'GOLIATH') return 8.2;
+  if (enemy?.type === 'BRUTE') return 7.4;
+  if (enemy?.type === 'EXPLODER') return 7.0;
+  if (enemy?.type === 'RUNNER') return 7.2;
+  return 6.4;
+}
+
+function addTangentialCloseRepulse(enemy, playerX, playerZ, out) {
+  const enemyX = finite(enemy?.mesh?.position?.x);
+  const enemyZ = finite(enemy?.mesh?.position?.z);
+  const radialX = enemyX - playerX;
+  const radialZ = enemyZ - playerZ;
+  const radialLength = Math.hypot(radialX, radialZ);
+
+  if (radialLength < 0.001) return out;
+
+  const nx = radialX / radialLength;
+  const nz = radialZ / radialLength;
+  const rawX = clamp(enemy.formationRepulseX, -CLOSE_REPULSE_CAP, CLOSE_REPULSE_CAP);
+  const rawZ = clamp(enemy.formationRepulseZ, -CLOSE_REPULSE_CAP, CLOSE_REPULSE_CAP);
+  const radialComponent = rawX * nx + rawZ * nz;
+
+  // Preserve only a very small radial component so separation cannot push a
+  // committed attacker back out of attack range. Most correction is tangential.
+  out.x += rawX - nx * radialComponent * 0.86;
+  out.z += rawZ - nz * radialComponent * 0.86;
+  return out;
 }
 
 function getLivingEnemies(enemies) {
@@ -387,6 +446,8 @@ export function resetAIFormationRun({ mapId = 'unknown' } = {}) {
   state.overBudgetCount = 0;
   state.updateCount = 0;
   state.congestionPressure = 0;
+  state.directPressureIds.clear();
+  state.stationaryCollapseIds.clear();
 }
 
 export function endAIFormationRun() {
@@ -394,6 +455,8 @@ export function endAIFormationRun() {
   state.active = false;
   state.livingEnemies = 0;
   state.laneCounts = {};
+  state.directPressureIds.clear();
+  state.stationaryCollapseIds.clear();
   state.lastEvent = 'ENDED';
 }
 
@@ -423,6 +486,8 @@ export function registerFormationEnemy(enemy) {
   enemy.formationLastZ = finite(enemy.mesh?.position?.z);
   enemy.formationBreachLead = false;
   enemy.formationHoldBack = false;
+  enemy.formationDirectPressure = false;
+  enemy.formationStationaryCollapse = false;
   state.forceAssignment = true;
 }
 
@@ -448,6 +513,8 @@ export function updateAIFormation(dt, {
   state.assignmentTimer -= safeDt;
   state.updateTimer -= safeDt;
   state.breachCooldown = Math.max(0, state.breachCooldown - safeDt);
+  state.directPressureIds.clear();
+  state.stationaryCollapseIds.clear();
 
   const living = getLivingEnemies(enemies);
   state.livingEnemies = living.length;
@@ -465,6 +532,12 @@ export function updateAIFormation(dt, {
     state.yieldingEnemies = 0;
     state.breachActive = false;
     state.congestionPressure = 0;
+
+    living.forEach((enemy) => {
+      enemy.formationDirectPressure = false;
+      enemy.formationStationaryCollapse = false;
+    });
+
     return;
   }
 
@@ -506,10 +579,53 @@ export function getFormationPursuitTarget(
 
   if (!state.active || !enemy?.alive) return out;
 
+  enemy.formationDirectPressure = false;
+  enemy.formationStationaryCollapse = false;
+
   const distToPlayer = Math.hypot(playerX - enemyX, playerZ - enemyZ);
+  const playerSpeed = getPlayerGroundSpeed(playerState);
+  const playerStationary = playerSpeed < PLAYER_STATIONARY_SPEED;
+  const attackCommitted = (
+    enemy.attackState === 'QUEUED' ||
+    enemy.attackState === 'WINDUP' ||
+    enemy.attackState === 'RECOVERY'
+  );
+  const directPressure = Boolean(
+    isMeleePressureEnemy(enemy) &&
+    (
+      attackCommitted ||
+      distToPlayer <= getDirectPressureDistance(enemy) ||
+      (
+        playerStationary &&
+        distToPlayer <= getStationaryCollapseDistance(enemy)
+      )
+    )
+  );
+
+  if (directPressure) {
+    // Squad/Director targets can still point to an intercept, rear, or flank
+    // slot. Near contact, replace them with the player's actual position.
+    out.x = playerX;
+    out.z = playerZ;
+    addTangentialCloseRepulse(enemy, playerX, playerZ, out);
+
+    enemy.formationDirectPressure = true;
+    enemy.formationStationaryCollapse = Boolean(
+      playerStationary &&
+      distToPlayer > getDirectPressureDistance(enemy)
+    );
+
+    state.directPressureIds.add(enemy.formationId ?? enemy.squadId ?? enemy);
+    if (enemy.formationStationaryCollapse) {
+      state.stationaryCollapseIds.add(enemy.formationId ?? enemy.squadId ?? enemy);
+    }
+
+    return out;
+  }
+
   if (distToPlayer <= 2.45 || enemy.formationBreachLead) {
-    out.x += clamp(enemy.formationRepulseX, -0.5, 0.5);
-    out.z += clamp(enemy.formationRepulseZ, -0.5, 0.5);
+    out.x += clamp(enemy.formationRepulseX, -0.32, 0.32);
+    out.z += clamp(enemy.formationRepulseZ, -0.32, 0.32);
     return out;
   }
 
@@ -591,6 +707,10 @@ export function getFormationPursuitTarget(
 
 export function getFormationMovementScale(enemy) {
   if (!state.active || !enemy?.alive) return 1;
+
+  // HOLD BACK and YIELD are congestion tools for approach lanes. They must
+  // never slow a melee enemy that has already collapsed into direct contact.
+  if (enemy.formationDirectPressure) return 1;
   if (enemy.formationBreachLead) return 1.035;
   if (enemy.formationHoldBack) return 0.88;
   if (finite(enemy.formationYieldT) > 0) return 0.82;
@@ -618,6 +738,8 @@ export function getAIFormationSnapshot() {
     breachEvents: state.breachEvents,
     breachCell: state.breachCell,
     congestionPressure: state.congestionPressure,
+    directPressureEnemies: state.directPressureIds.size,
+    stationaryCollapseEnemies: state.stationaryCollapseIds.size,
     lastEvent: state.lastEvent,
     lastUpdateMs: state.lastUpdateMs,
     averageUpdateMs: state.averageUpdateMs,

@@ -1687,6 +1687,12 @@ function processHit(hit, shotContext = {}) {
 
     e.health -= finalDamage;
 
+    // C10.7: expose the actual hit strength to the attack coordinator so only
+    // strong reactions interrupt telegraphed attacks.
+    e.lastHitDamage = finalDamage;
+    e.lastHitHeadshot = hs === true;
+    e.lastHitAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
     const heavyStaggerScale = e.type === 'GOLIATH'
       ? 0.48
       : (e.type === 'BRUTE' ? 0.68 : 1.0);

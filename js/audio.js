@@ -73,6 +73,9 @@ const AUDIO_ROUTES = Object.freeze({
   },
   enemy: {
     ranged: 'shoot_pistol',
+    rangedCharge: 'enemySpitterCharge',
+    heavyWindup: 'enemyHeavyWindup',
+    attackInterrupted: 'enemyAttackInterrupt',
     exploder: 'shoot_shotgun',
     spore: 'hit'
   },
@@ -123,7 +126,10 @@ const DEDICATED_SOUND_FILES = Object.freeze({
   reload_smg: 'assets/sounds/reload_smg.mp3',
   reload_rifle: 'assets/sounds/reload_rifle.mp3',
   reload_shotgun: 'assets/sounds/reload_shotgun.mp3',
-  reload_sniper: 'assets/sounds/reload_sniper.mp3'
+  reload_sniper: 'assets/sounds/reload_sniper.mp3',
+  enemySpitterCharge: 'assets/sounds/enemy_spitter_charge.mp3',
+  enemyHeavyWindup: 'assets/sounds/enemy_heavy_windup.mp3',
+  enemyAttackInterrupt: 'assets/sounds/enemy_attack_interrupt.mp3'
 });
 
 
@@ -288,6 +294,9 @@ function getFallbackSoundsFor(name) {
     case 'roundStart': return [];
     case 'roundClear': return ['hit'];
     case 'shoot_sniper': return ['shoot_rifle'];
+    case 'enemySpitterCharge': return ['arcadeSparklePing', 'hit'];
+    case 'enemyHeavyWindup': return ['hurt', 'hit'];
+    case 'enemyAttackInterrupt': return ['hit'];
     case 'reload_pistol':
     case 'reload_smg':
     case 'reload_rifle':

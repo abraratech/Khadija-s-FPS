@@ -4,7 +4,13 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, currentMapId, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost } from './map.js';
 import { player, damagePlayer } from './player.js';
 import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore, showStatusToast } from './ui.js';
-import { spawnBloodBurst } from './particles.js';
+import {
+  spawnBloodBurst,
+  spawnEnemyAttackWarning,
+  spawnEnemyProjectileTrail,
+  spawnEnemyProjectileImpact,
+  spawnEnemyAttackInterrupted
+} from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
 import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './audio.js';
 import { pushOut } from './utils.js';
@@ -32,6 +38,16 @@ import {
   getAIExploitSnapshot,
   recordAIExploitRangedResponse
 } from './ai_exploit.js';
+import {
+  registerAttackEnemy,
+  queueEnemyAttack,
+  updateAIAttackCoordinator,
+  advanceEnemyAttack,
+  consumeAttackTelegraphStart,
+  consumeAttackInterrupted,
+  cancelEnemyAttack,
+  recordAIAttackProjectileResult
+} from './ai_attacks.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -289,7 +305,14 @@ function initPools() {
 
   for (let i = 0; i < MAX_PROJECTILES; i++) {
     const pMesh = new THREE.Mesh(projGeo, projMat); pMesh.visible = false; scene.add(pMesh);
-    projectilePool.items.push({ mesh: pMesh, dir: new THREE.Vector3(), life: 0, elevatedResponse: false });
+    projectilePool.items.push({
+      mesh: pMesh,
+      dir: new THREE.Vector3(),
+      prevPos: new THREE.Vector3(),
+      life: 0,
+      trailTimer: 0,
+      elevatedResponse: false
+    });
   }
   for (let i = 0; i < MAX_EXPLOSIONS; i++) {
     const eMesh = new THREE.Mesh(expGeo, expMat.clone()); eMesh.visible = false; scene.add(eMesh);
@@ -322,6 +345,15 @@ const enemyInstance = {
   attackAnimDuration: 0.30,
   rangedLosTimer: 0,
   rangedHasLos: false,
+  lastHitDamage: 0,
+  lastHitHeadshot: false,
+  lastHitAt: 0,
+  attackState: 'IDLE',
+  attackKind: 'NONE',
+  attackWindupT: 0,
+  attackWindupDuration: 0,
+  attackRecoveryT: 0,
+  attackTelegraphProgress: 0,
   dyingT: -1,
   cachedGroundY: 0,
   groundUpdateTimer: 0,
@@ -832,6 +864,10 @@ function spawnZombie() {
   recycled.attackAnimDuration = config.name === 'CRAWLER' ? 0.46 : 0.30;
   recycled.rangedLosTimer = Math.random() * 0.12;
   recycled.rangedHasLos = false;
+  recycled.lastHitDamage = 0;
+  recycled.lastHitHeadshot = false;
+  recycled.lastHitAt = 0;
+  registerAttackEnemy(recycled);
   recycled.dyingT = -1;
   recycled.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
   recycled.cachedGroundY = 0;
@@ -968,6 +1004,7 @@ export function updateEnemies(dt) {
   if (!player.alive) return;
 
   meleeDamageGraceT = Math.max(0, meleeDamageGraceT - dt);
+  updateAIAttackCoordinator(dt, activeEnemies);
   // ── ELECTRIC TRAP LOGIC ──
   traps.forEach(t => {
     if (t.state === 'ACTIVE') {
@@ -993,21 +1030,67 @@ export function updateEnemies(dt) {
   });
 
   projectilePool.items.forEach(p => {
-    if (p.life > 0) {
-      p.mesh.position.addScaledVector(p.dir, dt * 14.0);
-      p.life -= dt;
-      const pdx = player.pos.x - p.mesh.position.x;
-      const pdy = player.pos.y - p.mesh.position.y;
-      const pdz = player.pos.z - p.mesh.position.z;
-      if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
-        damagePlayer(20, p.mesh.position, 'RANGED');
-        if (p.elevatedResponse) {
-          recordAIExploitRangedResponse({ hit: true });
-        }
+    if (p.life <= 0) return;
+
+    p.prevPos.copy(p.mesh.position);
+    p.mesh.position.addScaledVector(p.dir, dt * 14.0);
+    p.life -= dt;
+    p.trailTimer -= dt;
+
+    if (p.trailTimer <= 0) {
+      p.trailTimer = 0.045;
+      spawnEnemyProjectileTrail(p.mesh.position);
+    }
+
+    const segment = rangedSightDirection.subVectors(p.mesh.position, p.prevPos);
+    const segmentLength = segment.length();
+    let impactedWorld = false;
+
+    if (segmentLength > 0.001) {
+      rangedSightRay.near = 0;
+      rangedSightRay.far = segmentLength;
+      rangedSightRay.ray.origin.copy(p.prevPos);
+      rangedSightRay.ray.direction.copy(segment).multiplyScalar(1 / segmentLength);
+      rangedSightHits.length = 0;
+      rangedSightRay.intersectObjects(mapMeshes, false, rangedSightHits);
+
+      for (const hit of rangedSightHits) {
+        if (hit.object?.userData?.isMapDressing || hit.object?.userData?.playerNonBlockingProjectile) continue;
+        spawnEnemyProjectileImpact(hit.point, false);
+        recordAIAttackProjectileResult(false);
+        p.life = 0;
+        p.mesh.visible = false;
         p.elevatedResponse = false;
-        p.life = 0; p.mesh.visible = false;
+        impactedWorld = true;
+        break;
       }
-      if (p.life <= 0) p.mesh.visible = false;
+    }
+
+    if (impactedWorld) return;
+
+    const pdx = player.pos.x - p.mesh.position.x;
+    const pdy = player.pos.y - p.mesh.position.y;
+    const pdz = player.pos.z - p.mesh.position.z;
+
+    if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
+      damagePlayer(20, p.mesh.position, 'RANGED');
+      spawnEnemyProjectileImpact(p.mesh.position, true);
+      recordAIAttackProjectileResult(true);
+
+      if (p.elevatedResponse) {
+        recordAIExploitRangedResponse({ hit: true });
+      }
+
+      p.elevatedResponse = false;
+      p.life = 0;
+      p.mesh.visible = false;
+      return;
+    }
+
+    if (p.life <= 0) {
+      recordAIAttackProjectileResult(false);
+      p.elevatedResponse = false;
+      p.mesh.visible = false;
     }
   });
 
@@ -1170,6 +1253,9 @@ if (e.usingLod && e.lodMesh) {
       hitReactDir: e.hitReactDir,
       attackT: e.attackAnimT,
       attackDuration: e.attackAnimDuration || 0.30,
+      attackState: e.attackState,
+      attackKind: e.attackKind,
+      telegraphProgress: e.attackTelegraphProgress,
       deathT: e.dyingT
     }
   );
@@ -1246,8 +1332,48 @@ if (e.usingLod && e.lodMesh) {
       dt
     );
 
+    if (consumeAttackTelegraphStart(e)) {
+      spawnEnemyAttackWarning(
+        e.mesh.position,
+        e.attackKind,
+        e.attackWindupDuration
+      );
+
+      if (e.attackKind === 'RANGED') {
+        playEnemySound('rangedCharge', 0.34, false, {
+          cooldownKey: `spitter_charge_${e.squadId || i}`,
+          cooldownMs: 500
+        });
+      } else if (e.attackKind === 'HEAVY_BRUTE' || e.attackKind === 'HEAVY_GOLIATH') {
+        playEnemySound('heavyWindup', e.attackKind === 'HEAVY_GOLIATH' ? 0.50 : 0.38, true, {
+          cooldownKey: `heavy_windup_${e.squadId || i}`,
+          cooldownMs: 650,
+          pitchMin: e.attackKind === 'HEAVY_GOLIATH' ? 0.62 : 0.74,
+          pitchMax: e.attackKind === 'HEAVY_GOLIATH' ? 0.74 : 0.86
+        });
+      }
+    }
+
+    const interruptedKind = consumeAttackInterrupted(e);
+    if (interruptedKind) {
+      spawnEnemyAttackInterrupted(e.mesh.position);
+      playEnemySound('attackInterrupted', 0.24, true, {
+        cooldownKey: 'enemy_attack_interrupted',
+        cooldownMs: 120,
+        pitchMin: 0.95,
+        pitchMax: 1.12
+      });
+      e.atkCD = Math.max(e.atkCD, 0.32);
+    }
+
 // ── MOVEMENT & STAIRWAY ROUTING ENGINE ──
+    const attackMovementLocked = e.attackState === 'WINDUP' || (
+      e.attackState === 'RECOVERY' &&
+      (e.attackKind === 'HEAVY_BRUTE' || e.attackKind === 'HEAVY_GOLIATH')
+    );
+
     if (
+      !attackMovementLocked &&
       !rangedCanAttack &&
       (horizontalDist > e.attackRange || trueVerticalDist > 1.8)
     ) {
@@ -1331,7 +1457,7 @@ if (e.usingLod && e.lodMesh) {
     applyEnemySeparation(e, i, dt);
     pushOut(e.mesh.position, e.colRadius);
 
-    // ── ATTACK AND RANGE VALIDATION ──
+    // ── ATTACK TELEGRAPH, COMMIT, AND COUNTERPLAY ──
     e.atkCD -= dt;
 
     const canAttackNow = e.type === 'RANGED'
@@ -1341,50 +1467,130 @@ if (e.usingLod && e.lodMesh) {
         trueVerticalDist <= 1.8
       );
 
-    if (canAttackNow && e.atkCD <= 0 && player.alive) {
-      if (e.type === "EXPLODER") {
+    if (e.attackState === 'QUEUED' && !canAttackNow) {
+      cancelEnemyAttack(e, 'TARGET MOVED');
+    }
+
+    const commitRangePadding = e.type === 'GOLIATH'
+      ? 0.60
+      : (e.type === 'BRUTE' ? 0.42 : 0.26);
+    const canCommitTelegraph = e.attackKind === 'RANGED'
+      ? rangedCanAttack
+      : (
+        horizontalDist <= e.attackRange + commitRangePadding &&
+        trueVerticalDist <= 1.9
+      );
+
+    advanceEnemyAttack(e, dt, {
+      canCommit: canCommitTelegraph,
+      onCommit: (kind) => {
+        if (kind === 'RANGED') {
+          e.atkCD = e.attackRate;
+          e.attackAnimT = 0.30;
+          e.attackAnimDuration = 0.30;
+
+          const pool = projectilePool;
+          const projectile = pool.items[pool.index];
+          projectile.mesh.position.copy(e.mesh.position);
+          projectile.mesh.position.y += 1.2;
+          projectile.prevPos.copy(projectile.mesh.position);
+          projectile.dir.subVectors(player.pos, projectile.mesh.position).normalize();
+          projectile.life = 2.5;
+          projectile.trailTimer = 0;
+          projectile.elevatedResponse = trueVerticalDist > 1.8;
+          projectile.mesh.visible = true;
+          pool.index = (pool.index + 1) % MAX_PROJECTILES;
+
+          if (projectile.elevatedResponse) {
+            recordAIExploitRangedResponse({ hit: false });
+          }
+
+          playEnemySound('ranged', 0.32, true, {
+            cooldownKey: 'ranged_enemy_shot',
+            cooldownMs: 120
+          });
+          return;
+        }
+
+        if (kind === 'CRAWLER' || kind === 'HEAVY_BRUTE' || kind === 'HEAVY_GOLIATH') {
+          e.atkCD = e.attackRate;
+          meleeDamageGraceT = getMeleeDamageGrace();
+
+          if (kind === 'CRAWLER') {
+            e.attackAnimDuration = 0.46;
+            e.attackAnimT = 0.46;
+          } else {
+            e.attackAnimDuration = kind === 'HEAVY_GOLIATH' ? 0.58 : 0.46;
+            e.attackAnimT = e.attackAnimDuration;
+          }
+
+          damagePlayer(e.damage, e.mesh.position, e.type);
+          e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
+          e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
+          pushOut(e.mesh.position, e.colRadius);
+        }
+      }
+    });
+
+    if (
+      e.attackState === 'IDLE' &&
+      canAttackNow &&
+      e.atkCD <= 0 &&
+      player.alive
+    ) {
+      if (e.type === 'EXPLODER') {
         e.atkCD = e.attackRate;
         e.attackAnimT = 0.26;
         e.attackAnimDuration = 0.26;
         killEnemy(e);
       }
-      else if (e.type === "RANGED") {
-        e.atkCD = e.attackRate;
-        e.attackAnimT = 0.30;
-        e.attackAnimDuration = 0.30;
+      else if (e.type === 'RANGED') {
+        const exploitPriority = Math.max(
+          0,
+          Number(getAIDirectorTuning().rangedElevationResponse) || 0
+        );
 
-        const pool = projectilePool;
-        const p = pool.items[pool.index];
-        p.mesh.position.copy(e.mesh.position);
-        p.mesh.position.y += 1.2;
-        p.dir.subVectors(player.pos, p.mesh.position).normalize();
-        p.life = 2.5;
-        p.elevatedResponse = trueVerticalDist > 1.8;
-        p.mesh.visible = true;
-        pool.index = (pool.index + 1) % MAX_PROJECTILES;
-
-        if (p.elevatedResponse) {
-          recordAIExploitRangedResponse({ hit: false });
-        }
-
-        playEnemySound('ranged', 0.32, true, {
-          cooldownKey: 'ranged_enemy_shot',
-          cooldownMs: 120
+        queueEnemyAttack(e, 'RANGED', {
+          windup: exploitPriority > 0.65 ? 0.68 : 0.62,
+          recovery: 0.38,
+          priority: 1.0 + exploitPriority * 0.55,
+          globalGap: exploitPriority > 0.75 ? 0.64 : 0.72
+        });
+      }
+      else if (e.type === 'GOLIATH') {
+        queueEnemyAttack(e, 'HEAVY_GOLIATH', {
+          windup: 1.05,
+          recovery: 0.72,
+          priority: 1.28
+        });
+      }
+      else if (e.type === 'BRUTE') {
+        queueEnemyAttack(e, 'HEAVY_BRUTE', {
+          windup: 0.78,
+          recovery: 0.54,
+          priority: 1.12
+        });
+      }
+      else if (e.type === 'CRAWLER' && meleeDamageGraceT <= 0) {
+        meleeDamageGraceT = getMeleeDamageGrace();
+        queueEnemyAttack(e, 'CRAWLER', {
+          windup: 0.34,
+          recovery: 0.24,
+          priority: 0.78
         });
       }
       else if (meleeDamageGraceT <= 0) {
         e.atkCD = e.attackRate;
         meleeDamageGraceT = getMeleeDamageGrace();
-        e.attackAnimDuration = e.type === 'CRAWLER' ? 0.46 : 0.32;
-        e.attackAnimT = e.attackAnimDuration;
+        e.attackAnimDuration = 0.32;
+        e.attackAnimT = 0.32;
 
         damagePlayer(e.damage, e.mesh.position, e.type);
-
         e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
         e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
         pushOut(e.mesh.position, e.colRadius);
       } else {
-        e.attackAnimDuration = e.type === 'CRAWLER' ? 0.24 : 0.18;
+        e.attackAnimDuration = 0.18;
         e.attackAnimT = Math.max(e.attackAnimT, e.attackAnimDuration);
         e.atkCD = Math.min(e.attackRate, 0.12 + Math.random() * 0.10);
       }
@@ -1415,6 +1621,7 @@ if (e.usingLod && e.lodMesh) {
 
 export function killEnemy(e) {
   if (!e.alive) return;
+  cancelEnemyAttack(e, 'ENEMY REMOVED');
   recordSquadEnemyDeath(e);
   recordNavigationEnemyRemoved(e);
   e.alive = false; e.dyingT = 0; 

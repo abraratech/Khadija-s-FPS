@@ -1089,6 +1089,12 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   const attackPulse = attackT > 0
     ? Math.sin(attackProgress * Math.PI)
     : 0;
+  const attackState = state.attackState || 'IDLE';
+  const attackKind = state.attackKind || 'NONE';
+  const telegraphProgress = Math.max(0, Math.min(1, state.telegraphProgress || 0));
+  const telegraphPulse = attackState === 'WINDUP'
+    ? 0.45 + Math.sin(timeSeconds * 18 + phase) * 0.18
+    : 0;
   const deathT = state.deathT ?? -1;
 
   const t = timeSeconds * 7.0 * speed * typeSpeed + phase;
@@ -1155,6 +1161,32 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
     parts.leftLeg.rotation.x += 0.48;
     parts.rightLeg.rotation.x += 0.48;
     group.rotation.z += walk * 0.050 * power;
+  }
+
+  if (attackState === 'WINDUP') {
+    if (attackKind === 'RANGED') {
+      parts.rightArm.rotation.x -= 0.38 + telegraphProgress * 0.38;
+      parts.rightArm.rotation.z -= 0.10 * telegraphProgress;
+      parts.rightArm.position.z += 0.08 * telegraphProgress;
+      parts.head.rotation.y += Math.sin(timeSeconds * 12 + phase) * 0.05;
+      parts.rangedLens.scale.setScalar(1 + telegraphProgress * 0.65 + telegraphPulse * 0.12);
+      parts.rangedBand.scale.x = (parts.rangedBand.userData.baseScale?.x ?? 1) * (1 + telegraphProgress * 0.18);
+    } else if (attackKind === 'HEAVY_BRUTE' || attackKind === 'HEAVY_GOLIATH') {
+      const heavyScale = attackKind === 'HEAVY_GOLIATH' ? 1.18 : 1.0;
+      parts.torso.rotation.y -= 0.28 * telegraphProgress;
+      parts.torso.rotation.x -= 0.10 * telegraphProgress;
+      parts.leftArm.rotation.x -= 0.58 * telegraphProgress * heavyScale;
+      parts.rightArm.rotation.x -= 0.72 * telegraphProgress * heavyScale;
+      parts.leftArm.rotation.z += 0.16 * telegraphProgress;
+      parts.rightArm.rotation.z -= 0.18 * telegraphProgress;
+      parts.head.rotation.x -= 0.10 * telegraphProgress;
+      group.position.y += telegraphPulse * 0.018;
+    } else if (attackKind === 'CRAWLER') {
+      parts.torso.position.z += 0.08 * telegraphProgress;
+      parts.head.position.z += 0.06 * telegraphProgress;
+      parts.leftArm.rotation.x -= 0.28 * telegraphProgress;
+      parts.rightArm.rotation.x -= 0.28 * telegraphProgress;
+    }
   }
 
   if (attackPulse > 0) {

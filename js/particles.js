@@ -8,6 +8,9 @@ const MAX_BLOOD = 48;
 const MAX_SHELLS = 28;
 const MAX_SMOKE = 22;
 const MAX_SPARKS = 52;
+const MAX_ENEMY_WARNINGS = 10;
+const MAX_ENEMY_TRAILS = 30;
+const MAX_ENEMY_IMPACTS = 16;
 
 // ── THE RING BUFFERS ──
 const pools = {
@@ -15,7 +18,10 @@ const pools = {
   blood: { items: [], index: 0 },
   shells: { items: [], index: 0 },
   smoke: { items: [], index: 0 },
-  sparks: { items: [], index: 0 }
+  sparks: { items: [], index: 0 },
+  enemyWarnings: { items: [], index: 0 },
+  enemyTrails: { items: [], index: 0 },
+  enemyImpacts: { items: [], index: 0 }
 };
 
 let initialized = false;
@@ -101,6 +107,55 @@ export function initParticles() {
     mesh.visible = false;
     scene.add(mesh);
     pools.sparks.items.push({ mesh, life: 0, vel: new THREE.Vector3(), baseLife: 0.22 });
+  }
+
+  // 6. Enemy attack telegraph rings.
+  const warningGeo = new THREE.TorusGeometry(0.42, 0.045, 5, 16);
+  for (let i = 0; i < MAX_ENEMY_WARNINGS; i++) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x44ffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const mesh = new THREE.Mesh(warningGeo, material);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.visible = false;
+    scene.add(mesh);
+    pools.enemyWarnings.items.push({ mesh, life: 0, baseLife: 0.55, startScale: 0.6 });
+  }
+
+  // 7. Lightweight Spitter projectile trail points.
+  const trailGeo = new THREE.SphereGeometry(0.055, 5, 4);
+  for (let i = 0; i < MAX_ENEMY_TRAILS; i++) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x38f5ff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const mesh = new THREE.Mesh(trailGeo, material);
+    mesh.visible = false;
+    scene.add(mesh);
+    pools.enemyTrails.items.push({ mesh, life: 0, baseLife: 0.18 });
+  }
+
+  // 8. Projectile impact flashes.
+  const impactGeo = new THREE.SphereGeometry(0.16, 6, 5);
+  for (let i = 0; i < MAX_ENEMY_IMPACTS; i++) {
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x52ffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const mesh = new THREE.Mesh(impactGeo, material);
+    mesh.visible = false;
+    scene.add(mesh);
+    pools.enemyImpacts.items.push({ mesh, life: 0, baseLife: 0.24 });
   }
 
   initialized = true;
@@ -222,6 +277,62 @@ export function spawnImpactSpark(pos, normal = null, power = 1) {
 }
 
 
+export function spawnEnemyAttackWarning(pos, kind = 'RANGED', duration = 0.55) {
+  if (!initialized) initParticles();
+
+  const pool = pools.enemyWarnings;
+  const item = pool.items[pool.index];
+  const color = kind === 'INTERRUPTED'
+    ? 0xffffff
+    : (kind === 'RANGED'
+      ? 0x42f5ff
+      : (kind === 'HEAVY_GOLIATH' ? 0xff5a00 : (kind === 'HEAVY_BRUTE' ? 0xffa126 : 0xb8ff65)));
+
+  item.mesh.position.copy(pos);
+  item.mesh.position.y += kind === 'RANGED' ? 1.25 : 0.16;
+  item.mesh.material.color.setHex(color);
+  item.mesh.material.opacity = 0.88;
+  item.startScale = kind === 'RANGED' ? 0.48 : 0.72;
+  item.mesh.scale.setScalar(item.startScale);
+  item.baseLife = Math.max(0.20, Number(duration) || 0.55);
+  item.life = item.baseLife;
+  item.mesh.visible = true;
+  pool.index = (pool.index + 1) % MAX_ENEMY_WARNINGS;
+}
+
+export function spawnEnemyProjectileTrail(pos) {
+  if (!initialized) initParticles();
+  const pool = pools.enemyTrails;
+  const item = pool.items[pool.index];
+  item.mesh.position.copy(pos);
+  item.mesh.scale.setScalar(0.75 + Math.random() * 0.45);
+  item.mesh.material.opacity = 0.58;
+  item.baseLife = 0.16 + Math.random() * 0.05;
+  item.life = item.baseLife;
+  item.mesh.visible = true;
+  pool.index = (pool.index + 1) % MAX_ENEMY_TRAILS;
+}
+
+export function spawnEnemyProjectileImpact(pos, hitPlayer = false) {
+  if (!initialized) initParticles();
+  const pool = pools.enemyImpacts;
+  const item = pool.items[pool.index];
+  item.mesh.position.copy(pos);
+  item.mesh.material.color.setHex(hitPlayer ? 0xff5a5a : 0x52ffff);
+  item.mesh.material.opacity = 0.90;
+  item.mesh.scale.setScalar(hitPlayer ? 0.75 : 0.55);
+  item.baseLife = hitPlayer ? 0.28 : 0.22;
+  item.life = item.baseLife;
+  item.mesh.visible = true;
+  pool.index = (pool.index + 1) % MAX_ENEMY_IMPACTS;
+
+  spawnImpactSpark(pos, null, hitPlayer ? 1.15 : 0.82);
+}
+
+export function spawnEnemyAttackInterrupted(pos) {
+  spawnEnemyAttackWarning(pos, 'INTERRUPTED', 0.28);
+}
+
 // ── THE UPDATE LOOP (Called in tick) ──
 export function updateParticles(dt) {
   if (!initialized) return;
@@ -278,6 +389,34 @@ export function updateParticles(dt) {
       if (item.life <= 0) item.mesh.visible = false;
     }
   });
+
+  pools.enemyWarnings.items.forEach(item => {
+    if (item.life <= 0) return;
+    item.life -= dt;
+    const progress = 1 - item.life / Math.max(0.001, item.baseLife);
+    item.mesh.scale.setScalar(item.startScale + progress * 0.85);
+    item.mesh.rotation.z += dt * 3.2;
+    item.mesh.material.opacity = Math.max(0, (1 - progress) * 0.82);
+    if (item.life <= 0) item.mesh.visible = false;
+  });
+
+  pools.enemyTrails.items.forEach(item => {
+    if (item.life <= 0) return;
+    item.life -= dt;
+    const ratio = item.life / Math.max(0.001, item.baseLife);
+    item.mesh.scale.multiplyScalar(0.94);
+    item.mesh.material.opacity = Math.max(0, ratio * 0.58);
+    if (item.life <= 0) item.mesh.visible = false;
+  });
+
+  pools.enemyImpacts.items.forEach(item => {
+    if (item.life <= 0) return;
+    item.life -= dt;
+    const progress = 1 - item.life / Math.max(0.001, item.baseLife);
+    item.mesh.scale.addScalar(dt * 3.8);
+    item.mesh.material.opacity = Math.max(0, (1 - progress) * 0.88);
+    if (item.life <= 0) item.mesh.visible = false;
+  });
 }
 
 // Clears visual clutter instantly (Useful for map resets)
@@ -288,4 +427,7 @@ export function clearAllDecals() {
   pools.shells.items.forEach(i => i.mesh.visible = false);
   pools.smoke.items.forEach(i => i.mesh.visible = false);
   pools.sparks.items.forEach(i => i.mesh.visible = false);
+  pools.enemyWarnings.items.forEach(i => i.mesh.visible = false);
+  pools.enemyTrails.items.forEach(i => i.mesh.visible = false);
+  pools.enemyImpacts.items.forEach(i => i.mesh.visible = false);
 }

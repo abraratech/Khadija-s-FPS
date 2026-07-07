@@ -32,6 +32,12 @@ import {
   updateAIExploit,
   getAIExploitSnapshot
 } from './ai_exploit.js';
+import {
+  resetAIAttackRun,
+  endAIAttackRun,
+  beginAIAttackWave,
+  getAIAttackSnapshot
+} from './ai_attacks.js';
 
 // C10.1 — Adaptive AI Director Foundation
 //
@@ -547,6 +553,7 @@ function renderDebugPanel(force = false) {
   const navigation = getAINavigationSnapshot();
   const strategy = getAIStrategySnapshot();
   const exploit = getAIExploitSnapshot();
+  const attacks = getAIAttackSnapshot();
   const squadRoles = Object.entries(squad.roleCounts || {})
     .filter(([, count]) => count > 0)
     .map(([role, count]) => `${role.slice(0, 3)}:${count}`)
@@ -573,6 +580,9 @@ function renderDebugPanel(force = false) {
     <div><span>REACH</span><b>${exploit.state} · ${exploit.currentDuration.toFixed(1)}s · ${exploit.nearbyBelow} BELOW</b></div>
     <div><span>SURFACE</span><b>${exploit.supportTag.toUpperCase()} · ${exploit.supportAuthorized ? 'AUTHORED' : 'UNVERIFIED'}</b></div>
     <div><span>EXPLOIT</span><b>${exploit.incidents} EVENT · PEAK ${exploit.peakDuration.toFixed(1)}s · RANGE ${exploit.rangedResponses}/${exploit.rangedHits}</b></div>
+    <div><span>ATTACK QUEUE</span><b>${attacks.activeTelegraphs} ACTIVE · ${attacks.queued} WAIT · MAX ${attacks.maxConcurrent}</b></div>
+    <div><span>COUNTERPLAY</span><b>${attacks.interrupted} INTERRUPT · ${attacks.evaded} EVADE · ${attacks.committed} COMMIT</b></div>
+    <div><span>SPECIAL FIRE</span><b>${attacks.projectileHits}/${attacks.projectileHits + attacks.projectileMisses} HIT · ${attacks.lastEvent}</b></div>
     <div><span>MEMORY</span><b>${memoryText}</b></div>
     <div><span>SQUAD</span><b>${squad.active ? 'COORDINATED' : `ONLINE R${squad.activationWave}`}</b></div>
     <div><span>ROLES</span><b>${squadRoles}</b></div>
@@ -647,6 +657,7 @@ export function resetAIDirectorRun({ mapId = 'unknown', difficulty = 1 } = {}) {
     sessionId: state.sessionId
   });
   resetAIExploitRun({ mapId: state.mapId });
+  resetAIAttackRun();
   renderDebugPanel(true);
 }
 
@@ -658,6 +669,7 @@ export function endAIDirectorRun() {
   endAINavigationRun();
   endAIStrategyRun();
   endAIExploitRun();
+  endAIAttackRun();
   renderDebugPanel(true);
 }
 
@@ -668,6 +680,7 @@ export function beginAIDirectorWave(waveNumber) {
   beginAINavigationWave(state.currentWave);
   beginAIStrategyWave(state.currentWave);
   beginAIExploitWave(state.currentWave);
+  beginAIAttackWave(state.currentWave);
   renderDebugPanel(true);
 }
 
@@ -1030,6 +1043,7 @@ export function getAIDirectorSnapshot() {
     completedWaves: state.completedWaves,
     strategy: getAIStrategySnapshot(),
     exploit: getAIExploitSnapshot(),
+    attacks: getAIAttackSnapshot(),
     memory: {
       available: Boolean(state.memoryPrior?.available),
       source: state.memoryPrior?.source || 'none',

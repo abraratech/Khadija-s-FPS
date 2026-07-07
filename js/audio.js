@@ -76,6 +76,12 @@ const AUDIO_ROUTES = Object.freeze({
     rangedCharge: 'enemySpitterCharge',
     heavyWindup: 'enemyHeavyWindup',
     attackInterrupted: 'enemyAttackInterrupt',
+    runnerBurst: 'enemyRunnerBurst',
+    spitterReposition: 'enemySpitterReposition',
+    bruteBrace: 'enemyBruteBrace',
+    goliathPhase: 'enemyGoliathPhase',
+    exploderPrime: 'enemyExploderPrime',
+    crawlerAttack: 'enemyCrawlerAttack',
     exploder: 'shoot_shotgun',
     spore: 'hit'
   },
@@ -129,7 +135,13 @@ const DEDICATED_SOUND_FILES = Object.freeze({
   reload_sniper: 'assets/sounds/reload_sniper.mp3',
   enemySpitterCharge: 'assets/sounds/enemy_spitter_charge.mp3',
   enemyHeavyWindup: 'assets/sounds/enemy_heavy_windup.mp3',
-  enemyAttackInterrupt: 'assets/sounds/enemy_attack_interrupt.mp3'
+  enemyAttackInterrupt: 'assets/sounds/enemy_attack_interrupt.mp3',
+  enemyRunnerBurst: 'assets/sounds/enemy_runner_burst.mp3',
+  enemySpitterReposition: 'assets/sounds/enemy_spitter_reposition.mp3',
+  enemyBruteBrace: 'assets/sounds/enemy_brute_brace.mp3',
+  enemyGoliathPhase: 'assets/sounds/enemy_goliath_phase.mp3',
+  enemyExploderPrime: 'assets/sounds/enemy_exploder_prime.mp3',
+  enemyCrawlerAttack: 'assets/sounds/enemy_crawler_attack.mp3'
 });
 
 
@@ -297,6 +309,12 @@ function getFallbackSoundsFor(name) {
     case 'enemySpitterCharge': return ['arcadeSparklePing', 'hit'];
     case 'enemyHeavyWindup': return ['hurt', 'hit'];
     case 'enemyAttackInterrupt': return ['hit'];
+    case 'enemyRunnerBurst': return ['hurt', 'hit'];
+    case 'enemySpitterReposition': return ['arcadeSparklePing', 'hit'];
+    case 'enemyBruteBrace': return ['enemyHeavyWindup', 'hurt'];
+    case 'enemyGoliathPhase': return ['enemyHeavyWindup', 'hurt'];
+    case 'enemyExploderPrime': return ['shoot_shotgun', 'hit'];
+    case 'enemyCrawlerAttack': return ['hit'];
     case 'reload_pistol':
     case 'reload_smg':
     case 'reload_rifle':

@@ -9,7 +9,8 @@ import {
   spawnEnemyAttackWarning,
   spawnEnemyProjectileTrail,
   spawnEnemyProjectileImpact,
-  spawnEnemyAttackInterrupted
+  spawnEnemyAttackInterrupted,
+  spawnEnemyArchetypePulse
 } from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
 import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './audio.js';
@@ -48,6 +49,19 @@ import {
   cancelEnemyAttack,
   recordAIAttackProjectileResult
 } from './ai_attacks.js';
+import {
+  registerArchetypeEnemy,
+  updateAIArchetypeCoordinator,
+  recordArchetypeAttackCommitted,
+  getArchetypeMovementScale,
+  getArchetypeHitMoveScale,
+  shouldArchetypeForceMove,
+  canArchetypeRequestAttack,
+  getArchetypePursuitTarget,
+  getArchetypeAttackProfile,
+  getArchetypeAttackCooldownScale,
+  consumeArchetypeEvent
+} from './ai_archetypes.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -354,6 +368,14 @@ const enemyInstance = {
   attackWindupDuration: 0,
   attackRecoveryT: 0,
   attackTelegraphProgress: 0,
+  archetypeInitialized: false,
+  archetypeEvent: 'NONE',
+  runnerBurstT: 0,
+  spitterRepositionT: 0,
+  bruteBraceT: 0,
+  goliathPhase: 0,
+  goliathPhasePulseT: 0,
+  exploderStage: 'IDLE',
   dyingT: -1,
   cachedGroundY: 0,
   groundUpdateTimer: 0,
@@ -915,6 +937,7 @@ recycled.mesh.traverse(child => {
   updateProceduralZombieStyle(recycled.lodMesh, config);
   activeEnemies.push(recycled);
   registerSquadEnemy(recycled);
+  registerArchetypeEnemy(recycled);
   registerNavigationEnemy(recycled);
   actorManager.register(recycled);
   zombiesSpawnedSoFar++;
@@ -926,6 +949,7 @@ const _eToP = new THREE.Vector3();
 const _directorMoveTarget = { x: 0, z: 0 };
 const _squadMoveTarget = { x: 0, z: 0 };
 const _navigationMoveTarget = { x: 0, z: 0 };
+const _archetypeMoveTarget = { x: 0, z: 0 };
 
 function hasRangedLineOfSight(enemy) {
   rangedSightOrigin.set(
@@ -1005,6 +1029,10 @@ export function updateEnemies(dt) {
 
   meleeDamageGraceT = Math.max(0, meleeDamageGraceT - dt);
   updateAIAttackCoordinator(dt, activeEnemies);
+  updateAIArchetypeCoordinator(dt, {
+    enemies: activeEnemies,
+    player
+  });
   // ── ELECTRIC TRAP LOGIC ──
   traps.forEach(t => {
     if (t.state === 'ACTIVE') {
@@ -1256,6 +1284,16 @@ if (e.usingLod && e.lodMesh) {
       attackState: e.attackState,
       attackKind: e.attackKind,
       telegraphProgress: e.attackTelegraphProgress,
+      runnerBurstT: e.runnerBurstT,
+      runnerBurstDuration: e.runnerBurstDuration,
+      spitterRepositionT: e.spitterRepositionT,
+      spitterRepositionDuration: e.spitterRepositionDuration,
+      bruteBraceT: e.bruteBraceT,
+      bruteBraceDuration: e.bruteBraceDuration,
+      goliathPhase: e.goliathPhase,
+      goliathPhasePulseT: e.goliathPhasePulseT,
+      goliathPhasePulseDuration: e.goliathPhasePulseDuration,
+      exploderStage: e.exploderStage,
       deathT: e.dyingT
     }
   );
@@ -1321,8 +1359,15 @@ if (e.usingLod && e.lodMesh) {
       dt
     );
 
+    getArchetypePursuitTarget(
+      e,
+      player,
+      _navigationMoveTarget,
+      _archetypeMoveTarget
+    );
+
     if (horizontalDist > 0.1) {
-      e.mesh.lookAt(_navigationMoveTarget.x, e.mesh.position.y, _navigationMoveTarget.z);
+      e.mesh.lookAt(_archetypeMoveTarget.x, e.mesh.position.y, _archetypeMoveTarget.z);
     }
 
     const rangedCanAttack = canRangedAttackPlayer(
@@ -1343,6 +1388,18 @@ if (e.usingLod && e.lodMesh) {
         playEnemySound('rangedCharge', 0.34, false, {
           cooldownKey: `spitter_charge_${e.squadId || i}`,
           cooldownMs: 500
+        });
+      } else if (e.attackKind === 'EXPLODER') {
+        playEnemySound('exploderPrime', 0.48, false, {
+          cooldownKey: `exploder_prime_${e.squadId || i}`,
+          cooldownMs: 700
+        });
+      } else if (e.attackKind === 'CRAWLER') {
+        playEnemySound('crawlerAttack', 0.22, true, {
+          cooldownKey: `crawler_attack_${e.squadId || i}`,
+          cooldownMs: 320,
+          pitchMin: 0.92,
+          pitchMax: 1.08
         });
       } else if (e.attackKind === 'HEAVY_BRUTE' || e.attackKind === 'HEAVY_GOLIATH') {
         playEnemySound('heavyWindup', e.attackKind === 'HEAVY_GOLIATH' ? 0.50 : 0.38, true, {
@@ -1366,25 +1423,65 @@ if (e.usingLod && e.lodMesh) {
       e.atkCD = Math.max(e.atkCD, 0.32);
     }
 
+    const archetypeEvent = consumeArchetypeEvent(e);
+    if (archetypeEvent) {
+      spawnEnemyArchetypePulse(e.mesh.position, archetypeEvent);
+
+      if (archetypeEvent === 'RUNNER_BURST') {
+        playEnemySound('runnerBurst', 0.28, true, {
+          cooldownKey: 'runner_burst_identity',
+          cooldownMs: 220,
+          pitchMin: 0.96,
+          pitchMax: 1.08
+        });
+      } else if (archetypeEvent === 'SPITTER_REPOSITION') {
+        playEnemySound('spitterReposition', 0.24, true, {
+          cooldownKey: 'spitter_reposition_identity',
+          cooldownMs: 260,
+          pitchMin: 0.96,
+          pitchMax: 1.06
+        });
+      } else if (archetypeEvent === 'BRUTE_BRACE') {
+        playEnemySound('bruteBrace', 0.34, true, {
+          cooldownKey: 'brute_brace_identity',
+          cooldownMs: 520,
+          pitchMin: 0.72,
+          pitchMax: 0.84
+        });
+      } else if (archetypeEvent.startsWith('GOLIATH_PHASE_')) {
+        playEnemySound('goliathPhase', 0.54, false, {
+          cooldownKey: 'goliath_phase_identity',
+          cooldownMs: 900
+        });
+      }
+    }
+
 // ── MOVEMENT & STAIRWAY ROUTING ENGINE ──
     const attackMovementLocked = e.attackState === 'WINDUP' || (
       e.attackState === 'RECOVERY' &&
       (e.attackKind === 'HEAVY_BRUTE' || e.attackKind === 'HEAVY_GOLIATH')
     );
+    const archetypeForceMove = shouldArchetypeForceMove(e);
 
     if (
       !attackMovementLocked &&
-      !rangedCanAttack &&
-      (horizontalDist > e.attackRange || trueVerticalDist > 1.8)
+      (
+        archetypeForceMove ||
+        (
+          !rangedCanAttack &&
+          (horizontalDist > e.attackRange || trueVerticalDist > 1.8)
+        )
+      )
     ) {
       const oldWalk = e.walkT;
-      const heavyEnemy = e.type === "BRUTE" || e.type === "GOLIATH";
-      const hitMoveScale = e.hitReactT > 0 ? (heavyEnemy ? 0.72 : 0.42) : 1.0;
-      const moveSpeed = e.speed * hitMoveScale;
+      const hitMoveScale = e.hitReactT > 0
+        ? getArchetypeHitMoveScale(e)
+        : 1.0;
+      const moveSpeed = e.speed * hitMoveScale * getArchetypeMovementScale(e);
       e.walkT += dt * moveSpeed * 3.5;
       
-      const moveTargetX = _navigationMoveTarget.x - e.mesh.position.x;
-      const moveTargetZ = _navigationMoveTarget.z - e.mesh.position.z;
+      const moveTargetX = _archetypeMoveTarget.x - e.mesh.position.x;
+      const moveTargetZ = _archetypeMoveTarget.z - e.mesh.position.z;
       const moveTargetDistance = Math.max(0.001, Math.hypot(moveTargetX, moveTargetZ));
 
       let moveX = moveTargetX / moveTargetDistance;
@@ -1473,7 +1570,9 @@ if (e.usingLod && e.lodMesh) {
 
     const commitRangePadding = e.type === 'GOLIATH'
       ? 0.60
-      : (e.type === 'BRUTE' ? 0.42 : 0.26);
+      : (e.type === 'BRUTE'
+        ? 0.42
+        : (e.type === 'EXPLODER' ? 0.55 : 0.26));
     const canCommitTelegraph = e.attackKind === 'RANGED'
       ? rangedCanAttack
       : (
@@ -1485,7 +1584,7 @@ if (e.usingLod && e.lodMesh) {
       canCommit: canCommitTelegraph,
       onCommit: (kind) => {
         if (kind === 'RANGED') {
-          e.atkCD = e.attackRate;
+          e.atkCD = e.attackRate * getArchetypeAttackCooldownScale(e);
           e.attackAnimT = 0.30;
           e.attackAnimDuration = 0.30;
 
@@ -1509,11 +1608,19 @@ if (e.usingLod && e.lodMesh) {
             cooldownKey: 'ranged_enemy_shot',
             cooldownMs: 120
           });
+          recordArchetypeAttackCommitted(e, kind);
+          return;
+        }
+
+        if (kind === 'EXPLODER') {
+          e.atkCD = 999;
+          recordArchetypeAttackCommitted(e, kind);
+          killEnemy(e);
           return;
         }
 
         if (kind === 'CRAWLER' || kind === 'HEAVY_BRUTE' || kind === 'HEAVY_GOLIATH') {
-          e.atkCD = e.attackRate;
+          e.atkCD = e.attackRate * getArchetypeAttackCooldownScale(e);
           meleeDamageGraceT = getMeleeDamageGrace();
 
           if (kind === 'CRAWLER') {
@@ -1524,6 +1631,7 @@ if (e.usingLod && e.lodMesh) {
             e.attackAnimT = e.attackAnimDuration;
           }
 
+          recordArchetypeAttackCommitted(e, kind);
           damagePlayer(e.damage, e.mesh.position, e.type);
           e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
           e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
@@ -1538,49 +1646,32 @@ if (e.usingLod && e.lodMesh) {
       e.atkCD <= 0 &&
       player.alive
     ) {
-      if (e.type === 'EXPLODER') {
-        e.atkCD = e.attackRate;
-        e.attackAnimT = 0.26;
-        e.attackAnimDuration = 0.26;
-        killEnemy(e);
-      }
-      else if (e.type === 'RANGED') {
-        const exploitPriority = Math.max(
-          0,
-          Number(getAIDirectorTuning().rangedElevationResponse) || 0
-        );
+      if (
+        ['EXPLODER', 'RANGED', 'GOLIATH', 'BRUTE', 'CRAWLER'].includes(e.type)
+      ) {
+        const exploitPriority = e.type === 'RANGED'
+          ? Math.max(
+            0,
+            Number(getAIDirectorTuning().rangedElevationResponse) || 0
+          )
+          : 0;
+        const profile = getArchetypeAttackProfile(e, {
+          exploitPriority
+        });
 
-        queueEnemyAttack(e, 'RANGED', {
-          windup: exploitPriority > 0.65 ? 0.68 : 0.62,
-          recovery: 0.38,
-          priority: 1.0 + exploitPriority * 0.55,
-          globalGap: exploitPriority > 0.75 ? 0.64 : 0.72
-        });
-      }
-      else if (e.type === 'GOLIATH') {
-        queueEnemyAttack(e, 'HEAVY_GOLIATH', {
-          windup: 1.05,
-          recovery: 0.72,
-          priority: 1.28
-        });
-      }
-      else if (e.type === 'BRUTE') {
-        queueEnemyAttack(e, 'HEAVY_BRUTE', {
-          windup: 0.78,
-          recovery: 0.54,
-          priority: 1.12
-        });
-      }
-      else if (e.type === 'CRAWLER' && meleeDamageGraceT <= 0) {
-        meleeDamageGraceT = getMeleeDamageGrace();
-        queueEnemyAttack(e, 'CRAWLER', {
-          windup: 0.34,
-          recovery: 0.24,
-          priority: 0.78
-        });
+        if (
+          profile &&
+          canArchetypeRequestAttack(e) &&
+          (e.type !== 'CRAWLER' || meleeDamageGraceT <= 0)
+        ) {
+          if (e.type === 'CRAWLER') {
+            meleeDamageGraceT = getMeleeDamageGrace();
+          }
+          queueEnemyAttack(e, profile.kind, profile);
+        }
       }
       else if (meleeDamageGraceT <= 0) {
-        e.atkCD = e.attackRate;
+        e.atkCD = e.attackRate * getArchetypeAttackCooldownScale(e);
         meleeDamageGraceT = getMeleeDamageGrace();
         e.attackAnimDuration = 0.32;
         e.attackAnimT = 0.32;

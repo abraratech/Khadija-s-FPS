@@ -8,7 +8,7 @@ const MAX_BLOOD = 48;
 const MAX_SHELLS = 28;
 const MAX_SMOKE = 22;
 const MAX_SPARKS = 52;
-const MAX_ENEMY_WARNINGS = 10;
+const MAX_ENEMY_WARNINGS = 14;
 const MAX_ENEMY_TRAILS = 30;
 const MAX_ENEMY_IMPACTS = 16;
 
@@ -282,22 +282,51 @@ export function spawnEnemyAttackWarning(pos, kind = 'RANGED', duration = 0.55) {
 
   const pool = pools.enemyWarnings;
   const item = pool.items[pool.index];
-  const color = kind === 'INTERRUPTED'
-    ? 0xffffff
-    : (kind === 'RANGED'
-      ? 0x42f5ff
-      : (kind === 'HEAVY_GOLIATH' ? 0xff5a00 : (kind === 'HEAVY_BRUTE' ? 0xffa126 : 0xb8ff65)));
+  const colorByKind = {
+    INTERRUPTED: 0xffffff,
+    RANGED: 0x42f5ff,
+    HEAVY_GOLIATH: 0xff5a00,
+    HEAVY_BRUTE: 0xffa126,
+    EXPLODER: 0xff3300,
+    RUNNER_BURST: 0xff3344,
+    SPITTER_REPOSITION: 0x33ddff,
+    BRUTE_BRACE: 0xaa55ff,
+    GOLIATH_PHASE_2: 0xff9900,
+    GOLIATH_PHASE_3: 0xff3300,
+    CRAWLER: 0xb8ff65
+  };
+  const color = colorByKind[kind] ?? 0xb8ff65;
 
   item.mesh.position.copy(pos);
-  item.mesh.position.y += kind === 'RANGED' ? 1.25 : 0.16;
+  item.mesh.position.y += kind === 'RANGED'
+    ? 1.25
+    : (kind.startsWith('GOLIATH_PHASE') ? 0.40 : 0.16);
   item.mesh.material.color.setHex(color);
   item.mesh.material.opacity = 0.88;
-  item.startScale = kind === 'RANGED' ? 0.48 : 0.72;
+  item.startScale = kind === 'RANGED'
+    ? 0.48
+    : (kind === 'EXPLODER' ? 0.60 : 0.72);
   item.mesh.scale.setScalar(item.startScale);
   item.baseLife = Math.max(0.20, Number(duration) || 0.55);
   item.life = item.baseLife;
   item.mesh.visible = true;
   pool.index = (pool.index + 1) % MAX_ENEMY_WARNINGS;
+}
+
+export function spawnEnemyArchetypePulse(pos, kind = 'RUNNER_BURST') {
+  const durations = {
+    RUNNER_BURST: 0.42,
+    SPITTER_REPOSITION: 0.38,
+    BRUTE_BRACE: 0.48,
+    GOLIATH_PHASE_2: 0.72,
+    GOLIATH_PHASE_3: 0.86
+  };
+
+  spawnEnemyAttackWarning(
+    pos,
+    kind,
+    durations[kind] || 0.45
+  );
 }
 
 export function spawnEnemyProjectileTrail(pos) {

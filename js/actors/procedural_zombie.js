@@ -1095,6 +1095,30 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   const telegraphPulse = attackState === 'WINDUP'
     ? 0.45 + Math.sin(timeSeconds * 18 + phase) * 0.18
     : 0;
+  const runnerBurstT = Math.max(0, state.runnerBurstT ?? 0);
+  const runnerBurstDuration = Math.max(0.05, state.runnerBurstDuration ?? 0.58);
+  const runnerBurstProgress = runnerBurstT > 0
+    ? Math.min(1, runnerBurstT / runnerBurstDuration)
+    : 0;
+  const spitterRepositionT = Math.max(0, state.spitterRepositionT ?? 0);
+  const spitterRepositionDuration = Math.max(0.05, state.spitterRepositionDuration ?? 1.18);
+  const spitterRepositionProgress = spitterRepositionT > 0
+    ? Math.min(1, spitterRepositionT / spitterRepositionDuration)
+    : 0;
+  const bruteBraceT = Math.max(0, state.bruteBraceT ?? 0);
+  const bruteBraceDuration = Math.max(0.05, state.bruteBraceDuration ?? 0.38);
+  const bruteBraceProgress = bruteBraceT > 0
+    ? Math.min(1, bruteBraceT / bruteBraceDuration)
+    : 0;
+  const goliathPhase = Math.max(0, Math.round(state.goliathPhase ?? 0));
+  const goliathPhasePulseT = Math.max(0, state.goliathPhasePulseT ?? 0);
+  const goliathPhasePulseDuration = Math.max(0.05, state.goliathPhasePulseDuration ?? 1.10);
+  const goliathPhasePulse = goliathPhasePulseT > 0
+    ? Math.sin(
+      (1 - Math.min(1, goliathPhasePulseT / goliathPhasePulseDuration)) * Math.PI
+    )
+    : 0;
+  const exploderStage = state.exploderStage || 'IDLE';
   const deathT = state.deathT ?? -1;
 
   const t = timeSeconds * 7.0 * speed * typeSpeed + phase;
@@ -1181,11 +1205,74 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
       parts.rightArm.rotation.z -= 0.18 * telegraphProgress;
       parts.head.rotation.x -= 0.10 * telegraphProgress;
       group.position.y += telegraphPulse * 0.018;
+    } else if (attackKind === 'EXPLODER') {
+      const critical = exploderStage === 'CRITICAL' ? 1.0 : 0.45;
+      const chargePulse = 1 + telegraphProgress * (0.28 + critical * 0.18);
+      parts.exploderCore.scale.setScalar(chargePulse);
+      parts.exploderCoreGlow.scale.setScalar(chargePulse * 1.14);
+      parts.torso.scale.x = (parts.torso.userData.baseScale?.x ?? 1) * (1 + telegraphPulse * 0.07);
+      parts.torso.scale.z = (parts.torso.userData.baseScale?.z ?? 1) * (1 + telegraphPulse * 0.10);
+      parts.leftArm.rotation.z += 0.22 * telegraphProgress;
+      parts.rightArm.rotation.z -= 0.22 * telegraphProgress;
+      parts.head.rotation.x -= 0.14 * telegraphProgress;
+      group.rotation.z += Math.sin(timeSeconds * (14 + critical * 8) + phase) * 0.035 * telegraphProgress;
     } else if (attackKind === 'CRAWLER') {
       parts.torso.position.z += 0.08 * telegraphProgress;
       parts.head.position.z += 0.06 * telegraphProgress;
       parts.leftArm.rotation.x -= 0.28 * telegraphProgress;
       parts.rightArm.rotation.x -= 0.28 * telegraphProgress;
+    }
+  }
+
+  if (typeName === "RUNNER" && runnerBurstProgress > 0) {
+    const burst = Math.sin((1 - runnerBurstProgress) * Math.PI * 0.5);
+    parts.torso.rotation.x += 0.30 + burst * 0.12;
+    parts.head.rotation.x += 0.12;
+    parts.leftArm.rotation.x += 0.30;
+    parts.rightArm.rotation.x += 0.30;
+    parts.leftArm.position.z += 0.10;
+    parts.rightArm.position.z += 0.10;
+    parts.leftLeg.rotation.x += walk * 0.22;
+    parts.rightLeg.rotation.x += walkOpp * 0.22;
+    group.position.y += bob * 0.025;
+  }
+
+  if (typeName === "RANGED" && spitterRepositionProgress > 0) {
+    const weave = Math.sin(timeSeconds * 8 + phase) * 0.08;
+    parts.torso.rotation.z += weave;
+    parts.head.rotation.z -= weave * 0.65;
+    parts.rightArm.rotation.x += 0.22;
+    parts.rightArm.position.z -= 0.08;
+    parts.rangedLens.scale.setScalar(1 + spitterRepositionProgress * 0.18);
+  }
+
+  if (typeName === "BRUTE" && bruteBraceProgress > 0) {
+    const brace = Math.sin((1 - bruteBraceProgress) * Math.PI);
+    parts.torso.rotation.x -= 0.16 * brace;
+    parts.torso.rotation.z += hitReactDir * 0.08 * brace;
+    parts.leftArm.rotation.x -= 0.38 * brace;
+    parts.rightArm.rotation.x -= 0.38 * brace;
+    parts.leftArm.rotation.z += 0.12 * brace;
+    parts.rightArm.rotation.z -= 0.12 * brace;
+    parts.head.rotation.x -= 0.08 * brace;
+  }
+
+  if (typeName === "GOLIATH") {
+    const phaseEnergy = goliathPhase >= 3 ? 0.12 : (goliathPhase >= 2 ? 0.06 : 0);
+    if (phaseEnergy > 0) {
+      parts.leftEyeGlow.scale.setScalar(eyePulse + phaseEnergy);
+      parts.rightEyeGlow.scale.setScalar(eyePulse + phaseEnergy);
+      parts.torso.rotation.x += Math.sin(slowT * 1.7) * phaseEnergy * 0.12;
+    }
+
+    if (goliathPhasePulse > 0) {
+      const pulseScale = 1 + goliathPhasePulse * 0.08;
+      parts.goliathChestPlate.scale.setScalar(pulseScale);
+      parts.goliathShoulderLeft.scale.setScalar(1 + goliathPhasePulse * 0.10);
+      parts.goliathShoulderRight.scale.setScalar(1 + goliathPhasePulse * 0.10);
+      parts.leftArm.rotation.z += 0.16 * goliathPhasePulse;
+      parts.rightArm.rotation.z -= 0.16 * goliathPhasePulse;
+      group.position.y += 0.04 * goliathPhasePulse;
     }
   }
 

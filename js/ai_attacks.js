@@ -8,9 +8,11 @@
 const MAX_SPECIAL_TELEGRAPHS = 2;
 const MAX_RANGED_WINDUPS = 1;
 const MAX_HEAVY_WINDUPS = 1;
+const MAX_EXPLODER_WINDUPS = 1;
 const MAX_QUEUE_SIZE = 7;
 const RANGED_GLOBAL_GAP = 0.72;
 const HEAVY_GLOBAL_GAP = 0.42;
+const EXPLODER_GLOBAL_GAP = 0.85;
 
 const state = {
   runActive: false,
@@ -18,11 +20,14 @@ const state = {
   queue: [],
   rangedCooldown: 0,
   heavyCooldown: 0,
+  exploderCooldown: 0,
   activeTelegraphs: 0,
   activeRanged: 0,
   activeHeavy: 0,
+  activeExploder: 0,
   queuedRanged: 0,
   queuedHeavy: 0,
+  queuedExploder: 0,
   telegraphsStarted: 0,
   committed: 0,
   interrupted: 0,
@@ -49,11 +54,18 @@ function isLiving(enemy) {
 }
 
 function isSpecialKind(kind) {
-  return kind === 'RANGED' || kind === 'HEAVY_BRUTE' || kind === 'HEAVY_GOLIATH';
+  return kind === 'RANGED' ||
+    kind === 'HEAVY_BRUTE' ||
+    kind === 'HEAVY_GOLIATH' ||
+    kind === 'EXPLODER';
 }
 
 function isHeavyKind(kind) {
   return kind === 'HEAVY_BRUTE' || kind === 'HEAVY_GOLIATH';
+}
+
+function isExploderKind(kind) {
+  return kind === 'EXPLODER';
 }
 
 function getDefaultOptions(kind) {
@@ -64,6 +76,8 @@ function getDefaultOptions(kind) {
       return { windup: 1.05, recovery: 0.72, priority: 1.25 };
     case 'HEAVY_BRUTE':
       return { windup: 0.78, recovery: 0.54, priority: 1.10 };
+    case 'EXPLODER':
+      return { windup: 0.96, recovery: 0.30, priority: 1.20, globalGap: 0.85 };
     case 'CRAWLER':
       return { windup: 0.34, recovery: 0.24, priority: 0.75 };
     default:
@@ -137,6 +151,10 @@ function shouldInterrupt(enemy) {
     return damage >= 185 || (headshot && damage >= 105);
   }
 
+  if (kind === 'EXPLODER') {
+    return headshot || damage >= 70;
+  }
+
   if (kind === 'CRAWLER') {
     return headshot || damage >= 46;
   }
@@ -156,6 +174,7 @@ function countActive(enemies = []) {
   let total = 0;
   let ranged = 0;
   let heavy = 0;
+  let exploder = 0;
 
   for (const enemy of enemies) {
     if (!isLiving(enemy) || enemy.attackState !== 'WINDUP') continue;
@@ -163,17 +182,20 @@ function countActive(enemies = []) {
     total++;
     if (enemy.attackKind === 'RANGED') ranged++;
     if (isHeavyKind(enemy.attackKind)) heavy++;
+    if (isExploderKind(enemy.attackKind)) exploder++;
   }
 
   state.activeTelegraphs = total;
   state.activeRanged = ranged;
   state.activeHeavy = heavy;
+  state.activeExploder = exploder;
   state.maxConcurrent = Math.max(state.maxConcurrent, total);
 }
 
 function refreshQueueCounts() {
   state.queuedRanged = state.queue.filter((entry) => entry.kind === 'RANGED').length;
   state.queuedHeavy = state.queue.filter((entry) => isHeavyKind(entry.kind)).length;
+  state.queuedExploder = state.queue.filter((entry) => isExploderKind(entry.kind)).length;
 }
 
 export function resetAIAttackRun() {
@@ -182,11 +204,15 @@ export function resetAIAttackRun() {
   state.queue = [];
   state.rangedCooldown = 0;
   state.heavyCooldown = 0;
+  state.exploderCooldown = 0;
+  state.exploderCooldown = 0;
   state.activeTelegraphs = 0;
   state.activeRanged = 0;
   state.activeHeavy = 0;
+  state.activeExploder = 0;
   state.queuedRanged = 0;
   state.queuedHeavy = 0;
+  state.queuedExploder = 0;
   state.telegraphsStarted = 0;
   state.committed = 0;
   state.interrupted = 0;
@@ -203,8 +229,10 @@ export function endAIAttackRun(enemies = []) {
   state.queue = [];
   for (const enemy of enemies || []) clearEnemyAttack(enemy);
   state.activeTelegraphs = 0;
+  state.activeExploder = 0;
   state.queuedRanged = 0;
   state.queuedHeavy = 0;
+  state.queuedExploder = 0;
 }
 
 export function beginAIAttackWave(waveNumber) {
@@ -270,6 +298,7 @@ export function updateAIAttackCoordinator(dt, enemies = []) {
   const safeDt = clamp(dt, 0, 0.05);
   state.rangedCooldown = Math.max(0, state.rangedCooldown - safeDt);
   state.heavyCooldown = Math.max(0, state.heavyCooldown - safeDt);
+  state.exploderCooldown = Math.max(0, state.exploderCooldown - safeDt);
 
   state.queue = state.queue.filter((entry) => {
     if (!isLiving(entry.enemy)) {
@@ -296,8 +325,12 @@ export function updateAIAttackCoordinator(dt, enemies = []) {
     const heavyOpen = !isHeavyKind(kind) || (
       state.activeHeavy < MAX_HEAVY_WINDUPS && state.heavyCooldown <= 0
     );
+    const exploderOpen = !isExploderKind(kind) || (
+      state.activeExploder < MAX_EXPLODER_WINDUPS &&
+      state.exploderCooldown <= 0
+    );
 
-    if (!totalOpen || !rangedOpen || !heavyOpen) {
+    if (!totalOpen || !rangedOpen || !heavyOpen || !exploderOpen) {
       i++;
       continue;
     }
@@ -308,6 +341,7 @@ export function updateAIAttackCoordinator(dt, enemies = []) {
     state.activeTelegraphs++;
     if (kind === 'RANGED') state.activeRanged++;
     if (isHeavyKind(kind)) state.activeHeavy++;
+    if (isExploderKind(kind)) state.activeExploder++;
   }
 
   refreshQueueCounts();
@@ -354,6 +388,12 @@ export function advanceEnemyAttack(enemy, dt, {
         }
         if (isHeavyKind(kind)) {
           state.heavyCooldown = HEAVY_GLOBAL_GAP;
+        }
+        if (isExploderKind(kind)) {
+          state.exploderCooldown = Math.max(
+            EXPLODER_GLOBAL_GAP,
+            Number(enemy.attackRequestOptions?.globalGap) || 0
+          );
         }
       } else {
         state.evaded++;
@@ -418,9 +458,11 @@ export function getAIAttackSnapshot() {
     activeTelegraphs: state.activeTelegraphs,
     activeRanged: state.activeRanged,
     activeHeavy: state.activeHeavy,
+    activeExploder: state.activeExploder,
     queued: state.queue.length,
     queuedRanged: state.queuedRanged,
     queuedHeavy: state.queuedHeavy,
+    queuedExploder: state.queuedExploder,
     telegraphsStarted: state.telegraphsStarted,
     committed: state.committed,
     interrupted: state.interrupted,
@@ -430,6 +472,7 @@ export function getAIAttackSnapshot() {
     projectileMisses: state.projectileMisses,
     rangedCooldown: state.rangedCooldown,
     heavyCooldown: state.heavyCooldown,
+    exploderCooldown: state.exploderCooldown,
     maxConcurrent: state.maxConcurrent,
     lastEvent: state.lastEvent
   };

@@ -38,6 +38,12 @@ import {
   beginAIAttackWave,
   getAIAttackSnapshot
 } from './ai_attacks.js';
+import {
+  resetAIArchetypeRun,
+  endAIArchetypeRun,
+  beginAIArchetypeWave,
+  getAIArchetypeSnapshot
+} from './ai_archetypes.js';
 
 // C10.1 — Adaptive AI Director Foundation
 //
@@ -554,6 +560,7 @@ function renderDebugPanel(force = false) {
   const strategy = getAIStrategySnapshot();
   const exploit = getAIExploitSnapshot();
   const attacks = getAIAttackSnapshot();
+  const archetypes = getAIArchetypeSnapshot();
   const squadRoles = Object.entries(squad.roleCounts || {})
     .filter(([, count]) => count > 0)
     .map(([role, count]) => `${role.slice(0, 3)}:${count}`)
@@ -583,6 +590,9 @@ function renderDebugPanel(force = false) {
     <div><span>ATTACK QUEUE</span><b>${attacks.activeTelegraphs} ACTIVE · ${attacks.queued} WAIT · MAX ${attacks.maxConcurrent}</b></div>
     <div><span>COUNTERPLAY</span><b>${attacks.interrupted} INTERRUPT · ${attacks.evaded} EVADE · ${attacks.committed} COMMIT</b></div>
     <div><span>SPECIAL FIRE</span><b>${attacks.projectileHits}/${attacks.projectileHits + attacks.projectileMisses} HIT · ${attacks.lastEvent}</b></div>
+    <div><span>ARCHETYPE</span><b>RUN ${archetypes.activeRunnerBursts}/${archetypes.maxRunnerBursts} · SPIT ${archetypes.spitterRepositioning} · EXP ${archetypes.exploderPrimed + archetypes.exploderCritical}</b></div>
+    <div><span>HEAVY ID</span><b>BRACE ${archetypes.bruteBracing} · GOL P${archetypes.goliathPhase || 0} · ${archetypes.goliathPhaseTransitions} SHIFT</b></div>
+    <div><span>IDENTITY EVENT</span><b>${archetypes.lastEvent}</b></div>
     <div><span>MEMORY</span><b>${memoryText}</b></div>
     <div><span>SQUAD</span><b>${squad.active ? 'COORDINATED' : `ONLINE R${squad.activationWave}`}</b></div>
     <div><span>ROLES</span><b>${squadRoles}</b></div>
@@ -658,6 +668,7 @@ export function resetAIDirectorRun({ mapId = 'unknown', difficulty = 1 } = {}) {
   });
   resetAIExploitRun({ mapId: state.mapId });
   resetAIAttackRun();
+  resetAIArchetypeRun({ mapId: state.mapId });
   renderDebugPanel(true);
 }
 
@@ -670,6 +681,7 @@ export function endAIDirectorRun() {
   endAIStrategyRun();
   endAIExploitRun();
   endAIAttackRun();
+  endAIArchetypeRun();
   renderDebugPanel(true);
 }
 
@@ -681,6 +693,7 @@ export function beginAIDirectorWave(waveNumber) {
   beginAIStrategyWave(state.currentWave);
   beginAIExploitWave(state.currentWave);
   beginAIAttackWave(state.currentWave);
+  beginAIArchetypeWave(state.currentWave);
   renderDebugPanel(true);
 }
 
@@ -1044,6 +1057,7 @@ export function getAIDirectorSnapshot() {
     strategy: getAIStrategySnapshot(),
     exploit: getAIExploitSnapshot(),
     attacks: getAIAttackSnapshot(),
+    archetypes: getAIArchetypeSnapshot(),
     memory: {
       available: Boolean(state.memoryPrior?.available),
       source: state.memoryPrior?.source || 'none',

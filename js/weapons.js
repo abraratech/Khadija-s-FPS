@@ -17,6 +17,32 @@ import {
   recordDirectorHit,
   recordDirectorKill
 } from './ai_director.js';
+import {
+  getPerkIdForShop,
+  getPerkDefinition,
+  hasProgressionPerk,
+  purchaseProgressionPerk,
+  getProgressionHeadshotScale,
+  getWeaponUpgradeCost,
+  getWeaponUpgradeTier,
+  getActivePerkChips,
+  recordProgressionPurchase,
+  recordProgressionWeaponUpgrade
+} from './progression.js';
+import {
+  recordChallengeWeaponUpgrade,
+  recordChallengePerkCount,
+  consumeChallengeEvents
+} from './challenges.js';
+import {
+  recordRunShot,
+  recordRunHit,
+  recordRunDamageDealt,
+  recordRunPointsEarned,
+  recordRunPointsSpent,
+  recordRunPerk,
+  recordRunWeaponUpgrade
+} from './run_summary.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -264,6 +290,7 @@ function addBarricadeRepairReward(points) {
   player.score += points;
   updateScoreHUD(player.score);
   spawnFloatingScore(points, false);
+  recordRunPointsEarned(points);
 }
 
 // ── ECONOMY / INTERACTION TUNING ──
@@ -288,6 +315,8 @@ const ECONOMY = Object.freeze({
   UPGRADE_COST: 4200,
   PERK_HEALTH_COST: 2500,
   PERK_RELOAD_COST: 3000,
+  PERK_STAMINA_COST: 2800,
+  PERK_DEADSHOT_COST: 3200,
 
   BARRICADE_REPAIR_SCORE: 8,
   BARRICADE_REPAIR_COOLDOWN: 0.75,
@@ -772,10 +801,50 @@ function createWeaponInstance(def) {
     reserve: getReserveAmmoForWeapon(def),
     reloading: false,
     reloadT: 0,
+    upgradeTier: def.isUpgraded ? 1 : 0,
     meshGroup: def.buildMesh()
   };
 
   return instance;
+}
+
+function createWeaponUpgradeInstance(weapon, targetTier) {
+  const family = getWeaponFamily(weapon);
+  const upgradedDef = WEAPON_DEFS[`${family}_UPG`];
+  if (!upgradedDef) return null;
+
+  const tier = Math.max(1, Math.min(3, Math.round(Number(targetTier) || 1)));
+  const next = createWeaponInstance(upgradedDef);
+  const tierScale = tier === 1
+    ? { damage: 1, ammo: 1, fireRate: 1, reload: 1 }
+    : (tier === 2
+      ? { damage: 1.28, ammo: 1.25, fireRate: 0.92, reload: 0.88 }
+      : { damage: 1.62, ammo: 1.50, fireRate: 0.85, reload: 0.78 });
+
+  next.upgradeTier = tier;
+  next.isUpgraded = true;
+  next.damage = Math.max(1, Math.round(upgradedDef.damage * tierScale.damage));
+  next.maxAmmo = Math.max(1, Math.round(upgradedDef.maxAmmo * tierScale.ammo));
+  next.fireRate = Math.max(0.04, upgradedDef.fireRate * tierScale.fireRate);
+  next.reloadDuration = Math.max(0.45, upgradedDef.reloadDuration * tierScale.reload);
+  next.name = tier === 1 ? upgradedDef.name : `${upgradedDef.name} ${tier === 2 ? 'II' : 'III'}`;
+  next.ammo = next.maxAmmo;
+  next.reserve = getReserveAmmoForWeapon(next);
+  return next;
+}
+
+function announceProgressionEvents() {
+  consumeChallengeEvents().forEach((event, index) => {
+    const isAchievement = event.type === 'ACHIEVEMENT';
+    setTimeout(() => {
+      if (!player.alive) return;
+      showStatusToast(
+        `${isAchievement ? 'ACHIEVEMENT' : 'CHALLENGE'}: ${String(event.label || event.id).toUpperCase()}`,
+        isAchievement ? '#ffaa00' : '#00d4ff',
+        2100
+      );
+    }, index * 900);
+  });
 }
 
 function rollMysteryWeaponKey(excludeKey = null) {
@@ -864,6 +933,8 @@ export function buildGun() {
   spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS));
   spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS)); // Juggernog
   spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Speed Cola
+  spawnShop('PERK_STAMINA', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS)); // Stamin-Up
+  spawnShop('PERK_DEADSHOT', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Deadshot
 
   // ── WALL BUYS ──
   spawnShop('WALL_SMG', getShopPlacement('WALL_SMG', null, gameplayPoints.WALL_SPAWNS));
@@ -910,9 +981,16 @@ function spawnShop(type, placementInput) {
     const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.9, 1.0), machMat);
     const roller = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.2, 16), glowMat);
     roller.rotation.z = Math.PI / 2; roller.position.y = 0.5; g.add(base, roller);
-  } else if (type === 'PERK_HEALTH' || type === 'PERK_RELOAD') {
-    const machMat = new THREE.MeshStandardMaterial({ color: type === 'PERK_HEALTH' ? 0x880000 : 0x005500, roughness: 0.4 });
-    const glowMat = new THREE.MeshStandardMaterial({ color: type === 'PERK_HEALTH' ? 0xff0000 : 0x00ff00, emissive: type === 'PERK_HEALTH' ? 0xaa0000 : 0x00aa00 });
+  } else if (['PERK_HEALTH', 'PERK_RELOAD', 'PERK_STAMINA', 'PERK_DEADSHOT'].includes(type)) {
+    const perkColors = {
+      PERK_HEALTH: [0x880000, 0xff0000, 0xaa0000],
+      PERK_RELOAD: [0x005500, 0x00ff00, 0x00aa00],
+      PERK_STAMINA: [0x887000, 0xffdd22, 0xaa8800],
+      PERK_DEADSHOT: [0x003c66, 0x00aaff, 0x0066aa]
+    };
+    const [machineColor, glowColor, emissiveColor] = perkColors[type];
+    const machMat = new THREE.MeshStandardMaterial({ color: machineColor, roughness: 0.4 });
+    const glowMat = new THREE.MeshStandardMaterial({ color: glowColor, emissive: emissiveColor, emissiveIntensity: 0.8 });
     const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.0, 0.8), machMat);
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), glowMat);
     screen.position.set(0, 0.5, 0.41); base.position.y = 0.6; g.add(base, screen);
@@ -1092,6 +1170,8 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         if (player.score >= ECONOMY.TRAP_COST) {
           player.score -= ECONOMY.TRAP_COST;
           updateScoreHUD(player.score);
+          recordProgressionPurchase(ECONOMY.TRAP_COST, 'TRAP');
+          recordRunPointsSpent(ECONOMY.TRAP_COST);
 
           closestTrap.state = 'ACTIVE';
           closestTrap.timer = ECONOMY.TRAP_DURATION;
@@ -1149,6 +1229,8 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         if (shouldHandleInteraction(checkInteractionPressed)) {
           if (player.score >= doorCost) {
             player.score -= doorCost; updateScoreHUD(player.score);
+            recordProgressionPurchase(doorCost, 'DOOR');
+            recordRunPointsSpent(doorCost);
             openDoor(closestInteractable.data);
             playWorldSound('doorOpen', 0.75, false, { cooldownKey: 'door_open', cooldownMs: 300 });
             showShopFeedback({
@@ -1174,6 +1256,8 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
           if (shouldHandleInteraction(checkInteractionPressed)) {
             if (player.score >= ECONOMY.MYSTERY_BOX_COST) {
 			  player.score -= ECONOMY.MYSTERY_BOX_COST;
+              recordProgressionPurchase(ECONOMY.MYSTERY_BOX_COST, 'MYSTERY BOX');
+              recordRunPointsSpent(ECONOMY.MYSTERY_BOX_COST);
 			  updateScoreHUD(player.score);
 			  closestShop.state = 'SPINNING';
               closestShop.timer = MYSTERY_BOX_SPIN_TIME;
@@ -1257,6 +1341,9 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
 // ── STANDARD SHOP LOGIC (AMMO, PERKS, WALL BUYS) ──
       let cost = 0; let shopName = "";
       const isWallBuy = closestShop.type.startsWith('WALL_');
+      const perkId = getPerkIdForShop(closestShop.type);
+      const perkDef = perkId ? getPerkDefinition(perkId) : null;
+      const nextUpgradeTier = getWeaponUpgradeTier(activeW) + 1;
       let hasWallWeapon = false;
       let wallWeaponIdx = -1;
       let ownedWallWeapon = null;
@@ -1275,9 +1362,8 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
       }
       else if (closestShop.type === 'AMMO') { cost = ECONOMY.AMMO_COST; shopName = "Ammo Refill"; }
       else if (closestShop.type === 'HEALTH') { cost = ECONOMY.HEALTH_COST; shopName = "Medkit"; }
-      else if (closestShop.type === 'UPGRADE') { cost = ECONOMY.UPGRADE_COST; shopName = "Pack-a-Punch"; }
-      else if (closestShop.type === 'PERK_HEALTH') { cost = ECONOMY.PERK_HEALTH_COST; shopName = "Juggernog"; }
-      else if (closestShop.type === 'PERK_RELOAD') { cost = ECONOMY.PERK_RELOAD_COST; shopName = "Speed Cola"; }
+      else if (closestShop.type === 'UPGRADE') { cost = getWeaponUpgradeCost(nextUpgradeTier); shopName = `Pack-a-Punch Tier ${Math.min(3, nextUpgradeTier)}`; }
+      else if (perkDef) { cost = perkDef.cost; shopName = perkDef.label; }
 
       if (closestShop.type === 'HEALTH' && player.health >= player.maxHealth) {
         setInteractionPrompt(true, `HEALTH IS ALREADY FULL!`);
@@ -1291,18 +1377,14 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         setInteractionPrompt(true, `${closestShop.weaponKey} AMMO IS ALREADY FULL!`);
         if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('WALL AMMO FULL', `${ownedWallWeapon.name} already has maximum ammo.`);
       } 
-      else if (closestShop.type === 'UPGRADE' && activeW.isUpgraded) {
-        setInteractionPrompt(true, `WEAPON ALREADY UPGRADED!`);
-        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('ALREADY UPGRADED', `${activeW.name} is already Pack-a-Punched.`);
-      } 
-      else if (closestShop.type === 'PERK_HEALTH' && player.maxHealth >= 250) {
-        setInteractionPrompt(true, `ALREADY HAVE JUGGERNOG!`);
-        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('JUGGERNOG ACTIVE', 'Max health perk is already active.');
-      } 
-      else if (closestShop.type === 'PERK_RELOAD' && player.reloadMult <= 0.5) {
-        setInteractionPrompt(true, `ALREADY HAVE SPEED COLA!`);
-        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('SPEED COLA ACTIVE', 'Fast reload perk is already active.');
-      } 
+      else if (closestShop.type === 'UPGRADE' && getWeaponUpgradeTier(activeW) >= 3) {
+        setInteractionPrompt(true, `WEAPON IS MAX TIER!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback('MAXIMUM OUTPUT', `${activeW.name} is already Tier III.`);
+      }
+      else if (perkDef && hasProgressionPerk(perkDef.id)) {
+        setInteractionPrompt(true, `ALREADY HAVE ${perkDef.label.toUpperCase()}!`);
+        if (shouldHandleInteraction(checkInteractionPressed, 500)) showBlockedShopFeedback(`${perkDef.label.toUpperCase()} ACTIVE`, perkDef.description);
+      }
       else {
         setInteractionPrompt(true, `Press [E] to buy ${shopName} [${cost} PTS]`);
         
@@ -1310,6 +1392,8 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
           if (player.score >= cost) {
             player.score -= cost;
             updateScoreHUD(player.score);
+            recordProgressionPurchase(cost, shopName);
+            recordRunPointsSpent(cost);
             playUISound('confirm', 0.48, true, { cooldownKey: 'shop_confirm', cooldownMs: 220, pitchMin: 1.04, pitchMax: 1.14 }); 
             
             if (isWallBuy) {
@@ -1338,29 +1422,33 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
               showStatusToast('HEALTH RESTORED', '#ff5555', 1500);
               showShopFeedback({ title: 'HEALTH RESTORED', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
             }
-            else if (closestShop.type === 'PERK_HEALTH') {
-              player.maxHealth = 250;
-              player.health = 250;
-              updateHealthHUD(player.health, player.maxHealth);
-              showStatusToast('JUGGERNOG ACTIVE: MAX HEALTH 250', '#ff3333', 1900);
-              showShopFeedback({ title: 'JUGGERNOG ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
-              playUISound('perkRetroJingle', 0.78, false, { cooldownKey: 'perk_purchase', cooldownMs: 900 });
+            else if (perkDef) {
+              const result = purchaseProgressionPerk(perkDef.id, player);
+              if (result.ok) {
+                updateHealthHUD(player.health, player.maxHealth);
+                recordRunPerk();
+                recordChallengePerkCount(getActivePerkChips().length);
+                showStatusToast(`${perkDef.label.toUpperCase()} ACTIVE`, perkDef.id === 'JUGGERNOG' ? '#ff3333' : (perkDef.id === 'SPEED_COLA' ? '#00ff88' : (perkDef.id === 'STAMIN_UP' ? '#ffdd22' : '#00aaff')), 1900);
+                showShopFeedback({ title: `${perkDef.label.toUpperCase()} ACTIVE`, body: `${cost} points spent · ${perkDef.description}`, tone: 'ready', durationMs: 1900 });
+                playUISound('perkRetroJingle', 0.78, false, { cooldownKey: 'perk_purchase', cooldownMs: 900 });
+                announceProgressionEvents();
+              }
             }
-            else if (closestShop.type === 'PERK_RELOAD') {
-              player.reloadMult = 0.5;
-              showStatusToast('SPEED COLA ACTIVE: FASTER RELOAD', '#00ff88', 1900);
-              showShopFeedback({ title: 'SPEED COLA ACTIVE', body: `${cost} points spent`, tone: 'ready', durationMs: 1800 });
-              playUISound('perkRetroJingle', 0.78, false, { cooldownKey: 'perk_purchase', cooldownMs: 900 });
-            }
-			else if (closestShop.type === 'UPGRADE') {
-              showStatusToast('PACK-A-PUNCH COMPLETE', '#ff66ff', 1900);
-              showShopFeedback({ title: 'PACK-A-PUNCH COMPLETE', body: `${cost} points spent · damage, ammo, reload improved`, tone: 'ready', durationMs: 2000 });
-              playUISound('arcadeSparklePing', 0.82, true, { cooldownKey: 'upgrade_complete', cooldownMs: 900, pitchMin: 1.08, pitchMax: 1.22 });
-              const upgKey = activeW.key + "_UPG";
-              const upgDef = WEAPON_DEFS[upgKey];
-              camera.remove(activeW.meshGroup);
-              player.inventory[player.currentWeaponIdx] = createWeaponInstance(upgDef);
-              equipWeapon(player.currentWeaponIdx);
+            else if (closestShop.type === 'UPGRADE') {
+              const targetTier = Math.min(3, nextUpgradeTier);
+              const upgradedWeapon = createWeaponUpgradeInstance(activeW, targetTier);
+              if (upgradedWeapon) {
+                showStatusToast(`PACK-A-PUNCH TIER ${targetTier} COMPLETE`, '#ff66ff', 1900);
+                showShopFeedback({ title: `PACK-A-PUNCH TIER ${targetTier}`, body: `${cost} points spent · damage, ammo, reload improved`, tone: 'ready', durationMs: 2000 });
+                playUISound('arcadeSparklePing', 0.82, true, { cooldownKey: 'upgrade_complete', cooldownMs: 900, pitchMin: 1.08, pitchMax: 1.22 });
+                camera.remove(activeW.meshGroup);
+                player.inventory[player.currentWeaponIdx] = upgradedWeapon;
+                equipWeapon(player.currentWeaponIdx);
+                recordProgressionWeaponUpgrade(targetTier);
+                recordRunWeaponUpgrade();
+                recordChallengeWeaponUpgrade(targetTier);
+                announceProgressionEvents();
+              }
             }
             
 // ── SHOP POST-USE CLEANUP / RELOCATION ──
@@ -1372,13 +1460,9 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
             else if (closestShop.type === 'AMMO') relocateShop(closestShop, gameplayPoints.AMMO_SPAWNS);
             else if (closestShop.type === 'HEALTH') relocateShop(closestShop, gameplayPoints.HEALTH_SPAWNS);
             else if (closestShop.type === 'UPGRADE') relocateShop(closestShop, gameplayPoints.UPGRADE_SPAWNS);
-            else if (closestShop.type === 'PERK_HEALTH') {
+            else if (perkDef) {
               if (SINGLE_PLAYER_SHOP_CLEANUP) removeShop(closestShop);
-              else relocateShop(closestShop, gameplayPoints.PERK_HEALTH_SPAWNS);
-            }
-            else if (closestShop.type === 'PERK_RELOAD') {
-              if (SINGLE_PLAYER_SHOP_CLEANUP) removeShop(closestShop);
-              else relocateShop(closestShop, gameplayPoints.PERK_RELOAD_SPAWNS);
+              else relocateShop(closestShop, ['PERK_HEALTH', 'PERK_STAMINA'].includes(closestShop.type) ? gameplayPoints.PERK_HEALTH_SPAWNS : gameplayPoints.PERK_RELOAD_SPAWNS);
             }
           } else {
             showNotEnoughPoints(cost, shopName);
@@ -1617,6 +1701,7 @@ export function shoot() {
   w.ammo--;
   updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
   fireCooldown = w.fireRate;
+  recordRunShot();
 
   recordDirectorShot({
     weaponFamily: getWeaponFamily(w),
@@ -1678,7 +1763,7 @@ function processHit(hit, shotContext = {}) {
     const baseDamage = w.damage;
     const isInstaKill = player.instaKillTimer > 0;
     const damageScale = getDamageDistanceScale(w, hit.point);
-    const headshotMult = getHeadshotMultiplier(w);
+    const headshotMult = getHeadshotMultiplier(w) * getProgressionHeadshotScale();
     const finalDamage = isInstaKill
       ? 9999
       : Math.max(1, Math.round(baseDamage * damageScale * (hs ? headshotMult : 1)));
@@ -1686,12 +1771,7 @@ function processHit(hit, shotContext = {}) {
     const killed = wasHealth > 0 && wasHealth - finalDamage <= 0;
 
     e.health -= finalDamage;
-
-    // C10.7: expose the actual hit strength to the attack coordinator so only
-    // strong reactions interrupt telegraphed attacks.
-    e.lastHitDamage = finalDamage;
-    e.lastHitHeadshot = hs === true;
-    e.lastHitAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    recordRunDamageDealt(Math.min(wasHealth, finalDamage));
 
     const heavyStaggerScale = e.type === 'GOLIATH'
       ? 0.48
@@ -1717,6 +1797,7 @@ function processHit(hit, shotContext = {}) {
 
       spawnFloatingScore(pointsAwarded, killed && hs, killScoreLabel);
       updateScoreHUD(player.score);
+      recordRunPointsEarned(pointsAwarded);
     }
 
     playHitConfirmFeedback({ headshot: hs, killed, weapon: w });
@@ -1727,6 +1808,7 @@ function processHit(hit, shotContext = {}) {
     // pellets from inflating the director's accuracy model.
     if (!shotContext.directorHitRegistered) {
       shotContext.directorHitRegistered = true;
+      recordRunHit({ headshot: hs });
       recordDirectorHit({
         distance: fxDistance,
         headshot: hs,
@@ -1748,6 +1830,7 @@ function processHit(hit, shotContext = {}) {
         player.score += bossBounty;
         updateScoreHUD(player.score);
         spawnFloatingScore(bossBounty, false, 'ELITE BOUNTY');
+        recordRunPointsEarned(bossBounty);
       }
 
       if (killReward && e.type !== 'SHAMBLER') {
@@ -1762,7 +1845,13 @@ function processHit(hit, shotContext = {}) {
         headshot: hs
       });
 
-      killEnemy(e);
+      killEnemy(e, {
+        headshot: hs,
+        distance: fxDistance,
+        weaponFamily: getWeaponFamily(w),
+        damage: finalDamage,
+        source: 'WEAPON'
+      });
     }
   } else if (!e) {
     const normal = getWorldSurfaceNormal(hit);

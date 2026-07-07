@@ -5,77 +5,43 @@ import { updateHealthHUD, triggerDamageFlash, spawnDirectionalIndicator } from '
 import { playPlayerSound } from './audio.js';
 import { pushOut } from './utils.js';
 import { recordDirectorDamage } from './ai_director.js';
+import { recordRunDamageTaken } from './run_summary.js';
 
 export const EYE_H = 1.75;
 const P_RADIUS = 0.42;
 const GRAVITY = -22;
 const JUMP_F = 7.5;
 
-// C10.6 — Explicit authored support rules.
-// Parking Garage and Hospital Wing use a strict whitelist. Floors and selected
-// low cover are climbable; walls, pillars, cabinets, lights, signs, and doors
-// are not player platforms.
-const STRICT_SUPPORT_MAPS = new Set([
-  'parking_garage',
-  'hospital_wing'
-]);
-
+// C10.5 — Single-level anti-perch support limits.
+// Parking Garage and Hospital Wing intentionally use climbable low cover, but
+// ceiling fixtures, wall tops, and lamps are not playable surfaces.
 const MAP_MAX_WALKABLE_SUPPORT_Y = Object.freeze({
   parking_garage: 1.65,
   hospital_wing: 1.55
 });
 
-function readGroundSupport(hit) {
+function isValidPlayerGroundHit(hit) {
   const object = hit?.object;
   const pointY = Number(hit?.point?.y);
 
-  if (!object || !Number.isFinite(pointY)) return null;
+  if (!object || !Number.isFinite(pointY)) return false;
 
-  const strictMap = STRICT_SUPPORT_MAPS.has(currentMapId);
-  const authoredClimbable = object.userData?.playerClimbable === true;
-  const nonWalkable = Boolean(
+  // Floor decals, signs, lights, glows, car-roof dressing, and other visual
+  // meshes must never become physics platforms.
+  if (
     object.userData?.isMapDressing ||
     object.userData?.playerNonWalkable
-  );
+  ) {
+    return false;
+  }
+
   const maxSupportY = MAP_MAX_WALKABLE_SUPPORT_Y[currentMapId];
 
-  if (nonWalkable) return null;
-  if (strictMap && !authoredClimbable) return null;
-
   if (Number.isFinite(maxSupportY) && pointY > maxSupportY) {
-    return null;
+    return false;
   }
 
-  return {
-    object,
-    pointY,
-    strictMap,
-    authorized: authoredClimbable || !strictMap,
-    tag: String(object.userData?.supportTag || object.name || 'surface')
-  };
-}
-
-function updatePlayerSupportState(support) {
-  const target = player.supportSurface;
-
-  if (!support) {
-    target.authorized = true;
-    target.strictMap = STRICT_SUPPORT_MAPS.has(currentMapId);
-    target.tag = 'world_floor';
-    target.type = 'floor';
-    target.pointY = 0;
-    target.elevated = false;
-    target.meshName = '';
-    return;
-  }
-
-  target.authorized = support.authorized;
-  target.strictMap = support.strictMap;
-  target.tag = support.tag;
-  target.type = support.pointY > 0.55 ? 'climbable' : 'floor';
-  target.pointY = support.pointY;
-  target.elevated = support.pointY > 0.55;
-  target.meshName = String(support.object?.name || '');
+  return true;
 }
 
 // ── D4 SETTINGS: COMFORT / LOOK FEEL ──
@@ -130,16 +96,7 @@ export const player = {
   baseSpeed: 9.5, sprintSpeed: 15.0, adsSpeed: 4.5,
   baseFOV: initialBaseFOV, adsFOV: computeAdsFov(initialBaseFOV), currentADSFOV: null,
   lookSensitivityPercent: initialMouseSensitivity,
-  isSprinting: false, isADS: false,
-  supportSurface: {
-    authorized: true,
-    strictMap: false,
-    tag: 'world_floor',
-    type: 'floor',
-    pointY: 0,
-    elevated: false,
-    meshName: ''
-  }
+  isSprinting: false, isADS: false
 };
 
 const _fwd = new THREE.Vector3();
@@ -211,18 +168,12 @@ export function updatePlayer(dt, keys, mdx, mdy) {
   groundRay.ray.origin.set(player.pos.x, player.pos.y + 1, player.pos.z);
   groundRay.ray.direction.copy(groundRayDir);
   const hits = groundRay.intersectObjects(mapMeshes, false);
-  let groundSupport = null;
+  const supportHit = hits.find(isValidPlayerGroundHit);
 
-  for (const hit of hits) {
-    groundSupport = readGroundSupport(hit);
-    if (groundSupport) break;
-  }
-
-  updatePlayerSupportState(groundSupport);
-
-  if (groundSupport) {
-    // Only explicit gameplay supports can hold the player on strict maps.
-    groundY = groundSupport.pointY + EYE_H;
+  if (supportHit) {
+    // Snap only to authored gameplay surfaces. Decorative lamps and fixtures
+    // remain visible but no longer work as ladders or permanent camping spots.
+    groundY = supportHit.point.y + EYE_H;
   }
 
   // 2. Gravity and Jump snapping
@@ -253,6 +204,7 @@ export function damagePlayer(dmg, sourcePos = null, sourceType = 'UNKNOWN') {
     amount: appliedDamage,
     enemyType: sourceType
   });
+  recordRunDamageTaken(appliedDamage);
 
   player.health = Math.max(0, player.health - dmg);
   
@@ -306,13 +258,4 @@ export function setBaseFOV(value) {
   camera.updateProjectionMatrix();
 
   return next;
-}
-
-
-export function getPlayerSupportSnapshot() {
-  return { ...player.supportSurface };
-}
-
-if (typeof window !== 'undefined') {
-  window.KAGetPlayerSupport = getPlayerSupportSnapshot;
 }

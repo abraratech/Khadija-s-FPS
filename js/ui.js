@@ -1,4 +1,9 @@
 // js/ui.js
+import { getProgressionSnapshot, getActivePerkChips, getWeaponUpgradeTier, consumeProgressionLevelUps } from './progression.js';
+import { getObjectiveSnapshot } from './objectives.js';
+import { getChallengesSnapshot } from './challenges.js';
+import { getRunSummarySnapshot } from './run_summary.js';
+
 
 // ════════════ HUD HELPERS ════════════
 
@@ -424,6 +429,62 @@ function renderChipGroup(id, chips) {
   }).join('');
 }
 
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(value)) el.textContent = String(value);
+}
+
+function updateProgressionPanels() {
+  const progression = getProgressionSnapshot();
+  const objective = getObjectiveSnapshot();
+  const challengeState = getChallengesSnapshot();
+  const profile = progression.profile;
+
+  setText('progression-level', profile.level);
+  setText('progression-xp', profile.level >= progression.maxLevel ? 'MAX' : `${Math.floor(profile.xpIntoLevel)}/${profile.xpToNext} XP`);
+  for (const level of consumeProgressionLevelUps()) {
+    showStatusToast(`PROFILE LEVEL ${level}`, '#ffaa00', 2200);
+  }
+
+  const objectivePanel = document.getElementById('objective-panel');
+  if (objectivePanel && objective.objective) {
+    objectivePanel.classList.toggle('complete', objective.completed);
+    setText('objective-title', objective.completed ? 'CONTRACT COMPLETE' : objective.objective.label.toUpperCase());
+    setText('objective-description', objective.objective.description);
+    setText('objective-progress', `${Math.floor(objective.progress)}/${objective.objective.target}`);
+    const fill = document.getElementById('objective-progress-fill');
+    if (fill) fill.style.width = `${Math.min(100, (objective.progress / Math.max(1, objective.objective.target)) * 100)}%`;
+  }
+
+  const challengePanel = document.getElementById('challenge-panel');
+  if (challengePanel) {
+    challengePanel.innerHTML = challengeState.challenges.map((challenge) => {
+      const status = challenge.completed ? '✓' : `${Math.floor(challenge.progress)}/${challenge.target}`;
+      return `<div class="challenge-row ${challenge.completed ? 'complete' : ''}"><span>${escapeHtml(challenge.label)}</span><b>${escapeHtml(status)}</b></div>`;
+    }).join('');
+  }
+}
+
+export function renderRunSummaryScreen() {
+  const summary = getRunSummarySnapshot();
+  const progression = getProgressionSnapshot();
+  const objective = getObjectiveSnapshot();
+  const challenges = getChallengesSnapshot();
+  const minutes = Math.floor(summary.durationSeconds / 60);
+  const seconds = Math.floor(summary.durationSeconds % 60);
+
+  setText('final-accuracy', `${summary.accuracy.toFixed(1)}%`);
+  setText('final-headshots', summary.headshotKills);
+  setText('final-damage', Math.round(summary.damageDealt));
+  setText('final-time', `${minutes}:${String(seconds).padStart(2, '0')}`);
+  setText('final-xp', `+${progression.run.xpEarned}`);
+  setText('final-level', progression.profile.level);
+  setText('final-objectives', summary.objectivesCompleted);
+  setText('final-challenges', summary.challengesCompleted);
+  setText('final-contract-status', objective.completed ? objective.objective?.label || 'Complete' : 'Incomplete');
+  setText('final-achievements', challenges.totalUnlocked);
+}
+
 export function updateCombatStatusHUD(playerState, activeWeapon = null) {
   if (!playerState) return;
 
@@ -456,19 +517,13 @@ export function updateCombatStatusHUD(playerState, activeWeapon = null) {
     powerups.push({ label: 'DOUBLE POINTS', value: formatTimer(playerState.doublePointsTimer), tone: 'yellow' });
   }
 
-  const perks = [];
-
-  if ((playerState.maxHealth || 100) >= 250) {
-    perks.push({ label: 'JUGGERNOG', value: 'HP 250', tone: 'red' });
-  }
-
-  if ((playerState.reloadMult || 1) <= 0.55) {
-    perks.push({ label: 'SPEED COLA', value: 'FAST RELOAD', tone: 'green' });
-  }
+  const perks = getActivePerkChips();
 
   if (weapon?.isUpgraded) {
-    perks.push({ label: 'PACK-A-PUNCH', value: 'ACTIVE', tone: 'purple' });
+    perks.push({ label: 'PACK-A-PUNCH', value: `TIER ${getWeaponUpgradeTier(weapon)}`, tone: 'purple' });
   }
+
+  updateProgressionPanels();
 
   const signature = JSON.stringify({
     lowHealth,
@@ -550,6 +605,11 @@ export function resetCombatStatusHUD() {
   setWarning('low-ammo-warning', false);
   renderChipGroup('powerup-timers', []);
   renderChipGroup('perk-indicators', []);
+
+  const objectivePanel = document.getElementById('objective-panel');
+  if (objectivePanel) objectivePanel.classList.remove('complete');
+  const challengePanel = document.getElementById('challenge-panel');
+  if (challengePanel) challengePanel.innerHTML = '';
 
   uiTimers.hitT = 0;
   uiTimers.dmgFlashT = 0;

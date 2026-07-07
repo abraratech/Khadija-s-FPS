@@ -69,6 +69,28 @@ import {
   getFormationMovementScale,
   recordFormationEnemyRemoved
 } from './ai_formation.js';
+import {
+  recordProgressionKill,
+  recordProgressionWaveClear
+} from './progression.js';
+import {
+  recordObjectiveKill,
+  recordObjectiveWaveClear,
+  consumeObjectiveCompletion
+} from './objectives.js';
+import {
+  recordChallengeKill,
+  recordChallengeWaveClear,
+  recordChallengeObjective,
+  consumeChallengeEvents
+} from './challenges.js';
+import {
+  recordRunKill,
+  recordRunWave,
+  recordRunPointsEarned,
+  recordRunObjective,
+  recordRunChallenge
+} from './run_summary.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -229,6 +251,36 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
     osc.start(); osc.stop(audioCtx.currentTime + 0.5);
   }
+}
+
+function announceC11Events() {
+  const notices = [];
+  const objective = consumeObjectiveCompletion();
+  if (objective) {
+    player.score += objective.points;
+    updateScoreHUD(player.score);
+    spawnFloatingScore(objective.points, false, 'OBJECTIVE COMPLETE');
+    recordRunPointsEarned(objective.points);
+    recordRunObjective();
+    recordChallengeObjective();
+    notices.push({ text: `OBJECTIVE COMPLETE: ${objective.label.toUpperCase()} · +${objective.points} PTS`, color: '#22ff88', duration: 2600 });
+  }
+
+  for (const event of consumeChallengeEvents()) {
+    if (event.type === 'CHALLENGE') recordRunChallenge();
+    const achievement = event.type === 'ACHIEVEMENT';
+    notices.push({
+      text: `${achievement ? 'ACHIEVEMENT' : 'CHALLENGE'}: ${String(event.label || event.id).toUpperCase()}`,
+      color: achievement ? '#ffaa00' : '#00d4ff',
+      duration: 2200
+    });
+  }
+
+  notices.forEach((notice, index) => {
+    setTimeout(() => {
+      if (player.alive) showStatusToast(notice.text, notice.color, notice.duration);
+    }, index * 900);
+  });
 }
 
 // ── WAVE SYSTEM ──
@@ -515,6 +567,7 @@ function startWave(waveNumber) {
   spawnTimer = isSpecialRound ? -SPECIAL_WAVE_LEAD_IN : -NORMAL_WAVE_LEAD_IN;
   meleeDamageGraceT = 0;
   beginAIDirectorWave(waveNumber);
+  recordRunWave(waveNumber);
 
   // Instantly shift the map lighting.
   toggleSwarmLighting(isSpecialRound);
@@ -545,7 +598,13 @@ function completeCurrentWave() {
     maxHealth: player.maxHealth
   });
 
+  recordProgressionWaveClear(clearedWave);
+  recordChallengeWaveClear(clearedWave);
+  recordObjectiveWaveClear({ health: player.health, maxHealth: player.maxHealth });
+  announceC11Events();
+
   currentWave++;
+  recordRunWave(currentWave);
 
   flashWaveBanner("ROUND CLEAR", 2500);
   showStatusToast(`ROUND ${clearedWave} CLEAR · NEXT: ${getWaveBriefing(currentWave)}`, '#00d4ff', 2800);
@@ -835,23 +894,6 @@ function pickSafeEnemySpawnPoint() {
 function applyEnemySeparation(enemy, enemyIndex, dt) {
   if (!enemy?.alive || enemy.dyingT >= 0) return;
 
-  const playerDx = enemy.mesh.position.x - player.pos.x;
-  const playerDz = enemy.mesh.position.z - player.pos.z;
-  const playerDistance = Math.hypot(playerDx, playerDz);
-  const contactDistance = Math.max(
-    1.25,
-    Number(enemy.attackRange) || 1.4
-  ) + 0.48;
-  const closeToContact = (
-    enemy.type !== 'RANGED' &&
-    playerDistance <= contactDistance
-  );
-  const attackCommitted = (
-    enemy.attackState === 'QUEUED' ||
-    enemy.attackState === 'WINDUP' ||
-    enemy.attackState === 'RECOVERY'
-  );
-
   for (let j = 0; j < activeEnemies.length; j++) {
     if (j === enemyIndex) continue;
 
@@ -873,28 +915,10 @@ function applyEnemySeparation(enemy, enemyIndex, dt) {
 
     const dist = Math.sqrt(distSq);
     const overlap = desired - dist;
-    const correctionCap = closeToContact
-      ? (attackCommitted ? 0.012 : 0.028)
-      : 0.075;
-    const correction = Math.min(correctionCap, overlap * 0.34) * Math.min(1, dt * 12);
+    const correction = Math.min(0.075, overlap * 0.34) * Math.min(1, dt * 12);
 
-    let correctionX = (dx / dist) * correction;
-    let correctionZ = (dz / dist) * correction;
-
-    if (closeToContact && playerDistance > 0.001) {
-      const radialX = playerDx / playerDistance;
-      const radialZ = playerDz / playerDistance;
-      const radialComponent = correctionX * radialX + correctionZ * radialZ;
-
-      // Keep most separation tangential near the player. Full radial repulsion
-      // was pushing committed attackers back out of attack range and creating
-      // the visible approach/retreat loop.
-      correctionX -= radialX * radialComponent * 0.86;
-      correctionZ -= radialZ * radialComponent * 0.86;
-    }
-
-    enemy.mesh.position.x += correctionX;
-    enemy.mesh.position.z += correctionZ;
+    enemy.mesh.position.x += (dx / dist) * correction;
+    enemy.mesh.position.z += (dz / dist) * correction;
   }
 }
 
@@ -1188,6 +1212,7 @@ export function updateEnemies(dt) {
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
       if (p.type.name === 'NUKE') {
         player.score += 400; updateScoreHUD(player.score); spawnFloatingScore(400, false);
+        recordRunPointsEarned(400);
         zombiesSpawnedSoFar = zombiesToSpawnThisRound; 
         [...activeEnemies].forEach(z => { if (z.alive) killEnemy(z); });
       }
@@ -1769,8 +1794,17 @@ if (e.usingLod && e.lodMesh) {
   }
 } // <-- End of updateEnemies function
 
-export function killEnemy(e) {
+export function killEnemy(e, context = {}) {
   if (!e.alive) return;
+
+  const headshot = context.headshot === true;
+  const distance = Math.max(0, Number(context.distance) || player.pos.distanceTo(e.mesh.position));
+  recordProgressionKill({ headshot });
+  recordRunKill({ headshot });
+  recordChallengeKill({ headshot, enemyType: e.type });
+  recordObjectiveKill({ headshot, distance, enemyType: e.type });
+  announceC11Events();
+
   cancelEnemyAttack(e, 'ENEMY REMOVED');
   recordSquadEnemyDeath(e);
   recordFormationEnemyRemoved(e);

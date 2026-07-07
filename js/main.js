@@ -2,7 +2,7 @@
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
-import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast } from './ui.js';
+import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
@@ -16,6 +16,14 @@ import {
   bindAIMemoryControls,
   refreshAIMemoryControls
 } from './ai_memory.js';
+import {
+  resetProgressionRun,
+  finalizeProgressionRun,
+  getProgressionSnapshot
+} from './progression.js';
+import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
+import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
+import { resetRunSummary, finalizeRunSummary } from './run_summary.js';
 
 const canvas = document.getElementById('c');
 renderer.info.autoReset = false;
@@ -304,6 +312,8 @@ function updateDeathStats() {
 
   const finalBestWave = document.getElementById('final-best-wave');
   if (finalBestWave) finalBestWave.textContent = highWave;
+
+  renderRunSummaryScreen();
 }
 
 function showDeathScreen() {
@@ -561,6 +571,25 @@ function updateMenuBestStats() {
 
   const hiWaveEl = document.getElementById('hi-wave');
   if (hiWaveEl) hiWaveEl.textContent = highWave;
+
+  const progression = getProgressionSnapshot();
+  const challenges = getChallengesSnapshot();
+  const profileLevel = document.getElementById('profile-level');
+  if (profileLevel) profileLevel.textContent = progression.profile.level;
+  const achievementCount = document.getElementById('profile-achievements');
+  if (achievementCount) achievementCount.textContent = challenges.totalUnlocked;
+}
+
+function finalizeCurrentRun(reason = 'ENDED') {
+  const payload = {
+    score: Number(player.score || 0),
+    wave: Number(currentWave || 1),
+    reason: String(reason || 'ENDED').toUpperCase()
+  };
+  finalizeRunSummary(payload);
+  finalizeProgressionRun(payload);
+  endObjectivesRun();
+  endChallengesRun();
 }
 
 function saveRunRecords() {
@@ -610,6 +639,9 @@ function resetPlayerRunState() {
   player.health = 100;
   player.maxHealth = 100;
   player.reloadMult = 1.0;
+  player.baseSpeed = 9.5;
+  player.sprintSpeed = 15.0;
+  player.adsSpeed = 4.5;
 
   player.kills = 0;
   player.score = 0;
@@ -721,6 +753,10 @@ async function beginRun({ fromRespawn = false } = {}) {
       mapId: chosenMap,
       difficulty: difficultyMultiplier
     });
+    resetProgressionRun({ mapId: chosenMap, difficulty: difficultyMultiplier });
+    resetObjectivesRun({ mapId: chosenMap });
+    resetChallengesRun();
+    resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
 
     placePlayerAtRandomSpawn();
 
@@ -749,6 +785,7 @@ async function beginRun({ fromRespawn = false } = {}) {
 }
 
 function returnToMenu(source = 'pause') {
+  finalizeCurrentRun(source);
   saveRunRecords();
   endAIDirectorRun();
   refreshAIMemoryControls();
@@ -871,6 +908,7 @@ const effectsMs = performance.now() - mark;
 
     if (!player.alive && gs === 'playing') {
     endAIDirectorRun();
+    finalizeCurrentRun('DEATH');
     refreshAIMemoryControls();
     gs = 'dead';
     clearInputState();

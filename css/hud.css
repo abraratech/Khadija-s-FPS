@@ -110,6 +110,9 @@
 .hud-chip.green { border-color: rgba(34,255,136,0.68); box-shadow: 0 0 14px rgba(34,255,136,0.14); }
 .hud-chip.green b { color: #22ff88; }
 
+.hud-chip.blue { border-color: rgba(0,170,255,0.68); box-shadow: 0 0 14px rgba(0,170,255,0.15); }
+.hud-chip.blue b { color: #33bbff; }
+
 .hud-chip.purple { border-color: rgba(255,102,255,0.68); box-shadow: 0 0 14px rgba(255,102,255,0.15); }
 .hud-chip.purple b { color: #ff66ff; }
 
@@ -637,4 +640,91 @@
     width: 220px;
     font-size: 10px;
   }
+}
+
+/* ── C11 PROGRESSION / OBJECTIVE HUD ── */
+.progression-panel {
+  position: absolute;
+  top: 102px;
+  right: 20px;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,170,0,0.46);
+  border-radius: 10px;
+  background: rgba(18,10,0,0.74);
+  color: #fff;
+  font-family: ui-monospace, Consolas, monospace;
+  text-shadow: 1px 1px 2px #000;
+  pointer-events: none;
+}
+.progression-level-badge { color: #ffaa00; font-size: 12px; font-weight: 900; letter-spacing: 1px; }
+.progression-level-badge b { font-size: 17px; }
+.progression-xp { color: rgba(255,255,255,0.72); font-size: 10px; font-weight: 800; letter-spacing: .7px; }
+
+.objective-panel {
+  position: absolute;
+  left: 20px;
+  top: 178px;
+  width: 252px;
+  z-index: 11;
+  padding: 10px 12px;
+  border: 1px solid rgba(34,255,136,0.42);
+  border-radius: 10px;
+  background: rgba(0,18,12,0.72);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  text-shadow: 1px 1px 2px #000;
+  pointer-events: none;
+}
+.objective-panel.complete { border-color: rgba(255,170,0,0.65); box-shadow: 0 0 16px rgba(255,170,0,0.14); }
+.objective-kicker { color: #22ff88; font-size: 9px; font-weight: 900; letter-spacing: 1.8px; }
+.objective-title { margin-top: 3px; color: #fff; font-size: 12px; font-weight: 1000; letter-spacing: .8px; }
+.objective-description { margin-top: 3px; color: rgba(255,255,255,.66); font-size: 10px; line-height: 1.25; }
+.objective-meter { height: 5px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.10); }
+.objective-meter > div { height: 100%; width: 0; background: linear-gradient(90deg,#22ff88,#00d4ff); transition: width .25s ease; }
+.objective-progress { margin-top: 4px; color: #22ff88; font-size: 10px; font-weight: 900; text-align: right; }
+
+.challenge-panel-wrap {
+  position: absolute;
+  left: 20px;
+  top: 300px;
+  width: 252px;
+  z-index: 11;
+  padding: 9px 12px;
+  border: 1px solid rgba(0,212,255,.32);
+  border-radius: 10px;
+  background: rgba(0,10,18,.66);
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  text-shadow: 1px 1px 2px #000;
+  pointer-events: none;
+}
+.challenge-panel-title { margin-bottom: 5px; color: #00d4ff; font-size: 9px; font-weight: 900; letter-spacing: 1.6px; }
+.challenge-panel { display: grid; gap: 4px; }
+.challenge-row { display: flex; justify-content: space-between; gap: 8px; color: rgba(255,255,255,.72); font-size: 10px; font-weight: 750; }
+.challenge-row b { color: #fff; }
+.challenge-row.complete, .challenge-row.complete b { color: #22ff88; }
+
+.run-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 10px 14px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.run-summary-grid > div { padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,.035); }
+.run-summary-grid span { color: #a88; font-size: 10px; }
+.run-summary-grid b { display: block; margin-top: 2px; color: #fff; font-size: 15px; overflow-wrap: anywhere; }
+.run-summary-grid #final-score,
+.run-summary-grid #final-xp,
+.run-summary-grid #final-best-score { color: #ffaa00; }
+
+@media (max-width: 760px) {
+  .progression-panel { top: 92px; right: 10px; transform: scale(.88); transform-origin: top right; }
+  .objective-panel { left: 10px; top: 152px; width: 210px; transform: scale(.82); transform-origin: top left; }
+  .challenge-panel-wrap { display: none; }
+  .run-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
 }

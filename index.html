@@ -130,10 +130,11 @@
       flex-direction: column;
       justify-content: center;
     }
-    .ka-stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px; }
+    .ka-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
     .ka-stat-card { border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.055); border-radius: 14px; padding: 12px 14px; }
     .ka-stat-card span { color: #8898a5; font-size: 11px; font-weight: 950; letter-spacing: 1.4px; text-transform: uppercase; }
     .ka-stat-card b { display: block; margin-top: 4px; color: #fff; font-size: 22px; }
+    .ka-stat-card small { display:block; margin-top:3px; color:#708592; font-size:9px; font-weight:850; letter-spacing:.7px; text-transform:uppercase; }
     .ka-stat-muted b { color: #00d4ff; font-size: 16px; }
     .ka-mode-stack { display: grid; gap: 12px; }
     .ka-mode-card, .ka-map-card, .ka-diff-card, .ka-nav-btn, .ka-link-btn {
@@ -553,6 +554,24 @@
       <div id="perk-indicators" class="hud-chip-group"></div>
     </div>
 
+    <div id="progression-panel" class="progression-panel" aria-live="polite">
+      <div class="progression-level-badge">LV <b id="progression-level">1</b></div>
+      <div id="progression-xp" class="progression-xp">0/575 XP</div>
+    </div>
+
+    <div id="objective-panel" class="objective-panel" aria-live="polite">
+      <div class="objective-kicker">MAP CONTRACT</div>
+      <div id="objective-title" class="objective-title">BUNKER CLEARANCE</div>
+      <div id="objective-description" class="objective-description">Eliminate 25 enemies.</div>
+      <div class="objective-meter"><div id="objective-progress-fill"></div></div>
+      <div id="objective-progress" class="objective-progress">0/25</div>
+    </div>
+
+    <div class="challenge-panel-wrap">
+      <div class="challenge-panel-title">RUN CHALLENGES</div>
+      <div id="challenge-panel" class="challenge-panel" aria-live="polite"></div>
+    </div>
+
     <div id="hud-warning-stack" class="hud-warning-stack" aria-live="polite">
       <div id="low-health-warning" class="hud-warning danger">LOW HEALTH</div>
       <div id="low-ammo-warning" class="hud-warning ammo">LOW AMMO</div>
@@ -643,7 +662,8 @@
             <div class="ka-stats-row">
               <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
               <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
-              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>PROCEDURAL WEAPONS</b></div>
+              <div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-achievements">0</span> achievements</small></div>
+              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>PROGRESSION BUNDLE</b></div>
             </div>
           </div>
           <div class="ka-mode-stack">
@@ -1193,11 +1213,21 @@
     <div id="final-kills">0</div>
 
     <div id="death-stats-panel" style="margin: 22px auto 0 auto; width: min(520px, 90%); padding: 14px 16px; border: 1px solid rgba(255,34,0,0.38); background: rgba(30,0,0,0.42); border-radius: 8px; font-family: sans-serif; color: #fff; box-shadow: 0 0 20px rgba(255,34,0,0.12);">
-      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; font-size: 13px; letter-spacing: 1px;">
-        <div style="color: #a88;">FINAL SCORE<br><span id="final-score" style="color: #ffaa00; font-weight: bold; font-size: 17px;">0</span></div>
-        <div style="color: #a88;">FINAL WAVE<br><span id="final-wave" style="color: #fff; font-weight: bold; font-size: 17px;">1</span></div>
-        <div style="color: #a88;">BEST SCORE<br><span id="final-best-score" style="color: #ffaa00; font-weight: bold; font-size: 17px;">0</span></div>
-        <div style="color: #a88;">BEST WAVE<br><span id="final-best-wave" style="color: #fff; font-weight: bold; font-size: 17px;">1</span></div>
+      <div class="run-summary-grid">
+        <div><span>FINAL SCORE</span><b id="final-score">0</b></div>
+        <div><span>FINAL WAVE</span><b id="final-wave">1</b></div>
+        <div><span>ACCURACY</span><b id="final-accuracy">0%</b></div>
+        <div><span>HEADSHOT KILLS</span><b id="final-headshots">0</b></div>
+        <div><span>DAMAGE DEALT</span><b id="final-damage">0</b></div>
+        <div><span>SURVIVAL TIME</span><b id="final-time">0:00</b></div>
+        <div><span>XP EARNED</span><b id="final-xp">+0</b></div>
+        <div><span>PROFILE LEVEL</span><b id="final-level">1</b></div>
+        <div><span>OBJECTIVES</span><b id="final-objectives">0</b></div>
+        <div><span>CHALLENGES</span><b id="final-challenges">0</b></div>
+        <div><span>CONTRACT</span><b id="final-contract-status">Incomplete</b></div>
+        <div><span>ACHIEVEMENTS</span><b id="final-achievements">0</b></div>
+        <div><span>BEST SCORE</span><b id="final-best-score">0</b></div>
+        <div><span>BEST WAVE</span><b id="final-best-wave">1</b></div>
       </div>
     </div>
     

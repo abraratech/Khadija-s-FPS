@@ -44,6 +44,12 @@ import {
   beginAIArchetypeWave,
   getAIArchetypeSnapshot
 } from './ai_archetypes.js';
+import {
+  resetAIFormationRun,
+  endAIFormationRun,
+  beginAIFormationWave,
+  getAIFormationSnapshot
+} from './ai_formation.js';
 
 // C10.1 — Adaptive AI Director Foundation
 //
@@ -487,6 +493,16 @@ function buildTuning(nextWave) {
   flankChance *= 1 - navigationCaution * 0.34;
   predictionSeconds *= 1 - navigationCaution * 0.16;
 
+  // C10.9 finalization: previous-wave congestion gently reduces tactical
+  // complexity instead of increasing speed or spawn pressure into a traffic jam.
+  const formationSnapshot = getAIFormationSnapshot();
+  const congestionCaution = clamp(formationSnapshot.congestionPressure, 0, 0.70);
+  flankChance *= 1 - congestionCaution * 0.28;
+  predictionSeconds *= 1 - congestionCaution * 0.12;
+  if (congestionCaution >= 0.52) {
+    activeCapBonus = Math.max(0, activeCapBonus - 1);
+  }
+
   const selectedStrategy = selectAIStrategy({
     active: true,
     mapId: state.mapId,
@@ -561,6 +577,7 @@ function renderDebugPanel(force = false) {
   const exploit = getAIExploitSnapshot();
   const attacks = getAIAttackSnapshot();
   const archetypes = getAIArchetypeSnapshot();
+  const formation = getAIFormationSnapshot();
   const squadRoles = Object.entries(squad.roleCounts || {})
     .filter(([, count]) => count > 0)
     .map(([role, count]) => `${role.slice(0, 3)}:${count}`)
@@ -571,6 +588,13 @@ function renderDebugPanel(force = false) {
   const memoryText = state.memoryPrior?.available
     ? `${state.memoryPrior.source.toUpperCase()} · ${state.memoryPrior.runs} RUN${state.memoryPrior.runs === 1 ? '' : 'S'} · ${Math.round(state.memoryBlend * 100)}%`
     : 'EMPTY · LEARNS AFTER 2 WAVES';
+  const formationLanes = Object.entries(formation.laneCounts || {})
+    .filter(([, count]) => count > 0)
+    .map(([lane, count]) => `${lane.slice(0, 3)}:${count}`)
+    .join(' · ') || 'NONE';
+  const finalizationState = formation.overBudgetCount > 4
+    ? 'BUDGET WATCH'
+    : (formation.congestionPressure > 0.55 ? 'CONGESTION GUARD' : 'STABLE');
 
   panel.innerHTML = `
     <div class="ai-director-debug-title">AI DIRECTOR</div>
@@ -593,6 +617,10 @@ function renderDebugPanel(force = false) {
     <div><span>ARCHETYPE</span><b>RUN ${archetypes.activeRunnerBursts}/${archetypes.maxRunnerBursts} · SPIT ${archetypes.spitterRepositioning} · EXP ${archetypes.exploderPrimed + archetypes.exploderCritical}</b></div>
     <div><span>HEAVY ID</span><b>BRACE ${archetypes.bruteBracing} · GOL P${archetypes.goliathPhase || 0} · ${archetypes.goliathPhaseTransitions} SHIFT</b></div>
     <div><span>IDENTITY EVENT</span><b>${archetypes.lastEvent}</b></div>
+    <div><span>FORMATION</span><b>${formation.active ? formationLanes : `ONLINE R${formation.activationWave}`}</b></div>
+    <div><span>CONGESTION</span><b>${formation.jammedEnemies} JAM · ${formation.yieldingEnemies} YIELD · CELL ${formation.maxCellOccupancy}</b></div>
+    <div><span>BREACH</span><b>${formation.breachActive ? formation.breachLeadType : 'IDLE'} · ${formation.breachEvents} EVENT · ${formation.reassignments} REASSIGN</b></div>
+    <div><span>AI FINAL</span><b>${finalizationState} · ${formation.averageUpdateMs.toFixed(2)}ms / ${formation.performanceBudgetMs.toFixed(2)}ms</b></div>
     <div><span>MEMORY</span><b>${memoryText}</b></div>
     <div><span>SQUAD</span><b>${squad.active ? 'COORDINATED' : `ONLINE R${squad.activationWave}`}</b></div>
     <div><span>ROLES</span><b>${squadRoles}</b></div>
@@ -669,6 +697,7 @@ export function resetAIDirectorRun({ mapId = 'unknown', difficulty = 1 } = {}) {
   resetAIExploitRun({ mapId: state.mapId });
   resetAIAttackRun();
   resetAIArchetypeRun({ mapId: state.mapId });
+  resetAIFormationRun({ mapId: state.mapId });
   renderDebugPanel(true);
 }
 
@@ -682,6 +711,7 @@ export function endAIDirectorRun() {
   endAIExploitRun();
   endAIAttackRun();
   endAIArchetypeRun();
+  endAIFormationRun();
   renderDebugPanel(true);
 }
 
@@ -694,6 +724,7 @@ export function beginAIDirectorWave(waveNumber) {
   beginAIExploitWave(state.currentWave);
   beginAIAttackWave(state.currentWave);
   beginAIArchetypeWave(state.currentWave);
+  beginAIFormationWave(state.currentWave);
   renderDebugPanel(true);
 }
 
@@ -1058,6 +1089,7 @@ export function getAIDirectorSnapshot() {
     exploit: getAIExploitSnapshot(),
     attacks: getAIAttackSnapshot(),
     archetypes: getAIArchetypeSnapshot(),
+    formation: getAIFormationSnapshot(),
     memory: {
       available: Boolean(state.memoryPrior?.available),
       source: state.memoryPrior?.source || 'none',
@@ -1067,6 +1099,27 @@ export function getAIDirectorSnapshot() {
       navigationReliability: state.memoryPrior?.navigation?.reliability ?? 1,
       lastSavedAt: state.memoryLastSavedAt
     }
+  };
+}
+
+export function getAIFinalDiagnostics() {
+  return {
+    version: 'C10.9_FINAL',
+    generatedAt: new Date().toISOString(),
+    fairnessLimits: {
+      directorActivationWave: DIRECTOR_ACTIVATION_WAVE,
+      directorMaxIntensity: DIRECTOR_MAX_INTENSITY,
+      activeCapBonusMax: 2,
+      speedScaleMax: 1.065
+    },
+    director: getAIDirectorSnapshot(),
+    squad: getAISquadSnapshot(),
+    navigation: getAINavigationSnapshot(),
+    strategy: getAIStrategySnapshot(),
+    exploit: getAIExploitSnapshot(),
+    attacks: getAIAttackSnapshot(),
+    archetypes: getAIArchetypeSnapshot(),
+    formation: getAIFormationSnapshot()
   };
 }
 
@@ -1103,3 +1156,5 @@ if (typeof window !== 'undefined') {
 // Console helpers for testing.
 window.KAGetAIDirector = getAIDirectorSnapshot;
 window.KASetAIDirectorDebug = setAIDirectorDebugEnabled;
+window.KAGetAIFinalDiagnostics = getAIFinalDiagnostics;
+window.KAExportAIDiagnostics = () => JSON.stringify(getAIFinalDiagnostics(), null, 2);

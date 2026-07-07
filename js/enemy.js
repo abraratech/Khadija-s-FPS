@@ -62,6 +62,13 @@ import {
   getArchetypeAttackCooldownScale,
   consumeArchetypeEvent
 } from './ai_archetypes.js';
+import {
+  registerFormationEnemy,
+  updateAIFormation,
+  getFormationPursuitTarget,
+  getFormationMovementScale,
+  recordFormationEnemyRemoved
+} from './ai_formation.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -938,6 +945,7 @@ recycled.mesh.traverse(child => {
   activeEnemies.push(recycled);
   registerSquadEnemy(recycled);
   registerArchetypeEnemy(recycled);
+  registerFormationEnemy(recycled);
   registerNavigationEnemy(recycled);
   actorManager.register(recycled);
   zombiesSpawnedSoFar++;
@@ -948,6 +956,7 @@ recycled.mesh.traverse(child => {
 const _eToP = new THREE.Vector3();
 const _directorMoveTarget = { x: 0, z: 0 };
 const _squadMoveTarget = { x: 0, z: 0 };
+const _formationMoveTarget = { x: 0, z: 0 };
 const _navigationMoveTarget = { x: 0, z: 0 };
 const _archetypeMoveTarget = { x: 0, z: 0 };
 
@@ -1032,6 +1041,14 @@ export function updateEnemies(dt) {
   updateAIArchetypeCoordinator(dt, {
     enemies: activeEnemies,
     player
+  });
+  updateAIFormation(dt, {
+    enemies: activeEnemies,
+    player,
+    tuning: {
+      ...getAIDirectorTuning(),
+      wave: currentWave
+    }
   });
   // ── ELECTRIC TRAP LOGIC ──
   traps.forEach(t => {
@@ -1349,10 +1366,17 @@ if (e.usingLod && e.lodMesh) {
       _squadMoveTarget
     );
 
-    getReliableNavigationTarget(
+    getFormationPursuitTarget(
       e,
       player,
       _squadMoveTarget,
+      _formationMoveTarget
+    );
+
+    getReliableNavigationTarget(
+      e,
+      player,
+      _formationMoveTarget,
       walls,
       traps,
       _navigationMoveTarget,
@@ -1477,7 +1501,7 @@ if (e.usingLod && e.lodMesh) {
       const hitMoveScale = e.hitReactT > 0
         ? getArchetypeHitMoveScale(e)
         : 1.0;
-      const moveSpeed = e.speed * hitMoveScale * getArchetypeMovementScale(e);
+      const moveSpeed = e.speed * hitMoveScale * getArchetypeMovementScale(e) * getFormationMovementScale(e);
       e.walkT += dt * moveSpeed * 3.5;
       
       const moveTargetX = _archetypeMoveTarget.x - e.mesh.position.x;
@@ -1714,6 +1738,7 @@ export function killEnemy(e) {
   if (!e.alive) return;
   cancelEnemyAttack(e, 'ENEMY REMOVED');
   recordSquadEnemyDeath(e);
+  recordFormationEnemyRemoved(e);
   recordNavigationEnemyRemoved(e);
   e.alive = false; e.dyingT = 0; 
   spawnBloodBurst(e.mesh.position);

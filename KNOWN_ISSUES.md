@@ -21,6 +21,7 @@
   - Door opening
 - More enemy animation variety
 - More weapon feedback and weapon-specific effects
+- Procedural sniper weapon planned as Mystery Box-only future addition
 - More maps
 - Settings screen remaining expansion for music volume, crosshair presets, and keybinds
 - Longer auto graphics benchmarking across more hardware
@@ -28,3 +29,8 @@
 - Leaderboard system planning after demo stabilization: local/single-player first, then map-wise, difficulty-filtered, region-wise, and global/server-wide leaderboards
 - FPP / TPP camera-view system planning after demo stabilization and ADS polish: first-person and third-person toggle, third-person camera collision, player body visibility, ADS behavior per view, and multiplayer/PVP/PVPVE compatibility
 - Babylon.js V2 rebuild branch after this three.js demo is stable
+
+## Recently Completed
+
+- Active pistol, SMG, assault rifle, and shotgun viewmodels converted to procedural ES modules.
+- Active weapon GLB preloads removed from the playable demo.

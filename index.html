@@ -612,7 +612,7 @@
           <div class="ka-brand-chip">KA</div>
           <div>
             <div class="ka-eyebrow">Khadija Protocol</div>
-            <div class="ka-status-dot"><span></span> Procedural zombie survival</div>
+            <div class="ka-status-dot"><span></span> Procedural weapons + zombie survival</div>
           </div>
         </div>
         <div class="ka-stepper" aria-label="Menu progress">
@@ -643,14 +643,14 @@
             <div class="ka-stats-row">
               <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
               <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
-              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>5 MAP ROTATION</b></div>
+              <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>PROCEDURAL WEAPONS</b></div>
             </div>
           </div>
           <div class="ka-mode-stack">
             <button class="ka-mode-card active" type="button" data-next-screen="map">
               <span class="ka-card-kicker">Mode</span>
               <strong>Single Player</strong>
-              <small>Wave survival against procedural zombies. Choose from five arenas, pick a difficulty, then deploy.</small>
+              <small>Wave survival with procedural weapons and procedural zombies. Choose from five arenas, pick a difficulty, then deploy.</small>
             </button>
             <button class="ka-mode-card locked" type="button" aria-disabled="true">
               <span class="ka-card-kicker">Coming soon</span>
@@ -782,7 +782,7 @@
             </button>
 
             <div id="loading-container" class="ka-loading-wrap">
-              <div id="loading-label">LOADING WEAPONS... <span id="loading-pct">0%</span></div>
+              <div id="loading-label">LOADING ARENA ASSETS... <span id="loading-pct">0%</span></div>
               <div id="loading-bar-bg"><div id="loading-bar-fill"></div></div>
             </div>
             <button id="start-btn" style="display:none;">▶ DEPLOY TO ARENA</button>
@@ -1231,6 +1231,7 @@
 <script src="js/engine/animation_manager.js"></script>
 <script src="js/engine/actor_manager.js"></script>
 <script src="js/engine/dev_console.js"></script>
+<!-- C9.6: active weapons are procedural ES modules; weapon GLB preloads were removed from js/main.js. -->
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

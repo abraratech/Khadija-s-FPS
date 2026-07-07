@@ -3,7 +3,7 @@ import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoi
 import { player, updatePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast } from './ui.js';
-import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops } from './weapons.js';
+import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 
@@ -342,7 +342,7 @@ export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Oper
 
 // ════════════ DEMO SAFETY ════════════
 // Keep disabled for public/demo builds. When true, testing cheats add points and enable the nuke hotkey.
-export const DEV_MODE = false;
+export const DEV_MODE = true;
 // ══════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════
@@ -393,6 +393,14 @@ window.addEventListener('mouseup', e => {
   if (e.button === 0) keys['MousedownLeft'] = false;
   if (e.button === 2) player.isADS = false; 
 });
+
+window.addEventListener('wheel', e => {
+  if (gs !== 'playing' || !player.alive) return;
+
+  if (adjustSniperScopeZoom(e.deltaY)) {
+    e.preventDefault();
+  }
+}, { passive: false });
 
 window.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -452,7 +460,7 @@ document.getElementById('btn-mobile-pause').addEventListener('touchstart', (e) =
 // ════════════ GAME LOOP ════════════
 
 export const ASSETS = {
-  weapons: { pistol: null, smg: null, rifle: null, shotgun: null },
+  // C9.6: active weapons are procedural ES modules now. Keep only enemy/model assets here.
   enemies: { zombie: null }
 };
 
@@ -465,37 +473,34 @@ loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
   document.getElementById('loading-pct').textContent = pct + '%';
 };
 
-loadingManager.onLoad = () => {
-  document.getElementById('loading-container').style.display = 'none';
-  document.getElementById('start-btn').style.display = 'inline-block'; 
-  console.log("All 3D assets loaded successfully!");
-};
+function finishLoadingUI() {
+  const loadingFill = document.getElementById('loading-bar-fill');
+  const loadingPct = document.getElementById('loading-pct');
+  const loadingContainer = document.getElementById('loading-container');
+  const startBtn = document.getElementById('start-btn');
+
+  if (loadingFill) loadingFill.style.width = '100%';
+  if (loadingPct) loadingPct.textContent = '100%';
+  if (loadingContainer) loadingContainer.style.display = 'none';
+  if (startBtn) startBtn.style.display = 'inline-block';
+
+  console.log("Arena assets ready.");
+}
+
+loadingManager.onLoad = finishLoadingUI;
 
 loadingManager.onError = (url) => {
   console.error("Error loading asset from path: " + url);
 };
 
-gltfLoader.load('assets/models/pistol.glb', (gltf) => {
-  ASSETS.weapons.pistol = gltf.scene;
-  assetManager.addModel('pistol', gltf.scene);
+// C9.6: weapon GLB preloads removed. Pistol, SMG, rifle, and shotgun are procedural modules.
+// With no startup weapon GLBs queued, THREE.LoadingManager has no itemEnd event to trigger onLoad.
+// Finish the loading UI manually when no GLB assets are queued.
+queueMicrotask(() => {
+  if ((loadingManager.itemsTotal || 0) === 0) {
+    finishLoadingUI();
+  }
 });
-
-gltfLoader.load('assets/models/smg.glb', (gltf) => {
-  ASSETS.weapons.smg = gltf.scene;
-  assetManager.addModel('smg', gltf.scene);
-});
-
-gltfLoader.load('assets/models/rifle.glb', (gltf) => {
-  ASSETS.weapons.rifle = gltf.scene;
-  assetManager.addModel('rifle', gltf.scene);
-});
-
-gltfLoader.load('assets/models/shotgun.glb', (gltf) => {
-  ASSETS.weapons.shotgun = gltf.scene;
-  assetManager.addModel('shotgun', gltf.scene);
-});
-
-
 let gs = 'menu', prev = 0;
 let smoothFps = 60;
 let worstFrameMs = 0;

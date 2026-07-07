@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Khadija's Arena — Procedural Weapon Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #070912;
+      --panel: rgba(10, 16, 28, 0.86);
+      --panel-2: rgba(16, 25, 42, 0.88);
+      --text: #eaf6ff;
+      --muted: #89a8c4;
+      --accent: #00d4ff;
+      --good: #55ff99;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 28%, rgba(0, 212, 255, 0.15), transparent 34%), var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    #app { width: 100vw; height: 100vh; position: relative; }
+    #c { width: 100%; height: 100%; display: block; }
+    #preview-reticle {
+      position: absolute; left: 50%; top: 50%; width: 8px; height: 8px;
+      border: 1px solid rgba(0, 212, 255, 0.9); border-radius: 50%;
+      transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 8px rgba(0, 212, 255, 0.7);
+    }
+    #preview-reticle::before, #preview-reticle::after { content: ''; position: absolute; background: rgba(0, 212, 255, 0.7); }
+    #preview-reticle::before { width: 18px; height: 1px; left: -6px; top: 3px; }
+    #preview-reticle::after { width: 1px; height: 18px; left: 3px; top: -6px; }
+    .panel {
+      position: absolute; top: 16px; left: 16px; width: min(390px, calc(100vw - 32px));
+      max-height: calc(100vh - 32px); overflow: auto; background: var(--panel);
+      border: 1px solid rgba(0, 212, 255, 0.22); box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+      border-radius: 14px; padding: 16px; backdrop-filter: blur(10px);
+    }
+    .panel h1 { margin: 0 0 4px; font-size: 18px; letter-spacing: 0.8px; text-transform: uppercase; }
+    .sub, .hint { color: var(--muted); font-size: 12px; line-height: 1.45; margin-bottom: 14px; }
+    .section { border-top: 1px solid rgba(255,255,255,0.09); padding-top: 12px; margin-top: 12px; }
+    .section h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: 1.5px; color: var(--accent); text-transform: uppercase; }
+    .row { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 10px; margin: 9px 0; font-size: 13px; }
+    label { color: var(--muted); user-select: none; }
+    select, input[type="range"], button { width: 100%; }
+    select, button {
+      background: var(--panel-2); color: var(--text); border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 10px; padding: 9px 10px; font-weight: 700;
+    }
+    button { cursor: pointer; transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease; }
+    button:hover { transform: translateY(-1px); border-color: rgba(0, 212, 255, 0.45); background: rgba(0, 212, 255, 0.12); }
+    input[type="range"] { accent-color: var(--accent); }
+    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 999px;
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.10);
+      color: var(--muted); font-size: 12px; margin: 3px 4px 3px 0;
+    }
+    .pill b { color: var(--text); }
+    .kbd {
+      display: inline-block; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.12);
+      border-bottom-color: rgba(0,0,0,0.55); padding: 2px 6px; border-radius: 5px; color: #fff; font-size: 11px;
+    }
+    #parts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 12px; }
+    .part {
+      padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08); color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .part.active { color: var(--good); border-color: rgba(85,255,153,0.28); background: rgba(85,255,153,0.08); }
+    .badge {
+      position: absolute; right: 16px; top: 16px; background: rgba(10,16,28,0.78);
+      border: 1px solid rgba(255,255,255,0.13); color: var(--muted); padding: 8px 11px;
+      border-radius: 999px; font-size: 12px; backdrop-filter: blur(10px);
+    }
+    .footer-note {
+      position: absolute; right: 16px; bottom: 16px; max-width: min(520px, calc(100vw - 32px));
+      background: rgba(10,16,28,0.72); border: 1px solid rgba(255,255,255,0.12);
+      color: var(--muted); padding: 10px 12px; border-radius: 12px; font-size: 12px; line-height: 1.45; backdrop-filter: blur(10px);
+    }
+    @media (max-width: 820px) {
+      .panel { width: calc(100vw - 24px); top: 12px; left: 12px; max-height: 48vh; }
+      .badge, .footer-note { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="c"></canvas>
+    <div id="preview-reticle"></div>
+    <div class="badge">C9.7 Procedural Weapon Preview</div>
+
+    <aside class="panel">
+      <h1>Weapon Preview</h1>
+      <div class="sub">Preview all procedural weapons from the actual ES modules used by the game.</div>
+      <div>
+        <span class="pill"><b>Mouse</b> orbit</span>
+        <span class="pill"><b>Wheel</b> zoom</span>
+        <span class="pill"><b>R</b> reload</span>
+        <span class="pill"><b>Space</b> fire</span>
+        <span class="pill"><b>F</b> reset camera</span>
+      </div>
+
+      <div class="section">
+        <h2>Weapon</h2>
+        <div class="row">
+          <label for="weaponType">Weapon</label>
+          <select id="weaponType">
+            <option value="pistol">Pistol</option>
+            <option value="smg">SMG</option>
+            <option value="rifle">Assault Rifle</option>
+            <option value="shotgun">Shotgun</option>
+            <option value="sniper">Sniper</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="variant">Variant</label>
+          <select id="variant">
+            <option value="normal">Normal</option>
+            <option value="upgraded">Upgraded</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="pose">Pose</label>
+          <select id="pose">
+            <option value="hip">Hip / Idle</option>
+            <option value="ads">ADS</option>
+            <option value="sprint">Sprint</option>
+            <option value="reload">Reload Inspect</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="reload">Reload</label>
+          <input id="reload" type="range" min="0" max="100" value="0" />
+        </div>
+        <div class="btn-grid">
+          <button id="playReload">Play Reload</button>
+          <button id="fire">Fire / Action</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>View</h2>
+        <div class="row">
+          <label for="view">Camera</label>
+          <select id="view">
+            <option value="inspect">Inspect View</option>
+            <option value="game">Approx. Game View</option>
+            <option value="side">Side View</option>
+            <option value="top">Top View</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="wireframe">Wireframe</label>
+          <select id="wireframe">
+            <option value="off">Off</option>
+            <option value="on">On</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="labels">Labels</label>
+          <select id="labels">
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="autoRotate">Auto Rotate</label>
+          <select id="autoRotate">
+            <option value="off">Off</option>
+            <option value="on">On</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Parts</h2>
+        <div id="parts"></div>
+      </div>
+
+      <div class="hint">
+        Open through WAMP:
+        <br />
+        <span class="kbd">http://localhost/your-project/weapon_preview.html</span>
+      </div>
+    </aside>
+
+    <div class="footer-note">
+      C9.7: pistol, SMG, assault rifle, shotgun, and sniper now preview from real weapon modules.
+    </div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './js/weapons/pistol.js';
+    import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './js/weapons/smg.js';
+    import { createProceduralRifleMesh, updateProceduralRifleReloadParts, resetProceduralRifleParts, updateProceduralRifleFireParts } from './js/weapons/rifle.js';
+    import { createProceduralShotgunMesh, updateProceduralShotgunReloadParts, resetProceduralShotgunParts, updateProceduralShotgunFireParts } from './js/weapons/shotgun.js';
+    import { createProceduralSniperMesh, updateProceduralSniperReloadParts, resetProceduralSniperParts, updateProceduralSniperFireParts } from './js/weapons/sniper.js';
+
+    const canvas = document.getElementById('c');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070912);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.01, 100);
+    camera.position.set(1.2, 0.55, 1.7);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, -0.02, -0.04);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.minDistance = 0.35;
+    controls.maxDistance = 5.0;
+
+    scene.add(new THREE.HemisphereLight(0xbdeeff, 0x111122, 1.6));
+    const key = new THREE.DirectionalLight(0xffffff, 2.2);
+    key.position.set(2.2, 2.8, 2.0);
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x66ddff, 1.1);
+    rim.position.set(-2.0, 0.8, -2.0);
+    scene.add(rim);
+    const magenta = new THREE.PointLight(0xff66ff, 1.4, 4);
+    magenta.position.set(-0.8, 0.4, -0.9);
+    scene.add(magenta);
+
+    const grid = new THREE.GridHelper(2.4, 24, 0x24445f, 0x102436);
+    grid.position.y = -0.36;
+    scene.add(grid);
+
+    const axes = new THREE.AxesHelper(0.45);
+    axes.position.set(-0.55, -0.32, 0.45);
+    scene.add(axes);
+
+    let weaponGroup = null;
+    let previewWeapon = { meshGroup: null };
+    let labelsGroup = new THREE.Group();
+    scene.add(labelsGroup);
+
+    const ui = {
+      weaponType: document.getElementById('weaponType'),
+      variant: document.getElementById('variant'),
+      pose: document.getElementById('pose'),
+      reload: document.getElementById('reload'),
+      playReload: document.getElementById('playReload'),
+      fire: document.getElementById('fire'),
+      view: document.getElementById('view'),
+      wireframe: document.getElementById('wireframe'),
+      labels: document.getElementById('labels'),
+      autoRotate: document.getElementById('autoRotate'),
+      parts: document.getElementById('parts')
+    };
+
+    const modules = {
+      pistol: { create: createProceduralPistolMesh, reload: updateProceduralPistolReloadParts, reset: resetProceduralPistolParts, fire: null },
+      smg: { create: createProceduralSMGMesh, reload: updateProceduralSMGReloadParts, reset: resetProceduralSMGParts, fire: updateProceduralSMGFireParts },
+      rifle: { create: createProceduralRifleMesh, reload: updateProceduralRifleReloadParts, reset: resetProceduralRifleParts, fire: updateProceduralRifleFireParts },
+      shotgun: { create: createProceduralShotgunMesh, reload: updateProceduralShotgunReloadParts, reset: resetProceduralShotgunParts, fire: updateProceduralShotgunFireParts },
+      sniper: { create: createProceduralSniperMesh, reload: updateProceduralSniperReloadParts, reset: resetProceduralSniperParts, fire: updateProceduralSniperFireParts }
+    };
+
+    const poseMap = {
+      pistol: { hip: [0.115, -0.125, -0.28], ads: [0.000, -0.087, -0.302], sprint: [0.135, -0.140, -0.18], reload: [0.12, -0.05, 0.03] },
+      smg: { hip: [0.16, -0.13, -0.32], ads: [0.000, -0.118, -0.430], sprint: [0.185, -0.165, -0.26], reload: [0.16, -0.07, -0.02] },
+      rifle: { hip: [0.16, -0.13, -0.36], ads: [0.000, -0.128, -0.470], sprint: [0.20, -0.17, -0.30], reload: [0.17, -0.07, -0.03] },
+      shotgun: { hip: [0.17, -0.14, -0.40], ads: [0.000, -0.148, -0.520], sprint: [0.22, -0.18, -0.34], reload: [0.18, -0.08, -0.04] },
+      sniper: { hip: [0.18, -0.15, -0.45], ads: [0.000, -0.150, -0.690], sprint: [0.24, -0.19, -0.38], reload: [0.19, -0.08, -0.06] }
+    };
+
+    let reloadPlaying = false;
+    let reloadT = 0;
+    let fireKickT = 0;
+
+    function createTextSprite(text, color = '#eaf6ff') {
+      const cnv = document.createElement('canvas');
+      const ctx = cnv.getContext('2d');
+      const scale = 2;
+      cnv.width = 256 * scale;
+      cnv.height = 64 * scale;
+      ctx.scale(scale, scale);
+      ctx.font = '700 18px Arial';
+      ctx.textBaseline = 'middle';
+      const w = Math.min(246, ctx.measureText(text).width + 26);
+      ctx.fillStyle = 'rgba(5, 10, 18, 0.78)';
+      ctx.strokeStyle = 'rgba(0, 212, 255, 0.35)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, 4, 10, w, 42, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillText(text, 17, 32);
+      const tex = new THREE.CanvasTexture(cnv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(0.19, 0.048, 1);
+      return sprite;
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function disposeWeapon(group) {
+      if (!group) return;
+      scene.remove(group);
+      group.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+          else child.material.dispose();
+        }
+      });
+    }
+
+    function rebuildWeapon() {
+      disposeWeapon(weaponGroup);
+      labelsGroup.clear();
+
+      const mod = modules[ui.weaponType.value] || modules.pistol;
+      weaponGroup = mod.create({ upgraded: ui.variant.value === 'upgraded' });
+      previewWeapon.meshGroup = weaponGroup;
+      scene.add(weaponGroup);
+
+      refreshPartsList();
+      refreshLabels();
+      applyWireframe();
+      applyPose();
+    }
+
+    function getMeshNames() {
+      const names = [];
+      weaponGroup?.traverse((child) => {
+        if (child.isMesh && child.name && child.name !== 'muzzleFlashMesh' && !child.userData.isProceduralHand) {
+          names.push(child.name);
+        }
+      });
+      return names;
+    }
+
+    function refreshPartsList() {
+      ui.parts.innerHTML = getMeshNames()
+        .map(name => `<div class="part" data-part="${name}">${name}</div>`)
+        .join('');
+    }
+
+    function refreshLabels() {
+      labelsGroup.clear();
+      if (ui.labels.value === 'off' || !weaponGroup) return;
+
+      const names = getMeshNames().filter((name) => (
+        name.includes('receiver') ||
+        name.includes('barrel') ||
+        name.includes('muzzle') ||
+        name.includes('magazine') ||
+        name.includes('pump') ||
+        name.includes('stock') ||
+        name.includes('scope') ||
+        name.includes('bolt') ||
+        name.includes('sight')
+      )).slice(0, 8);
+
+      names.forEach((name, i) => {
+        const part = weaponGroup.getObjectByName(name);
+        if (!part) return;
+        const label = createTextSprite(name.replace(/^(pistol|smg|rifle|shotgun|sniper)_/, ''), name.includes('muzzle') ? '#ffaa33' : '#eaf6ff');
+        label.position.copy(part.position);
+        label.position.x += i % 2 === 0 ? 0.22 : -0.26;
+        label.position.y += 0.11 + (i % 3) * 0.035;
+        label.position.z += i % 2 === 0 ? -0.04 : 0.05;
+        label.userData.targetName = name;
+        label.userData.offset = label.position.clone().sub(part.position);
+        labelsGroup.add(label);
+      });
+    }
+
+    function applyWireframe() {
+      const enabled = ui.wireframe.value === 'on';
+      weaponGroup?.traverse((child) => {
+        if (child.material && 'wireframe' in child.material) child.material.wireframe = enabled;
+      });
+    }
+
+    function applyReloadProgress(progress) {
+      const mod = modules[ui.weaponType.value] || modules.pistol;
+      mod.reload?.(previewWeapon, progress);
+      weaponGroup.rotation.z += Math.sin(progress * Math.PI) * 0.10;
+      weaponGroup.rotation.x += Math.sin(progress * Math.PI) * 0.08;
+    }
+
+    function applyPose() {
+      if (!weaponGroup) return;
+      const mod = modules[ui.weaponType.value] || modules.pistol;
+      mod.reset?.(previewWeapon, 1);
+      weaponGroup.position.set(0, 0, 0);
+      weaponGroup.rotation.set(0, 0, 0);
+      weaponGroup.scale.setScalar(1);
+
+      const type = ui.weaponType.value;
+      const pose = ui.pose.value;
+      const map = poseMap[type] || poseMap.pistol;
+
+      if (pose === 'ads') {
+        weaponGroup.position.set(...map.ads);
+        weaponGroup.rotation.set(-0.01, 0, 0);
+      } else if (pose === 'sprint') {
+        weaponGroup.position.set(...map.sprint);
+        weaponGroup.rotation.set(-0.32, -0.34, 0.22);
+      } else if (pose === 'reload') {
+        weaponGroup.position.set(...map.reload);
+        weaponGroup.rotation.set(0.08, -0.10, 0.12);
+        applyReloadProgress(Number(ui.reload.value) / 100);
+      } else {
+        weaponGroup.position.set(...map.hip);
+        weaponGroup.rotation.set(0, 0, 0);
+      }
+    }
+
+    function applyView() {
+      const view = ui.view.value;
+      if (view === 'game') {
+        camera.position.set(0.0, 0.0, 0.72);
+        controls.target.set(0.0, 0.0, -0.18);
+      } else if (view === 'side') {
+        camera.position.set(1.25, 0.00, 0.02);
+        controls.target.set(0.0, -0.06, -0.05);
+      } else if (view === 'top') {
+        camera.position.set(0.02, 1.25, 0.05);
+        controls.target.set(0.0, -0.08, -0.04);
+      } else {
+        camera.position.set(1.2, 0.55, 1.7);
+        controls.target.set(0, -0.02, -0.04);
+      }
+      controls.update();
+    }
+
+    function pulseFire() {
+      const flash = weaponGroup?.getObjectByName('muzzleFlashMesh');
+      if (flash) {
+        flash.visible = true;
+        flash.scale.setScalar(1.0 + Math.random() * 0.35);
+        flash.rotation.z = Math.random() * Math.PI * 2;
+      }
+      fireKickT = 0.16;
+    }
+
+    function animateReload() {
+      reloadPlaying = true;
+      reloadT = 0;
+      ui.pose.value = 'reload';
+      ui.reload.value = '0';
+    }
+
+    function syncLabelsToParts() {
+      labelsGroup.visible = ui.labels.value === 'on';
+      labelsGroup.children.forEach((label) => {
+        const target = weaponGroup?.getObjectByName(label.userData.targetName);
+        if (!target) return;
+        label.position.copy(target.position).add(label.userData.offset);
+      });
+    }
+
+    function tick(now) {
+      requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (tick.prev ? (now - tick.prev) / 1000 : 1 / 60));
+      tick.prev = now;
+
+      if (reloadPlaying) {
+        reloadT += dt / 1.15;
+        if (reloadT >= 1) {
+          reloadT = 1;
+          reloadPlaying = false;
+        }
+        ui.reload.value = String(Math.round(reloadT * 100));
+        applyPose();
+      }
+
+      if (fireKickT > 0 && weaponGroup) {
+        fireKickT -= dt;
+        const k = Math.sin(Math.max(0, fireKickT) / 0.16 * Math.PI);
+        const mod = modules[ui.weaponType.value] || modules.pistol;
+        mod.fire?.(previewWeapon, k);
+        weaponGroup.position.z = -k * 0.025;
+        if (fireKickT <= 0) {
+          const flash = weaponGroup.getObjectByName('muzzleFlashMesh');
+          if (flash) flash.visible = false;
+          applyPose();
+        }
+      }
+
+      if (ui.autoRotate.value === 'on' && weaponGroup) {
+        weaponGroup.rotation.y += dt * 0.55;
+      }
+
+      syncLabelsToParts();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    ui.weaponType.addEventListener('change', rebuildWeapon);
+    ui.variant.addEventListener('change', rebuildWeapon);
+    ui.pose.addEventListener('change', () => {
+      reloadPlaying = false;
+      if (ui.pose.value !== 'reload') ui.reload.value = '0';
+      applyPose();
+    });
+    ui.reload.addEventListener('input', () => {
+      reloadPlaying = false;
+      ui.pose.value = 'reload';
+      applyPose();
+    });
+    ui.view.addEventListener('change', applyView);
+    ui.wireframe.addEventListener('change', applyWireframe);
+    ui.labels.addEventListener('change', refreshLabels);
+    ui.playReload.addEventListener('click', animateReload);
+    ui.fire.addEventListener('click', pulseFire);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyR') animateReload();
+      if (e.code === 'KeyF') {
+        ui.view.value = 'inspect';
+        applyView();
+      }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        pulseFire();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    rebuildWeapon();
+    applyView();
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

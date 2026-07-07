@@ -2,12 +2,16 @@
 import * as THREE from 'three';
 import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId, updateBarricadeRepairGhost } from './map.js';
 import { player } from './player.js';
-import { activeEnemies, killEnemy, getEnemyPointReward } from './enemy.js';
+import { activeEnemies, killEnemy, getEnemyPointReward, currentWave } from './enemy.js';
 import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast, updateCombatStatusHUD, showShopFeedback, updateShopFeedbackProgress, hideShopFeedback } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
 import { playWeaponSound, playWorldSound, playUISound } from './audio.js';
-import { ASSETS } from './main.js';
-import { getGameplayPointsForMap, getOrderedGameplayPointsForShop } from './maps/gameplay_points.js';
+import { getGameplayPointsForMap } from './maps/gameplay_points.js';
+import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './weapons/pistol.js';
+import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './weapons/smg.js';
+import { createProceduralRifleMesh, updateProceduralRifleReloadParts, resetProceduralRifleParts, updateProceduralRifleFireParts } from './weapons/rifle.js';
+import { createProceduralShotgunMesh, updateProceduralShotgunReloadParts, resetProceduralShotgunParts, updateProceduralShotgunFireParts } from './weapons/shotgun.js';
+import { createProceduralSniperMesh, updateProceduralSniperReloadParts, resetProceduralSniperParts, updateProceduralSniperFireParts } from './weapons/sniper.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -21,25 +25,115 @@ let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
 
-function getActiveShopDebugSummary() {
-  return activeShops.map((shop) => ({
-    type: shop.type,
-    weapon: shop.weaponKey || '',
-    x: Number(shop.pos?.x || 0).toFixed(1),
-    z: Number(shop.pos?.z || 0).toFixed(1),
-    wallMounted: Boolean(shop.wallMounted)
-  }));
+const SNIPER_SCOPE_ZOOM_KEY = 'ka_sniper_scope_fov';
+const SNIPER_SCOPE_FOV_DEFAULT = 24;
+const SNIPER_SCOPE_FOV_MIN = 18;
+const SNIPER_SCOPE_FOV_MAX = 32;
+let sniperScopeOverlay = null;
+
+function readStoredSniperScopeFOV() {
+  try {
+    const stored = Number(localStorage.getItem(SNIPER_SCOPE_ZOOM_KEY));
+    if (Number.isFinite(stored)) {
+      return THREE.MathUtils.clamp(stored, SNIPER_SCOPE_FOV_MIN, SNIPER_SCOPE_FOV_MAX);
+    }
+  } catch {
+    // Ignore storage failures.
+  }
+
+  return SNIPER_SCOPE_FOV_DEFAULT;
 }
 
-if (typeof window !== 'undefined') {
-  window.KAShopPlacements = () => getActiveShopDebugSummary();
+let sniperScopeFOV = readStoredSniperScopeFOV();
+
+function saveSniperScopeFOV() {
+  try {
+    localStorage.setItem(SNIPER_SCOPE_ZOOM_KEY, String(Math.round(sniperScopeFOV)));
+  } catch {
+    // Ignore storage failures.
+  }
 }
+
+function getSniperScopeOverlay() {
+  if (sniperScopeOverlay && document.body?.contains(sniperScopeOverlay)) return sniperScopeOverlay;
+
+  const root = document.createElement('div');
+  root.id = 'sniper-scope-overlay';
+  root.className = 'sniper-scope-overlay';
+  root.innerHTML = `
+    <div class="sniper-scope-vignette"></div>
+    <div class="sniper-scope-ring"></div>
+    <div class="sniper-scope-line sniper-scope-line-v-top"></div>
+    <div class="sniper-scope-line sniper-scope-line-v-bottom"></div>
+    <div class="sniper-scope-line sniper-scope-line-h-left"></div>
+    <div class="sniper-scope-line sniper-scope-line-h-right"></div>
+    <div class="sniper-scope-dot"></div>
+    <div class="sniper-scope-range-ticks"></div>
+    <div class="sniper-scope-zoom-label"></div>
+  `;
+
+  sniperScopeOverlay = root;
+  document.body.appendChild(root);
+  return root;
+}
+
+function getSniperZoomLabelText() {
+  const zoomApprox = Math.max(1, 82 / Math.max(1, sniperScopeFOV));
+  return `${zoomApprox.toFixed(1)}x · wheel zoom`;
+}
+
+function setSniperScopeOverlayVisible(visible) {
+  const overlay = getSniperScopeOverlay();
+  overlay.classList.toggle('active', visible);
+
+  const label = overlay.querySelector('.sniper-scope-zoom-label');
+  if (label) label.textContent = getSniperZoomLabelText();
+}
+
+export function adjustSniperScopeZoom(delta = 0) {
+  const activeWeapon = getActiveWeapon();
+  const isSniperADS = Boolean(
+    player.isADS &&
+    activeWeapon?.meshGroup?.userData?.isProceduralWeapon &&
+    activeWeapon.meshGroup.userData.weaponFamily === 'SNIPER'
+  );
+
+  if (!isSniperADS || !Number.isFinite(delta) || delta === 0) return false;
+
+  // Wheel up zooms in. Smaller FOV = stronger zoom.
+  sniperScopeFOV = THREE.MathUtils.clamp(
+    sniperScopeFOV + (delta > 0 ? 2 : -2),
+    SNIPER_SCOPE_FOV_MIN,
+    SNIPER_SCOPE_FOV_MAX
+  );
+
+  saveSniperScopeFOV();
+
+  const overlay = getSniperScopeOverlay();
+  const label = overlay.querySelector('.sniper-scope-zoom-label');
+  if (label) label.textContent = getSniperZoomLabelText();
+
+  showStatusToast(`SCOPE ZOOM ${getSniperZoomLabelText().split(' · ')[0]}`, '#66ccff', 650);
+  return true;
+}
+
+function clearScopedPresentation() {
+  player.currentADSFOV = null;
+  setSniperScopeOverlayVisible(false);
+
+  const activeWeapon = getActiveWeapon();
+  if (activeWeapon?.meshGroup) activeWeapon.meshGroup.visible = true;
+}
+
+// C9.6: active weapons are fully procedural ES modules. No active weapon GLB fallback remains.
 
 const MYSTERY_BOX_SPIN_TIME = 4.0;
 const MYSTERY_BOX_READY_TIME = 12.0;
 const MYSTERY_BOX_FEEDBACK_RANGE = 3.15;
 const INTERACTION_COOLDOWN_MS = 280;
 let lastInteractionUseAt = 0;
+let barricadeRepairScoreThisRound = 0;
+let barricadeRepairScoreWave = 0;
 
 function isPlayerNearShop(shop, range = MYSTERY_BOX_FEEDBACK_RANGE) {
   if (!shop?.pos || !player?.pos) return false;
@@ -149,6 +243,24 @@ function describeShopSignal(pos) {
   return `New signal ${direction.toUpperCase()} · approx. ${distance}m away`;
 }
 
+function getBarricadeRepairReward() {
+  if (barricadeRepairScoreWave !== currentWave) {
+    barricadeRepairScoreWave = currentWave;
+    barricadeRepairScoreThisRound = 0;
+  }
+
+  const remaining = Math.max(0, ECONOMY.BARRICADE_REPAIR_ROUND_SCORE_CAP - barricadeRepairScoreThisRound);
+  return Math.min(ECONOMY.BARRICADE_REPAIR_SCORE, remaining);
+}
+
+function addBarricadeRepairReward(points) {
+  if (points <= 0) return;
+  barricadeRepairScoreThisRound += points;
+  player.score += points;
+  updateScoreHUD(player.score);
+  spawnFloatingScore(points, false);
+}
+
 // ── ECONOMY / INTERACTION TUNING ──
 // Centralized so future balancing does not require hunting magic numbers.
 const ECONOMY = Object.freeze({
@@ -172,8 +284,9 @@ const ECONOMY = Object.freeze({
   PERK_HEALTH_COST: 2500,
   PERK_RELOAD_COST: 3000,
 
-  BARRICADE_REPAIR_SCORE: 15,
-  BARRICADE_REPAIR_COOLDOWN: 0.33,
+  BARRICADE_REPAIR_SCORE: 8,
+  BARRICADE_REPAIR_COOLDOWN: 0.75,
+  BARRICADE_REPAIR_ROUND_SCORE_CAP: 120,
 
   TRAP_COST: 1000,
   TRAP_DURATION: 14.0
@@ -187,9 +300,9 @@ function getCurrentGameplayPoints() {
 // Perk spawn pools are shared from js/maps/gameplay_points.js
 
 const SHOP_WALL_CLEARANCE = 0.95;
-const SHOP_MIN_SHOP_DISTANCE = 4.25;
+const SHOP_MIN_SHOP_DISTANCE = 3.0;
 const SHOP_MIN_PLAYER_DISTANCE = 7.0;
-const SHOP_MIN_FEATURE_DISTANCE = 2.75;
+const SHOP_MIN_FEATURE_DISTANCE = 2.25;
 
 // C4.5: current demo build is single-player only. One-time perks are hidden after use,
 // while wall buys stay active as ammo refill boards for the owned weapon.
@@ -205,9 +318,16 @@ function flatDistance(a, b) {
 }
 
 function shuffledCopy(list) {
-  // C8: keep deterministic order so authored gameplay-point priority matters.
-  // Random shuffling made shops feel scattered instead of intentionally placed.
-  return Array.isArray(list) ? list.slice() : [];
+  const arr = list.slice();
+
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+
+  return arr;
 }
 
 function cloneShopPoint(pos) {
@@ -278,14 +398,9 @@ function isShopSpawnSafe(pos, ignoreShop = null, options = {}) {
   return true;
 }
 
-function getOrderedShopCandidatePoints(type, spawnList) {
-  const ordered = getOrderedGameplayPointsForShop(currentMapId, type, spawnList);
-  return getShopCandidatePoints(ordered);
-}
-
-function pickSafeShopSpawn(shop, spawnList, type = shop?.type || null) {
+function pickSafeShopSpawn(shop, spawnList) {
   const currentPos = shop?.pos || null;
-  const candidates = shuffledCopy(getOrderedShopCandidatePoints(type, spawnList));
+  const candidates = shuffledCopy(getShopCandidatePoints(spawnList));
 
   // Pass 1: ideal pick. Different location, clear of walls/features/player/shops.
   for (const candidate of candidates) {
@@ -423,8 +538,15 @@ function isWallBuyPlacementSafe(placement, ignoreShop = null, options = {}) {
 }
 
 function getWallBuyCandidateOrder(type, spawnList) {
-  const tacticalType = String(type || '').includes('SHOTGUN') ? 'WALL_SHOTGUN' : 'WALL_SMG';
-  return getOrderedShopCandidatePoints(tacticalType, spawnList);
+  const candidates = getShopCandidatePoints(spawnList);
+
+  // Keep the two demo wall buys from fighting over the same first candidate.
+  // SMG uses the list in authored order; shotgun starts from the opposite end.
+  if (String(type || '').includes('SHOTGUN')) {
+    return candidates.reverse();
+  }
+
+  return candidates;
 }
 
 function pickSafeWallBuyPlacement(type, shop, spawnList) {
@@ -455,7 +577,7 @@ function pickSafeWallBuyPlacement(type, shop, spawnList) {
     || (() => {
       console.warn(`No safe wall-mounted spawn found for ${type || shop?.type || 'wall buy'}. Using floor fallback.`);
       return {
-        pos: pickSafeShopSpawn(shop, spawnList, type || shop?.type || null),
+        pos: pickSafeShopSpawn(shop, spawnList),
         rotationY: 0,
         wallMounted: false
       };
@@ -468,7 +590,7 @@ function getShopPlacement(type, shop, spawnList) {
   }
 
   return {
-    pos: pickSafeShopSpawn(shop, spawnList, type),
+    pos: pickSafeShopSpawn(shop, spawnList),
     rotationY: 0,
     wallMounted: false
   };
@@ -506,88 +628,93 @@ function relocateShop(shop, spawnList) {
   return spawnShop(shop.type, nextPlacement);
 }
 
+
+
+// ── PROCEDURAL WEAPON MODULE ENTRYPOINTS ──
+// C9.3: weapon-specific viewmodel builders live in js/weapons/*.js.
+// weapons.js remains the manager for inventory, shooting, shops, economy, and interaction logic.
+
+function buildPistolViewmodel(upgraded = false) {
+  return createProceduralPistolMesh({ upgraded });
+}
+
+
+
+function buildSMGViewmodel(upgraded = false) {
+  return createProceduralSMGMesh({ upgraded });
+}
+
+
+function buildRifleViewmodel(upgraded = false) {
+  return createProceduralRifleMesh({ upgraded });
+}
+
+
+function buildShotgunViewmodel(upgraded = false) {
+  return createProceduralShotgunMesh({ upgraded });
+}
+
+
+function buildSniperViewmodel(upgraded = false) {
+  return createProceduralSniperMesh({ upgraded });
+}
+
+
+
+// C9.1 ADS hotfix: procedural pistol ADS is aligned to the actual sight line.
+// The front/rear sight meshes sit around x=0.014 and y=0.087 inside the viewmodel,
+// so ADS offsets counter those values instead of centering the whole gun body.
 // ── WEAPON DEFINITIONS ──
 export const WEAPON_DEFS = {
   PISTOL: { 
-    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 24, maxAmmo: 10, fireRate: 0.24, isAutomatic: false, reloadDuration: 1.15, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.005, -0.135, -0.235), isUpgraded: false, 
-    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), null, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), { left: new THREE.Vector3(0.06, -0.012, 0.082), right: new THREE.Vector3(-0.01, -0.075, 0.18), leftScale: new THREE.Vector3(1.0, 1.0, 1.65), hideRight: true }) 
+    key: "PISTOL", name: "Starting Pistol", shootSound: 'shoot_pistol', damage: 24, maxAmmo: 10, fireRate: 0.24, isAutomatic: false, reloadDuration: 1.15, recoilZ: 0.05, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.240, -0.250, -0.620), adsPos: new THREE.Vector3(0.000, -0.090, -0.610), baseRot: new THREE.Vector3(-0.055, -0.075, 0.035), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false,
+    buildMesh: () => buildPistolViewmodel(false) 
   },
   PISTOL_UPG: { 
-    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 58, maxAmmo: 24, fireRate: 0.14, isAutomatic: true, reloadDuration: 0.85, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.2, -0.2, -0.35), adsPos: new THREE.Vector3(0.005, -0.135, -0.235), isUpgraded: true, 
-    buildMesh: () => clone3DAsset(ASSETS.weapons.pistol, new THREE.Vector3(0.15, 0.15, 0.15), 0xffaa00, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0), { left: new THREE.Vector3(0.06, -0.012, 0.082), right: new THREE.Vector3(-0.01, -0.075, 0.18), leftScale: new THREE.Vector3(1.0, 1.0, 1.65), hideRight: true }) 
+    key: "PISTOL_UPG", name: "Mustang & Sally", shootSound: 'shoot_pistol', damage: 58, maxAmmo: 24, fireRate: 0.14, isAutomatic: true, reloadDuration: 0.85, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.02, basePos: new THREE.Vector3(0.240, -0.250, -0.620), adsPos: new THREE.Vector3(0.000, -0.090, -0.610), baseRot: new THREE.Vector3(-0.055, -0.075, 0.035), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true,
+    buildMesh: () => buildPistolViewmodel(true) 
   },
   RIFLE: { 
     key: "RIFLE", name: "Assault Rifle", shootSound: 'shoot_rifle', damage: 38, maxAmmo: 32, fireRate: 0.115, isAutomatic: true, reloadDuration: 1.75, recoilZ: 0.06, recoilY: 0.03, cameraKick: 0.025, 
-    basePos: new THREE.Vector3(0.255, -0.175, -0.405), adsPos: new THREE.Vector3(-0.006, -0.125, -0.245), isUpgraded: false, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.rifle, 
-      new THREE.Vector3(0.0015, 0.0015, 0.0015), 
-      null, 
-      new THREE.Vector3(0, 0, 0), 
-      new THREE.Vector3(0, 0, -0.15),
-      { left: new THREE.Vector3(-0.055, -0.055, -0.155), right: new THREE.Vector3(0.018, -0.082, 0.015) }
-    ) 
+    basePos: new THREE.Vector3(0.245, -0.215, -0.620), adsPos: new THREE.Vector3(0.000, -0.128, -0.470), baseRot: new THREE.Vector3(-0.045, -0.090, 0.020), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false, 
+    buildMesh: () => buildRifleViewmodel(false) 
   },
   RIFLE_UPG: { 
     key: "RIFLE_UPG", name: "Khadija's Fury", shootSound: 'shoot_rifle', damage: 88, maxAmmo: 64, fireRate: 0.085, isAutomatic: true, reloadDuration: 1.25, recoilZ: 0.04, recoilY: 0.02, cameraKick: 0.015, 
-    basePos: new THREE.Vector3(0.255, -0.175, -0.405), adsPos: new THREE.Vector3(-0.006, -0.125, -0.245), isUpgraded: true, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.rifle, 
-      new THREE.Vector3(0.0015, 0.0015, 0.0015), 
-      0xff0044, 
-      new THREE.Vector3(0, 0, 0), 
-      new THREE.Vector3(0, 0, -0.15),
-      { left: new THREE.Vector3(-0.055, -0.055, -0.155), right: new THREE.Vector3(0.018, -0.082, 0.015) }
-    ) 
+    basePos: new THREE.Vector3(0.245, -0.215, -0.620), adsPos: new THREE.Vector3(0.000, -0.128, -0.470), baseRot: new THREE.Vector3(-0.045, -0.090, 0.020), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true, 
+    buildMesh: () => buildRifleViewmodel(true) 
   },
   SMG: { 
     key: "SMG", name: "Tactical SMG", shootSound: 'shoot_rifle', damage: 20, maxAmmo: 45, fireRate: 0.07, isAutomatic: true, reloadDuration: 1.35, recoilZ: 0.03, recoilY: 0.015, cameraKick: 0.015, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(-0.004, -0.124, -0.232), isUpgraded: false, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.smg, 
-      new THREE.Vector3(0.11, 0.11, 0.11), 
-      null, 
-      new THREE.Vector3(0, -Math.PI / 2, 0), 
-      new THREE.Vector3(0, -0.02, 0.05), 
-      { left: new THREE.Vector3(-0.03, -0.02, -0.02), right: new THREE.Vector3(0.03, -0.06, 0.08) } 
-    ) 
+    basePos: new THREE.Vector3(0.235, -0.205, -0.575), adsPos: new THREE.Vector3(0.000, -0.118, -0.430), baseRot: new THREE.Vector3(-0.040, -0.110, 0.030), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false, 
+    buildMesh: () => buildSMGViewmodel(false) 
   },
   SMG_UPG: { 
     key: "SMG_UPG", name: "The Shredder", shootSound: 'shoot_rifle', damage: 38, maxAmmo: 90, fireRate: 0.05, isAutomatic: true, reloadDuration: 0.95, recoilZ: 0.02, recoilY: 0.01, cameraKick: 0.01, 
-    basePos: new THREE.Vector3(0.18, -0.15, -0.25), adsPos: new THREE.Vector3(-0.004, -0.124, -0.232), isUpgraded: true, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.smg, 
-      new THREE.Vector3(0.11, 0.11, 0.11), 
-      0x00ffaa, 
-      new THREE.Vector3(0, -Math.PI / 2, 0), 
-      new THREE.Vector3(0, -0.02, 0.05),
-      { left: new THREE.Vector3(-0.03, -0.02, -0.02), right: new THREE.Vector3(0.03, -0.06, 0.08) }
-    ) 
+    basePos: new THREE.Vector3(0.235, -0.205, -0.575), adsPos: new THREE.Vector3(0.000, -0.118, -0.430), baseRot: new THREE.Vector3(-0.040, -0.110, 0.030), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true, 
+    buildMesh: () => buildSMGViewmodel(true) 
   },
   SHOTGUN: { 
     key: "SHOTGUN", name: "Pump Shotgun", shootSound: 'shoot_shotgun', damage: 28, maxAmmo: 8, fireRate: 0.82, isAutomatic: false, reloadDuration: 2.05, recoilZ: 0.15, recoilY: 0.05, cameraKick: 0.05, 
-    basePos: new THREE.Vector3(0.24, -0.19, -0.43), adsPos: new THREE.Vector3(0.0, -0.145, -0.285), isUpgraded: false, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.shotgun, 
-      new THREE.Vector3(0.0009, 0.0009, 0.0009), 
-      null, 
-      new THREE.Vector3(0, Math.PI, 0), 
-      new THREE.Vector3(0, -0.05, -0.15), 
-      { left: new THREE.Vector3(-0.06, -0.05, -0.2), right: new THREE.Vector3(0.018, -0.082, -0.005) }
-    ) 
+    basePos: new THREE.Vector3(0.260, -0.230, -0.690), adsPos: new THREE.Vector3(0.000, -0.148, -0.520), baseRot: new THREE.Vector3(-0.055, -0.105, 0.030), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false, 
+    buildMesh: () => buildShotgunViewmodel(false) 
   },
   SHOTGUN_UPG: { 
     key: "SHOTGUN_UPG", name: "The Boomstick", shootSound: 'shoot_shotgun', damage: 48, maxAmmo: 16, fireRate: 0.54, isAutomatic: true, reloadDuration: 1.45, recoilZ: 0.12, recoilY: 0.04, cameraKick: 0.04, 
-    basePos: new THREE.Vector3(0.24, -0.19, -0.43), adsPos: new THREE.Vector3(0.0, -0.145, -0.285), isUpgraded: true, 
-    buildMesh: () => clone3DAsset(
-      ASSETS.weapons.shotgun, 
-      new THREE.Vector3(0.0009, 0.0009, 0.0009), 
-      0xaa00ff, 
-      new THREE.Vector3(0, Math.PI, 0), 
-      new THREE.Vector3(0, -0.05, -0.15),
-      { left: new THREE.Vector3(-0.06, -0.05, -0.2), right: new THREE.Vector3(0.018, -0.082, -0.005) }
-    ) 
+    basePos: new THREE.Vector3(0.260, -0.230, -0.690), adsPos: new THREE.Vector3(0.000, -0.148, -0.520), baseRot: new THREE.Vector3(-0.055, -0.105, 0.030), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true, 
+    buildMesh: () => buildShotgunViewmodel(true) 
+  },
+  SNIPER: {
+    key: "SNIPER", name: "Longshot Sniper", shootSound: 'shoot_rifle', damage: 155, maxAmmo: 5, fireRate: 1.15, isAutomatic: false, reloadDuration: 2.40, recoilZ: 0.20, recoilY: 0.07, cameraKick: 0.075,
+    basePos: new THREE.Vector3(0.285, -0.245, -0.790), adsPos: new THREE.Vector3(0.000, -0.190, -0.760), baseRot: new THREE.Vector3(-0.052, -0.085, 0.026), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: false,
+    buildMesh: () => buildSniperViewmodel(false)
+  },
+  SNIPER_UPG: {
+    key: "SNIPER_UPG", name: "Khadija's Judgment", shootSound: 'shoot_rifle', damage: 320, maxAmmo: 10, fireRate: 0.92, isAutomatic: false, reloadDuration: 1.85, recoilZ: 0.16, recoilY: 0.055, cameraKick: 0.060,
+    basePos: new THREE.Vector3(0.285, -0.245, -0.790), adsPos: new THREE.Vector3(0.000, -0.190, -0.760), baseRot: new THREE.Vector3(-0.052, -0.085, 0.026), adsRot: new THREE.Vector3(0.000, 0.000, 0.000), isUpgraded: true,
+    buildMesh: () => buildSniperViewmodel(true)
   }
+
 };
 
 // ── C4 WEAPON BALANCE / UPGRADE TUNING ──
@@ -596,13 +723,16 @@ const WEAPON_BALANCE = Object.freeze({
   PISTOL: { reserveMags: 5, falloffStart: 20, falloffEnd: 36, minDamageScale: 0.62, headshotMult: 2.35, pellets: 1, upgradedPellets: 1 },
   RIFLE: { reserveMags: 4, falloffStart: 34, falloffEnd: 58, minDamageScale: 0.76, headshotMult: 2.10, pellets: 1, upgradedPellets: 1 },
   SMG: { reserveMags: 4, falloffStart: 17, falloffEnd: 34, minDamageScale: 0.56, headshotMult: 1.85, pellets: 1, upgradedPellets: 1 },
-  SHOTGUN: { reserveMags: 4, falloffStart: 6.5, falloffEnd: 18, minDamageScale: 0.30, headshotMult: 1.45, pellets: 9, upgradedPellets: 12, pelletSpread: 0.052, upgradedPelletSpread: 0.044 }
+  SHOTGUN: { reserveMags: 4, falloffStart: 6.5, falloffEnd: 18, minDamageScale: 0.30, headshotMult: 1.45, pellets: 9, upgradedPellets: 12, pelletSpread: 0.052, upgradedPelletSpread: 0.044 },
+  SNIPER: { reserveMags: 4, falloffStart: 52, falloffEnd: 92, minDamageScale: 0.88, headshotMult: 3.25, pellets: 1, upgradedPellets: 1 }
 });
 
+// C9.7: sniper is Mystery Box-only. Weights sum to 1.00.
 const MYSTERY_BOX_WEAPON_POOL = Object.freeze([
-  { key: 'SMG', weight: 0.42 },
-  { key: 'RIFLE', weight: 0.34 },
-  { key: 'SHOTGUN', weight: 0.24 }
+  { key: 'SMG', weight: 0.30 },
+  { key: 'RIFLE', weight: 0.32 },
+  { key: 'SHOTGUN', weight: 0.25 },
+  { key: 'SNIPER', weight: 0.13 }
 ]);
 
 function getWeaponFamily(weapon) {
@@ -691,96 +821,8 @@ function getHeadshotMultiplier(weapon) {
 }
 
 // ── 3D CLONING ENGINE ──
-function clone3DAsset(originalScene, scaleVec, upgradeGlowColor = null, rotationOffset = null, positionOffset = null, handOffsets = null, forceCenter = false) {
-  const group = new THREE.Group();
-  
-  if (!originalScene) {
-    const fallback = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.8), new THREE.MeshStandardMaterial({ color: upgradeGlowColor || 0x555555 }));
-    group.add(fallback);
-    return group;
-  }
+// C9.6: clone3DAsset removed for active weapons. Weapon visuals now come from procedural modules.
 
-  const modelClone = originalScene.clone();
-
-  if (forceCenter) {
-    modelClone.traverse((child) => {
-      if (child.isMesh && child.geometry) {
-        child.geometry.computeBoundingBox();
-        const centerOffset = new THREE.Vector3();
-        child.geometry.boundingBox.getCenter(centerOffset);
-        child.geometry.translate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
-      }
-    });
-  }
-
-  modelClone.scale.copy(scaleVec);
-  
-  if (rotationOffset) {
-    modelClone.rotation.set(rotationOffset.x, rotationOffset.y, rotationOffset.z);
-  } else {
-    modelClone.rotation.y = Math.PI; 
-  }
-
-  if (positionOffset) {
-    modelClone.position.copy(positionOffset);
-  }
-
-  if (upgradeGlowColor !== null) {
-    modelClone.traverse((child) => {
-      if (child.isMesh) {
-        child.material = new THREE.MeshStandardMaterial({ color: upgradeGlowColor, emissive: upgradeGlowColor, emissiveIntensity: 0.6, roughness: 0.2 });
-      }
-    });
-  } else {
-    modelClone.traverse((child) => {
-      if (child.isMesh && child.material) {
-        child.material.metalness = 0.1; 
-        child.material.roughness = 0.5;
-        child.castShadow = false;       
-        child.receiveShadow = false;
-      }
-    });
-  }
-
-  group.add(modelClone);
-
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c, roughness: 0.8 });
-  const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.08), skinMat);
-  const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.08), skinMat);
-
-  leftHand.userData.isProceduralHand = true;
-  rightHand.userData.isProceduralHand = true;
-
-  if (handOffsets) {
-    leftHand.position.copy(handOffsets.left);
-    rightHand.position.copy(handOffsets.right);
-    if (handOffsets.leftScale) leftHand.scale.copy(handOffsets.leftScale);
-    if (handOffsets.rightScale) rightHand.scale.copy(handOffsets.rightScale);
-  } else {
-    leftHand.position.set(0.06, -0.02, 0.1);    
-    rightHand.position.set(-0.02, -0.06, 0.25); 
-  }
-
-  // Short pistol viewmodels can reveal a detached procedural hand during sprint bob.
-  // Long guns keep both hands; pistol can keep its normal hand and hide it only while sprinting.
-  if (handOffsets?.hideLeft === true) {
-    leftHand.visible = false;
-  }
-
-  if (handOffsets?.hideRight === true) {
-    rightHand.visible = false;
-  }
-
-  leftHand.userData.defaultVisible = leftHand.visible;
-  rightHand.userData.defaultVisible = rightHand.visible;
-
-  if (handOffsets?.hideHandsWhileSprinting === true) {
-    group.userData.hideProceduralHandsWhileSprinting = true;
-  }
-
-  group.add(leftHand, rightHand);
-  return group;
-}
 
 export function getActiveWeapon() { return player.inventory[player.currentWeaponIdx]; }
 
@@ -811,18 +853,16 @@ export function buildGun() {
 // ── SPAWN PROCEDURAL SHOPS ──
   const gameplayPoints = getCurrentGameplayPoints();
 
-  spawnShop('AMMO', pickSafeShopSpawn(null, gameplayPoints.AMMO_SPAWNS, 'AMMO'));
-  spawnShop('MYSTERY_BOX', pickSafeShopSpawn(null, gameplayPoints.BOX_SPAWNS, 'MYSTERY_BOX'));
-  spawnShop('HEALTH', pickSafeShopSpawn(null, gameplayPoints.HEALTH_SPAWNS, 'HEALTH'));
-  spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS, 'UPGRADE'));
-  spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS, 'PERK_HEALTH')); // Juggernog
-  spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS, 'PERK_RELOAD')); // Speed Cola
+  spawnShop('AMMO', pickSafeShopSpawn(null, gameplayPoints.AMMO_SPAWNS));
+  spawnShop('MYSTERY_BOX', pickSafeShopSpawn(null, gameplayPoints.BOX_SPAWNS));
+  spawnShop('HEALTH', pickSafeShopSpawn(null, gameplayPoints.HEALTH_SPAWNS));
+  spawnShop('UPGRADE', pickSafeShopSpawn(null, gameplayPoints.UPGRADE_SPAWNS));
+  spawnShop('PERK_HEALTH', pickSafeShopSpawn(null, gameplayPoints.PERK_HEALTH_SPAWNS)); // Juggernog
+  spawnShop('PERK_RELOAD', pickSafeShopSpawn(null, gameplayPoints.PERK_RELOAD_SPAWNS)); // Speed Cola
 
   // ── WALL BUYS ──
   spawnShop('WALL_SMG', getShopPlacement('WALL_SMG', null, gameplayPoints.WALL_SPAWNS));
   spawnShop('WALL_SHOTGUN', getShopPlacement('WALL_SHOTGUN', null, gameplayPoints.WALL_SPAWNS));
-
-  console.table(getActiveShopDebugSummary());
   }
 
 function spawnShop(type, placementInput) {
@@ -884,12 +924,46 @@ function spawnShop(type, placementInput) {
     const chalkMesh = getHologramMesh(wKey);
     chalkMesh.position.z = 0.15; 
     chalkMesh.position.y = mountY;
-    chalkMesh.scale.z = 0.001; // Flatten it completely against the blackboard!
-    
+
+    // C9.7 axis fix:
+    // Procedural weapons are long on local Z. For wall-buy boards, rotate local Z
+    // onto the board's X axis, then flatten local X depth only.
+    // Do NOT flatten local Z or the gun becomes a thin glowing vertical strip.
+    if (wKey === 'SMG' || wKey === 'SHOTGUN') {
+      chalkMesh.rotation.y = Math.PI / 2;
+      chalkMesh.position.z = 0.13;
+      chalkMesh.position.x = wKey === 'SHOTGUN' ? -0.03 : 0.0;
+      chalkMesh.scale.x *= 0.001;
+      chalkMesh.scale.y *= wKey === 'SHOTGUN' ? 1.05 : 1.10;
+      chalkMesh.scale.z *= wKey === 'SHOTGUN' ? 1.22 : 1.35;
+    } else {
+      chalkMesh.scale.z = 0.001; // Default flat board silhouette.
+    }
+
+    const chalkMat = new THREE.MeshBasicMaterial({
+      color: 0xb8c7d2,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      toneMapped: false
+    });
+
     chalkMesh.traverse(child => {
-      if (child.isMesh) {
-        child.material = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+      if (!child.isMesh) return;
+
+      // Keep the wall-buy readable without the old pure-white bloom blob.
+      if (
+        child.name === 'muzzleFlashMesh' ||
+        child.userData?.isProceduralHand ||
+        child.name.includes('ejected_shell') ||
+        child.name.includes('reload_shell')
+      ) {
+        child.visible = false;
+        return;
       }
+
+      child.material = chalkMat;
     });
 
     board.position.y = mountY;
@@ -911,6 +985,7 @@ function announceWeaponEquipped(weapon) {
 }
 
 function equipWeapon(idx) {
+  clearScopedPresentation();
   player.inventory.forEach(w => { if(w.meshGroup.parent) camera.remove(w.meshGroup); w.meshGroup.visible = false; });
   player.currentWeaponIdx = idx;
   const active = getActiveWeapon();
@@ -954,7 +1029,11 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         return;
       }
 
-      setInteractionPrompt(true, `Press [E] to repair barricade (+${ECONOMY.BARRICADE_REPAIR_SCORE} PTS)`);
+      const repairReward = getBarricadeRepairReward();
+      const repairPrompt = repairReward > 0
+        ? `Press [E] to repair barricade (+${repairReward} PTS)`
+        : `Press [E] to repair barricade (round repair points capped)`;
+      setInteractionPrompt(true, repairPrompt);
 
       if (shouldHandleInteraction(checkInteractionPressed)) {
         closestBarricade.cooldown = ECONOMY.BARRICADE_REPAIR_COOLDOWN;
@@ -965,15 +1044,16 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         closestBarricade.currentPlanks++;
         updateBarricadeRepairGhost(closestBarricade);
 
-        // Reward score progression
-        player.score += ECONOMY.BARRICADE_REPAIR_SCORE;
-        updateScoreHUD(player.score);
-        spawnFloatingScore(ECONOMY.BARRICADE_REPAIR_SCORE, false);
-        playWorldSound('plankRepair', 0.58, true, { cooldownKey: 'plank_repair', cooldownMs: 170, pitchMin: 0.92, pitchMax: 1.12 });
+        // Reward score progression with anti-farm round cap.
+        const pointsAwarded = getBarricadeRepairReward();
+        addBarricadeRepairReward(pointsAwarded);
+        playWorldSound('plankRepair', 0.48, true, { cooldownKey: 'plank_repair', cooldownMs: 260, pitchMin: 0.92, pitchMax: 1.12 });
         showShopFeedback({
           title: 'BARRICADE REPAIRED',
-          body: `+${ECONOMY.BARRICADE_REPAIR_SCORE} points · ${closestBarricade.currentPlanks}/${closestBarricade.maxPlanks} planks restored`,
-          tone: 'ready',
+          body: pointsAwarded > 0
+            ? `+${pointsAwarded} points · ${closestBarricade.currentPlanks}/${closestBarricade.maxPlanks} planks restored`
+            : `Plank restored · round repair points capped`,
+          tone: pointsAwarded > 0 ? 'ready' : 'warning',
           durationMs: 1300
         });
 
@@ -1332,6 +1412,11 @@ const WEAPON_FEEL = Object.freeze({
     screenShake: 0.19, cameraKick: 0.048, yawKick: 0.020, gunPitch: -0.125, gunRoll: 0.035,
     recoilZ: 0.150, recoilY: 0.050, muzzleIntensity: 7.2, muzzleTime: 0.105, flashTime: 0.055, flashScale: 1.45,
     smokePower: 1.55, soundVolume: 1.0, pitchMin: 0.86, pitchMax: 0.98, crosshairBase: 28, crosshairKick: 24, impactPower: 1.55, adsRecoilMultiplier: 0.64, pelletSpread: 0.048
+  },
+  SNIPER: {
+    screenShake: 0.26, cameraKick: 0.070, yawKick: 0.030, gunPitch: -0.165, gunRoll: 0.045,
+    recoilZ: 0.200, recoilY: 0.062, muzzleIntensity: 8.2, muzzleTime: 0.130, flashTime: 0.062, flashScale: 1.55,
+    smokePower: 1.35, soundVolume: 0.92, pitchMin: 0.78, pitchMax: 0.92, crosshairBase: 20, crosshairKick: 32, impactPower: 1.75, adsRecoilMultiplier: 0.55
   }
 });
 
@@ -1477,10 +1562,13 @@ function castFromCamera(offset, targets) {
 }
 
 export function resetGunState() {
+  clearScopedPresentation();
   fireCooldown = 0;
   muzzleT = 0;
   flashVisibleT = 0;
   lastInteractionUseAt = 0;
+  barricadeRepairScoreThisRound = 0;
+  barricadeRepairScoreWave = currentWave;
   _lastDryFireAt = 0;
   _recoilZ = 0;
   _recoilY = 0;
@@ -1686,7 +1774,6 @@ export function processReloadTick(dt) {
     if (reloadWrap) reloadWrap.style.display = 'none';
 
     updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
-    playUISound('equip', 0.12, true, { cooldownKey: 'reload_complete_tick', cooldownMs: 160, pitchMin: 1.05, pitchMax: 1.15 });
   }
 }
 
@@ -1694,6 +1781,8 @@ export function processReloadTick(dt) {
 let _recoilZ = 0, _recoilY = 0, _recoilPitch = 0, _recoilYaw = 0, _recoilRoll = 0, bobT = 0; 
 const _currentGunTarget = new THREE.Vector3();
 const _gunPoseTarget = new THREE.Vector3();
+const _gunRotTarget = new THREE.Vector3();
+const _zeroGunRot = new THREE.Vector3();
 
 export function updateGun(dt, keys, isMoving) {
   if (player.instaKillTimer > 0) player.instaKillTimer = Math.max(0, player.instaKillTimer - dt);
@@ -1701,14 +1790,96 @@ export function updateGun(dt, keys, isMoving) {
 
   const w = getActiveWeapon();
   updateCombatStatusHUD(player, w);
-  if (!w) return;
+  if (!w) {
+    clearScopedPresentation();
+    return;
+  }
 
   updateProceduralHandVisibility(w);
+
+  const sniperScopeActive = Boolean(
+    player.isADS &&
+    w.meshGroup?.userData?.isProceduralWeapon &&
+    w.meshGroup.userData.weaponFamily === 'SNIPER'
+  );
+
+  player.currentADSFOV = sniperScopeActive ? sniperScopeFOV : null;
+  setSniperScopeOverlayVisible(sniperScopeActive);
+
+  // The scope overlay provides the view. Hide the weapon model while scoped.
+  if (w.meshGroup) w.meshGroup.visible = !sniperScopeActive;
 
   if (fireCooldown > 0) fireCooldown -= dt;
 
   const targetPos = _gunPoseTarget.copy(player.isADS ? w.adsPos : w.basePos);
-  const targetRot = new THREE.Vector3(0, 0, 0);
+  const targetRot = _gunRotTarget.copy(player.isADS ? (w.adsRot || _zeroGunRot) : (w.baseRot || _zeroGunRot));
+
+  if (!player.isADS && w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'PISTOL') {
+    const wideFovT = THREE.MathUtils.clamp(((player.baseFOV || 82) - 82) / 18, 0, 1);
+
+    // C9.2 micro 6: Micro5 had the right anchored direction, but was pushed
+    // slightly too far down/right at 100 FOV. Pull it back toward the screen
+    // just enough while keeping the bottom-right FPS pistol feel.
+    targetPos.x += wideFovT * 0.175;
+    targetPos.y -= wideFovT * 0.385;
+    targetPos.z += wideFovT * 0.075;
+
+    // Keep forward-facing. Only tiny pose correction at high FOV.
+    targetRot.x -= wideFovT * 0.008;
+    targetRot.y -= wideFovT * 0.012;
+    targetRot.z += wideFovT * 0.008;
+  }
+
+  if (!player.isADS && w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SMG') {
+    const wideFovT = THREE.MathUtils.clamp(((player.baseFOV || 82) - 82) / 18, 0, 1);
+
+    // C9.4: keep procedural SMG anchored lower-right at wide FOV without
+    // turning it away from the crosshair.
+    targetPos.x += wideFovT * 0.145;
+    targetPos.y -= wideFovT * 0.255;
+    targetPos.z += wideFovT * 0.045;
+
+    targetRot.x -= wideFovT * 0.010;
+    targetRot.y -= wideFovT * 0.015;
+    targetRot.z += wideFovT * 0.010;
+  }
+
+  if (!player.isADS && w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'RIFLE') {
+    const wideFovT = THREE.MathUtils.clamp(((player.baseFOV || 82) - 82) / 18, 0, 1);
+
+    targetPos.x += wideFovT * 0.150;
+    targetPos.y -= wideFovT * 0.285;
+    targetPos.z += wideFovT * 0.050;
+
+    targetRot.x -= wideFovT * 0.010;
+    targetRot.y -= wideFovT * 0.012;
+    targetRot.z += wideFovT * 0.010;
+  }
+
+  if (!player.isADS && w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SHOTGUN') {
+    const wideFovT = THREE.MathUtils.clamp(((player.baseFOV || 82) - 82) / 18, 0, 1);
+
+    targetPos.x += wideFovT * 0.160;
+    targetPos.y -= wideFovT * 0.300;
+    targetPos.z += wideFovT * 0.045;
+
+    targetRot.x -= wideFovT * 0.012;
+    targetRot.y -= wideFovT * 0.012;
+    targetRot.z += wideFovT * 0.012;
+  }
+
+
+  if (!player.isADS && w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SNIPER') {
+    const wideFovT = THREE.MathUtils.clamp(((player.baseFOV || 82) - 82) / 18, 0, 1);
+
+    targetPos.x += wideFovT * 0.170;
+    targetPos.y -= wideFovT * 0.315;
+    targetPos.z += wideFovT * 0.055;
+
+    targetRot.x -= wideFovT * 0.012;
+    targetRot.y -= wideFovT * 0.012;
+    targetRot.z += wideFovT * 0.012;
+  }
 
   if (w.reloading) {
     const totalTime = w.reloadDuration * player.reloadMult;
@@ -1721,11 +1892,80 @@ export function updateGun(dt, keys, isMoving) {
     targetPos.x += dip * 0.1;
     targetPos.z += dip * 0.05;
 
-    targetRot.z = dip * (Math.PI / 4); 
-    targetRot.x = dip * (Math.PI / 6); 
-    targetRot.y = twist * 0.08;        
+    if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'PISTOL') {
+      updateProceduralPistolReloadParts(w, progress);
+
+      targetRot.z += dip * 0.22;
+      targetRot.x += dip * 0.18;
+      targetRot.y += twist * 0.04;
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SMG') {
+      updateProceduralSMGReloadParts(w, progress);
+
+      targetRot.z += dip * 0.18;
+      targetRot.x += dip * 0.15;
+      targetRot.y += twist * 0.035;
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'RIFLE') {
+      updateProceduralRifleReloadParts(w, progress);
+
+      targetRot.z += dip * 0.19;
+      targetRot.x += dip * 0.15;
+      targetRot.y += twist * 0.035;
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SHOTGUN') {
+      updateProceduralShotgunReloadParts(w, progress);
+
+      targetRot.z += dip * 0.21;
+      targetRot.x += dip * 0.17;
+      targetRot.y += twist * 0.040;
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SNIPER') {
+      updateProceduralSniperReloadParts(w, progress);
+
+      targetRot.z += dip * 0.23;
+      targetRot.x += dip * 0.18;
+      targetRot.y += twist * 0.042;
+    } else {
+      targetRot.z += dip * (Math.PI / 4);
+      targetRot.x += dip * (Math.PI / 6);
+      targetRot.y += twist * 0.08;
+    }        
   } 
-  else if (isMoving && !player.isADS) { 
+  else {
+    if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'PISTOL') {
+      resetProceduralPistolParts(w, dt);
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SMG') {
+      resetProceduralSMGParts(w, dt);
+
+      const smgFeel = getWeaponFeel(w);
+      const firePulse = muzzleT > 0
+        ? THREE.MathUtils.clamp(muzzleT / Math.max(0.001, smgFeel.muzzleTime), 0, 1)
+        : 0;
+      updateProceduralSMGFireParts(w, firePulse);
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'RIFLE') {
+      resetProceduralRifleParts(w, dt);
+
+      const rifleFeel = getWeaponFeel(w);
+      const firePulse = muzzleT > 0
+        ? THREE.MathUtils.clamp(muzzleT / Math.max(0.001, rifleFeel.muzzleTime), 0, 1)
+        : 0;
+      updateProceduralRifleFireParts(w, firePulse);
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SHOTGUN') {
+      resetProceduralShotgunParts(w, dt);
+
+      const shotgunFeel = getWeaponFeel(w);
+      const firePulse = muzzleT > 0
+        ? THREE.MathUtils.clamp(muzzleT / Math.max(0.001, shotgunFeel.muzzleTime), 0, 1)
+        : 0;
+      updateProceduralShotgunFireParts(w, firePulse);
+    } else if (w.meshGroup?.userData?.isProceduralWeapon && w.meshGroup.userData.weaponFamily === 'SNIPER') {
+      resetProceduralSniperParts(w, dt);
+
+      const sniperFeel = getWeaponFeel(w);
+      const firePulse = muzzleT > 0
+        ? THREE.MathUtils.clamp(muzzleT / Math.max(0.001, sniperFeel.muzzleTime), 0, 1)
+        : 0;
+      updateProceduralSniperFireParts(w, firePulse);
+    }
+  }
+  if (isMoving && !player.isADS) { 
     const bobSpeed = player.isSprinting ? 11 : 7; 
     const bobAmount = player.isSprinting ? 0.025 : 0.013;
     bobT += dt * bobSpeed; 
@@ -1914,28 +2154,39 @@ export function updateShops(dt) {
   });
 }
 
-function getHologramMesh(key) {
-  let clone = null;
-  if (key === 'RIFLE' && ASSETS.weapons.rifle) {
-    clone = ASSETS.weapons.rifle.clone();
-    clone.scale.set(0.0015, 0.0015, 0.0015);
-  } else if (key === 'SMG' && ASSETS.weapons.smg) {
-    clone = ASSETS.weapons.smg.clone();
-    clone.scale.set(0.11, 0.11, 0.11);
-  } else if (key === 'SHOTGUN' && ASSETS.weapons.shotgun) {
-    clone = ASSETS.weapons.shotgun.clone();
-    clone.scale.set(0.0009, 0.0009, 0.0009);
+function getHologramMesh(weaponKey = 'RIFLE') {
+  const key = String(weaponKey || 'RIFLE').replace('_UPG', '');
+  let mesh;
+
+  if (key === 'PISTOL') {
+    mesh = createProceduralPistolMesh({ upgraded: false });
+  } else if (key === 'SMG') {
+    mesh = createProceduralSMGMesh({ upgraded: false });
+  } else if (key === 'SHOTGUN') {
+    mesh = createProceduralShotgunMesh({ upgraded: false });
+  } else if (key === 'SNIPER') {
+    mesh = createProceduralSniperMesh({ upgraded: false });
+  } else {
+    mesh = createProceduralRifleMesh({ upgraded: false });
   }
-  
-  if (!clone) return new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.6));
-  
-clone.traverse((child) => {
-    if (child.isMesh) {
-      child.material = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00aaee, emissiveIntensity: 0.8, wireframe: true });
+
+  mesh.userData.isShopHologram = true;
+  mesh.scale.setScalar(key === 'SNIPER' ? 0.86 : (key === 'SHOTGUN' ? 1.0 : 0.95));
+
+  // Keep shop previews lightweight and consistent.
+  mesh.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = false;
+    child.receiveShadow = false;
+
+    if (child.name === 'muzzleFlashMesh') {
+      child.visible = false;
     }
   });
-  return clone;
+
+  return mesh;
 }
+
 
 // ── PROCEDURAL TEDDY BEAR ──
 function getTeddyMesh() {

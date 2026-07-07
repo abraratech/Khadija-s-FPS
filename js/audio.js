@@ -47,8 +47,8 @@ const AUDIO_ROUTE_GAIN = Object.freeze({
   weapon: 1.0,
   player: 1.0,
   enemy: 0.85,
-  ui: 0.65,
-  world: 0.75
+  ui: 0.54,
+  world: 0.68
 });
 
 const AUDIO_ROUTES = Object.freeze({
@@ -68,14 +68,14 @@ const AUDIO_ROUTES = Object.freeze({
   enemy: {
     ranged: 'shoot_pistol',
     exploder: 'shoot_shotgun',
-    spore: 'hurt'
+    spore: 'hit'
   },
   ui: {
     confirm: 'hit',
     denied: 'hit',
-    equip: 'reload',
+    equip: 'hit',
     reward: 'hit',
-    warning: 'hurt',
+    warning: 'hit',
     waveStart: 'roundStart',
     waveClear: 'roundClear'
   },
@@ -263,17 +263,17 @@ export function playSound(name, volume = 1.0, randomizePitch = false, options = 
 
 function getFallbackSoundsFor(name) {
   switch (name) {
-    case 'lowHealthHeartbeat': return ['hurt'];
+    case 'lowHealthHeartbeat': return [];
     case 'woodPlankSnap': return ['hit'];
     case 'hammerNailWood': return ['hit'];
     case 'mysteryBoxOpen': return ['hit'];
     case 'rouletteSpin': return ['shoot_pistol'];
     case 'teddySqueak': return ['hit'];
-    case 'boxGunChime': return ['reload', 'hit'];
+    case 'boxGunChime': return ['hit'];
     case 'arcadeSparklePing': return ['hit'];
-    case 'perkRetroJingle': return ['reload', 'hit'];
+    case 'perkRetroJingle': return ['hit'];
     case 'electricTrapHum': return ['hit'];
-    case 'roundStart': return ['reload'];
+    case 'roundStart': return [];
     case 'roundClear': return ['hit'];
     default: return [];
   }
@@ -340,25 +340,33 @@ export function updateLowHealthHeartbeat(playerState, dt = 0.016) {
   const maxHealth = Math.max(1, Number(playerState.maxHealth) || 100);
   const healthPct = Math.max(0, Math.min(1, (Number(playerState.health) || 0) / maxHealth));
 
-  if (healthPct > 0.32) {
+  if (healthPct > 0.45) {
     heartbeatTimer = 0;
     return;
   }
 
-  const danger = 1 - (healthPct / 0.32);
-  const interval = Math.max(0.46, 1.05 - danger * 0.38);
+  const danger = 1 - (healthPct / 0.45);
+  const interval = Math.max(0.62, 1.20 - danger * 0.38);
   heartbeatTimer -= dt;
 
   if (heartbeatTimer > 0) return;
   heartbeatTimer = interval;
 
-  playPlayerSound('heartbeat', 0.16 + danger * 0.22, false, {
+  playPlayerSound('heartbeat', 0.22 + danger * 0.25, false, {
     cooldownKey: 'low_health_heartbeat',
     cooldownMs: Math.round(interval * 820),
     playbackRate: 0.88 + danger * 0.16
   });
 }
 
+
+
+if (typeof window !== 'undefined') {
+  window.KAPlayHeartbeatTest = () => playPlayerSound('heartbeat', 0.55, false, {
+    cooldownKey: `heartbeat_test_${Date.now()}`,
+    cooldownMs: 0
+  });
+}
 
 // Called on the PLAY button click
 export function initAudio() {

@@ -391,7 +391,7 @@ function announceWaveStart(waveNumber) {
   const briefing = getWaveBriefing(waveNumber);
   const color = isSpecialRound ? '#ff6633' : '#00d4ff';
 
-  playUISound(isSpecialRound ? 'warning' : 'waveStart', isSpecialRound ? 0.34 : 0.48, true, {
+  playUISound(isSpecialRound ? 'warning' : 'waveStart', isSpecialRound ? 0.18 : 0.48, true, {
     cooldownKey: 'wave_start',
     cooldownMs: 1400,
     pitchMin: isSpecialRound ? 0.86 : 0.96,
@@ -611,7 +611,7 @@ function announceEnemyVariant(config) {
     : config.announce;
 
   showStatusToast(message, config.radarColor || '#ffaa00', isFirstSightThisRun ? 2300 : 1600);
-  playUISound('warning', config.name === "GOLIATH" ? 0.75 : 0.42, true, {
+  playUISound('warning', config.name === "GOLIATH" ? 0.24 : 0.16, true, {
     cooldownKey: `enemy_variant_${config.name}`,
     cooldownMs: 1500
   });
@@ -1041,7 +1041,7 @@ else {
     if (campWarningTimer > 4.0) { // 4 seconds of standing on a box
       damagePlayer(15, null);
       flashWaveBanner("WARNING: TOXIC SPORES! KEEP MOVING!", 1000);
-      playEnemySound('spore', 0.45, false, { cooldownKey: 'toxic_spores', cooldownMs: 700 });
+      playEnemySound('spore', 0.16, true, { cooldownKey: 'toxic_spores', cooldownMs: 1100, pitchMin: 0.72, pitchMax: 0.90 });
       campWarningTimer = 3.0; // Ticks damage every 1 second until they jump down
     }
   } else {
@@ -1056,7 +1056,7 @@ export function killEnemy(e) {
   
   if (e.type === "EXPLODER") {
     addScreenShake(0.6); 
-    playEnemySound('exploder', 1.0, true, { cooldownKey: 'enemy_exploder', cooldownMs: 120 }); 
+    playEnemySound('exploder', 0.72, true, { cooldownKey: 'enemy_exploder', cooldownMs: 180, pitchMin: 0.88, pitchMax: 1.02 }); 
     
     const pool = explosionPool;
     const ex = pool.items[pool.index];

@@ -430,3 +430,141 @@
 #shop-feedback-panel {
   backdrop-filter: blur(4px);
 }
+
+
+/* ── C9.7 SNIPER SCOPE OVERLAY ── */
+.sniper-scope-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  z-index: 46;
+  overflow: hidden;
+}
+
+.sniper-scope-overlay.active {
+  display: block;
+}
+
+.sniper-scope-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center,
+      rgba(0, 0, 0, 0.00) 0 18%,
+      rgba(0, 0, 0, 0.10) 20%,
+      rgba(0, 0, 0, 0.72) 23%,
+      rgba(0, 0, 0, 0.96) 24.5%,
+      rgba(0, 0, 0, 0.985) 43%,
+      #000 62%);
+}
+
+.sniper-scope-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(64vh, 64vw);
+  height: min(64vh, 64vw);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid rgba(12, 16, 18, 0.98);
+  box-shadow:
+    0 0 0 2px rgba(120, 150, 160, 0.32),
+    0 0 44px rgba(0, 212, 255, 0.10),
+    inset 0 0 34px rgba(0, 0, 0, 0.44);
+}
+
+.sniper-scope-line {
+  position: absolute;
+  background: rgba(8, 10, 10, 0.95);
+  box-shadow: 0 0 4px rgba(255, 255, 255, 0.18);
+}
+
+.sniper-scope-line-v-top {
+  left: 50%;
+  top: 18%;
+  width: 2px;
+  height: 31.5%;
+  transform: translateX(-50%);
+}
+
+.sniper-scope-line-v-bottom {
+  left: 50%;
+  top: 50.5%;
+  width: 2px;
+  height: 31.5%;
+  transform: translateX(-50%);
+}
+
+.sniper-scope-line-h-left {
+  left: 18%;
+  top: 50%;
+  width: 31.5%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.sniper-scope-line-h-right {
+  left: 50.5%;
+  top: 50%;
+  width: 31.5%;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.sniper-scope-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(4, 6, 6, 0.96);
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.20);
+}
+
+.sniper-scope-range-ticks {
+  position: absolute;
+  left: 50%;
+  top: 50.5%;
+  width: 2px;
+  height: 17%;
+  transform: translateX(-50%);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 14px,
+      rgba(8, 10, 10, 0.92) 14px 16px
+    );
+}
+
+.sniper-scope-zoom-label {
+  position: absolute;
+  left: 50%;
+  bottom: 18%;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border: 1px solid rgba(0, 212, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(0, 8, 14, 0.52);
+  color: rgba(217, 248, 255, 0.78);
+  font-family: sans-serif;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-shadow: 1px 1px 2px #000;
+}
+
+@media (max-width: 760px) {
+  .sniper-scope-ring {
+    width: min(78vh, 78vw);
+    height: min(78vh, 78vw);
+  }
+
+  .sniper-scope-zoom-label {
+    bottom: 14%;
+  }
+}
+

@@ -22,6 +22,7 @@
 - Mystery Box system
 - Wall-buy weapons
 - Pack-a-Punch weapon upgrades
+- Procedural weapon system for pistol, SMG, assault rifle, and shotgun
 - Perks:
   - Juggernog
   - Speed Cola
@@ -30,6 +31,21 @@
 - Electric traps
 - Minimap enemy indicators
 - Pause, death screen, and demo-flow polish
+
+## Procedural Weapons Milestone
+
+The active demo weapon set has moved from weapon GLB viewmodels to procedural ES-module weapons:
+
+- Starting Pistol
+- Tactical SMG
+- Assault Rifle
+- Pump Shotgun
+
+Each weapon now lives in its own module under `js/weapons/`, with shared helpers in `js/weapons/procedural_helpers.js`.
+
+Active weapon GLB preloads for pistol, SMG, rifle, and shotgun have been removed from `js/main.js`. Mystery Box previews and wall-buy chalk outlines now use procedural weapon meshes instead of GLB weapon models.
+
+Sniper remains planned as a future Mystery Box-only weapon after the current procedural weapon baseline is fully stabilized.
 
 ## Recommended Demo Test
 

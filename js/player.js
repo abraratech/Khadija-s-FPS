@@ -60,7 +60,7 @@ export const player = {
   instaKillTimer: 0, doublePointsTimer: 0,
   inventory: [], currentWeaponIdx: 0,
   baseSpeed: 9.5, sprintSpeed: 15.0, adsSpeed: 4.5,
-  baseFOV: initialBaseFOV, adsFOV: computeAdsFov(initialBaseFOV),
+  baseFOV: initialBaseFOV, adsFOV: computeAdsFov(initialBaseFOV), currentADSFOV: null,
   lookSensitivityPercent: initialMouseSensitivity,
   isSprinting: false, isADS: false
 };
@@ -100,7 +100,8 @@ export function updatePlayer(dt, keys, mdx, mdy) {
 
   if (_mv.lengthSq() > 0) { _mv.normalize(); _mv.multiplyScalar(currentSpeed); }
 
-  const targetFOV = player.isADS ? player.adsFOV : (player.isSprinting && currentSpeed === player.sprintSpeed ? player.baseFOV + 10 : player.baseFOV);
+  const activeAdsFov = Number.isFinite(player.currentADSFOV) ? player.currentADSFOV : player.adsFOV;
+  const targetFOV = player.isADS ? activeAdsFov : (player.isSprinting && currentSpeed === player.sprintSpeed ? player.baseFOV + 10 : player.baseFOV);
   camera.fov = THREE.MathUtils.lerp(camera.fov, targetFOV, dt * 10);
   camera.updateProjectionMatrix();
 
@@ -204,7 +205,8 @@ export function setBaseFOV(value) {
 
   saveStoredNumber(PLAYER_FOV_KEY, next);
 
-  camera.fov = player.isADS ? player.adsFOV : player.baseFOV;
+  const activeAdsFov = Number.isFinite(player.currentADSFOV) ? player.currentADSFOV : player.adsFOV;
+  camera.fov = player.isADS ? activeAdsFov : player.baseFOV;
   camera.updateProjectionMatrix();
 
   return next;

@@ -54,6 +54,12 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
+import {
+  initializeMultiplayerFoundation,
+  beginMultiplayerRun,
+  endMultiplayerRun,
+  syncMultiplayerLocalPlayer
+} from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -82,6 +88,7 @@ function purgePublicDebugSurfaces() {
 }
 
 purgePublicDebugSurfaces();
+initializeMultiplayerFoundation(player);
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
 let usePostProcessing = true;
@@ -865,6 +872,12 @@ async function beginRun({ fromRespawn = false } = {}) {
 
     difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
 
+    beginMultiplayerRun({
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      fromRespawn
+    });
+
     resetAIDirectorRun({
       mapId: chosenMap,
       difficulty: difficultyMultiplier
@@ -903,6 +916,7 @@ async function beginRun({ fromRespawn = false } = {}) {
 }
 
 function returnToMenu(source = 'pause') {
+  endMultiplayerRun({ reason: source, player });
   finalizeCurrentRun(source);
   saveRunRecords();
   endAIDirectorRun();
@@ -1026,6 +1040,7 @@ const frameStart = performance.now();
 let mark = frameStart;
 
 updatePlayer(dt, frameKeys, mdx, mdy);
+syncMultiplayerLocalPlayer(player, performance.now());
 updateLowHealthHeartbeat(player, dt);
 
 updateAIDirector(dt, {
@@ -1095,6 +1110,7 @@ processReloadTick(dt);
 const effectsMs = performance.now() - mark;
 
     if (!player.alive && gs === 'playing') {
+    endMultiplayerRun({ reason: 'death', player });
     endAIDirectorRun();
     finalizeCurrentRun('DEATH');
     endMapGameplay();

@@ -1,12 +1,14 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_PROTOCOL_VERSION = 1;
+export const MULTIPLAYER_PROTOCOL_VERSION = 2;
 
 export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   INPUT_COMMAND: 'input-command',
   GAMEPLAY_ACTION: 'gameplay-action',
   PLAYER_SNAPSHOT: 'player-snapshot',
   ROOM_STATE: 'room-state',
+  WORLD_SNAPSHOT: 'world-snapshot',
+  ENEMY_HIT_REQUEST: 'enemy-hit-request',
   HEARTBEAT: 'heartbeat'
 });
 

@@ -17,7 +17,9 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   LOCAL_ACTION_SENT: 'multiplayer:local-action-sent',
   REMOTE_COMMAND_RECEIVED: 'multiplayer:remote-command-received',
   REMOTE_ACTION_RECEIVED: 'multiplayer:remote-action-received',
-  REMOTE_SNAPSHOT_RECEIVED: 'multiplayer:remote-snapshot-received'
+  REMOTE_SNAPSHOT_RECEIVED: 'multiplayer:remote-snapshot-received',
+  REMOTE_WORLD_SNAPSHOT_RECEIVED: 'multiplayer:remote-world-snapshot-received',
+  REMOTE_ENEMY_HIT_RECEIVED: 'multiplayer:remote-enemy-hit-received'
 });
 
 function nowMs() {
@@ -50,6 +52,8 @@ export class MultiplayerRuntime {
     this.localPlayerId = null;
     this.snapshotSequence = 0;
     this.roomSequence = 0;
+    this.worldSequence = 0;
+    this.hitSequence = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -58,7 +62,11 @@ export class MultiplayerRuntime {
       envelopesAccepted: 0,
       envelopesRejected: 0,
       loopbackIgnored: 0,
-      staleSnapshotsRejected: 0
+      staleSnapshotsRejected: 0,
+      worldSnapshotsSent: 0,
+      worldSnapshotsReceived: 0,
+      hitRequestsSent: 0,
+      hitRequestsReceived: 0
     };
   }
 
@@ -116,6 +124,8 @@ export class MultiplayerRuntime {
     const run = sessionSnapshot?.run || null;
     this.commandStream.beginRun(run?.runId || null);
     this.snapshotSequence = 0;
+    this.worldSequence = 0;
+    this.hitSequence = 0;
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -187,6 +197,32 @@ export class MultiplayerRuntime {
       { state },
       this.snapshotSequence
     );
+  }
+
+  sendWorldSnapshot(snapshot) {
+    if (!this.initialized || !this.session?.run?.active || !snapshot) return null;
+    this.worldSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.WORLD_SNAPSHOT,
+      snapshot,
+      this.worldSequence
+    );
+    this.metrics.worldSnapshotsSent += 1;
+    return envelope;
+  }
+
+  sendEnemyHitRequest(hit) {
+    if (!this.initialized || !this.session?.run?.active || !hit?.enemyId) {
+      return null;
+    }
+    this.hitSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.ENEMY_HIT_REQUEST,
+      hit,
+      this.hitSequence
+    );
+    this.metrics.hitRequestsSent += 1;
+    return envelope;
   }
 
   sendRoomState() {
@@ -266,8 +302,6 @@ export class MultiplayerRuntime {
       const receivedAt = nowMs();
       const result = this.remoteSnapshots.push(envelope.playerId, {
         sequence: envelope.sequence,
-        // Remote performance.now() clocks are not comparable. Place snapshots
-        // on the local receive timeline before interpolation.
         sentAt: receivedAt,
         receivedAt,
         state: envelope.payload?.state
@@ -284,6 +318,24 @@ export class MultiplayerRuntime {
       }
 
       return result;
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.WORLD_SNAPSHOT) {
+      this.metrics.worldSnapshotsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_WORLD_SNAPSHOT_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.ENEMY_HIT_REQUEST) {
+      this.metrics.hitRequestsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ENEMY_HIT_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
     }
 
     if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.INPUT_COMMAND) {

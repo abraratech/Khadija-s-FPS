@@ -7,11 +7,13 @@ import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime } from './runtime.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
+import { SharedWorldManager } from './shared_world.js';
 
 let sessionRef = null;
 let runLauncher = null;
 let pendingOnlineRun = null;
 let remotePlayerManager = null;
+let sharedWorldManager = null;
 let lobbyController = null;
 
 export const multiplayerEvents = new MultiplayerEventBus({
@@ -56,7 +58,13 @@ export function registerMultiplayerRunLauncher(launcher) {
   runLauncher = launcher;
 }
 
-export function initializeMultiplayerFoundation(player, { scene = null } = {}) {
+export function initializeMultiplayerFoundation(
+  player,
+  {
+    scene = null,
+    worldAdapter = null
+  } = {}
+) {
   if (initialized) return getMultiplayerFoundationSnapshot();
 
   const playerId = localPlayerId();
@@ -77,6 +85,15 @@ export function initializeMultiplayerFoundation(player, { scene = null } = {}) {
     localPlayerId: playerId
   });
 
+  sharedWorldManager = new SharedWorldManager({
+    scene,
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    adapter: worldAdapter
+  });
+
   lobbyController = new MultiplayerLobbyController({
     eventBus: multiplayerEvents,
     transport: multiplayerTransport,
@@ -89,7 +106,7 @@ export function initializeMultiplayerFoundation(player, { scene = null } = {}) {
       if (typeof runLauncher === 'function') {
         runLauncher(start);
       } else {
-        console.error('[M2] Multiplayer run launcher has not been registered.');
+        console.error('[M3] Multiplayer run launcher has not been registered.');
       }
     }
   });
@@ -98,7 +115,7 @@ export function initializeMultiplayerFoundation(player, { scene = null } = {}) {
   initialized = true;
 
   console.info(
-    '[M2.1-M2.4] Online lobby, WebSocket transport, synchronized launch, and remote players ready.'
+    '[M3.1-M3.2] Shared host-authoritative horde and operative hit forwarding ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -127,6 +144,7 @@ export function beginMultiplayerRun({
 
   multiplayerRuntime.beginRun(sessionSnapshot);
   remotePlayerManager?.beginRun();
+  sharedWorldManager?.beginRun();
   return sessionSnapshot;
 }
 
@@ -139,6 +157,7 @@ export function endMultiplayerRun({ reason = 'ended', player = null } = {}) {
     { force: true }
   );
 
+  sharedWorldManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun();
   lobbyController?.notifyRunEnded?.(reason);
@@ -147,6 +166,24 @@ export function endMultiplayerRun({ reason = 'ended', player = null } = {}) {
     reason,
     playerSnapshot: state
   });
+}
+
+export function initializeSharedMultiplayerEnemies() {
+  if (!initialized) return;
+  sharedWorldManager?.initializeEnemies();
+}
+
+export function updateSharedMultiplayerWorld(
+  dt,
+  now = performance.now()
+) {
+  if (!initialized) return;
+  sharedWorldManager?.update(dt, now);
+}
+
+export function isSharedMultiplayerWorldAuthority() {
+  if (!initialized) return true;
+  return sharedWorldManager?.isAuthority?.() !== false;
 }
 
 // Retained for compatibility with M1.1 callers and tests.
@@ -197,7 +234,8 @@ export function getMultiplayerFoundationSnapshot() {
     transportState: multiplayerTransport.getState(),
     runtime: multiplayerRuntime.getSnapshot(),
     lobby: lobbyController?.getSnapshot?.() || null,
-    remotePlayers: remotePlayerManager?.getSnapshot?.() || null
+    remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
+    sharedWorld: sharedWorldManager?.getSnapshot?.() || null
   };
 }
 

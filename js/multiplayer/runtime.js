@@ -19,7 +19,8 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_ACTION_RECEIVED: 'multiplayer:remote-action-received',
   REMOTE_SNAPSHOT_RECEIVED: 'multiplayer:remote-snapshot-received',
   REMOTE_WORLD_SNAPSHOT_RECEIVED: 'multiplayer:remote-world-snapshot-received',
-  REMOTE_ENEMY_HIT_RECEIVED: 'multiplayer:remote-enemy-hit-received'
+  REMOTE_ENEMY_HIT_RECEIVED: 'multiplayer:remote-enemy-hit-received',
+  REMOTE_PLAYER_DAMAGE_RECEIVED: 'multiplayer:remote-player-damage-received'
 });
 
 function nowMs() {
@@ -54,6 +55,7 @@ export class MultiplayerRuntime {
     this.roomSequence = 0;
     this.worldSequence = 0;
     this.hitSequence = 0;
+    this.damageSequence = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -66,7 +68,9 @@ export class MultiplayerRuntime {
       worldSnapshotsSent: 0,
       worldSnapshotsReceived: 0,
       hitRequestsSent: 0,
-      hitRequestsReceived: 0
+      hitRequestsReceived: 0,
+      playerDamageSent: 0,
+      playerDamageReceived: 0
     };
   }
 
@@ -126,6 +130,7 @@ export class MultiplayerRuntime {
     this.snapshotSequence = 0;
     this.worldSequence = 0;
     this.hitSequence = 0;
+    this.damageSequence = 0;
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -222,6 +227,25 @@ export class MultiplayerRuntime {
       this.hitSequence
     );
     this.metrics.hitRequestsSent += 1;
+    return envelope;
+  }
+
+  sendPlayerDamage(damage) {
+    if (
+      !this.initialized
+      || !this.session?.run?.active
+      || !damage?.targetPlayerId
+    ) {
+      return null;
+    }
+
+    this.damageSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.PLAYER_DAMAGE,
+      damage,
+      this.damageSequence
+    );
+    this.metrics.playerDamageSent += 1;
     return envelope;
   }
 
@@ -333,6 +357,15 @@ export class MultiplayerRuntime {
       this.metrics.hitRequestsReceived += 1;
       this.eventBus?.emit(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ENEMY_HIT_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.PLAYER_DAMAGE) {
+      this.metrics.playerDamageReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_PLAYER_DAMAGE_RECEIVED,
         { envelope }
       );
       return { accepted: true };

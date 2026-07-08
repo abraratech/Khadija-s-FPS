@@ -7,6 +7,8 @@ const MAX_PLAYERS = 4;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 30_000;
+const SERVER_PROTOCOL = 2;
+const SERVER_BUILD = 'm3-coop-stability-r1';
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -221,6 +223,8 @@ export class ArenaRoom extends DurableObject {
       action: 'welcome',
       payload: {
         sessionId: this.room.sessionId,
+        protocol: SERVER_PROTOCOL,
+        build: SERVER_BUILD,
         reconnectToken: token,
         room: this.snapshot()
       }
@@ -373,6 +377,35 @@ export class ArenaRoom extends DurableObject {
     return attachment.messagesInWindow <= RATE_LIMIT_PER_SECOND;
   }
 
+  async finishRun({
+    reason = 'ended',
+    endedByPlayerId = null
+  } = {}) {
+    if (!this.room || this.room.status !== 'in-run') return false;
+
+    this.room.status = 'waiting';
+    this.room.runId = null;
+
+    Object.values(this.room.players).forEach((entry) => {
+      entry.ready = entry.isHost === true && entry.connected === true;
+    });
+
+    await this.commit();
+    const room = this.snapshot();
+
+    this.broadcast({
+      kind: 'control',
+      action: 'run-ended',
+      payload: {
+        reason: String(reason || 'ended'),
+        endedByPlayerId,
+        room
+      }
+    });
+    this.broadcastRoomState();
+    return true;
+  }
+
   async handleControl(socket, player, action, payload) {
     if (action === 'ping') {
       socket.send(JSON.stringify({
@@ -441,15 +474,20 @@ export class ArenaRoom extends DurableObject {
       return;
     }
 
-    if (action === 'end-run') {
-      if (!player.isHost || this.room.status !== 'in-run') return;
-      this.room.status = 'waiting';
-      this.room.runId = null;
-      Object.values(this.room.players).forEach((entry) => {
-        entry.ready = entry.isHost && entry.connected;
+    if (action === 'player-death') {
+      await this.finishRun({
+        reason: String(payload.reason || 'player-death'),
+        endedByPlayerId: player.playerId
       });
-      await this.commit();
-      this.broadcastRoomState();
+      return;
+    }
+
+    if (action === 'end-run') {
+      if (!player.isHost) return;
+      await this.finishRun({
+        reason: String(payload.reason || 'ended'),
+        endedByPlayerId: player.playerId
+      });
       return;
     }
 
@@ -525,6 +563,7 @@ export class ArenaRoom extends DurableObject {
     const player = this.room.players?.[playerId];
     if (!player || player.connected === false) return;
 
+    const wasInRun = this.room.status === 'in-run';
     player.connected = false;
     player.ready = false;
     player.disconnectedAt = Date.now();
@@ -539,6 +578,15 @@ export class ArenaRoom extends DurableObject {
         replacement.isHost = true;
         replacement.ready = true;
       }
+    }
+
+    if (wasInRun) {
+      await this.finishRun({
+        reason: 'player-disconnected',
+        endedByPlayerId: playerId
+      });
+      await this.scheduleCleanup();
+      return;
     }
 
     if (this.connectedPlayers().length === 0) {
@@ -615,7 +663,8 @@ export default {
       return json({
         ok: true,
         service: 'khadijas-arena-multiplayer',
-        protocol: 1
+        protocol: SERVER_PROTOCOL,
+        build: SERVER_BUILD
       });
     }
 

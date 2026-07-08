@@ -120,6 +120,7 @@ export class SharedWorldManager {
     this.authorityCounter = 0;
     this.enemyIdentity = new WeakMap();
     this.proxies = new Map();
+    this.remoteTargets = new Map();
     this.hitWindows = new Map();
     this.unsubscribe = [];
 
@@ -134,6 +135,13 @@ export class SharedWorldManager {
       this.eventBus?.on(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ENEMY_HIT_RECEIVED,
         (event) => this.handleEnemyHitRequest(event?.payload?.envelope)
+      ) || (() => {})
+    );
+
+    this.unsubscribe.push(
+      this.eventBus?.on(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_PLAYER_DAMAGE_RECEIVED,
+        (event) => this.handlePlayerDamage(event?.payload?.envelope)
       ) || (() => {})
     );
   }
@@ -154,7 +162,25 @@ export class SharedWorldManager {
     this.authorityCounter = 0;
     this.enemyIdentity = new WeakMap();
     this.hitWindows.clear();
+    this.remoteTargets.clear();
     this.clearProxies();
+
+    if (this.isAuthority()) {
+      this.adapter.configureMultiplayerEnemyAuthority?.({
+        localPlayerId: this.runtime?.localPlayerId || null,
+        getTargets: () => this.getRemoteAuthorityTargets(),
+        damageTarget: (target, damage, sourcePosition, damageType) => (
+          this.damageAuthorityTarget(
+            target,
+            damage,
+            sourcePosition,
+            damageType
+          )
+        )
+      });
+    } else {
+      this.adapter.configureMultiplayerEnemyAuthority?.(null);
+    }
   }
 
   initializeEnemies() {
@@ -192,7 +218,9 @@ export class SharedWorldManager {
   endRun() {
     this.active = false;
     this.initializedForRun = false;
+    this.adapter.configureMultiplayerEnemyAuthority?.(null);
     this.clearProxies();
+    this.remoteTargets.clear();
     this.hitWindows.clear();
   }
 
@@ -232,7 +260,8 @@ export class SharedWorldManager {
       walkT: Number(enemy.walkT || 0),
       attackState: String(enemy.attackState || 'IDLE'),
       attackAnimT: Number(enemy.attackAnimT || 0),
-      hitReactT: Number(enemy.hitReactT || 0)
+      hitReactT: Number(enemy.hitReactT || 0),
+      targetPlayerId: enemy.targetPlayerId || null
     };
   }
 
@@ -303,6 +332,7 @@ export class SharedWorldManager {
       attackState: String(state.attackState || 'IDLE'),
       attackAnimT: Number(state.attackAnimT || 0),
       hitReactT: Number(state.hitReactT || 0),
+      targetPlayerId: state.targetPlayerId || null,
       handleNetworkHit: (hit) => {
         this.runtime?.sendEnemyHitRequest?.({
           enemyId: state.id,
@@ -345,6 +375,7 @@ export class SharedWorldManager {
     proxy.attackState = String(state.attackState || 'IDLE');
     proxy.attackAnimT = Number(state.attackAnimT || 0);
     proxy.hitReactT = Number(state.hitReactT || 0);
+    proxy.targetPlayerId = state.targetPlayerId || null;
     proxy.targetPosition.set(
       Number(state.position?.x || 0),
       Number(state.position?.y || 0),
@@ -363,30 +394,151 @@ export class SharedWorldManager {
       proxy.mesh.visible = proxy.alive && !stale;
       if (!proxy.mesh.visible) return;
 
+      const moveDeltaX = proxy.targetPosition.x - proxy.mesh.position.x;
+      const moveDeltaZ = proxy.targetPosition.z - proxy.mesh.position.z;
+      const isMoving = (
+        moveDeltaX * moveDeltaX + moveDeltaZ * moveDeltaZ
+      ) > 0.0004;
+
       proxy.mesh.position.lerp(proxy.targetPosition, blend);
-      const yawDelta = Math.atan2(
-        Math.sin(proxy.targetYaw - proxy.mesh.rotation.y),
-        Math.cos(proxy.targetYaw - proxy.mesh.rotation.y)
-      );
-      proxy.mesh.rotation.y += yawDelta * blend;
+
+      if (isMoving) {
+        // Face the direction the synchronized proxy is actually travelling.
+        // This prevents a newly created proxy from briefly retaining an older
+        // host-facing yaw while it moves toward an operative.
+        proxy.mesh.lookAt(
+          proxy.targetPosition.x,
+          proxy.mesh.position.y,
+          proxy.targetPosition.z
+        );
+      } else {
+        const yawDelta = Math.atan2(
+          Math.sin(proxy.targetYaw - proxy.mesh.rotation.y),
+          Math.cos(proxy.targetYaw - proxy.mesh.rotation.y)
+        );
+        proxy.mesh.rotation.y += yawDelta * blend;
+      }
 
       proxy.walkT += dt * 7;
       proxy.visual.position.y = Math.sin(proxy.walkT * 2) * 0.025;
       proxy.visual.rotation.z = Math.sin(proxy.walkT) * 0.018;
 
-      if (
-        this.player?.alive
-        && proxy.contactCooldown <= 0
-        && this.player.pos?.distanceTo?.(proxy.mesh.position) <= proxy.attackRange
-      ) {
-        proxy.contactCooldown = proxy.attackRate;
-        this.adapter.damagePlayer?.(
-          proxy.damage,
-          proxy.mesh.position,
-          proxy.type
-        );
-      }
+      // Damage is authoritative on the host and arrives through
+      // PLAYER_DAMAGE envelopes. Client proxies are visual/raycast targets only.
     });
+  }
+
+  getRemoteAuthorityTargets(now = nowMs()) {
+    if (!this.active || !this.isAuthority() || !this.isOnline()) return [];
+
+    const roomPlayers = this.runtime?.room?.getSnapshot?.()?.players || [];
+    const activeIds = new Set();
+    const targets = [];
+
+    roomPlayers.forEach((roomPlayer) => {
+      const playerId = roomPlayer?.playerId;
+      if (
+        !playerId
+        || playerId === this.runtime?.localPlayerId
+        || roomPlayer.connected === false
+      ) {
+        return;
+      }
+
+      const sampled = this.runtime?.sampleRemotePlayer?.(playerId, now);
+      const state = sampled?.state;
+      if (!state?.position) return;
+
+      activeIds.add(playerId);
+      let target = this.remoteTargets.get(playerId);
+
+      if (!target) {
+        target = {
+          playerId,
+          isLocal: false,
+          pos: new THREE.Vector3(),
+          alive: true,
+          health: 100,
+          maxHealth: 100
+        };
+        this.remoteTargets.set(playerId, target);
+      }
+
+      target.pos.set(
+        Number(state.position.x || 0),
+        Number(state.position.y || 0),
+        Number(state.position.z || 0)
+      );
+      target.alive = state.alive !== false && Number(state.health || 0) > 0;
+      target.health = Math.max(0, Number(state.health || 0));
+      target.maxHealth = Math.max(1, Number(state.maxHealth || 100));
+      targets.push(target);
+    });
+
+    Array.from(this.remoteTargets.keys()).forEach((playerId) => {
+      if (!activeIds.has(playerId)) this.remoteTargets.delete(playerId);
+    });
+
+    return targets;
+  }
+
+  damageAuthorityTarget(
+    target,
+    damage,
+    sourcePosition = null,
+    damageType = 'UNKNOWN'
+  ) {
+    if (!target?.playerId) return false;
+
+    const amount = Math.max(0, Number(damage) || 0);
+    if (amount <= 0 || target.alive === false) return false;
+
+    if (target.isLocal || target.playerId === this.runtime?.localPlayerId) {
+      this.adapter.damagePlayer?.(amount, sourcePosition, damageType);
+      return true;
+    }
+
+    return Boolean(this.runtime?.sendPlayerDamage?.({
+      targetPlayerId: target.playerId,
+      damage: amount,
+      damageType: String(damageType || 'UNKNOWN').slice(0, 40),
+      sourcePosition: sourcePosition
+        ? vectorPayload(sourcePosition)
+        : null
+    }));
+  }
+
+  handlePlayerDamage(envelope) {
+    if (!this.active || this.isAuthority()) return;
+
+    const expectedHost = this.runtime?.room?.hostPlayerId
+      || this.session?.hostPlayerId
+      || null;
+
+    if (expectedHost && envelope?.playerId !== expectedHost) return;
+    if (envelope?.runId && envelope.runId !== this.session?.run?.runId) return;
+
+    const damage = envelope?.payload;
+    if (
+      damage?.targetPlayerId !== this.runtime?.localPlayerId
+      || this.player?.alive !== true
+    ) {
+      return;
+    }
+
+    const source = damage.sourcePosition
+      ? new THREE.Vector3(
+          Number(damage.sourcePosition.x || 0),
+          Number(damage.sourcePosition.y || 0),
+          Number(damage.sourcePosition.z || 0)
+        )
+      : null;
+
+    this.adapter.damagePlayer?.(
+      Math.max(0, Number(damage.damage) || 0),
+      source,
+      String(damage.damageType || 'UNKNOWN')
+    );
   }
 
   handleEnemyHitRequest(envelope) {

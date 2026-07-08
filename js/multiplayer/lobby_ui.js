@@ -50,6 +50,25 @@ function appendOptions(select, options) {
   });
 }
 
+function setNumericSelectValue(select, value, fallback = 1) {
+  if (!select) return;
+
+  const numericValue = Number(value);
+  const match = Array.from(select.options).find((option) => (
+    Number(option.value) === numericValue
+  ));
+
+  if (match) {
+    select.value = match.value;
+    return;
+  }
+
+  const fallbackMatch = Array.from(select.options).find((option) => (
+    Number(option.value) === Number(fallback)
+  ));
+  select.value = fallbackMatch?.value || select.options[0]?.value || '';
+}
+
 export class MultiplayerLobbyUI {
   constructor({ actions = {} } = {}) {
     this.actions = actions;
@@ -92,9 +111,9 @@ export class MultiplayerLobbyUI {
 
         <div id="ka-coop-connect-view">
           <p class="ka-coop-note">
-            This alpha synchronizes rooms, match launch, player movement, aim, sprint,
-            weapon state, and firing effects. Enemies, damage, shops, and wave authority
-            remain local until the next server-authority bundle.
+            This alpha synchronizes rooms, match launch, players, shared enemies,
+            enemy damage, waves, and coordinated run endings. Shops and economy remain
+            local while the remaining co-op authority systems are completed.
           </p>
 
           <label class="ka-coop-field">
@@ -186,9 +205,12 @@ export class MultiplayerLobbyUI {
     appendOptions(
       this.elements.difficulty,
       optionData(document.getElementById('diff-select'), [
-        { value: '1', label: 'Normal' }
+        { value: '1.0', label: 'Normal' }
       ])
     );
+
+    this.elements.map.value = 'grid_bunker';
+    setNumericSelectValue(this.elements.difficulty, 1, 1);
 
     this.bindEvents();
     this.render({
@@ -232,6 +254,19 @@ export class MultiplayerLobbyUI {
         .slice(0, 6);
     });
 
+    [
+      this.elements.name,
+      this.elements.server,
+      this.elements.codeInput
+    ].forEach((input) => {
+      input?.addEventListener('keydown', (event) => {
+        event.stopPropagation();
+      });
+      input?.addEventListener('keyup', (event) => {
+        event.stopPropagation();
+      });
+    });
+
     this.elements.codeInput.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') this.elements.join.click();
     });
@@ -256,6 +291,10 @@ export class MultiplayerLobbyUI {
     });
 
     this.elements.start.addEventListener('click', () => {
+      this.actions.updateSettings?.({
+        mapId: this.elements.map.value || 'grid_bunker',
+        difficulty: Number(this.elements.difficulty.value) || 1
+      });
       this.actions.startRun?.();
     });
 
@@ -394,7 +433,11 @@ export class MultiplayerLobbyUI {
     });
 
     this.elements.map.value = String(room.settings?.mapId || 'grid_bunker');
-    this.elements.difficulty.value = String(room.settings?.difficulty || 1);
+    setNumericSelectValue(
+      this.elements.difficulty,
+      room.settings?.difficulty,
+      1
+    );
     this.elements.map.disabled = !isHost || room.status === 'in-run';
     this.elements.difficulty.disabled = !isHost || room.status === 'in-run';
 

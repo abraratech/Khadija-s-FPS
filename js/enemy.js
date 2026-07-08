@@ -1037,16 +1037,113 @@ const _formationMoveTarget = { x: 0, z: 0 };
 const _navigationMoveTarget = { x: 0, z: 0 };
 const _archetypeMoveTarget = { x: 0, z: 0 };
 
-function hasRangedLineOfSight(enemy) {
+let multiplayerEnemyAuthority = null;
+
+export function configureMultiplayerEnemyAuthority(config = null) {
+  multiplayerEnemyAuthority = config && typeof config === 'object'
+    ? config
+    : null;
+}
+
+function getLocalEnemyTarget() {
+  return {
+    playerId: multiplayerEnemyAuthority?.localPlayerId || 'local-player',
+    isLocal: true,
+    pos: player.pos,
+    alive: player.alive === true,
+    health: Number(player.health || 0),
+    maxHealth: Number(player.maxHealth || 100)
+  };
+}
+
+function getEnemyTargetCandidates() {
+  const candidates = [];
+  const localTarget = getLocalEnemyTarget();
+
+  if (localTarget.alive) candidates.push(localTarget);
+
+  const remoteTargets = multiplayerEnemyAuthority?.getTargets?.() || [];
+  remoteTargets.forEach((target) => {
+    if (
+      target?.playerId
+      && target?.pos
+      && target.alive !== false
+      && Number(target.health ?? 1) > 0
+    ) {
+      candidates.push(target);
+    }
+  });
+
+  return candidates;
+}
+
+function findEnemyTargetById(targets, playerId) {
+  if (!playerId) return null;
+  return targets.find((target) => target.playerId === playerId) || null;
+}
+
+function chooseEnemyTarget(enemy, targets, targetLoads) {
+  if (!targets.length) return null;
+
+  let bestTarget = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  targets.forEach((target) => {
+    const dx = Number(target.pos.x || 0) - enemy.mesh.position.x;
+    const dz = Number(target.pos.z || 0) - enemy.mesh.position.z;
+    const distance = Math.hypot(dx, dz);
+    const load = targetLoads.get(target.playerId) || 0;
+    const stickyBonus = enemy.targetPlayerId === target.playerId ? -2.25 : 0;
+    const score = distance + load * 2.4 + stickyBonus;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestTarget = target;
+    }
+  });
+
+  if (bestTarget) {
+    enemy.targetPlayerId = bestTarget.playerId;
+    targetLoads.set(
+      bestTarget.playerId,
+      (targetLoads.get(bestTarget.playerId) || 0) + 1
+    );
+  }
+
+  return bestTarget;
+}
+
+function damageEnemyTarget(
+  target,
+  damage,
+  sourcePosition = null,
+  damageType = 'UNKNOWN'
+) {
+  if (!target || target.alive === false) return false;
+
+  if (target.isLocal || !multiplayerEnemyAuthority?.damageTarget) {
+    damagePlayer(damage, sourcePosition, damageType);
+    return true;
+  }
+
+  return multiplayerEnemyAuthority.damageTarget(
+    target,
+    damage,
+    sourcePosition,
+    damageType
+  ) !== false;
+}
+
+function hasRangedLineOfSight(enemy, targetPosition = player.pos) {
   rangedSightOrigin.set(
     enemy.mesh.position.x,
     enemy.mesh.position.y + 1.18,
     enemy.mesh.position.z
   );
   rangedSightTarget.set(
-    player.pos.x,
-    player.pos.y - 0.10,
-    player.pos.z
+    Number(targetPosition?.x || 0),
+    Number(targetPosition?.y || 0) - 0.10,
+    Number(targetPosition?.z || 0)
   );
   rangedSightDirection.subVectors(rangedSightTarget, rangedSightOrigin);
 
@@ -1079,7 +1176,13 @@ function hasRangedLineOfSight(enemy) {
   return true;
 }
 
-function canRangedAttackPlayer(enemy, horizontalDist, verticalDist, dt) {
+function canRangedAttackPlayer(
+  enemy,
+  horizontalDist,
+  verticalDist,
+  dt,
+  targetPosition = player.pos
+) {
   if (enemy.type !== 'RANGED') return false;
 
   const tuning = getAIDirectorTuning();
@@ -1104,14 +1207,17 @@ function canRangedAttackPlayer(enemy, horizontalDist, verticalDist, dt) {
 
   if (enemy.rangedLosTimer <= 0) {
     enemy.rangedLosTimer = 0.12 + Math.random() * 0.08;
-    enemy.rangedHasLos = hasRangedLineOfSight(enemy);
+    enemy.rangedHasLos = hasRangedLineOfSight(enemy, targetPosition);
   }
 
   return enemy.rangedHasLos === true;
 }
 
 export function updateEnemies(dt) {
-  if (!player.alive) return;
+  const teamTargets = getEnemyTargetCandidates();
+  if (teamTargets.length === 0) return;
+
+  const targetLoads = new Map();
 
   meleeDamageGraceT = Math.max(0, meleeDamageGraceT - dt);
   updateAIAttackCoordinator(dt, activeEnemies);
@@ -1190,12 +1296,28 @@ export function updateEnemies(dt) {
 
     if (impactedWorld) return;
 
-    const pdx = player.pos.x - p.mesh.position.x;
-    const pdy = player.pos.y - p.mesh.position.y;
-    const pdz = player.pos.z - p.mesh.position.z;
+    const projectileTarget = findEnemyTargetById(
+      teamTargets,
+      p.targetPlayerId
+    ) || teamTargets[0] || null;
+
+    if (!projectileTarget) {
+      p.life = 0;
+      p.mesh.visible = false;
+      return;
+    }
+
+    const pdx = projectileTarget.pos.x - p.mesh.position.x;
+    const pdy = projectileTarget.pos.y - p.mesh.position.y;
+    const pdz = projectileTarget.pos.z - p.mesh.position.z;
 
     if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
-      damagePlayer(20, p.mesh.position, 'RANGED');
+      damageEnemyTarget(
+        projectileTarget,
+        20,
+        p.mesh.position,
+        'RANGED'
+      );
       spawnEnemyProjectileImpact(p.mesh.position, true);
       recordAIAttackProjectileResult(true);
 
@@ -1359,8 +1481,16 @@ if (!e.alive) continue;
     }
     if (zapped) continue;
 
-// Calculate dynamic distance components
-    _eToP.set(player.pos.x - e.mesh.position.x, player.pos.y - e.mesh.position.y, player.pos.z - e.mesh.position.z);
+// Calculate dynamic distance components against the assigned living player.
+    const enemyTarget = chooseEnemyTarget(e, teamTargets, targetLoads);
+    if (!enemyTarget) continue;
+
+    const targetPos = enemyTarget.pos;
+    _eToP.set(
+      targetPos.x - e.mesh.position.x,
+      targetPos.y - e.mesh.position.y,
+      targetPos.z - e.mesh.position.z
+    );
     const horizontalDist = Math.sqrt(_eToP.x * _eToP.x + _eToP.z * _eToP.z);
     const trueVerticalDist = Math.abs(_eToP.y);
 
@@ -1435,38 +1565,45 @@ if (e.usingLod && e.lodMesh) {
       continue; // Skip standard player movement calculations this frame
     }
 
-    getDirectorPursuitTarget(e, player, _directorMoveTarget);
-    getSquadPursuitTarget(
-      e,
-      player,
-      _directorMoveTarget,
-      traps,
-      _squadMoveTarget
-    );
+    if (enemyTarget.isLocal) {
+      getDirectorPursuitTarget(e, player, _directorMoveTarget);
+      getSquadPursuitTarget(
+        e,
+        player,
+        _directorMoveTarget,
+        traps,
+        _squadMoveTarget
+      );
 
-    getFormationPursuitTarget(
-      e,
-      player,
-      _squadMoveTarget,
-      _formationMoveTarget
-    );
+      getFormationPursuitTarget(
+        e,
+        player,
+        _squadMoveTarget,
+        _formationMoveTarget
+      );
 
-    getReliableNavigationTarget(
-      e,
-      player,
-      _formationMoveTarget,
-      walls,
-      traps,
-      _navigationMoveTarget,
-      dt
-    );
+      getReliableNavigationTarget(
+        e,
+        player,
+        _formationMoveTarget,
+        walls,
+        traps,
+        _navigationMoveTarget,
+        dt
+      );
 
-    getArchetypePursuitTarget(
-      e,
-      player,
-      _navigationMoveTarget,
-      _archetypeMoveTarget
-    );
+      getArchetypePursuitTarget(
+        e,
+        player,
+        _navigationMoveTarget,
+        _archetypeMoveTarget
+      );
+    } else {
+      // Remote operatives use direct host-authoritative pursuit until the
+      // navigation modules accept generic player targets.
+      _archetypeMoveTarget.x = targetPos.x;
+      _archetypeMoveTarget.z = targetPos.z;
+    }
 
     if (horizontalDist > 0.1) {
       e.mesh.lookAt(_archetypeMoveTarget.x, e.mesh.position.y, _archetypeMoveTarget.z);
@@ -1476,7 +1613,8 @@ if (e.usingLod && e.lodMesh) {
       e,
       horizontalDist,
       trueVerticalDist,
-      dt
+      dt,
+      targetPos
     );
 
     if (consumeAttackTelegraphStart(e)) {
@@ -1591,7 +1729,7 @@ if (e.usingLod && e.lodMesh) {
 
       // ── THE MULTISTORY NAV-MESH FIX ──
       // If player is upstairs (Y > 4) and zombie is down below, route them to the steps!
-      if (currentMap === 4 && player.pos.y > 4.0 && e.mesh.position.y < 4.0) {
+      if (currentMap === 4 && targetPos.y > 4.0 && e.mesh.position.y < 4.0) {
         
         // Check if the zombie is already inside the physical staircase corridor (Z is between -9 and -26)
         const isOnStairs = e.mesh.position.x > -4 && e.mesh.position.x < 4 && e.mesh.position.z < -9 && e.mesh.position.z > -26;
@@ -1695,7 +1833,11 @@ if (e.usingLod && e.lodMesh) {
           projectile.mesh.position.copy(e.mesh.position);
           projectile.mesh.position.y += 1.2;
           projectile.prevPos.copy(projectile.mesh.position);
-          projectile.dir.subVectors(player.pos, projectile.mesh.position).normalize();
+          projectile.dir.subVectors(
+            targetPos,
+            projectile.mesh.position
+          ).normalize();
+          projectile.targetPlayerId = enemyTarget.playerId;
           projectile.life = 2.5;
           projectile.trailTimer = 0;
           projectile.elevatedResponse = trueVerticalDist > 1.8;
@@ -1734,7 +1876,12 @@ if (e.usingLod && e.lodMesh) {
           }
 
           recordArchetypeAttackCommitted(e, kind);
-          damagePlayer(e.damage, e.mesh.position, e.type);
+          damageEnemyTarget(
+            enemyTarget,
+            e.damage,
+            e.mesh.position,
+            e.type
+          );
           e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
           e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
           pushOut(e.mesh.position, e.colRadius);
@@ -1746,7 +1893,7 @@ if (e.usingLod && e.lodMesh) {
       e.attackState === 'IDLE' &&
       canAttackNow &&
       e.atkCD <= 0 &&
-      player.alive
+      enemyTarget.alive
     ) {
       if (
         ['EXPLODER', 'RANGED', 'GOLIATH', 'BRUTE', 'CRAWLER'].includes(e.type)
@@ -1778,7 +1925,12 @@ if (e.usingLod && e.lodMesh) {
         e.attackAnimDuration = 0.32;
         e.attackAnimT = 0.32;
 
-        damagePlayer(e.damage, e.mesh.position, e.type);
+        damageEnemyTarget(
+          enemyTarget,
+          e.damage,
+          e.mesh.position,
+          e.type
+        );
         e.mesh.position.x -= (_eToP.x / (horizontalDist || 1)) * 0.22;
         e.mesh.position.z -= (_eToP.z / (horizontalDist || 1)) * 0.22;
         pushOut(e.mesh.position, e.colRadius);
@@ -1841,7 +1993,15 @@ export function killEnemy(e, context = {}) {
     ex.life = 0.3; ex.mesh.visible = true;
     pool.index = (pool.index + 1) % MAX_EXPLOSIONS;
     
-    if (player.pos.distanceTo(e.mesh.position) < 5.0) damagePlayer(e.damage, e.mesh.position, 'EXPLODER');
+    const explosionTargets = getEnemyTargetCandidates();
+    explosionTargets.forEach((target) => {
+      const dx = target.pos.x - e.mesh.position.x;
+      const dy = target.pos.y - e.mesh.position.y;
+      const dz = target.pos.z - e.mesh.position.z;
+      if ((dx * dx + dy * dy + dz * dz) < 25) {
+        damageEnemyTarget(target, e.damage, e.mesh.position, 'EXPLODER');
+      }
+    });
   }
   
 player.kills++; updateKillsHUD(player.kills);
@@ -1866,4 +2026,13 @@ player.kills++; updateKillsHUD(player.kills);
 
 export function getActiveEnemies() { 
   return activeEnemies; 
+}
+
+export function applyNetworkWaveState(
+  waveNumber,
+  specialRound = false
+) {
+  currentWave = Math.max(1, Math.floor(Number(waveNumber) || 1));
+  isSpecialRound = specialRound === true;
+  updateRoundHUD(currentWave);
 }

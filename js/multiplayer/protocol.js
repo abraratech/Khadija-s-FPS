@@ -1,6 +1,8 @@
 // js/multiplayer/protocol.js
 
+export const MULTIPLAYER_BUILD_ID = 'm3-coop-stability-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 2;
+export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([1, 2]);
 
 export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   INPUT_COMMAND: 'input-command',
@@ -9,6 +11,7 @@ export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   ROOM_STATE: 'room-state',
   WORLD_SNAPSHOT: 'world-snapshot',
   ENEMY_HIT_REQUEST: 'enemy-hit-request',
+  PLAYER_DAMAGE: 'player-damage',
   HEARTBEAT: 'heartbeat'
 });
 
@@ -87,7 +90,9 @@ export function validateProtocolEnvelope(candidate, {
 
   if (
     !allowDifferentProtocolVersion
-    && candidate.protocolVersion !== MULTIPLAYER_PROTOCOL_VERSION
+    && !MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS.includes(
+      Number(candidate.protocolVersion)
+    )
   ) {
     errors.push(`Unsupported protocol version: ${String(candidate.protocolVersion)}`);
   }

@@ -1,7 +1,7 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave } from './enemy.js';
+import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -83,15 +83,52 @@ function purgePublicDebugSurfaces() {
 }
 
 purgePublicDebugSurfaces();
-initializeMultiplayerFoundation(player, { scene });
+initializeMultiplayerFoundation(player, {
+  scene,
+  worldAdapter: {
+    initEnemies,
+    updateEnemies,
+    getActiveEnemies,
+    killEnemy,
+    getCurrentWave: () => currentWave,
+    getSpecialRound: () => isSpecialRound,
+    applyNetworkWaveState,
+    configureMultiplayerEnemyAuthority,
+    damagePlayer
+  }
+});
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-coop-stability-r1';
+console.info('[Multiplayer Build] m3-coop-stability-r1 · protocol 2');
+
+function setNumericSelectValue(select, value, fallback = 1) {
+  if (!select) return;
+
+  const numericValue = Number(value);
+  const match = Array.from(select.options).find((option) => (
+    Number(option.value) === numericValue
+  ));
+  const fallbackMatch = Array.from(select.options).find((option) => (
+    Number(option.value) === Number(fallback)
+  ));
+
+  select.value = match?.value
+    || fallbackMatch?.value
+    || select.options[0]?.value
+    || '';
+}
+
 registerMultiplayerRunLauncher(({ mapId, difficulty }) => {
   const mapSelect = document.getElementById('map-select');
   const difficultySelect = document.getElementById('diff-select');
+
   if (mapSelect && mapId) mapSelect.value = mapId;
-  if (difficultySelect && difficulty !== undefined) {
-    difficultySelect.value = String(difficulty);
-  }
+  setNumericSelectValue(difficultySelect, difficulty, 1);
+
   void beginRun({ deferPointerLock: true });
+});
+
+registerMultiplayerRunEndHandler((details) => {
+  handleOnlineRunEnded(details);
 });
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
@@ -397,7 +434,17 @@ function hideDeathScreen() {
   if (deathScreen) deathScreen.style.display = 'none';
 }
 
+function isEditableInputTarget(target) {
+  if (!(target instanceof Element)) return false;
+
+  return target.matches(
+    'input, textarea, select, [contenteditable="true"], [contenteditable=""]'
+  );
+}
+
 window.addEventListener('keydown', (e) => {
+  if (isEditableInputTarget(e.target)) return;
+
   if (e.code === 'F6') {
     e.preventDefault();
 
@@ -432,6 +479,13 @@ const frameKeys = {};
 let mdx = 0, mdy = 0, locked = false, pendingShot = false, mouseADS = false;
 let mobileSprintIntent = false;
 let pauseTransitionAt = -Infinity;
+let coOpMenuOpen = false;
+let onlineDeathReportPending = false;
+function isOnlineCoOpRun() {
+  return multiplayerSession?.run?.active === true
+    && (multiplayerSession.mode === 'host'
+      || multiplayerSession.mode === 'client');
+}
 
 function setActionKeyState(action, pressed) {
   const canonical = getCanonicalCode(action);
@@ -440,25 +494,53 @@ function setActionKeyState(action, pressed) {
 
 function pauseGameplay(source = 'input') {
   if (gs !== 'playing' || !player.alive) return false;
+  if (isOnlineCoOpRun() && coOpMenuOpen) return true;
 
   pauseTransitionAt = performance.now();
-  gs = 'paused';
   clearInputState();
   showPauseScreen();
 
+  if (isOnlineCoOpRun()) {
+    coOpMenuOpen = true;
+    if (!isMobile && document.pointerLockElement) {
+      document.exitPointerLock();
+    }
+    console.log(`Co-op menu opened from ${source}; match remains live.`);
+    return true;
+  }
+
+  gs = 'paused';
   if (!isMobile && document.pointerLockElement) {
     document.exitPointerLock();
   }
-
   console.log(`Game paused from ${source}.`);
   return true;
-}
+} function resumeGameplay(source = 'input') {
+  if (!player.alive) return false;
 
-function resumeGameplay(source = 'input') {
-  if (gs !== 'paused' || !player.alive) return false;
+  if (isOnlineCoOpRun() && coOpMenuOpen) {
+    if (performance.now() - pauseTransitionAt < 180) return false;
 
-  // Escape can release pointer lock before its key event reaches the page.
-  // This guard prevents that single press from pausing and immediately resuming.
+    pauseTransitionAt = performance.now();
+    coOpMenuOpen = false;
+    clearInputState();
+    setLockHintVisible(false);
+    hidePauseScreen();
+
+    if (!isMobile) {
+      try {
+        const lockResult = canvas.requestPointerLock();
+        lockResult?.catch?.(() => setLockHintVisible(true));
+      } catch {
+        setLockHintVisible(true);
+      }
+    }
+
+    console.log(`Co-op menu closed from ${source}; match stayed live.`);
+    return true;
+  }
+
+  if (gs !== 'paused') return false;
   if (performance.now() - pauseTransitionAt < 180) return false;
 
   pauseTransitionAt = performance.now();
@@ -469,19 +551,22 @@ function resumeGameplay(source = 'input') {
   gs = 'playing';
 
   if (!isMobile) {
-    canvas.requestPointerLock();
+    try {
+      const lockResult = canvas.requestPointerLock();
+      lockResult?.catch?.(() => setLockHintVisible(true));
+    } catch {
+      setLockHintVisible(true);
+    }
   }
 
   console.log(`Game resumed from ${source}.`);
   return true;
-}
-
-function togglePauseGameplay(source = 'input') {
-  if (gs === 'paused') return resumeGameplay(source);
+} function togglePauseGameplay(source = 'input') {
+  if (coOpMenuOpen || gs === 'paused') {
+    return resumeGameplay(source);
+  }
   return pauseGameplay(source);
-}
-
-function triggerGameplayAction(action) {
+} function triggerGameplayAction(action) {
   if (!action) return;
 
   if (action === CONTROL_ACTIONS.PAUSE) {
@@ -489,7 +574,7 @@ function triggerGameplayAction(action) {
     return;
   }
 
-  if (gs !== 'playing' || !player.alive) return;
+  if (coOpMenuOpen || gs !== 'playing' || !player.alive) return;
 
   if (action === CONTROL_ACTIONS.FIRE) {
     pendingShot = true;
@@ -504,23 +589,30 @@ function triggerGameplayAction(action) {
     checkWorldInteractions(true);
     recordTutorialAction('INTERACT');
   }
-}
-
-window.addEventListener('keydown', e => {
-  if (isKeybindingCaptureActive()) return;
+} window.addEventListener('keydown', e => {
+  if (isEditableInputTarget(e.target) || isKeybindingCaptureActive()) return;
 
   const action = getKeyboardAction(e.code);
+
+  if (coOpMenuOpen && action !== CONTROL_ACTIONS.PAUSE) {
+    if (action) e.preventDefault();
+    return;
+  }
+
   if (action) {
     setActionKeyState(action, true);
     if (!e.repeat) triggerGameplayAction(action);
   }
 
-  if (action === CONTROL_ACTIONS.JUMP || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+  if (
+    action === CONTROL_ACTIONS.JUMP
+    || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)
+  ) {
     e.preventDefault();
   }
-});
+}); window.addEventListener('keyup', e => {
+  if (isEditableInputTarget(e.target)) return;
 
-window.addEventListener('keyup', e => {
   const action = getKeyboardAction(e.code);
   if (action) setActionKeyState(action, false);
 });
@@ -555,7 +647,7 @@ window.addEventListener('mouseup', e => {
 });
 
 window.addEventListener('wheel', e => {
-  if (gs !== 'playing' || !player.alive) return;
+  if (coOpMenuOpen || gs !== 'playing' || !player.alive) return;
 
   if (adjustSniperScopeZoom(e.deltaY)) {
     e.preventDefault();
@@ -604,9 +696,7 @@ canvas.addEventListener('click', () => {
 // ── MOBILE IN-GAME PAUSE BUTTON LISTENER ──
 document.getElementById('btn-mobile-pause').addEventListener('touchstart', (e) => {
   e.preventDefault();
-  if (gs === 'playing' && player.alive) {
-    pauseGameplay('mobile');
-  }
+  if (gs === 'playing' && player.alive) { togglePauseGameplay('mobile'); }
 }, { passive: false });  
 
 // ════════════ GAME LOOP ════════════
@@ -874,6 +964,9 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
 
   try {
     clearDeathScreenTimer();
+    onlineDeathReportPending = false;
+    coOpMenuOpen = false;
+    document.activeElement?.blur?.();
     clearInputState();
     resetCombatStatusHUD();
     hidePauseScreen();
@@ -915,7 +1008,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
 
     buildGun();
     resetGunState();
-    initEnemies();
+    initializeSharedMultiplayerEnemies();
     clearAllDecals();
 
     syncHudFromPlayer();
@@ -933,7 +1026,67 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
   }
 }
 
+function handleOnlineRunEnded(details = {}) {
+  onlineDeathReportPending = false;
+  coOpMenuOpen = false;
+
+  finalizeCurrentRun(`CO-OP ${details.reason || 'ENDED'}`);
+  saveRunRecords();
+  endAIDirectorRun();
+  endMapGameplay();
+  endTutorialRun();
+  refreshAIMemoryControls();
+  clearDeathScreenTimer();
+  clearInputState();
+  removeActiveWeaponMesh();
+  coOpMenuOpen = false;
+  onlineDeathReportPending = false;
+
+  gs = 'menu';
+  player.alive = false;
+
+  if (!isMobile && document.pointerLockElement) {
+    document.exitPointerLock();
+  }
+
+  resetCombatStatusHUD();
+  hidePauseScreen();
+  hideDeathScreen();
+  setLockHintVisible(false);
+  setGameChromeVisible(false);
+  showMenuScreen('home');
+
+  queueMicrotask(() => openMultiplayerLobby());
+  console.log(
+    `Co-op run ended: ${details.reason || 'ended'}. Returned to room lobby.`
+  );
+}
+
+function requestOnlineRunEnd(reason = 'ended') {
+  if (onlineDeathReportPending) return true;
+
+  onlineDeathReportPending = true;
+  clearInputState();
+
+  const sent = notifyMultiplayerPlayerDeath(reason);
+  if (!sent) {
+    endMultiplayerRun({
+      reason: 'connection-lost',
+      player,
+      notifyServer: false
+    });
+    handleOnlineRunEnded({ reason: 'connection-lost' });
+  }
+
+  return sent;
+}
+
 function returnToMenu(source = 'pause') {
+  if (isOnlineMultiplayerRun()) {
+    requestOnlineRunEnd(source);
+    return;
+  }
+
   endMultiplayerRun({ reason: source, player });
   finalizeCurrentRun(source);
   saveRunRecords();
@@ -944,6 +1097,8 @@ function returnToMenu(source = 'pause') {
   clearDeathScreenTimer();
   clearInputState();
   removeActiveWeaponMesh();
+  coOpMenuOpen = false;
+  onlineDeathReportPending = false;
 
   gs = 'menu';
   player.alive = false;
@@ -1021,13 +1176,9 @@ if (gs !== 'playing') {
   return;
 }
 
-if (gamepadInput.pausePressed) {
-  pauseGameplay('gamepad');
-  renderGameFrame();
-  return;
-}
+if (gamepadInput.pausePressed) { togglePauseGameplay('gamepad'); renderGameFrame(); return; }
 
-populateFrameKeys(keys, gamepadInput, frameKeys);
+populateFrameKeys(keys, gamepadInput, frameKeys); if (coOpMenuOpen) { Object.keys(frameKeys).forEach((key) => { frameKeys[key] = false; }); pendingShot = false; }
 player.isADS = mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld;
 
 // Mobile auto-sprint replaces another large on-screen button. It activates
@@ -1043,10 +1194,10 @@ if (
 }
 player.isSprinting = Boolean(frameKeys.ShiftLeft);
 
-if (gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
-if (gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
-if (gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
-if (gamepadInput.firePressed) {
+if (!coOpMenuOpen && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
+if (!coOpMenuOpen && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
+if (!coOpMenuOpen && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
+if (!coOpMenuOpen && gamepadInput.firePressed) {
   pendingShot = true;
   recordTutorialAction('FIRE');
 }
@@ -1066,23 +1217,23 @@ syncMultiplayerFrame(player, frameKeys, {
   });
 updateLowHealthHeartbeat(player, dt);
 
-updateAIDirector(dt, {
+if (isSharedMultiplayerWorldAuthority()) { updateAIDirector(dt, {
   player,
   activeWeapon: getActiveWeapon(),
   enemies: getActiveEnemies(),
   wave: currentWave
-});
+}); }
 
 mdx = 0; mdy = 0;
 const playerMs = performance.now() - mark;
 mark = performance.now();
 
-updateMapGameplay(dt, {
+if (isSharedMultiplayerWorldAuthority()) { updateMapGameplay(dt, {
   player,
   enemies: getActiveEnemies(),
   damagePlayer,
   killEnemy
-});
+}); }
 
 for (const event of consumeMapGameplayEvents()) {
   showStatusToast(event.text, event.color || '#ffaa00', event.duration || 1400);
@@ -1110,7 +1261,7 @@ for (const event of consumeTutorialEvents()) {
   });
 }
 
-updateEnemies(dt);
+updateSharedMultiplayerWorld(dt, performance.now());
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
@@ -1132,19 +1283,30 @@ updateUIEffects(dt);
 processReloadTick(dt);
 const effectsMs = performance.now() - mark;
 
-    if (!player.alive && gs === 'playing') {
-    endMultiplayerRun({ reason: 'death', player });
-    endAIDirectorRun();
-    finalizeCurrentRun('DEATH');
-    endMapGameplay();
-    endTutorialRun();
-    refreshAIMemoryControls();
-    gs = 'dead';
-    clearInputState();
-    saveRunRecords();
-    resetCombatStatusHUD();
-    updateDeathStats();
-    scheduleDeathScreen();
+  if (!player.alive && gs === 'playing') {
+    if (isOnlineMultiplayerRun()) {
+      if (!onlineDeathReportPending) {
+        requestOnlineRunEnd('player-death');
+        showStatusToast(
+          'OPERATIVE DOWN · RETURNING TEAM TO CO-OP LOBBY',
+          '#ff5a36',
+          1800
+        );
+      }
+    } else {
+      endMultiplayerRun({ reason: 'death', player });
+      endAIDirectorRun();
+      finalizeCurrentRun('DEATH');
+      endMapGameplay();
+      endTutorialRun();
+      refreshAIMemoryControls();
+      gs = 'dead';
+      clearInputState();
+      saveRunRecords();
+      resetCombatStatusHUD();
+      updateDeathStats();
+      scheduleDeathScreen();
+    }
   }
   
 mark = performance.now();
@@ -1180,6 +1342,15 @@ document.getElementById('start-btn').addEventListener('click', () => {
 });
 
 document.getElementById('respawn-btn').addEventListener('click', () => {
+  if (
+    multiplayerSession.mode === 'host'
+    || multiplayerSession.mode === 'client'
+  ) {
+    hideDeathScreen();
+    openMultiplayerLobby();
+    return;
+  }
+
   beginRun({ fromRespawn: true });
 });
 

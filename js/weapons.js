@@ -1816,7 +1816,43 @@ function processHit(hit, shotContext = {}) {
     const finalDamage = isInstaKill
       ? 9999
       : Math.max(1, Math.round(baseDamage * damageScale * (hs ? headshotMult : 1)));
-    const wasHealth = e.health;
+    
+if (e.isNetworkProxy && typeof e.handleNetworkHit === 'function') {
+  const networkHitDistance = getHitFxDistance(hit.point);
+  e.handleNetworkHit({
+    damage: finalDamage,
+    headshot: hs,
+    distance: networkHitDistance,
+    weaponFamily: getWeaponFamily(w),
+    point: {
+      x: Number(hit.point?.x || 0),
+      y: Number(hit.point?.y || 0),
+      z: Number(hit.point?.z || 0)
+    }
+  });
+  playHitConfirmFeedback({
+    headshot: hs,
+    killed: false,
+    weapon: w
+  });
+  const networkBloodScale = networkHitDistance > 30
+    ? 0
+    : (networkHitDistance > 20 ? 0.45 : 1.0);
+  if (networkBloodScale > 0) {
+    spawnBloodBurst(
+      hit.point,
+      (hs ? 1.22 : 1.0) * networkBloodScale,
+      hs
+    );
+  }
+  if (!shotContext.directorHitRegistered) {
+    shotContext.directorHitRegistered = true;
+    recordRunHit({ headshot: hs });
+  }
+  return;
+}
+
+const wasHealth = e.health;
     const killed = wasHealth > 0 && wasHealth - finalDamage <= 0;
 
     e.health -= finalDamage;

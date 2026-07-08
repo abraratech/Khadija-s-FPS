@@ -11,6 +11,7 @@ import { SharedWorldManager } from './shared_world.js';
 
 let sessionRef = null;
 let runLauncher = null;
+let runEndHandler = null;
 let pendingOnlineRun = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
@@ -56,6 +57,15 @@ export function registerMultiplayerRunLauncher(launcher) {
     throw new TypeError('registerMultiplayerRunLauncher requires a function.');
   }
   runLauncher = launcher;
+}
+
+export function registerMultiplayerRunEndHandler(handler) {
+  if (typeof handler !== 'function') {
+    throw new TypeError(
+      'registerMultiplayerRunEndHandler requires a function.'
+    );
+  }
+  runEndHandler = handler;
 }
 
 export function initializeMultiplayerFoundation(
@@ -108,6 +118,25 @@ export function initializeMultiplayerFoundation(
       } else {
         console.error('[M3] Multiplayer run launcher has not been registered.');
       }
+    },
+    onRunEnded: (details = {}) => {
+      pendingOnlineRun = null;
+      sharedWorldManager?.endRun();
+      multiplayerRuntime.endRun();
+      remotePlayerManager?.endRun();
+
+      const state = multiplayerPlayers.syncLocalPlayer(
+        player,
+        performance.now(),
+        { force: true }
+      );
+
+      multiplayerSession.endRun({
+        reason: details.reason || 'ended',
+        playerSnapshot: state
+      });
+
+      runEndHandler?.(details);
     }
   });
   lobbyController.initialize();
@@ -148,7 +177,11 @@ export function beginMultiplayerRun({
   return sessionSnapshot;
 }
 
-export function endMultiplayerRun({ reason = 'ended', player = null } = {}) {
+export function endMultiplayerRun({
+  reason = 'ended',
+  player = null,
+  notifyServer = true
+} = {}) {
   if (!initialized) return null;
 
   const state = multiplayerPlayers.syncLocalPlayer(
@@ -160,12 +193,31 @@ export function endMultiplayerRun({ reason = 'ended', player = null } = {}) {
   sharedWorldManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun();
-  lobbyController?.notifyRunEnded?.(reason);
+
+  if (notifyServer) {
+    lobbyController?.notifyRunEnded?.(reason);
+  }
 
   return multiplayerSession.endRun({
     reason,
     playerSnapshot: state
   });
+}
+
+export function notifyMultiplayerPlayerDeath(reason = 'death') {
+  return lobbyController?.notifyPlayerDied?.(reason) === true;
+}
+
+export function openMultiplayerLobby() {
+  lobbyController?.openLobby?.();
+}
+
+export function isOnlineMultiplayerRun() {
+  return multiplayerSession?.run?.active === true
+    && (
+      multiplayerSession.mode === 'host'
+      || multiplayerSession.mode === 'client'
+    );
 }
 
 export function initializeSharedMultiplayerEnemies() {

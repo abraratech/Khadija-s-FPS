@@ -4,6 +4,10 @@ import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { SESSION_MODES } from './session.js';
 import { TRANSPORT_MODES, TRANSPORT_STATES } from './transport.js';
 import { MultiplayerLobbyUI } from './lobby_ui.js';
+import {
+  MULTIPLAYER_BUILD_ID,
+  MULTIPLAYER_PROTOCOL_VERSION
+} from './protocol.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -59,7 +63,8 @@ export class MultiplayerLobbyController {
     runtime,
     players,
     localPlayerId,
-    onStartRun
+    onStartRun,
+    onRunEnded
   } = {}) {
     this.eventBus = eventBus;
     this.transport = transport;
@@ -68,6 +73,7 @@ export class MultiplayerLobbyController {
     this.players = players;
     this.localPlayerId = localPlayerId;
     this.onStartRun = onStartRun;
+    this.onRunEnded = onRunEnded;
     this.ui = null;
     this.unsubscribe = [];
     this.error = null;
@@ -191,12 +197,28 @@ export class MultiplayerLobbyController {
     }
 
     if (action === 'welcome') {
+      if (
+        Number(payload.protocol) !== MULTIPLAYER_PROTOCOL_VERSION
+        || payload.build !== MULTIPLAYER_BUILD_ID
+      ) {
+        this.error = (
+          `WORKER BUILD MISMATCH · EXPECTED ${MULTIPLAYER_BUILD_ID}`
+        );
+        void this.transport.disconnect('worker-build-mismatch', {
+          fallbackLocal: true
+        });
+        this.render();
+        return;
+      }
+
       const room = payload.room;
       if (!room?.roomId || !payload.sessionId) {
         this.error = 'SERVER WELCOME WAS INCOMPLETE';
         this.render();
         return;
       }
+
+      const localRunWasActive = this.session.run?.active === true;
 
       this.connected = true;
       this.error = null;
@@ -217,6 +239,15 @@ export class MultiplayerLobbyController {
       });
 
       this.runtime.room.replaceFromSnapshot(room, 'server-welcome');
+
+      if (localRunWasActive && room.status !== 'in-run') {
+        this.onRunEnded?.({
+          reason: 'reconnected-after-run-ended',
+          endedByPlayerId: null,
+          room
+        });
+      }
+
       this.render();
       return;
     }
@@ -233,6 +264,18 @@ export class MultiplayerLobbyController {
       this.session.hostPlayerId = payload.room.hostPlayerId || null;
 
       this.runtime.room.replaceFromSnapshot(payload.room, 'server-room-state');
+
+      if (
+        this.session.run?.active === true
+        && payload.room.status !== 'in-run'
+      ) {
+        this.onRunEnded?.({
+          reason: 'room-returned-to-lobby',
+          endedByPlayerId: null,
+          room: payload.room
+        });
+      }
+
       this.render();
       return;
     }
@@ -253,6 +296,25 @@ export class MultiplayerLobbyController {
 
       this.ui?.close();
       this.onStartRun?.(start);
+      return;
+    }
+
+    if (action === 'run-ended') {
+      if (payload.room) {
+        this.connected = true;
+        this.room = payload.room;
+        this.runtime.room.replaceFromSnapshot(
+          payload.room,
+          'server-run-ended'
+        );
+      }
+
+      this.onRunEnded?.({
+        reason: String(payload.reason || 'ended'),
+        endedByPlayerId: payload.endedByPlayerId || null,
+        room: this.room
+      });
+      this.render();
       return;
     }
 
@@ -281,6 +343,18 @@ export class MultiplayerLobbyController {
     );
     if (!this.connected || local?.isHost !== true) return false;
     return this.transport.sendControl('end-run', { reason });
+  }
+
+  notifyPlayerDied(reason = 'death') {
+    if (!this.connected || this.room?.status !== 'in-run') return false;
+    return this.transport.sendControl('player-death', {
+      reason: String(reason || 'death')
+    });
+  }
+
+  openLobby() {
+    this.ui?.open();
+    this.render();
   }
 
   async leaveRoom() {

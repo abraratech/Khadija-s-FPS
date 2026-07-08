@@ -19,9 +19,10 @@ const state = {
   missingDomIds: [],
   mapId: null,
   mapValidation: null,
-  build: 'C13.2 PUBLIC PLAYABLE DEMO',
-  baselineCommit: '19af59b2e4de41d03685e1a49f7297e01d515587',
-  devMode: false
+  build: 'C13.3 PUBLIC PLAYABLE DEMO',
+  baselineCommit: '2cc8e4bab6ed3a7a4940b85fd84bec34dfe3667a',
+  devMode: false,
+  debugSurfaces: []
 };
 
 function testLocalStorage() {
@@ -81,6 +82,24 @@ export function runReleaseValidation({
   state.warnings = [];
   state.missingDomIds = REQUIRED_DOM_IDS.filter((id) => !document.getElementById(id));
   state.duplicateIds = getDuplicateIds();
+  state.debugSurfaces = [];
+
+  const loadedDevScript = [...document.scripts].some((script) =>
+    /(?:^|\/)dev_console\.js(?:$|[?#])/i.test(script.src || '')
+  );
+  if (loadedDevScript) state.debugSurfaces.push('dev_console.js script');
+  if (document.getElementById('dev-console')) state.debugSurfaces.push('#dev-console');
+  if (document.getElementById('ai-director-debug')) state.debugSurfaces.push('#ai-director-debug');
+  if (typeof window.devConsole !== 'undefined') state.debugSurfaces.push('window.devConsole');
+  if (typeof window.KASetAIDirectorDebug === 'function') state.debugSurfaces.push('window.KASetAIDirectorDebug');
+
+  try {
+    if (localStorage.getItem('ka_ai_director_debug') === 'on') {
+      state.debugSurfaces.push('ka_ai_director_debug storage');
+    }
+  } catch {
+    // Storage availability is checked separately below.
+  }
 
   const capabilities = {
     webgl: Boolean(window.WebGLRenderingContext || window.WebGL2RenderingContext),
@@ -102,6 +121,9 @@ export function runReleaseValidation({
     state.errors.push(`Duplicate DOM IDs: ${state.duplicateIds.join(', ')}`);
   }
   if (state.devMode) state.errors.push('Development mode must be disabled for the public build.');
+  if (state.debugSurfaces.length > 0) {
+    state.errors.push(`Developer diagnostics exposed: ${state.debugSurfaces.join(', ')}`);
+  }
   if (!capabilities.webgl) state.errors.push('WebGL is not available.');
   if (!capabilities.esModules) state.errors.push('ES modules are not supported.');
   if (state.mapValidation && state.phase === 'RUN_START') {
@@ -138,7 +160,8 @@ export function getReleaseValidationSnapshot() {
     mapValidation: state.mapValidation ? { ...state.mapValidation, warnings: [...state.mapValidation.warnings], errors: [...state.mapValidation.errors] } : null,
     build: state.build,
     baselineCommit: state.baselineCommit,
-    devMode: state.devMode
+    devMode: state.devMode,
+    debugSurfaces: [...state.debugSurfaces]
   };
 }
 

@@ -159,15 +159,16 @@ const state = {
 
 function readDebugSetting() {
   try {
-    return localStorage.getItem(DIRECTOR_DEBUG_KEY) === 'on';
+    localStorage.removeItem(DIRECTOR_DEBUG_KEY);
   } catch {
-    return false;
+    // Ignore restricted/private storage failures.
   }
+  return false;
 }
 
 function saveDebugSetting() {
   try {
-    localStorage.setItem(DIRECTOR_DEBUG_KEY, state.debugEnabled ? 'on' : 'off');
+    localStorage.removeItem(DIRECTOR_DEBUG_KEY);
   } catch {
     // Ignore restricted/private storage failures.
   }
@@ -546,90 +547,25 @@ function buildTuning(nextWave) {
   return state.tuning;
 }
 
-function ensureDebugPanel() {
-  if (state.debugPanel && document.body?.contains(state.debugPanel)) {
-    return state.debugPanel;
+function removeDirectorDebugSurface() {
+  state.debugEnabled = false;
+
+  if (state.debugPanel?.remove) {
+    state.debugPanel.remove();
+  }
+  state.debugPanel = null;
+
+  if (typeof document !== 'undefined') {
+    document.getElementById('ai-director-debug')?.remove();
   }
 
-  const panel = document.createElement('div');
-  panel.id = 'ai-director-debug';
-  panel.className = 'ai-director-debug';
-  panel.setAttribute('aria-live', 'polite');
-  document.body.appendChild(panel);
-
-  state.debugPanel = panel;
-  return panel;
+  saveDebugSetting();
 }
 
-function renderDebugPanel(force = false) {
-  if (!state.debugEnabled && !force) return;
-
-  const panel = ensureDebugPanel();
-  panel.classList.toggle('active', state.debugEnabled);
-
-  if (!state.debugEnabled) return;
-
-  const profile = state.profile;
-  const tuning = state.tuning;
-  const squad = getAISquadSnapshot();
-  const navigation = getAINavigationSnapshot();
-  const strategy = getAIStrategySnapshot();
-  const exploit = getAIExploitSnapshot();
-  const attacks = getAIAttackSnapshot();
-  const archetypes = getAIArchetypeSnapshot();
-  const formation = getAIFormationSnapshot();
-  const squadRoles = Object.entries(squad.roleCounts || {})
-    .filter(([, count]) => count > 0)
-    .map(([role, count]) => `${role.slice(0, 3)}:${count}`)
-    .join(' · ') || 'NONE';
-  const activationText = tuning.active
-    ? `ACTIVE · ${(tuning.intensity * 100).toFixed(0)}%`
-    : `OBSERVING · ONLINE R${DIRECTOR_ACTIVATION_WAVE}`;
-  const memoryText = state.memoryPrior?.available
-    ? `${state.memoryPrior.source.toUpperCase()} · ${state.memoryPrior.runs} RUN${state.memoryPrior.runs === 1 ? '' : 'S'} · ${Math.round(state.memoryBlend * 100)}%`
-    : 'EMPTY · LEARNS AFTER 2 WAVES';
-  const formationLanes = Object.entries(formation.laneCounts || {})
-    .filter(([, count]) => count > 0)
-    .map(([lane, count]) => `${lane.slice(0, 3)}:${count}`)
-    .join(' · ') || 'NONE';
-  const finalizationState = formation.overBudgetCount > 4
-    ? 'BUDGET WATCH'
-    : (formation.congestionPressure > 0.55 ? 'CONGESTION GUARD' : 'STABLE');
-
-  panel.innerHTML = `
-    <div class="ai-director-debug-title">AI DIRECTOR</div>
-    <div><span>STATE</span><b>${activationText}</b></div>
-    <div><span>STYLE</span><b>${profile.style}</b></div>
-    <div><span>RANGE</span><b>${profile.preferredRange}</b></div>
-    <div><span>CAMP</span><b>${Math.round(profile.campingScore * 100)}%</b></div>
-    <div><span>MOVE</span><b>${Math.round(profile.movementScore * 100)}%</b></div>
-    <div><span>ACCURACY</span><b>${Math.round(profile.accuracy * 100)}%</b></div>
-    <div><span>RESPONSE</span><b>${tuning.response}</b></div>
-    <div><span>STRATEGY</span><b>${strategy.activeLabel}${strategy.tier ? ` · T${strategy.tier}` : ''}</b></div>
-    <div><span>LEARNED</span><b>${strategy.persistentAttempts} TRY · ${Math.round(strategy.learnedScore * 100)}% · FAIR ${Math.round(strategy.fairnessScore * 100)}%</b></div>
-    <div><span>TACTIC TREND</span><b>ROLL ${Math.round(strategy.rollingScore * 100)}% · ${strategy.recentSampleCount}/3 · ${strategy.trendScore >= 0 ? '+' : ''}${Math.round(strategy.trendScore * 100)}%</b></div>
-    <div><span>REACH</span><b>${exploit.state} · ${exploit.currentDuration.toFixed(1)}s · ${exploit.nearbyBelow} BELOW</b></div>
-    <div><span>SURFACE</span><b>${exploit.supportTag.toUpperCase()} · ${exploit.supportAuthorized ? 'AUTHORED' : 'UNVERIFIED'}</b></div>
-    <div><span>EXPLOIT</span><b>${exploit.incidents} EVENT · PEAK ${exploit.peakDuration.toFixed(1)}s · RANGE ${exploit.rangedResponses}/${exploit.rangedHits}</b></div>
-    <div><span>ATTACK QUEUE</span><b>${attacks.activeTelegraphs} ACTIVE · ${attacks.queued} WAIT · MAX ${attacks.maxConcurrent}</b></div>
-    <div><span>COUNTERPLAY</span><b>${attacks.interrupted} INTERRUPT · ${attacks.evaded} EVADE · ${attacks.committed} COMMIT</b></div>
-    <div><span>SPECIAL FIRE</span><b>${attacks.projectileHits}/${attacks.projectileHits + attacks.projectileMisses} HIT · ${attacks.lastEvent}</b></div>
-    <div><span>ARCHETYPE</span><b>RUN ${archetypes.activeRunnerBursts}/${archetypes.maxRunnerBursts} · SPIT ${archetypes.spitterRepositioning} · EXP ${archetypes.exploderPrimed + archetypes.exploderCritical}</b></div>
-    <div><span>HEAVY ID</span><b>BRACE ${archetypes.bruteBracing} · GOL P${archetypes.goliathPhase || 0} · ${archetypes.goliathPhaseTransitions} SHIFT</b></div>
-    <div><span>IDENTITY EVENT</span><b>${archetypes.lastEvent}</b></div>
-    <div><span>FORMATION</span><b>${formation.active ? formationLanes : `ONLINE R${formation.activationWave}`}</b></div>
-    <div><span>CONGESTION</span><b>${formation.jammedEnemies} JAM · ${formation.yieldingEnemies} YIELD · CELL ${formation.maxCellOccupancy}</b></div>
-    <div><span>BREACH</span><b>${formation.breachActive ? formation.breachLeadType : 'IDLE'} · ${formation.breachEvents} EVENT · ${formation.reassignments} REASSIGN</b></div>
-    <div><span>AI FINAL</span><b>${finalizationState} · ${formation.averageUpdateMs.toFixed(2)}ms / ${formation.performanceBudgetMs.toFixed(2)}ms</b></div>
-    <div><span>MEMORY</span><b>${memoryText}</b></div>
-    <div><span>SQUAD</span><b>${squad.active ? 'COORDINATED' : `ONLINE R${squad.activationWave}`}</b></div>
-    <div><span>ROLES</span><b>${squadRoles}</b></div>
-    <div><span>HEAT</span><b>${squad.playerHeatCells}P / ${squad.deathHeatCells}D</b></div>
-    <div><span>TRAP AWARE</span><b>${squad.trapAwareEnemies}</b></div>
-    <div><span>NAV</span><b>${navigation.detouringEnemies} DETOUR · ${navigation.recoveringEnemies} RECOVER</b></div>
-    <div><span>STUCK</span><b>${navigation.stuckEnemies}</b></div>
-    <div class="ai-director-debug-foot">F7 TOGGLE · DIRECTOR CAP ${Math.round(DIRECTOR_MAX_INTENSITY * 100)}%</div>
-  `;
+function renderDebugPanel() {
+  // Public playable-demo build: keep Director behavior active while ensuring
+  // its internal monitoring UI can never be created or restored from storage.
+  removeDirectorDebugSurface();
 }
 
 function persistDirectorMemory(finalized = false) {
@@ -1123,38 +1059,37 @@ export function getAIFinalDiagnostics() {
   };
 }
 
-export function setAIDirectorDebugEnabled(enabled) {
-  state.debugEnabled = enabled === true;
-  saveDebugSetting();
-  renderDebugPanel(true);
-  return state.debugEnabled;
+export function setAIDirectorDebugEnabled() {
+  removeDirectorDebugSurface();
+  return false;
 }
 
 export function bindAIDirectorDebugHotkey() {
-  if (window.__KA_AI_DIRECTOR_DEBUG_BOUND__) return;
-  window.__KA_AI_DIRECTOR_DEBUG_BOUND__ = true;
-
-  window.addEventListener('keydown', (event) => {
-    if (event.code !== 'F7') return;
-
-    event.preventDefault();
-    setAIDirectorDebugEnabled(!state.debugEnabled);
-  });
-
-  renderDebugPanel(true);
+  // Compatibility no-op for older imports. No F7 listener is bound.
+  if (typeof window !== 'undefined') {
+    window.__KA_AI_DIRECTOR_DEBUG_BOUND__ = true;
+  }
+  removeDirectorDebugSurface();
 }
 
 if (typeof window !== 'undefined') {
+  removeDirectorDebugSurface();
+
   window.addEventListener('ka-ai-memory-reset', () => {
     if (state.runActive) return;
     state.memoryPrior = getAIMemoryPrior(state.mapId);
     state.memoryBlend = 0;
-    renderDebugPanel(true);
+    removeDirectorDebugSurface();
   });
-}
 
-// Console helpers for testing.
-window.KAGetAIDirector = getAIDirectorSnapshot;
-window.KASetAIDirectorDebug = setAIDirectorDebugEnabled;
-window.KAGetAIFinalDiagnostics = getAIFinalDiagnostics;
-window.KAExportAIDiagnostics = () => JSON.stringify(getAIFinalDiagnostics(), null, 2);
+  try {
+    delete window.KASetAIDirectorDebug;
+  } catch {
+    window.KASetAIDirectorDebug = undefined;
+  }
+
+  // Read-only diagnostics remain available for support without exposing a UI.
+  window.KAGetAIDirector = getAIDirectorSnapshot;
+  window.KAGetAIFinalDiagnostics = getAIFinalDiagnostics;
+  window.KAExportAIDiagnostics = () => JSON.stringify(getAIFinalDiagnostics(), null, 2);
+}

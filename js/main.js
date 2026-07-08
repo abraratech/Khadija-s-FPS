@@ -1,7 +1,7 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, getEnemyVisualStats } from './enemy.js';
+import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
@@ -60,6 +60,28 @@ export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Oper
 
 // Public playable-demo build. Development cheats and AI debug hotkeys stay disabled.
 export const DEV_MODE = false;
+
+function purgePublicDebugSurfaces() {
+  try {
+    localStorage.removeItem('ka_ai_director_debug');
+  } catch {
+    // Ignore restricted/private storage failures.
+  }
+
+  ['dev-console', 'ai-director-debug'].forEach((id) => {
+    document.getElementById(id)?.remove();
+  });
+
+  try {
+    delete window.devConsole;
+    delete window.KASetAIDirectorDebug;
+  } catch {
+    window.devConsole = undefined;
+    window.KASetAIDirectorDebug = undefined;
+  }
+}
+
+purgePublicDebugSurfaces();
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
 let usePostProcessing = true;
@@ -623,12 +645,10 @@ queueMicrotask(() => {
 let gs = 'menu', prev = 0;
 let smoothFps = 60;
 let worstFrameMs = 0;
-let lastSpike = "none";
 
 function resetFrameStats() {
   smoothFps = 60;
   worstFrameMs = 0;
-  lastSpike = "none";
   prev = 0;
 }
 let highScore = localStorage.getItem('fps_hi_score') || 0;
@@ -944,8 +964,7 @@ if (rawDt > 0.25) {
 
 const dt = Math.min(rawDt, 0.05);
 
-const instantFps = rawDt > 0 ? 1 / rawDt : 60;
-smoothFps = smoothFps * 0.9 + instantFps * 0.1;
+smoothFps = smoothFps * 0.9 + (rawDt > 0 ? 1 / rawDt : 60) * 0.1;
 
 const rawFrameMs = rawDt * 1000;
 
@@ -958,9 +977,6 @@ if (gs === 'playing') {
     worstFrameMs = rawFrameMs;
   }
 
-  if (rawFrameMs > 25) {
-    lastSpike = `${rawFrameMs.toFixed(1)} ms`;
-  }
 }
 
 const gamepadInput = pollGamepadInput();
@@ -1108,35 +1124,6 @@ renderGameFrame();
 const renderMs = performance.now() - renderStart;
 const frameMs = performance.now() - frameStart;
 
-if (typeof devConsole !== 'undefined' && devConsole?.update) {
-  devConsole.update({
-    fps: Math.round(smoothFps),
-	instantFps: Math.round(instantFps),
-	frameMs: frameMs.toFixed(2),
-	rawFrameMs: rawFrameMs.toFixed(2),
-	worstFrameMs: worstFrameMs.toFixed(2),
-	lastSpike: lastSpike,
-
-    wave: currentWave,
-	postProcessing: usePostProcessing ? "ON" : "OFF",
-    actors: actorManager.count(),
-    enemies: getActiveEnemies().length,
-	...getEnemyVisualStats(),
-    playerMs: playerMs.toFixed(2),
-    enemiesMs: enemiesMs.toFixed(2),
-    weaponMs: weaponMs.toFixed(2),
-    effectsMs: effectsMs.toFixed(2),
-	minimapMs: minimapMs.toFixed(2),
-    renderMs: renderMs.toFixed(2),
-
-    ...assetManager.stats(),
-
-    drawCalls: renderer.info.render.calls,
-    triangles: renderer.info.render.triangles,
-    gpuGeometries: renderer.info.memory.geometries,
-    gpuTextures: renderer.info.memory.textures
-  });
-}
 
 updatePerformanceStatsPanel({
   fps: Math.round(smoothFps),

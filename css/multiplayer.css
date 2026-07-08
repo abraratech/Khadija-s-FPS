@@ -1,0 +1,314 @@
+/* css/multiplayer.css */
+
+#ka-coop-open {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 9500;
+  border: 1px solid rgba(0, 212, 255, 0.72);
+  border-radius: 8px;
+  padding: 10px 15px;
+  background: rgba(3, 13, 20, 0.9);
+  color: #dffaff;
+  font: 800 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(0, 212, 255, 0.18);
+}
+
+#ka-coop-open[data-online="true"] {
+  border-color: rgba(81, 255, 151, 0.82);
+  color: #bfffd8;
+  box-shadow: 0 0 20px rgba(81, 255, 151, 0.24);
+}
+
+#ka-coop-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 50% 10%, rgba(0, 212, 255, 0.12), transparent 38%),
+    rgba(0, 4, 8, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+#ka-coop-modal.open {
+  display: flex;
+}
+
+.ka-coop-card {
+  width: min(760px, 96vw);
+  max-height: min(820px, 94vh);
+  overflow: auto;
+  border: 1px solid rgba(0, 212, 255, 0.45);
+  border-radius: 14px;
+  padding: 22px;
+  background:
+    linear-gradient(145deg, rgba(11, 28, 38, 0.98), rgba(3, 9, 14, 0.98));
+  color: #eafaff;
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  font-family: system-ui, sans-serif;
+}
+
+.ka-coop-header,
+.ka-coop-room-top,
+.ka-coop-player,
+.ka-coop-actions,
+.ka-coop-join-row {
+  display: flex;
+  align-items: center;
+}
+
+.ka-coop-header,
+.ka-coop-room-top {
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.ka-coop-header h2 {
+  margin: 4px 0 0;
+  font-size: clamp(20px, 4vw, 32px);
+  letter-spacing: 0.04em;
+}
+
+.ka-coop-kicker,
+.ka-coop-label,
+.ka-coop-field > span {
+  color: #7fdff1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ka-coop-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  font-size: 25px;
+}
+
+.ka-coop-status {
+  margin: 18px 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.ka-coop-status[data-tone="success"] {
+  border-color: rgba(81, 255, 151, 0.5);
+  color: #9dffc2;
+}
+
+.ka-coop-status[data-tone="warning"] {
+  border-color: rgba(255, 194, 92, 0.5);
+  color: #ffd489;
+}
+
+.ka-coop-status[data-tone="danger"] {
+  border-color: rgba(255, 82, 92, 0.58);
+  color: #ff9ba2;
+}
+
+.ka-coop-note {
+  margin: 0 0 18px;
+  color: #b7cbd3;
+  line-height: 1.55;
+}
+
+.ka-coop-field {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.ka-coop-field input,
+.ka-coop-field select,
+.ka-coop-join-row input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(127, 223, 241, 0.26);
+  border-radius: 7px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.34);
+  color: #ffffff;
+  font: 700 14px system-ui, sans-serif;
+  outline: none;
+}
+
+.ka-coop-field input:focus,
+.ka-coop-field select:focus,
+.ka-coop-join-row input:focus {
+  border-color: #00d4ff;
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.12);
+}
+
+.ka-coop-card button {
+  border: 1px solid rgba(127, 223, 241, 0.32);
+  border-radius: 7px;
+  padding: 11px 14px;
+  background: rgba(12, 32, 42, 0.96);
+  color: #eaffff;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.ka-coop-card button:hover:not(:disabled) {
+  border-color: #00d4ff;
+  transform: translateY(-1px);
+}
+
+.ka-coop-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.ka-coop-card .ka-coop-primary {
+  border-color: rgba(0, 212, 255, 0.72);
+  background: linear-gradient(135deg, #087d9e, #07546d);
+}
+
+.ka-coop-card .ka-coop-danger {
+  border-color: rgba(255, 82, 92, 0.46);
+  color: #ffadb3;
+}
+
+.ka-coop-connect-grid,
+.ka-coop-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ka-coop-join-row {
+  gap: 8px;
+}
+
+.ka-coop-join-row input {
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.ka-coop-room-top {
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 14px;
+}
+
+#ka-coop-code {
+  display: block;
+  margin-top: 3px;
+  color: #ffffff;
+  font-size: 28px;
+  letter-spacing: 0.22em;
+}
+
+.ka-coop-player-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+
+.ka-coop-player {
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.ka-coop-player-identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.ka-coop-player-slot {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0, 212, 255, 0.13);
+  color: #8cecff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ka-coop-player-role {
+  color: #718a94;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.ka-coop-player-state {
+  color: #ffbc75;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.ka-coop-player-state[data-ready="true"] {
+  color: #77ffad;
+}
+
+.ka-coop-player-state[data-connected="false"] {
+  color: #ff8b94;
+}
+
+.ka-coop-actions {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ka-coop-actions button {
+  flex: 1 1 160px;
+}
+
+#ka-coop-ready[data-ready="true"] {
+  border-color: rgba(81, 255, 151, 0.62);
+  color: #9dffc2;
+}
+
+@media (max-width: 680px), (max-height: 560px) {
+  #ka-coop-open {
+    top: 8px;
+    right: 8px;
+    padding: 8px 10px;
+  }
+
+  .ka-coop-card {
+    padding: 15px;
+    max-height: 96vh;
+  }
+
+  .ka-coop-connect-grid,
+  .ka-coop-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ka-coop-header h2 {
+    font-size: 20px;
+  }
+
+  .ka-coop-note {
+    font-size: 12px;
+  }
+}

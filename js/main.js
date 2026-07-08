@@ -54,12 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import {
-  initializeMultiplayerFoundation,
-  beginMultiplayerRun,
-  endMultiplayerRun,
-  syncMultiplayerFrame
-} from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -88,7 +83,16 @@ function purgePublicDebugSurfaces() {
 }
 
 purgePublicDebugSurfaces();
-initializeMultiplayerFoundation(player);
+initializeMultiplayerFoundation(player, { scene });
+registerMultiplayerRunLauncher(({ mapId, difficulty }) => {
+  const mapSelect = document.getElementById('map-select');
+  const difficultySelect = document.getElementById('diff-select');
+  if (mapSelect && mapId) mapSelect.value = mapId;
+  if (difficultySelect && difficulty !== undefined) {
+    difficultySelect.value = String(difficulty);
+  }
+  void beginRun();
+});
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
 let usePostProcessing = true;

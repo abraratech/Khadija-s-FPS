@@ -1,5 +1,7 @@
 // js/multiplayer/room.js
 
+import { MULTIPLAYER_EVENTS } from './event_bus.js';
+
 export const ROOM_STATUS = Object.freeze({
   WAITING: 'waiting',
   COUNTDOWN: 'countdown',
@@ -28,6 +30,7 @@ export class MultiplayerRoomState {
   constructor({ eventBus = null } = {}) {
     this.eventBus = eventBus;
     this.roomId = null;
+    this.roomCode = null;
     this.status = ROOM_STATUS.CLOSED;
     this.hostPlayerId = null;
     this.players = new Map();
@@ -37,6 +40,7 @@ export class MultiplayerRoomState {
       difficulty: 1,
       privacy: 'private'
     };
+    this.runId = null;
     this.revision = 0;
   }
 
@@ -51,8 +55,10 @@ export class MultiplayerRoomState {
     }
 
     this.roomId = makeRoomId();
+    this.roomCode = null;
     this.status = ROOM_STATUS.WAITING;
     this.hostPlayerId = hostPlayer.playerId;
+    this.runId = null;
     this.players.clear();
     this.settings = {
       ...this.settings,
@@ -73,7 +79,10 @@ export class MultiplayerRoomState {
 
   addPlayer(player) {
     if (!this.roomId || !player?.playerId) return null;
-    if (this.players.size >= this.settings.maxPlayers && !this.players.has(player.playerId)) {
+    if (
+      this.players.size >= this.settings.maxPlayers
+      && !this.players.has(player.playerId)
+    ) {
       return null;
     }
 
@@ -92,7 +101,8 @@ export class MultiplayerRoomState {
     this.players.delete(playerId);
 
     if (playerId === this.hostPlayerId) {
-      const nextHost = this.players.values().next().value || null;
+      const nextHost = Array.from(this.players.values())
+        .find((player) => player.connected !== false) || null;
       this.hostPlayerId = nextHost?.playerId || null;
       if (nextHost) nextHost.isHost = true;
     }
@@ -123,16 +133,21 @@ export class MultiplayerRoomState {
         Math.min(4, Math.floor(nextSettings.maxPlayers) || 4)
       );
     }
-    if (nextSettings.privacy) this.settings.privacy = String(nextSettings.privacy);
+    if (nextSettings.privacy) {
+      this.settings.privacy = String(nextSettings.privacy);
+    }
 
     this.commit('settings-changed');
     return true;
   }
 
-  beginRun({ mapId, difficulty } = {}) {
+  beginRun({ runId = null, mapId, difficulty } = {}) {
     if (!this.roomId) return null;
     if (mapId) this.settings.mapId = mapId;
-    if (difficulty !== undefined) this.settings.difficulty = Number(difficulty) || 1;
+    if (difficulty !== undefined) {
+      this.settings.difficulty = Number(difficulty) || 1;
+    }
+    this.runId = runId || this.runId;
     this.status = ROOM_STATUS.IN_RUN;
     return this.commit('run-started');
   }
@@ -140,23 +155,27 @@ export class MultiplayerRoomState {
   endRun() {
     if (!this.roomId || this.status === ROOM_STATUS.CLOSED) return null;
     this.status = ROOM_STATUS.WAITING;
+    this.runId = null;
     return this.commit('run-ended');
   }
 
   close() {
     this.status = ROOM_STATUS.CLOSED;
+    this.runId = null;
     return this.commit('closed');
   }
 
-  replaceFromSnapshot(snapshot) {
+  replaceFromSnapshot(snapshot, reason = 'remote-sync') {
     if (!snapshot?.roomId || !Array.isArray(snapshot.players)) return false;
 
     this.roomId = snapshot.roomId;
+    this.roomCode = snapshot.roomCode || null;
     this.status = Object.values(ROOM_STATUS).includes(snapshot.status)
       ? snapshot.status
       : ROOM_STATUS.WAITING;
     this.hostPlayerId = snapshot.hostPlayerId || null;
     this.settings = { ...this.settings, ...(snapshot.settings || {}) };
+    this.runId = snapshot.runId || null;
     this.revision = Math.max(this.revision, Number(snapshot.revision) || 0);
     this.players.clear();
 
@@ -164,26 +183,33 @@ export class MultiplayerRoomState {
       if (player?.playerId) this.players.set(player.playerId, { ...player });
     });
 
+    this.emitChange(reason);
     return true;
   }
 
   commit(reason) {
     this.revision += 1;
     const snapshot = this.getSnapshot();
-    this.eventBus?.emit('multiplayer:room-state-changed', {
+    this.emitChange(reason, snapshot);
+    return snapshot;
+  }
+
+  emitChange(reason, snapshot = this.getSnapshot()) {
+    this.eventBus?.emit(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, {
       reason,
       room: snapshot
     });
-    return snapshot;
   }
 
   getSnapshot() {
     return {
       roomId: this.roomId,
+      roomCode: this.roomCode,
       status: this.status,
       hostPlayerId: this.hostPlayerId,
       settings: { ...this.settings },
       players: Array.from(this.players.values(), serializePlayer),
+      runId: this.runId,
       revision: this.revision
     };
   }

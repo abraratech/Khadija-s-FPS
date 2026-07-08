@@ -9,6 +9,7 @@ import {
 import { MultiplayerCommandStream } from './command_stream.js';
 import { RemoteSnapshotBuffer } from './snapshot_buffer.js';
 import { MultiplayerRoomState } from './room.js';
+import { TRANSPORT_MODES } from './transport.js';
 
 export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   PROTOCOL_REJECTED: 'multiplayer:protocol-rejected',
@@ -94,6 +95,23 @@ export class MultiplayerRuntime {
     return this.getSnapshot();
   }
 
+  resetToLocalRoom() {
+    this.remoteSnapshots.clear();
+    this.lastRemoteCommands.clear();
+    this.remoteActions.length = 0;
+
+    const localPlayer = this.players?.getLocalPlayerSnapshot?.();
+    if (localPlayer) {
+      this.room.createLocalRoom({
+        hostPlayer: localPlayer,
+        mapId: 'grid_bunker',
+        difficulty: 1
+      });
+    }
+
+    return this.room.getSnapshot();
+  }
+
   beginRun(sessionSnapshot = this.session?.getSnapshot?.()) {
     const run = sessionSnapshot?.run || null;
     this.commandStream.beginRun(run?.runId || null);
@@ -102,6 +120,7 @@ export class MultiplayerRuntime {
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
     this.room.beginRun({
+      runId: run?.runId,
       mapId: run?.mapId,
       difficulty: run?.difficulty
     });
@@ -172,6 +191,8 @@ export class MultiplayerRuntime {
 
   sendRoomState() {
     if (!this.room.roomId) return null;
+    if (this.transport?.getMode?.() === TRANSPORT_MODES.ONLINE) return null;
+
     this.roomSequence += 1;
     return this.sendEnvelope(
       MULTIPLAYER_MESSAGE_TYPES.ROOM_STATE,
@@ -242,10 +263,13 @@ export class MultiplayerRuntime {
     this.metrics.envelopesAccepted += 1;
 
     if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.PLAYER_SNAPSHOT) {
+      const receivedAt = nowMs();
       const result = this.remoteSnapshots.push(envelope.playerId, {
         sequence: envelope.sequence,
-        sentAt: envelope.sentAt,
-        receivedAt: nowMs(),
+        // Remote performance.now() clocks are not comparable. Place snapshots
+        // on the local receive timeline before interpolation.
+        sentAt: receivedAt,
+        receivedAt,
         state: envelope.payload?.state
       });
 
@@ -281,7 +305,10 @@ export class MultiplayerRuntime {
 
     if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.ROOM_STATE) {
       return {
-        accepted: this.room.replaceFromSnapshot(envelope.payload?.room)
+        accepted: this.room.replaceFromSnapshot(
+          envelope.payload?.room,
+          'protocol-room-sync'
+        )
       };
     }
 
@@ -290,6 +317,11 @@ export class MultiplayerRuntime {
 
   sampleRemotePlayer(playerId, now = nowMs()) {
     return this.remoteSnapshots.sample(playerId, now);
+  }
+
+  removeRemotePlayer(playerId) {
+    this.remoteSnapshots.removePlayer(playerId);
+    this.lastRemoteCommands.delete(playerId);
   }
 
   getSnapshot() {

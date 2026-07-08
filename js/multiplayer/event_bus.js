@@ -8,16 +8,24 @@ export const MULTIPLAYER_EVENTS = Object.freeze({
   PLAYER_JOINED: 'multiplayer:player-joined',
   PLAYER_LEFT: 'multiplayer:player-left',
   PLAYER_STATE_CHANGED: 'multiplayer:player-state-changed',
+  ROOM_STATE_CHANGED: 'multiplayer:room-state-changed',
   TRANSPORT_STATE_CHANGED: 'multiplayer:transport-state-changed',
-  TRANSPORT_MESSAGE: 'multiplayer:transport-message'
+  TRANSPORT_MESSAGE: 'multiplayer:transport-message',
+  TRANSPORT_CONTROL: 'multiplayer:transport-control',
+  TRANSPORT_ERROR: 'multiplayer:transport-error'
 });
 
 function makeEventId(sequence) {
   const randomPart = typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-
   return `ka-event-${sequence}-${randomPart}`;
+}
+
+function eventTime() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
 }
 
 export class MultiplayerEventBus {
@@ -31,7 +39,6 @@ export class MultiplayerEventBus {
     if (typeof type !== 'string' || !type) {
       throw new TypeError('MultiplayerEventBus.on requires a non-empty event type.');
     }
-
     if (typeof listener !== 'function') {
       throw new TypeError('MultiplayerEventBus.on requires a listener function.');
     }
@@ -42,7 +49,6 @@ export class MultiplayerEventBus {
 
     const bucket = this.listeners.get(type);
     bucket.add(listener);
-
     return () => this.off(type, listener);
   }
 
@@ -51,7 +57,6 @@ export class MultiplayerEventBus {
       unsubscribe();
       listener(event);
     });
-
     return unsubscribe;
   }
 
@@ -70,12 +75,11 @@ export class MultiplayerEventBus {
     }
 
     this.sequence += 1;
-
     const event = Object.freeze({
       eventId: makeEventId(this.sequence),
       type,
       sequence: this.sequence,
-      timestamp: performance.now(),
+      timestamp: eventTime(),
       sourceId: meta.sourceId || this.sourceIdProvider() || 'local',
       payload
     });

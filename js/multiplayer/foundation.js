@@ -3,16 +3,22 @@
 import { MultiplayerEventBus, MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MultiplayerSession } from './session.js';
 import { MultiplayerPlayerRegistry } from './player_registry.js';
-import { NullMultiplayerTransport } from './transport.js';
+import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime } from './runtime.js';
+import { MultiplayerLobbyController } from './lobby.js';
+import { RemotePlayerManager } from './remote_players.js';
 
 let sessionRef = null;
+let runLauncher = null;
+let pendingOnlineRun = null;
+let remotePlayerManager = null;
+let lobbyController = null;
 
 export const multiplayerEvents = new MultiplayerEventBus({
   sourceIdProvider: () => sessionRef?.clientId || 'bootstrap'
 });
 
-export const multiplayerTransport = new NullMultiplayerTransport({
+export const multiplayerTransport = new MultiplayerTransport({
   eventBus: multiplayerEvents
 });
 
@@ -43,7 +49,14 @@ function localPlayerId() {
   return `player-${multiplayerSession.clientId}`;
 }
 
-export function initializeMultiplayerFoundation(player) {
+export function registerMultiplayerRunLauncher(launcher) {
+  if (typeof launcher !== 'function') {
+    throw new TypeError('registerMultiplayerRunLauncher requires a function.');
+  }
+  runLauncher = launcher;
+}
+
+export function initializeMultiplayerFoundation(player, { scene = null } = {}) {
   if (initialized) return getMultiplayerFoundationSnapshot();
 
   const playerId = localPlayerId();
@@ -57,10 +70,35 @@ export function initializeMultiplayerFoundation(player) {
   multiplayerTransport.connect();
   multiplayerRuntime.initialize({ localPlayerId: playerId });
 
+  remotePlayerManager = new RemotePlayerManager({
+    scene,
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    localPlayerId: playerId
+  });
+
+  lobbyController = new MultiplayerLobbyController({
+    eventBus: multiplayerEvents,
+    transport: multiplayerTransport,
+    session: multiplayerSession,
+    runtime: multiplayerRuntime,
+    players: multiplayerPlayers,
+    localPlayerId: playerId,
+    onStartRun: (start) => {
+      pendingOnlineRun = start;
+      if (typeof runLauncher === 'function') {
+        runLauncher(start);
+      } else {
+        console.error('[M2] Multiplayer run launcher has not been registered.');
+      }
+    }
+  });
+  lobbyController.initialize();
+
   initialized = true;
 
   console.info(
-    '[M1.2-M1.5] Multiplayer protocol, command stream, snapshot buffer, and room model ready.'
+    '[M2.1-M2.4] Online lobby, WebSocket transport, synchronized launch, and remote players ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -77,13 +115,18 @@ export function beginMultiplayerRun({
 
   multiplayerPlayers.syncLocalPlayer(null, performance.now(), { force: true });
 
+  const pending = pendingOnlineRun;
+  pendingOnlineRun = null;
+
   const sessionSnapshot = multiplayerSession.beginRun({
-    mapId,
-    difficulty,
+    runId: pending?.runId || null,
+    mapId: pending?.mapId || mapId,
+    difficulty: pending?.difficulty ?? difficulty,
     fromRespawn
   });
 
   multiplayerRuntime.beginRun(sessionSnapshot);
+  remotePlayerManager?.beginRun();
   return sessionSnapshot;
 }
 
@@ -97,6 +140,8 @@ export function endMultiplayerRun({ reason = 'ended', player = null } = {}) {
   );
 
   multiplayerRuntime.endRun();
+  remotePlayerManager?.endRun();
+  lobbyController?.notifyRunEnded?.(reason);
 
   return multiplayerSession.endRun({
     reason,
@@ -132,10 +177,14 @@ export function syncMultiplayerFrame(
     now
   });
 
+  remotePlayerManager?.update(now);
   return { state, input };
 }
 
-export function sampleRemoteMultiplayerPlayer(playerId, now = performance.now()) {
+export function sampleRemoteMultiplayerPlayer(
+  playerId,
+  now = performance.now()
+) {
   if (!initialized) return null;
   return multiplayerRuntime.sampleRemotePlayer(playerId, now);
 }
@@ -146,7 +195,9 @@ export function getMultiplayerFoundationSnapshot() {
     session: multiplayerSession.getSnapshot(),
     players: multiplayerPlayers.getPlayersSnapshot(),
     transportState: multiplayerTransport.getState(),
-    runtime: multiplayerRuntime.getSnapshot()
+    runtime: multiplayerRuntime.getSnapshot(),
+    lobby: lobbyController?.getSnapshot?.() || null,
+    remotePlayers: remotePlayerManager?.getSnapshot?.() || null
   };
 }
 

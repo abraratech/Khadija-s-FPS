@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -96,29 +96,6 @@ initializeMultiplayerFoundation(player, {
     configureMultiplayerEnemyAuthority,
     damagePlayer
   },
-  reviveAdapter: {
-    getWave: () => currentWave,
-    clearInput: clearInputState,
-    syncHud: syncHudFromPlayer,
-    showToast: showStatusToast,
-    requestTeamGameOver: () => requestOnlineRunEnd('team-eliminated'),
-    reviveLocalPlayer: ({ health = 40 } = {}) => {
-      player.alive = true;
-      player.health = Math.max(1, Math.round(Number(health) || 40));
-      player.vel.set(0, 0, 0);
-      syncHudFromPlayer();
-      onlineDeathReportPending = false;
-    },
-    respawnLocalPlayer: ({ health = 100 } = {}) => {
-      player.alive = true;
-      player.health = Math.max(1, Math.round(Number(health) || 100));
-      player.vel.set(0, 0, 0);
-      placePlayerAtRandomSpawn();
-      syncHudFromPlayer();
-      onlineDeathReportPending = false;
-    },
-    camera
-  },
   economyAdapter: {
     prepareMultiplayerWorld,
     getLocalPurchaseState,
@@ -140,8 +117,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-revive-r1';
-console.info('[Multiplayer Build] m3-revive-r1 · protocol 4');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-shared-economy-r1';
+console.info('[Multiplayer Build] m3-shared-economy-r1 · protocol 3');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -915,9 +892,6 @@ function resetPlayerRunState() {
   player.doublePointsTimer = 0;
 
   player.alive = true;
-  player.isDowned = false;
-  player.isSpectating = false;
-  player.multiplayerLifeState = 'ACTIVE';
 }
 
 function placePlayerAtRandomSpawn() {
@@ -1225,8 +1199,8 @@ if (gs !== 'playing') {
 
 if (gamepadInput.pausePressed) { togglePauseGameplay('gamepad'); renderGameFrame(); return; }
 
-populateFrameKeys(keys, gamepadInput, frameKeys); if (coOpMenuOpen || isMultiplayerLifeInputBlocked()) { Object.keys(frameKeys).forEach((key) => { frameKeys[key] = false; }); pendingShot = false; }
-player.isADS = !isMultiplayerLifeInputBlocked() && (mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld);
+populateFrameKeys(keys, gamepadInput, frameKeys); if (coOpMenuOpen) { Object.keys(frameKeys).forEach((key) => { frameKeys[key] = false; }); pendingShot = false; }
+player.isADS = mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld;
 
 // Mobile auto-sprint replaces another large on-screen button. It activates
 // only when the joystick is pushed strongly forward and immediately releases
@@ -1241,10 +1215,10 @@ if (
 }
 player.isSprinting = Boolean(frameKeys.ShiftLeft);
 
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.firePressed) {
+if (!coOpMenuOpen && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
+if (!coOpMenuOpen && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
+if (!coOpMenuOpen && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
+if (!coOpMenuOpen && gamepadInput.firePressed) {
   pendingShot = true;
   recordTutorialAction('FIRE');
 }
@@ -1310,14 +1284,10 @@ for (const event of consumeTutorialEvents()) {
 
 updateSharedMultiplayerWorld(dt, performance.now());
 updateSharedMultiplayerEconomy(performance.now());
-updateMultiplayerRevive(dt, performance.now(), {
-  interactHeld: Boolean(frameKeys.KeyE || frameKeys.KeyF)
-});
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
 const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;
-if (!isMultiplayerLifeInputBlocked()) {
 updateGun(dt, frameKeys, isMoving);
 updateShops(dt);
 checkWorldInteractions(false); 
@@ -1325,7 +1295,6 @@ checkWorldInteractions(false);
 if (pendingShot) { 
   shoot(); 
   pendingShot = false; 
-}
 }
 
 const weaponMs = performance.now() - mark;
@@ -1336,16 +1305,12 @@ updateUIEffects(dt);
 processReloadTick(dt);
 const effectsMs = performance.now() - mark;
 
-  if (player.alive && onlineDeathReportPending && isOnlineMultiplayerRun()) {
-    onlineDeathReportPending = false;
-  }
-
   if (!player.alive && gs === 'playing') {
     if (isOnlineMultiplayerRun()) {
       if (!onlineDeathReportPending) {
-        onlineDeathReportPending = notifyMultiplayerLocalDowned('player-downed');
+        requestOnlineRunEnd('player-death');
         showStatusToast(
-          'DOWNED · HOLD INTERACT TO REVIVE TEAMMATE',
+          'OPERATIVE DOWN · RETURNING TEAM TO CO-OP LOBBY',
           '#ff5a36',
           1800
         );

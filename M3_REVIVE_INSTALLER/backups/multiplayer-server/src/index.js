@@ -7,8 +7,8 @@ const MAX_PLAYERS = 4;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 30_000;
-const SERVER_PROTOCOL = 4;
-const SERVER_BUILD = 'm3-revive-r1';
+const SERVER_PROTOCOL = 3;
+const SERVER_BUILD = 'm3-shared-economy-r1';
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});

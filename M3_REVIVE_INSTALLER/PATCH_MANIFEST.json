@@ -1,0 +1,33 @@
+{
+  "baseline_head": "5f039c8cd0ac2cc88177f244cdbb68fc0252eb7c",
+  "build_id": "m3-revive-r1",
+  "expected_hashes": {
+    "js/main.js": "1351a119569e2bd9bb38dece8ab7f6b45054099d27c456b52a4fd7d46869e04c",
+    "js/multiplayer/protocol.js": "e6b851b582fbe13fdc7e6ee25e97b4172d367d907542448469c72beea1374f63",
+    "js/multiplayer/runtime.js": "fcb33432f77acc3235380b6b37e0093dfe635f8103b973c9bb9ebf98a805990d",
+    "js/multiplayer/foundation.js": "8a3f6fc8f506bcfd57611f09cb6d761cd30d70e13f57065f8a247ff0b743142c",
+    "js/multiplayer/revive_core.js": null,
+    "js/multiplayer/revive.js": null,
+    "multiplayer-server/src/index.js": "f1882605e6c7453a6f867932ca02b7360ef90a043e56b1e936804846858c50a6"
+  },
+  "installed_hashes": {
+    "js/main.js": "8dc7bfea191dc852b3acec542f6755ec22f920e81409b64982e5c92922dd47f6",
+    "js/multiplayer/protocol.js": "583ff53ed04b36a1239717cbf273925f094598b82881255d9eaca157ea27b74f",
+    "js/multiplayer/runtime.js": "3e96d65ff123a6d17f3de9d4dd03289a12d533d6adf1b887a28a4bc012b16599",
+    "js/multiplayer/foundation.js": "8dc21770f1b8ff7a4f9ddf794f1724c729e512d46fecea73a11902a6e548f6bc",
+    "js/multiplayer/revive_core.js": "91c2597c34843fc77873c37a35efa244b642355f4907b2c565de785366e8cb40",
+    "js/multiplayer/revive.js": "e837512faa7333c7dfa7955c0dc834de8ea1c662dcf0c1532d547709021a7f07",
+    "multiplayer-server/src/index.js": "f291d79ec75b49e660cf58d72a3f34af1db7e90335d071a39728468d7ab87211"
+  },
+  "modified_files": [
+    "js/main.js",
+    "js/multiplayer/protocol.js",
+    "js/multiplayer/runtime.js",
+    "js/multiplayer/foundation.js",
+    "js/multiplayer/revive_core.js",
+    "js/multiplayer/revive.js",
+    "multiplayer-server/src/index.js"
+  ],
+  "worker_redeploy_required": true,
+  "worker_url": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev"
+}

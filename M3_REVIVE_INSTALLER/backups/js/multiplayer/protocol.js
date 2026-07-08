@@ -1,8 +1,8 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-revive-r1';
-export const MULTIPLAYER_PROTOCOL_VERSION = 4;
-export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([3, 4]);
+export const MULTIPLAYER_BUILD_ID = 'm3-shared-economy-r1';
+export const MULTIPLAYER_PROTOCOL_VERSION = 3;
+export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([2, 3]);
 
 export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   INPUT_COMMAND: 'input-command',
@@ -15,7 +15,6 @@ export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   ECONOMY_REQUEST: 'economy-request',
   ECONOMY_RESULT: 'economy-result',
   ECONOMY_SNAPSHOT: 'economy-snapshot',
-  REVIVE_STATE: 'revive-state',
   HEARTBEAT: 'heartbeat'
 });
 

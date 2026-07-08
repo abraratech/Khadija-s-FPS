@@ -23,8 +23,7 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_PLAYER_DAMAGE_RECEIVED: 'multiplayer:remote-player-damage-received',
   REMOTE_ECONOMY_REQUEST_RECEIVED: 'multiplayer:remote-economy-request-received',
   REMOTE_ECONOMY_RESULT_RECEIVED: 'multiplayer:remote-economy-result-received',
-  REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received',
-  REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received'
+  REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received'
 });
 
 function nowMs() {
@@ -63,8 +62,6 @@ export class MultiplayerRuntime {
     this.economyRequestSequence = 0;
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
-    this.reviveStateSequence = 0;
-    this.reviveStateSequence = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -85,9 +82,7 @@ export class MultiplayerRuntime {
       economyResultsSent: 0,
       economyResultsReceived: 0,
       economySnapshotsSent: 0,
-      economySnapshotsReceived: 0,
-      reviveStatesSent: 0,
-      reviveStatesReceived: 0
+      economySnapshotsReceived: 0
     };
   }
 
@@ -151,8 +146,6 @@ export class MultiplayerRuntime {
     this.economyRequestSequence = 0;
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
-    this.reviveStateSequence = 0;
-    this.reviveStateSequence = 0;
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -320,21 +313,6 @@ export class MultiplayerRuntime {
     return envelope;
   }
 
-  sendReviveState(state) {
-    if (!this.initialized || !this.session?.run?.active || !state) {
-      return null;
-    }
-
-    this.reviveStateSequence += 1;
-    const envelope = this.sendEnvelope(
-      MULTIPLAYER_MESSAGE_TYPES.REVIVE_STATE,
-      state,
-      this.reviveStateSequence
-    );
-    this.metrics.reviveStatesSent += 1;
-    return envelope;
-  }
-
   sendRoomState() {
     if (!this.room.roomId) return null;
     if (this.transport?.getMode?.() === TRANSPORT_MODES.ONLINE) return null;
@@ -479,15 +457,6 @@ export class MultiplayerRuntime {
       this.metrics.economySnapshotsReceived += 1;
       this.eventBus?.emit(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ECONOMY_SNAPSHOT_RECEIVED,
-        { envelope }
-      );
-      return { accepted: true };
-    }
-
-    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.REVIVE_STATE) {
-      this.metrics.reviveStatesReceived += 1;
-      this.eventBus?.emit(
-        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_REVIVE_STATE_RECEIVED,
         { envelope }
       );
       return { accepted: true };

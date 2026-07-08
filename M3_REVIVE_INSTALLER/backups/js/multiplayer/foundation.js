@@ -9,7 +9,6 @@ import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
-import { MultiplayerReviveManager } from './revive.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -18,7 +17,6 @@ let pendingOnlineRun = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
-let reviveManager = null;
 let lobbyController = null;
 
 export const multiplayerEvents = new MultiplayerEventBus({
@@ -77,8 +75,7 @@ export function initializeMultiplayerFoundation(
   {
     scene = null,
     worldAdapter = null,
-    economyAdapter = null,
-    reviveAdapter = null
+    economyAdapter = null
   } = {}
 ) {
   if (initialized) return getMultiplayerFoundationSnapshot();
@@ -120,15 +117,6 @@ export function initializeMultiplayerFoundation(
     economy: economyManager
   });
 
-  reviveManager = new MultiplayerReviveManager({
-    eventBus: multiplayerEvents,
-    runtime: multiplayerRuntime,
-    session: multiplayerSession,
-    player,
-    scene,
-    adapter: reviveAdapter
-  });
-
   lobbyController = new MultiplayerLobbyController({
     eventBus: multiplayerEvents,
     transport: multiplayerTransport,
@@ -147,7 +135,6 @@ export function initializeMultiplayerFoundation(
     onRunEnded: (details = {}) => {
       pendingOnlineRun = null;
       sharedWorldManager?.endRun();
-      reviveManager?.endRun();
       economyManager?.endRun();
       multiplayerRuntime.endRun();
       remotePlayerManager?.endRun();
@@ -171,7 +158,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.5-M3.6] Downed, revive, spectating, and team elimination ready.'
+    '[M3.3-M3.4] Shared horde, authoritative economy, and synchronized interactions ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -201,7 +188,6 @@ export function beginMultiplayerRun({
   multiplayerRuntime.beginRun(sessionSnapshot);
   remotePlayerManager?.beginRun();
   economyManager?.beginRun();
-  reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
   return sessionSnapshot;
 }
@@ -220,7 +206,6 @@ export function endMultiplayerRun({
   );
 
   sharedWorldManager?.endRun();
-  reviveManager?.endRun();
   economyManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun();
@@ -303,30 +288,6 @@ export function updateSharedMultiplayerWorld(
   sharedWorldManager?.update(dt, now);
 }
 
-export function updateMultiplayerRevive(
-  dt,
-  now = performance.now(),
-  options = {}
-) {
-  if (!initialized) return;
-  reviveManager?.update(dt, now, options);
-}
-
-export function notifyMultiplayerLocalDowned(reason = 'damage') {
-  if (!initialized) return false;
-  return reviveManager?.handleLocalDeath?.(reason) === true;
-}
-
-export function isMultiplayerLifeInputBlocked() {
-  if (!initialized) return false;
-  return reviveManager?.isInputBlocked?.() === true;
-}
-
-export function getMultiplayerReviveSnapshot() {
-  if (!initialized) return null;
-  return reviveManager?.getSnapshot?.() || null;
-}
-
 export function isSharedMultiplayerWorldAuthority() {
   if (!initialized) return true;
   return sharedWorldManager?.isAuthority?.() !== false;
@@ -382,8 +343,7 @@ export function getMultiplayerFoundationSnapshot() {
     lobby: lobbyController?.getSnapshot?.() || null,
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
-    economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null
+    economy: economyManager?.getSnapshot?.() || null
   };
 }
 

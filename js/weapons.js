@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId, updateBarricadeRepairGhost } from './map.js';
 import { player } from './player.js';
 import { activeEnemies, killEnemy, getEnemyPointReward, currentWave } from './enemy.js';
-import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, spawnFloatingScore, updateHealthHUD, showStatusToast, updateCombatStatusHUD, showShopFeedback, updateShopFeedbackProgress, hideShopFeedback } from './ui.js';
+import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt, updateScoreHUD, updateKillsHUD, spawnFloatingScore, updateHealthHUD, showStatusToast, updateCombatStatusHUD, showShopFeedback, updateShopFeedbackProgress, hideShopFeedback } from './ui.js';
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
 import { playWeaponSound, playWeaponReloadSound, playWorldSound, playUISound } from './audio.js';
 import { getGameplayPointsForMap } from './maps/gameplay_points.js';
@@ -61,6 +61,28 @@ export let muzzleT = 0;
 let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
+let multiplayerEconomy = null;
+let networkShotSequence = 0;
+const openedNetworkDoorIds = new Set();
+const networkRepairAwards = new Map();
+
+export function configureMultiplayerEconomy(config = null) {
+  multiplayerEconomy = config && typeof config === 'object'
+    ? config
+    : null;
+}
+
+function isOnlineEconomyRun() {
+  return multiplayerEconomy?.isOnline?.() === true;
+}
+
+function isEconomyAuthority() {
+  return multiplayerEconomy?.isAuthority?.() !== false;
+}
+
+function localMultiplayerPlayerId() {
+  return multiplayerEconomy?.getLocalPlayerId?.() || null;
+}
 
 const SNIPER_SCOPE_ZOOM_KEY = 'ka_sniper_scope_fov';
 const SNIPER_SCOPE_FOV_DEFAULT = 24;
@@ -245,6 +267,7 @@ function clearMysteryReadyWeapon(shop, options = {}) {
   }
 
   shop.finalWeapon = null;
+  shop.finalWeaponKey = null;
   shop.timer = 0;
   shop.cycleTimer = 0;
   shop.state = 'IDLE';
@@ -662,10 +685,15 @@ function removeShop(shop) {
 // ── UNIVERSAL SHOP RELOCATOR ──
 function relocateShop(shop, spawnList) {
   const nextPlacement = getShopPlacement(shop.type, shop, spawnList);
+  const networkId = shop?.networkId || null;
+  const ownerPlayerId = shop?.ownerPlayerId || null;
 
   removeShop(shop);
 
-  return spawnShop(shop.type, nextPlacement);
+  const relocated = spawnShop(shop.type, nextPlacement);
+  if (networkId) relocated.networkId = networkId;
+  if (ownerPlayerId) relocated.ownerPlayerId = ownerPlayerId;
+  return relocated;
 }
 
 
@@ -925,6 +953,9 @@ export function buildGun() {
   activeShops.forEach(s => scene.remove(s.mesh));
   player.inventory = []; 
   activeShops.length = 0;
+  openedNetworkDoorIds.clear();
+  networkRepairAwards.clear();
+  networkShotSequence = 0;
 
   const pistolDef = WEAPON_DEFS.PISTOL;
   player.inventory.push(createWeaponInstance(pistolDef));
@@ -1062,6 +1093,8 @@ function spawnShop(type, placementInput) {
   }
   
   g.position.copy(position); scene.add(g);
+  const sameTypeCount = activeShops.filter((shop) => shop.type === type).length;
+  shopData.networkId = shopData.networkId || `shop:${type}:${sameTypeCount}`;
   activeShops.push(shopData);
   return shopData;
 }
@@ -1093,7 +1126,927 @@ export function cycleWeapon() {
   equipWeapon((player.currentWeaponIdx + 1) % player.inventory.length);
 }
 
+
+// ── M3.3-M3.4 HOST-AUTHORITATIVE ECONOMY / WORLD STATE ──
+const MULTIPLAYER_INTERACTION_RANGES = Object.freeze({
+  door: 5.8,
+  barricade: 3.2,
+  trap: 2.8,
+  shop: 2.8
+});
+
+function toNetworkVector(value) {
+  return {
+    x: Number(value?.x || 0),
+    y: Number(value?.y || 0),
+    z: Number(value?.z || 0)
+  };
+}
+
+function actorPositionFromContext(context = {}) {
+  return context.playerState?.position
+    || context.request?.actor?.position
+    || context.request?.position
+    || null;
+}
+
+function distanceToNetworkTarget(actorPosition, targetPosition) {
+  if (!actorPosition || !targetPosition) return Infinity;
+  const dx = Number(actorPosition.x || 0) - Number(targetPosition.x || 0);
+  const dy = Number(actorPosition.y || 0) - Number(targetPosition.y || 0);
+  const dz = Number(actorPosition.z || 0) - Number(targetPosition.z || 0);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function getDoorNetworkId(door, index = -1) {
+  if (!door) return null;
+  door.userData = door.userData || {};
+  if (!door.userData.networkId) {
+    door.userData.networkId = `door:${index >= 0 ? index : doors.indexOf(door)}`;
+  }
+  return door.userData.networkId;
+}
+
+function getBarricadeNetworkId(barricade, index = -1) {
+  if (!barricade) return null;
+  if (!barricade.networkId) {
+    barricade.networkId = `barricade:${index >= 0 ? index : barricades.indexOf(barricade)}`;
+  }
+  return barricade.networkId;
+}
+
+function getTrapNetworkId(trap, index = -1) {
+  if (!trap) return null;
+  if (!trap.networkId) {
+    trap.networkId = `trap:${index >= 0 ? index : traps.indexOf(trap)}`;
+  }
+  return trap.networkId;
+}
+
+function prepareNetworkIds() {
+  doors.forEach((door, index) => getDoorNetworkId(door, index));
+  barricades.forEach((barricade, index) => getBarricadeNetworkId(barricade, index));
+  traps.forEach((trap, index) => getTrapNetworkId(trap, index));
+  activeShops.forEach((shop, index) => {
+    if (!shop.networkId) shop.networkId = `shop:${shop.type}:${index}`;
+  });
+}
+
+function findDoorByNetworkId(networkId) {
+  return doors.find((door) => getDoorNetworkId(door) === networkId) || null;
+}
+
+function findBarricadeByNetworkId(networkId) {
+  return barricades.find((barricade) => (
+    getBarricadeNetworkId(barricade) === networkId
+  )) || null;
+}
+
+function findTrapByNetworkId(networkId) {
+  return traps.find((trap) => getTrapNetworkId(trap) === networkId) || null;
+}
+
+function findShopByNetworkId(networkId) {
+  return activeShops.find((shop) => shop.networkId === networkId) || null;
+}
+
+function findInventoryWeapon(family) {
+  const normalized = String(family || '').replace('_UPG', '');
+  const index = player.inventory.findIndex((weapon) => (
+    getWeaponFamily(weapon) === normalized
+  ));
+  return {
+    index,
+    weapon: index >= 0 ? player.inventory[index] : null
+  };
+}
+
+function getAccountWeaponTier(account, family) {
+  const key = String(family || '').replace('_UPG', '');
+  return Math.max(0, Number(account?.profile?.upgrades?.[key]) || 0);
+}
+
+function accountOwnsWeapon(account, family) {
+  const key = String(family || '').replace('_UPG', '');
+  return Boolean(account?.profile?.weapons?.has?.(key));
+}
+
+function accountHasPerk(account, perkId) {
+  return Boolean(account?.profile?.perks?.has?.(perkId));
+}
+
+function setBarricadePlanks(barricade, desiredCount) {
+  if (!barricade) return;
+  const maxPlanks = Math.max(0, Number(barricade.maxPlanks) || barricade.planks?.length || 0);
+  const target = Math.max(0, Math.min(maxPlanks, Math.floor(Number(desiredCount) || 0)));
+  const current = Math.max(0, Math.floor(Number(barricade.currentPlanks) || 0));
+
+  if (target > current) {
+    for (let index = current; index < target; index += 1) {
+      const plank = barricade.planks?.[index];
+      if (plank && plank.parent !== barricade.plankGroup) {
+        barricade.plankGroup?.add?.(plank);
+      }
+    }
+  } else if (target < current) {
+    for (let index = current - 1; index >= target; index -= 1) {
+      const plank = barricade.planks?.[index];
+      if (plank?.parent === barricade.plankGroup) {
+        barricade.plankGroup.remove(plank);
+      }
+    }
+  }
+
+  barricade.currentPlanks = target;
+  if (target > 0) {
+    if (barricade.wallTracker && !walls.includes(barricade.wallTracker)) {
+      walls.push(barricade.wallTracker);
+    }
+  } else if (barricade.wallTracker) {
+    const wallIndex = walls.indexOf(barricade.wallTracker);
+    if (wallIndex >= 0) walls.splice(wallIndex, 1);
+  }
+  updateBarricadeRepairGhost(barricade);
+}
+
+function applyTrapVisualState(trap) {
+  if (!trap) return;
+  const active = trap.state === 'ACTIVE';
+  if (trap.field) trap.field.visible = active;
+  if (trap.switchMesh?.material?.color) {
+    trap.switchMesh.material.color.setHex(
+      active ? 0x00ff00 : (trap.state === 'READY' ? 0xaa0000 : 0x444444)
+    );
+  }
+}
+
+function renderNetworkMysteryState(shop) {
+  if (!shop || shop.type !== 'MYSTERY_BOX' || !shop.spinMesh) return;
+  shop.spinMesh.clear();
+
+  if (shop.state === 'TEDDY') {
+    shop.spinMesh.add(getTeddyMesh());
+    return;
+  }
+
+  const weaponKey = shop.finalWeapon?.key || shop.finalWeaponKey;
+  if ((shop.state === 'READY' || shop.state === 'SPINNING') && weaponKey) {
+    const mesh = getHologramMesh(weaponKey);
+    if (shop.state === 'READY') {
+      mesh.traverse((child) => {
+        if (!child.isMesh) return;
+        child.material = new THREE.MeshStandardMaterial({
+          color: 0xffaa00,
+          emissive: 0xffaa00,
+          emissiveIntensity: 0.5
+        });
+      });
+    }
+    shop.spinMesh.add(mesh);
+  }
+}
+
+function applyShopNetworkState(shop, state) {
+  if (!shop || !state) return;
+  if (state.position) {
+    shop.pos.set(
+      Number(state.position.x || 0),
+      Number(state.position.y || 0),
+      Number(state.position.z || 0)
+    );
+    shop.mesh.position.copy(shop.pos);
+  }
+  if (Number.isFinite(Number(state.rotationY))) {
+    shop.rotationY = Number(state.rotationY);
+    shop.mesh.rotation.y = shop.rotationY;
+  }
+  shop.ownerPlayerId = state.ownerPlayerId || null;
+  shop.state = state.state || shop.state || 'IDLE';
+  shop.timer = Math.max(0, Number(state.timer) || 0);
+  shop.cycleTimer = Math.max(0, Number(state.cycleTimer) || 0);
+  shop.lastUnclaimedWeaponKey = state.lastUnclaimedWeaponKey || null;
+  shop.finalWeaponKey = state.finalWeaponKey || null;
+  shop.finalWeapon = shop.finalWeaponKey
+    ? WEAPON_DEFS[shop.finalWeaponKey] || null
+    : null;
+  renderNetworkMysteryState(shop);
+}
+
+export function prepareMultiplayerWorld() {
+  prepareNetworkIds();
+  openedNetworkDoorIds.clear();
+  networkRepairAwards.clear();
+}
+
+export function getLocalPurchaseState() {
+  return {
+    position: toNetworkVector(player.pos),
+    health: Number(player.health) || 0,
+    maxHealth: Number(player.maxHealth) || 100,
+    activeWeaponFamily: getWeaponFamily(getActiveWeapon()),
+    activeWeaponTier: getWeaponUpgradeTier(getActiveWeapon()),
+    ammoFull: isWeaponAmmoFull(getActiveWeapon()),
+    doublePoints: (Number(player.doublePointsTimer) || 0) > 0
+  };
+}
+
+function makeInteractionFeedback(title, body, tone = 'ready') {
+  return { title, body, tone, durationMs: 1900 };
+}
+
+export function validateMultiplayerInteraction(request = {}, context = {}) {
+  const kind = String(request.kind || '');
+  const actorPosition = actorPositionFromContext(context);
+  const account = context.account;
+
+  if (!actorPosition) {
+    return { ok: false, reason: 'PLAYER POSITION UNAVAILABLE' };
+  }
+
+  if (kind === 'door-open') {
+    const door = findDoorByNetworkId(request.targetId);
+    if (!door || openedNetworkDoorIds.has(request.targetId)) {
+      return { ok: false, reason: 'ENERGY GATE ALREADY OPEN' };
+    }
+    if (distanceToNetworkTarget(actorPosition, door.pos) > MULTIPLAYER_INTERACTION_RANGES.door) {
+      return { ok: false, reason: 'MOVE CLOSER TO THE ENERGY GATE' };
+    }
+    return {
+      ok: true,
+      cost: ECONOMY.DOOR_COST,
+      target: door,
+      feedback: makeInteractionFeedback(
+        'ENERGY GATE OPENED',
+        `${ECONOMY.DOOR_COST} points spent · new route unlocked`
+      )
+    };
+  }
+
+  if (kind === 'barricade-repair') {
+    const barricade = findBarricadeByNetworkId(request.targetId);
+    if (!barricade) return { ok: false, reason: 'BARRICADE NOT FOUND' };
+    if (distanceToNetworkTarget(actorPosition, barricade.pos) > MULTIPLAYER_INTERACTION_RANGES.barricade) {
+      return { ok: false, reason: 'MOVE CLOSER TO THE BARRICADE' };
+    }
+    if ((Number(barricade.cooldown) || 0) > 0) {
+      return { ok: false, reason: 'BARRICADE REPAIR COOLDOWN' };
+    }
+    if (barricade.currentPlanks >= barricade.maxPlanks) {
+      return { ok: false, reason: 'BARRICADE FULLY REPAIRED' };
+    }
+
+    const repairKey = `${context.playerId}:${currentWave}`;
+    const awardedThisRound = Number(networkRepairAwards.get(repairKey)) || 0;
+    const reward = Math.min(
+      ECONOMY.BARRICADE_REPAIR_SCORE,
+      Math.max(0, ECONOMY.BARRICADE_REPAIR_ROUND_SCORE_CAP - awardedThisRound)
+    );
+    return {
+      ok: true,
+      cost: 0,
+      reward,
+      target: barricade,
+      repairKey,
+      feedback: makeInteractionFeedback(
+        'BARRICADE REPAIRED',
+        reward > 0 ? `+${reward} points` : 'Plank restored · round repair points capped',
+        reward > 0 ? 'ready' : 'warning'
+      )
+    };
+  }
+
+  if (kind === 'trap-activate') {
+    const trap = findTrapByNetworkId(request.targetId);
+    if (!trap) return { ok: false, reason: 'TRAP NOT FOUND' };
+    if (distanceToNetworkTarget(actorPosition, trap.pos) > MULTIPLAYER_INTERACTION_RANGES.trap) {
+      return { ok: false, reason: 'MOVE CLOSER TO THE TRAP' };
+    }
+    if (trap.state !== 'READY') {
+      return { ok: false, reason: trap.state === 'ACTIVE' ? 'TRAP ALREADY ACTIVE' : 'TRAP RECHARGING' };
+    }
+    return {
+      ok: true,
+      cost: ECONOMY.TRAP_COST,
+      target: trap,
+      feedback: makeInteractionFeedback(
+        'TRAP ACTIVE',
+        `Electric trap armed for ${ECONOMY.TRAP_DURATION}s`
+      )
+    };
+  }
+
+  const shop = findShopByNetworkId(request.targetId);
+  if (!shop) return { ok: false, reason: 'SHOP NOT FOUND' };
+  if (distanceToNetworkTarget(actorPosition, shop.pos) > MULTIPLAYER_INTERACTION_RANGES.shop) {
+    return { ok: false, reason: 'MOVE CLOSER TO THE SHOP' };
+  }
+
+  if (kind === 'mystery-spin') {
+    if (shop.type !== 'MYSTERY_BOX' || shop.state !== 'IDLE') {
+      return { ok: false, reason: 'MYSTERY BOX IS BUSY' };
+    }
+    return {
+      ok: true,
+      cost: ECONOMY.MYSTERY_BOX_COST,
+      target: shop,
+      feedback: {
+        title: 'MYSTERY BOX',
+        body: 'Rolling weapon... stay close.',
+        tone: 'mystery',
+        durationMs: 0,
+        progress: 0
+      }
+    };
+  }
+
+  if (kind === 'mystery-take') {
+    if (shop.type !== 'MYSTERY_BOX' || shop.state !== 'READY' || !shop.finalWeapon) {
+      return { ok: false, reason: 'MYSTERY WEAPON NOT READY' };
+    }
+    if (shop.ownerPlayerId && shop.ownerPlayerId !== context.playerId) {
+      return { ok: false, reason: 'MYSTERY WEAPON BELONGS TO ANOTHER PLAYER' };
+    }
+    const family = getWeaponFamily(shop.finalWeapon);
+    return {
+      ok: true,
+      cost: 0,
+      target: shop,
+      grant: { type: 'weapon', weaponKey: family, source: 'MYSTERY_BOX' },
+      profilePatch: { addWeapons: [family] },
+      feedback: makeInteractionFeedback(
+        'MYSTERY BOX CLAIMED',
+        `${shop.finalWeapon.name} equipped`,
+        'mystery'
+      )
+    };
+  }
+
+  if (kind === 'wall-buy') {
+    if (!shop.type.startsWith('WALL_')) {
+      return { ok: false, reason: 'INVALID WALL BUY' };
+    }
+    const family = shop.weaponKey;
+    const owns = accountOwnsWeapon(account, family);
+    return {
+      ok: true,
+      cost: owns
+        ? (ECONOMY.WALL_AMMO_COSTS[family] ?? 450)
+        : (ECONOMY.WALL_WEAPON_COSTS[family] ?? 1200),
+      target: shop,
+      grant: owns
+        ? { type: 'weapon-ammo', weaponKey: family, source: 'WALL_BUY' }
+        : { type: 'weapon', weaponKey: family, source: 'WALL_BUY' },
+      profilePatch: owns ? null : { addWeapons: [family] },
+      feedback: makeInteractionFeedback(
+        owns ? 'WALL AMMO REFILLED' : 'WALL BUY COMPLETE',
+        owns ? `${family} ammo restored` : `${WEAPON_DEFS[family]?.name || family} purchased`
+      )
+    };
+  }
+
+  if (kind === 'ammo-refill') {
+    const family = String(request.weaponFamily || context.playerState?.activeWeaponFamily || 'PISTOL');
+    if (!accountOwnsWeapon(account, family)) {
+      return { ok: false, reason: 'WEAPON NOT OWNED' };
+    }
+    if (context.request?.actor?.ammoFull === true) {
+      return { ok: false, reason: 'AMMO IS ALREADY FULL' };
+    }
+    return {
+      ok: true,
+      cost: ECONOMY.AMMO_COST,
+      target: shop,
+      grant: { type: 'weapon-ammo', weaponKey: family, source: 'AMMO' },
+      feedback: makeInteractionFeedback('AMMO REFILLED', `${ECONOMY.AMMO_COST} points spent`)
+    };
+  }
+
+  if (kind === 'health') {
+    if ((Number(context.playerState?.health) || 0) >= (Number(context.playerState?.maxHealth) || 100)) {
+      return { ok: false, reason: 'HEALTH IS ALREADY FULL' };
+    }
+    return {
+      ok: true,
+      cost: ECONOMY.HEALTH_COST,
+      target: shop,
+      grant: { type: 'health' },
+      feedback: makeInteractionFeedback('HEALTH RESTORED', `${ECONOMY.HEALTH_COST} points spent`)
+    };
+  }
+
+  if (kind === 'perk') {
+    const perkId = String(request.perkId || '');
+    const perkDef = getPerkDefinition(perkId);
+    if (!perkDef) return { ok: false, reason: 'PERK NOT FOUND' };
+    if (accountHasPerk(account, perkId)) {
+      return { ok: false, reason: `${perkDef.label.toUpperCase()} ALREADY ACTIVE` };
+    }
+    return {
+      ok: true,
+      cost: perkDef.cost,
+      target: shop,
+      grant: { type: 'perk', perkId },
+      profilePatch: { addPerks: [perkId] },
+      feedback: makeInteractionFeedback(
+        `${perkDef.label.toUpperCase()} ACTIVE`,
+        perkDef.description
+      )
+    };
+  }
+
+  if (kind === 'upgrade') {
+    const family = String(request.weaponFamily || context.playerState?.activeWeaponFamily || 'PISTOL');
+    const currentTier = getAccountWeaponTier(account, family);
+    if (!accountOwnsWeapon(account, family)) {
+      return { ok: false, reason: 'WEAPON NOT OWNED' };
+    }
+    if (currentTier >= 3) {
+      return { ok: false, reason: 'WEAPON IS MAX TIER' };
+    }
+    const targetTier = currentTier + 1;
+    const cost = getWeaponUpgradeCost(targetTier);
+    return {
+      ok: true,
+      cost,
+      target: shop,
+      grant: { type: 'weapon-upgrade', weaponKey: family, tier: targetTier },
+      profilePatch: { upgrades: { [family]: targetTier } },
+      feedback: makeInteractionFeedback(
+        `PACK-A-PUNCH TIER ${targetTier}`,
+        `${cost} points spent · damage, ammo, reload improved`
+      )
+    };
+  }
+
+  return { ok: false, reason: 'INTERACTION NOT SUPPORTED' };
+}
+
+export function commitMultiplayerInteraction(request = {}, validation = {}, context = {}) {
+  const kind = String(request.kind || '');
+  const target = validation.target;
+
+  if (kind === 'door-open') {
+    const networkId = request.targetId;
+    openedNetworkDoorIds.add(networkId);
+    openDoor(target);
+    playWorldSound('doorOpen', 0.75, false, {
+      cooldownKey: 'door_open',
+      cooldownMs: 300
+    });
+  } else if (kind === 'barricade-repair') {
+    target.cooldown = ECONOMY.BARRICADE_REPAIR_COOLDOWN;
+    setBarricadePlanks(target, target.currentPlanks + 1);
+    networkRepairAwards.set(
+      validation.repairKey,
+      (Number(networkRepairAwards.get(validation.repairKey)) || 0)
+        + (Number(validation.reward) || 0)
+    );
+    playWorldSound('plankRepair', 0.48, true, {
+      cooldownKey: 'plank_repair',
+      cooldownMs: 260,
+      pitchMin: 0.92,
+      pitchMax: 1.12
+    });
+  } else if (kind === 'trap-activate') {
+    target.state = 'ACTIVE';
+    target.timer = ECONOMY.TRAP_DURATION;
+    target.activatedByPlayerId = context.playerId;
+    applyTrapVisualState(target);
+    playWorldSound('trapActivate', 0.62, false, {
+      cooldownKey: 'trap_activate',
+      cooldownMs: 650
+    });
+  } else if (kind === 'mystery-spin') {
+    target.ownerPlayerId = context.playerId;
+    target.state = 'SPINNING';
+    target.timer = MYSTERY_BOX_SPIN_TIME;
+    target.cycleTimer = 0;
+    target.finalWeapon = null;
+    target.finalWeaponKey = null;
+    playWorldSound('mysteryStart', 0.76, true, {
+      cooldownKey: 'mystery_start',
+      cooldownMs: 650,
+      pitchMin: 0.94,
+      pitchMax: 1.04
+    });
+  } else if (kind === 'mystery-take') {
+    const finalKey = target.finalWeapon?.key || target.finalWeaponKey;
+    validation.grant = {
+      type: 'weapon',
+      weaponKey: String(finalKey || 'RIFLE').replace('_UPG', ''),
+      source: 'MYSTERY_BOX'
+    };
+    validation.profilePatch = {
+      addWeapons: [validation.grant.weaponKey]
+    };
+    clearMysteryReadyWeapon(target, { clearUnclaimed: true });
+    target.ownerPlayerId = null;
+    relocateShop(target, getCurrentGameplayPoints().BOX_SPAWNS);
+    playWorldSound('mysteryTake', 0.76, true, {
+      cooldownKey: 'mystery_take',
+      cooldownMs: 550,
+      pitchMin: 1.02,
+      pitchMax: 1.14
+    });
+  }
+
+  return {
+    ok: true,
+    reward: validation.reward || 0,
+    grant: validation.grant || null,
+    profilePatch: validation.profilePatch || null,
+    feedback: validation.feedback || null
+  };
+}
+
+function applyWeaponGrant(grant) {
+  const family = String(grant?.weaponKey || 'PISTOL').replace('_UPG', '');
+  const owned = findInventoryWeapon(family);
+
+  if (grant?.type === 'weapon-ammo') {
+    if (!owned.weapon) return false;
+    refillWeaponAmmo(owned.weapon);
+    equipWeapon(owned.index);
+    return true;
+  }
+
+  if (grant?.type === 'weapon') {
+    if (owned.weapon) {
+      refillWeaponAmmo(owned.weapon);
+      equipWeapon(owned.index);
+      return true;
+    }
+    const def = WEAPON_DEFS[family];
+    if (!def) return false;
+    player.inventory.push(createWeaponInstance(def));
+    equipWeapon(player.inventory.length - 1);
+    return true;
+  }
+
+  if (grant?.type === 'weapon-upgrade') {
+    const current = owned.weapon || getActiveWeapon();
+    if (!current || getWeaponFamily(current) !== family) return false;
+    const upgraded = createWeaponUpgradeInstance(current, grant.tier);
+    if (!upgraded) return false;
+    camera.remove(current.meshGroup);
+    const targetIndex = owned.index >= 0 ? owned.index : player.currentWeaponIdx;
+    player.inventory[targetIndex] = upgraded;
+    equipWeapon(targetIndex);
+    return true;
+  }
+
+  return false;
+}
+
+export function applyLocalEconomyState({ score, kills } = {}) {
+  if (Number.isFinite(Number(score))) {
+    player.score = Math.max(0, Math.floor(Number(score)));
+    updateScoreHUD(player.score);
+  }
+  if (Number.isFinite(Number(kills))) {
+    player.kills = Math.max(0, Math.floor(Number(kills)));
+    updateKillsHUD(player.kills);
+  }
+}
+
+export function applyMultiplayerInteractionResult(result = {}) {
+  if (!result.accepted) {
+    showBlockedShopFeedback(
+      result.feedback?.title || result.reason || 'INTERACTION REJECTED',
+      result.feedback?.body || result.reason || 'The host rejected this interaction.'
+    );
+    return;
+  }
+
+  const grant = result.grant;
+  if (grant?.type === 'health') {
+    player.health = player.maxHealth;
+    updateHealthHUD(player.health, player.maxHealth);
+  } else if (grant?.type === 'perk') {
+    const perkResult = purchaseProgressionPerk(grant.perkId, player);
+    if (perkResult.ok) {
+      updateHealthHUD(player.health, player.maxHealth);
+      recordRunPerk();
+      recordChallengePerkCount(getActivePerkChips().length);
+      announceProgressionEvents();
+    }
+  } else if (grant) {
+    applyWeaponGrant(grant);
+    if (grant.type === 'weapon-upgrade') {
+      recordProgressionWeaponUpgrade(grant.tier);
+      recordRunWeaponUpgrade();
+      recordChallengeWeaponUpgrade(grant.tier);
+      announceProgressionEvents();
+    }
+  }
+
+  if (result.cost > 0) {
+    recordProgressionPurchase(result.cost, result.interactionKind || 'CO-OP PURCHASE');
+    recordRunPointsSpent(result.cost);
+  }
+  if (result.reward > 0 || result.pointsAwarded > 0) {
+    const points = Math.max(0, Number(result.reward || result.pointsAwarded) || 0);
+    spawnFloatingScore(
+      points,
+      result.headshot === true,
+      String(result.label || '')
+    );
+    recordRunPointsEarned(points);
+  }
+
+  const feedback = result.feedback;
+  if (feedback) {
+    showShopFeedback(feedback);
+    showStatusToast(feedback.title || 'PURCHASE COMPLETE', '#00ff88', 1500);
+  }
+}
+
+export function buildMultiplayerWorldState() {
+  prepareNetworkIds();
+  return {
+    openedDoors: Array.from(openedNetworkDoorIds),
+    barricades: barricades.map((barricade) => ({
+      id: getBarricadeNetworkId(barricade),
+      currentPlanks: Math.max(0, Number(barricade.currentPlanks) || 0),
+      maxPlanks: Math.max(0, Number(barricade.maxPlanks) || 0),
+      cooldown: Math.max(0, Number(barricade.cooldown) || 0)
+    })),
+    traps: traps.map((trap) => ({
+      id: getTrapNetworkId(trap),
+      state: trap.state || 'READY',
+      timer: Math.max(0, Number(trap.timer) || 0),
+      activatedByPlayerId: trap.activatedByPlayerId || null
+    })),
+    shops: activeShops.map((shop) => ({
+      id: shop.networkId,
+      type: shop.type,
+      position: toNetworkVector(shop.pos),
+      rotationY: Number(shop.rotationY || shop.mesh?.rotation?.y || 0),
+      state: shop.state || 'IDLE',
+      timer: Math.max(0, Number(shop.timer) || 0),
+      cycleTimer: Math.max(0, Number(shop.cycleTimer) || 0),
+      finalWeaponKey: shop.finalWeapon?.key || shop.finalWeaponKey || null,
+      lastUnclaimedWeaponKey: shop.lastUnclaimedWeaponKey || null,
+      ownerPlayerId: shop.ownerPlayerId || null
+    }))
+  };
+}
+
+export function applyMultiplayerWorldState(world = {}) {
+  prepareNetworkIds();
+
+  (world.openedDoors || []).forEach((networkId) => {
+    if (openedNetworkDoorIds.has(networkId)) return;
+    const door = findDoorByNetworkId(networkId);
+    if (!door) return;
+    openedNetworkDoorIds.add(networkId);
+    openDoor(door);
+  });
+
+  (world.barricades || []).forEach((state) => {
+    const barricade = findBarricadeByNetworkId(state.id);
+    if (!barricade) return;
+    barricade.cooldown = Math.max(0, Number(state.cooldown) || 0);
+    setBarricadePlanks(barricade, state.currentPlanks);
+  });
+
+  (world.traps || []).forEach((state) => {
+    const trap = findTrapByNetworkId(state.id);
+    if (!trap) return;
+    trap.state = state.state || 'READY';
+    trap.timer = Math.max(0, Number(state.timer) || 0);
+    trap.activatedByPlayerId = state.activatedByPlayerId || null;
+    applyTrapVisualState(trap);
+  });
+
+  (world.shops || []).forEach((state) => {
+    const shop = findShopByNetworkId(state.id);
+    if (shop) applyShopNetworkState(shop, state);
+  });
+}
+
+export function applyMultiplayerProfile(profile = {}) {
+  (profile.weapons || []).forEach((family) => {
+    if (!findInventoryWeapon(family).weapon) {
+      const def = WEAPON_DEFS[String(family).replace('_UPG', '')];
+      if (def) player.inventory.push(createWeaponInstance(def));
+    }
+  });
+
+  Object.entries(profile.upgrades || {}).forEach(([family, tier]) => {
+    const owned = findInventoryWeapon(family);
+    if (!owned.weapon || getWeaponUpgradeTier(owned.weapon) >= Number(tier)) return;
+    const upgraded = createWeaponUpgradeInstance(owned.weapon, tier);
+    if (!upgraded) return;
+    camera.remove(owned.weapon.meshGroup);
+    player.inventory[owned.index] = upgraded;
+  });
+
+  (profile.perks || []).forEach((perkId) => {
+    if (!hasProgressionPerk(perkId)) {
+      purchaseProgressionPerk(perkId, player);
+    }
+  });
+
+  const active = getActiveWeapon();
+  if (active) {
+    active.meshGroup.visible = true;
+    if (active.meshGroup.parent !== camera) camera.add(active.meshGroup);
+    updateAmmoHUD(active.ammo, active.reserve, active.maxAmmo);
+    updateWeaponNameHUD(active.name);
+  }
+  updateHealthHUD(player.health, player.maxHealth);
+}
+
+export function endMultiplayerEconomy() {
+  openedNetworkDoorIds.clear();
+  networkRepairAwards.clear();
+}
+
+function getOnlineInteractionPromptAndRequest() {
+  prepareNetworkIds();
+
+  let closestBarricade = null;
+  let barricadeDistance = MULTIPLAYER_INTERACTION_RANGES.barricade;
+  barricades.forEach((barricade) => {
+    const distance = player.pos.distanceTo(barricade.pos);
+    if (distance < barricadeDistance) {
+      closestBarricade = barricade;
+      barricadeDistance = distance;
+    }
+  });
+  if (closestBarricade) {
+    if (closestBarricade.currentPlanks >= closestBarricade.maxPlanks) {
+      return { prompt: 'BARRICADE IS FULLY REPAIRED', request: null };
+    }
+    return {
+      prompt: `Press [E] to repair barricade (+${ECONOMY.BARRICADE_REPAIR_SCORE} PTS)`,
+      request: {
+        kind: 'barricade-repair',
+        targetId: getBarricadeNetworkId(closestBarricade)
+      }
+    };
+  }
+
+  let closestTrap = null;
+  let trapDistance = MULTIPLAYER_INTERACTION_RANGES.trap;
+  traps.forEach((trap) => {
+    const distance = player.pos.distanceTo(trap.pos);
+    if (distance < trapDistance) {
+      closestTrap = trap;
+      trapDistance = distance;
+    }
+  });
+  if (closestTrap) {
+    if (closestTrap.state === 'READY') {
+      return {
+        prompt: `Press [E] to activate Electric Trap [${ECONOMY.TRAP_COST} PTS]`,
+        request: { kind: 'trap-activate', targetId: getTrapNetworkId(closestTrap) }
+      };
+    }
+    return {
+      prompt: closestTrap.state === 'ACTIVE'
+        ? `TRAP ACTIVE (${Math.ceil(closestTrap.timer)}s)`
+        : `TRAP RECHARGING (${Math.ceil(closestTrap.timer)}s)`,
+      request: null
+    };
+  }
+
+  let closestShop = null;
+  let shopDistance = MULTIPLAYER_INTERACTION_RANGES.shop;
+  activeShops.forEach((shop) => {
+    const distance = player.pos.distanceTo(shop.pos);
+    if (distance < shopDistance) {
+      closestShop = shop;
+      shopDistance = distance;
+    }
+  });
+
+  if (closestShop) {
+    if (closestShop.type === 'MYSTERY_BOX') {
+      if (closestShop.state === 'IDLE') {
+        return {
+          prompt: `Press [E] to buy Mystery Box [${ECONOMY.MYSTERY_BOX_COST} PTS]`,
+          request: { kind: 'mystery-spin', targetId: closestShop.networkId }
+        };
+      }
+      if (closestShop.state === 'READY') {
+        if (closestShop.ownerPlayerId && closestShop.ownerPlayerId !== localMultiplayerPlayerId()) {
+          return { prompt: 'MYSTERY WEAPON RESERVED FOR ANOTHER PLAYER', request: null };
+        }
+        return {
+          prompt: `Press [E] to take ${closestShop.finalWeapon?.name || 'Mystery Weapon'}`,
+          request: { kind: 'mystery-take', targetId: closestShop.networkId }
+        };
+      }
+      return {
+        prompt: closestShop.state === 'TEDDY'
+          ? 'Mystery Box moving...'
+          : `Mystery Box rolling... (${Math.ceil(closestShop.timer || 0)}s)`,
+        request: null
+      };
+    }
+
+    if (closestShop.type.startsWith('WALL_')) {
+      const owned = findInventoryWeapon(closestShop.weaponKey).weapon;
+      const cost = owned
+        ? (ECONOMY.WALL_AMMO_COSTS[closestShop.weaponKey] ?? 450)
+        : (ECONOMY.WALL_WEAPON_COSTS[closestShop.weaponKey] ?? 1200);
+      return {
+        prompt: `Press [E] to buy ${owned ? `${closestShop.weaponKey} Ammo` : `Wall ${closestShop.weaponKey}`} [${cost} PTS]`,
+        request: { kind: 'wall-buy', targetId: closestShop.networkId }
+      };
+    }
+
+    if (closestShop.type === 'AMMO') {
+      return {
+        prompt: `Press [E] to buy Ammo Refill [${ECONOMY.AMMO_COST} PTS]`,
+        request: {
+          kind: 'ammo-refill',
+          targetId: closestShop.networkId,
+          weaponFamily: getWeaponFamily(getActiveWeapon())
+        }
+      };
+    }
+
+    if (closestShop.type === 'HEALTH') {
+      return {
+        prompt: `Press [E] to buy Medkit [${ECONOMY.HEALTH_COST} PTS]`,
+        request: { kind: 'health', targetId: closestShop.networkId }
+      };
+    }
+
+    if (closestShop.type === 'UPGRADE') {
+      const weapon = getActiveWeapon();
+      const nextTier = Math.min(3, getWeaponUpgradeTier(weapon) + 1);
+      return {
+        prompt: getWeaponUpgradeTier(weapon) >= 3
+          ? 'WEAPON IS MAX TIER!'
+          : `Press [E] to buy Pack-a-Punch Tier ${nextTier} [${getWeaponUpgradeCost(nextTier)} PTS]`,
+        request: getWeaponUpgradeTier(weapon) >= 3 ? null : {
+          kind: 'upgrade',
+          targetId: closestShop.networkId,
+          weaponFamily: getWeaponFamily(weapon)
+        }
+      };
+    }
+
+    const perkId = getPerkIdForShop(closestShop.type);
+    const perkDef = perkId ? getPerkDefinition(perkId) : null;
+    if (perkDef) {
+      return {
+        prompt: hasProgressionPerk(perkId)
+          ? `ALREADY HAVE ${perkDef.label.toUpperCase()}!`
+          : `Press [E] to buy ${perkDef.label} [${perkDef.cost} PTS]`,
+        request: hasProgressionPerk(perkId) ? null : {
+          kind: 'perk',
+          targetId: closestShop.networkId,
+          perkId
+        }
+      };
+    }
+  }
+
+  let closestDoor = null;
+  let doorDistance = MULTIPLAYER_INTERACTION_RANGES.door;
+  doors.forEach((door) => {
+    const distance = player.pos.distanceTo(door.pos);
+    if (distance < doorDistance) {
+      closestDoor = door;
+      doorDistance = distance;
+    }
+  });
+  if (closestDoor) {
+    return {
+      prompt: `Press [E] to open energy gate [${ECONOMY.DOOR_COST} PTS]`,
+      request: { kind: 'door-open', targetId: getDoorNetworkId(closestDoor) }
+    };
+  }
+
+  return null;
+}
+
+function checkMultiplayerWorldInteractions(checkInteractionPressed = false) {
+  const interaction = getOnlineInteractionPromptAndRequest();
+  if (!interaction) {
+    setInteractionPrompt(false);
+    return;
+  }
+
+  setInteractionPrompt(true, interaction.prompt);
+  if (
+    interaction.request
+    && shouldHandleInteraction(checkInteractionPressed)
+  ) {
+    multiplayerEconomy?.requestInteraction?.(interaction.request);
+  }
+}
+
 export function checkWorldInteractions(checkInteractionPressed = false) {
+  if (isOnlineEconomyRun()) {
+    checkMultiplayerWorldInteractions(checkInteractionPressed);
+    return;
+  }
   if (!player.alive) return;
 
   // ── C12 MAP-SPECIFIC DEFENSIVE SYSTEM ──
@@ -1768,7 +2721,13 @@ export function shoot() {
 
   // C5: reuse raycast arrays/vectors instead of allocating new arrays every shot.
   const hitTargets = buildShotTargets();
-  const shotContext = { weapon: w, feel, scoredEnemies: new Set(), directorHitRegistered: false };
+  const shotContext = {
+    weapon: w,
+    feel,
+    shotId: ++networkShotSequence,
+    scoredEnemies: new Set(),
+    directorHitRegistered: false
+  };
 
   if (isShotgunWeapon(w)) {
     const pelletCount = getShotgunPelletCount(w);
@@ -1824,6 +2783,7 @@ if (e.isNetworkProxy && typeof e.handleNetworkHit === 'function') {
     headshot: hs,
     distance: networkHitDistance,
     weaponFamily: getWeaponFamily(w),
+    shotId: shotContext.shotId || 0,
     point: {
       x: Number(hit.point?.x || 0),
       y: Number(hit.point?.y || 0),
@@ -1870,19 +2830,37 @@ const wasHealth = e.health;
     if (!alreadyScoredThisShot) shotContext.scoredEnemies?.add(e);
 
     const killReward = killed ? getEnemyPointReward(e, hs) : null;
-    let pointsAwarded = killReward ? killReward.basePoints : (alreadyScoredThisShot ? 0 : 10);
+    const doublePoints = player.doublePointsTimer > 0;
 
-    if (player.doublePointsTimer > 0) pointsAwarded *= 2;
+    if (isOnlineEconomyRun()) {
+      if (!killed && !alreadyScoredThisShot) {
+        multiplayerEconomy?.awardCombat?.({
+          playerId: localMultiplayerPlayerId(),
+          points: doublePoints ? 20 : 10,
+          kills: 0,
+          label: 'HIT',
+          headshot: hs
+        });
+      }
+    } else {
+      let pointsAwarded = killReward
+        ? killReward.basePoints
+        : (alreadyScoredThisShot ? 0 : 10);
 
-    if (pointsAwarded > 0) {
-      player.score = (player.score || 0) + pointsAwarded;
-      const killScoreLabel = killReward
-        ? (hs ? `${killReward.label.toUpperCase()} HEADSHOT` : killReward.label.toUpperCase())
-        : '';
+      if (doublePoints) pointsAwarded *= 2;
 
-      spawnFloatingScore(pointsAwarded, killed && hs, killScoreLabel);
-      updateScoreHUD(player.score);
-      recordRunPointsEarned(pointsAwarded);
+      if (pointsAwarded > 0) {
+        player.score = (player.score || 0) + pointsAwarded;
+        const killScoreLabel = killReward
+          ? (hs
+            ? `${killReward.label.toUpperCase()} HEADSHOT`
+            : killReward.label.toUpperCase())
+          : '';
+
+        spawnFloatingScore(pointsAwarded, killed && hs, killScoreLabel);
+        updateScoreHUD(player.score);
+        recordRunPointsEarned(pointsAwarded);
+      }
     }
 
     playHitConfirmFeedback({ headshot: hs, killed, weapon: w });
@@ -1908,7 +2886,7 @@ const wasHealth = e.health;
     }
 
     if (killed) {
-      if (killReward?.bonusPoints > 0) {
+      if (!isOnlineEconomyRun() && killReward?.bonusPoints > 0) {
         let bossBounty = killReward.bonusPoints;
         if (player.doublePointsTimer > 0) bossBounty *= 2;
 
@@ -1935,7 +2913,12 @@ const wasHealth = e.health;
         distance: fxDistance,
         weaponFamily: getWeaponFamily(w),
         damage: finalDamage,
-        source: 'WEAPON'
+        source: 'WEAPON',
+        creditPlayerId: isOnlineEconomyRun()
+          ? localMultiplayerPlayerId()
+          : null,
+        creditLocal: true,
+        doublePoints
       });
     }
   } else if (!e) {
@@ -2261,7 +3244,36 @@ function updateCrosshair(dt, isMoving) {
 
 
 // ── MYSTERY BOX ANIMATION SYSTEM ──
+function updateNetworkShopVisuals(dt) {
+  activeShops.forEach((shop) => {
+    if (shop.type !== 'MYSTERY_BOX' || !shop.spinMesh) return;
+    if (shop.state === 'SPINNING') {
+      shop.spinMesh.rotation.y += dt * 8.0;
+      shop.spinMesh.position.y = 1.2 + Math.sin(Date.now() * 0.01) * 0.15;
+    } else if (shop.state === 'READY') {
+      shop.spinMesh.rotation.y += dt * 1.5;
+      shop.spinMesh.position.y = 1.2 + Math.sin(Date.now() * 0.003) * 0.1;
+    } else if (shop.state === 'TEDDY') {
+      shop.spinMesh.rotation.y += dt * 6.0;
+      shop.spinMesh.position.y = Math.min(3.0, shop.spinMesh.position.y + dt * 0.5);
+    }
+  });
+}
+
 export function updateShops(dt) {
+  if (isOnlineEconomyRun() && isEconomyAuthority()) {
+    barricades.forEach((barricade) => {
+      barricade.cooldown = Math.max(
+        0,
+        (Number(barricade.cooldown) || 0) - dt
+      );
+    });
+  }
+
+  if (isOnlineEconomyRun() && !isEconomyAuthority()) {
+    updateNetworkShopVisuals(dt);
+    return;
+  }
   activeShops.forEach(shop => {
     if (shop.type === 'MYSTERY_BOX') {
       if (['SPINNING', 'READY', 'TEDDY'].includes(shop.state) && !isPlayerNearShop(shop)) {
@@ -2282,6 +3294,7 @@ export function updateShops(dt) {
           shop.spinMesh.clear();
           
           const randKey = getPreviewWeaponKey();
+          shop.finalWeaponKey = randKey;
           shop.spinMesh.add(getHologramMesh(randKey));
           playWorldSound('mysteryTick', 0.045, false, { cooldownKey: 'mystery_tick', cooldownMs: 80 }); 
         }
@@ -2311,6 +3324,7 @@ export function updateShops(dt) {
             
             const finalKey = rollMysteryWeaponKey(shop.lastUnclaimedWeaponKey);
             shop.finalWeapon = WEAPON_DEFS[finalKey];
+            shop.finalWeaponKey = finalKey;
             shop.lastUnclaimedWeaponKey = finalKey;
             
             const finalMesh = getHologramMesh(finalKey);
@@ -2337,16 +3351,22 @@ export function updateShops(dt) {
         shop.spinMesh.rotation.y += dt * 6.0; // Spin violently
         
         if (shop.timer <= 0) {
-          import('./player.js').then(({ player }) => {
-              player.score += ECONOMY.MYSTERY_BOX_COST; // Refund the player
-            import('./ui.js').then(({ updateScoreHUD, spawnFloatingScore }) => {
-              updateScoreHUD(player.score);
-              spawnFloatingScore(ECONOMY.MYSTERY_BOX_COST, false);
-              showStatusToast(`REFUNDED ${ECONOMY.MYSTERY_BOX_COST} PTS`, '#ffaa00', 1600);
-            });
-          });
-          
+          const refundPlayerId = shop.ownerPlayerId || localMultiplayerPlayerId();
+          if (isOnlineEconomyRun()) {
+            multiplayerEconomy?.refundPlayer?.(
+              refundPlayerId,
+              ECONOMY.MYSTERY_BOX_COST,
+              'MYSTERY BOX REFUND'
+            );
+          } else {
+            player.score += ECONOMY.MYSTERY_BOX_COST;
+            updateScoreHUD(player.score);
+            spawnFloatingScore(ECONOMY.MYSTERY_BOX_COST, false);
+            showStatusToast(`REFUNDED ${ECONOMY.MYSTERY_BOX_COST} PTS`, '#ffaa00', 1600);
+          }
+
           clearMysteryReadyWeapon(shop, { clearUnclaimed: true });
+          shop.ownerPlayerId = null;
 
           // Move the Mystery Box using the same safe relocation system as every other shop.
           const movedBox = relocateShop(shop, getCurrentGameplayPoints().BOX_SPAWNS);
@@ -2366,6 +3386,7 @@ export function updateShops(dt) {
         shop.spinMesh.position.y = 1.2 + Math.sin(Date.now() * 0.003) * 0.1;
         
         if (shop.timer <= 0) {
+          shop.ownerPlayerId = null;
           clearMysteryReadyWeapon(shop, { rememberUnclaimed: true });
           showMysteryFeedbackIfNear(shop, {
             title: 'MYSTERY BOX CLOSED',

@@ -3,7 +3,7 @@ import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoi
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
-import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
+import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 import {
@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -95,10 +95,30 @@ initializeMultiplayerFoundation(player, {
     applyNetworkWaveState,
     configureMultiplayerEnemyAuthority,
     damagePlayer
+  },
+  economyAdapter: {
+    prepareMultiplayerWorld,
+    getLocalPurchaseState,
+    validateMultiplayerInteraction,
+    commitMultiplayerInteraction,
+    applyLocalEconomyState,
+    applyMultiplayerInteractionResult,
+    buildMultiplayerWorldState,
+    applyMultiplayerWorldState,
+    applyMultiplayerProfile,
+    endMultiplayerEconomy
   }
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-coop-stability-r1';
-console.info('[Multiplayer Build] m3-coop-stability-r1 · protocol 2');
+configureMultiplayerEconomy({
+  isOnline: isOnlineMultiplayerRun,
+  isAuthority: isSharedMultiplayerEconomyAuthority,
+  getLocalPlayerId: getLocalMultiplayerPlayerId,
+  requestInteraction: requestMultiplayerInteraction,
+  awardCombat: awardMultiplayerCombat,
+  refundPlayer: refundMultiplayerPoints
+});
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-shared-economy-r1';
+console.info('[Multiplayer Build] m3-shared-economy-r1 · protocol 3');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -1009,6 +1029,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     buildGun();
     resetGunState();
     initializeSharedMultiplayerEnemies();
+    initializeSharedMultiplayerEconomy();
     clearAllDecals();
 
     syncHudFromPlayer();
@@ -1262,6 +1283,7 @@ for (const event of consumeTutorialEvents()) {
 }
 
 updateSharedMultiplayerWorld(dt, performance.now());
+updateSharedMultiplayerEconomy(performance.now());
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 

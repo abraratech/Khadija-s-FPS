@@ -20,7 +20,10 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_SNAPSHOT_RECEIVED: 'multiplayer:remote-snapshot-received',
   REMOTE_WORLD_SNAPSHOT_RECEIVED: 'multiplayer:remote-world-snapshot-received',
   REMOTE_ENEMY_HIT_RECEIVED: 'multiplayer:remote-enemy-hit-received',
-  REMOTE_PLAYER_DAMAGE_RECEIVED: 'multiplayer:remote-player-damage-received'
+  REMOTE_PLAYER_DAMAGE_RECEIVED: 'multiplayer:remote-player-damage-received',
+  REMOTE_ECONOMY_REQUEST_RECEIVED: 'multiplayer:remote-economy-request-received',
+  REMOTE_ECONOMY_RESULT_RECEIVED: 'multiplayer:remote-economy-result-received',
+  REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received'
 });
 
 function nowMs() {
@@ -56,6 +59,9 @@ export class MultiplayerRuntime {
     this.worldSequence = 0;
     this.hitSequence = 0;
     this.damageSequence = 0;
+    this.economyRequestSequence = 0;
+    this.economyResultSequence = 0;
+    this.economySnapshotSequence = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -70,7 +76,13 @@ export class MultiplayerRuntime {
       hitRequestsSent: 0,
       hitRequestsReceived: 0,
       playerDamageSent: 0,
-      playerDamageReceived: 0
+      playerDamageReceived: 0,
+      economyRequestsSent: 0,
+      economyRequestsReceived: 0,
+      economyResultsSent: 0,
+      economyResultsReceived: 0,
+      economySnapshotsSent: 0,
+      economySnapshotsReceived: 0
     };
   }
 
@@ -131,6 +143,9 @@ export class MultiplayerRuntime {
     this.worldSequence = 0;
     this.hitSequence = 0;
     this.damageSequence = 0;
+    this.economyRequestSequence = 0;
+    this.economyResultSequence = 0;
+    this.economySnapshotSequence = 0;
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -246,6 +261,55 @@ export class MultiplayerRuntime {
       this.damageSequence
     );
     this.metrics.playerDamageSent += 1;
+    return envelope;
+  }
+
+  sendEconomyRequest(request) {
+    if (!this.initialized || !this.session?.run?.active || !request?.requestId) {
+      return null;
+    }
+
+    this.economyRequestSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.ECONOMY_REQUEST,
+      request,
+      this.economyRequestSequence
+    );
+    this.metrics.economyRequestsSent += 1;
+    return envelope;
+  }
+
+  sendEconomyResult(result) {
+    if (
+      !this.initialized
+      || !this.session?.run?.active
+      || !result?.targetPlayerId
+    ) {
+      return null;
+    }
+
+    this.economyResultSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.ECONOMY_RESULT,
+      result,
+      this.economyResultSequence
+    );
+    this.metrics.economyResultsSent += 1;
+    return envelope;
+  }
+
+  sendEconomySnapshot(snapshot) {
+    if (!this.initialized || !this.session?.run?.active || !snapshot) {
+      return null;
+    }
+
+    this.economySnapshotSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.ECONOMY_SNAPSHOT,
+      snapshot,
+      this.economySnapshotSequence
+    );
+    this.metrics.economySnapshotsSent += 1;
     return envelope;
   }
 
@@ -366,6 +430,33 @@ export class MultiplayerRuntime {
       this.metrics.playerDamageReceived += 1;
       this.eventBus?.emit(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_PLAYER_DAMAGE_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.ECONOMY_REQUEST) {
+      this.metrics.economyRequestsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ECONOMY_REQUEST_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.ECONOMY_RESULT) {
+      this.metrics.economyResultsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ECONOMY_RESULT_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.ECONOMY_SNAPSHOT) {
+      this.metrics.economySnapshotsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ECONOMY_SNAPSHOT_RECEIVED,
         { envelope }
       );
       return { accepted: true };

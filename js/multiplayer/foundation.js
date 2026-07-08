@@ -8,6 +8,7 @@ import { MultiplayerRuntime } from './runtime.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
+import { MultiplayerEconomyManager } from './economy.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -15,6 +16,7 @@ let runEndHandler = null;
 let pendingOnlineRun = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
+let economyManager = null;
 let lobbyController = null;
 
 export const multiplayerEvents = new MultiplayerEventBus({
@@ -72,7 +74,8 @@ export function initializeMultiplayerFoundation(
   player,
   {
     scene = null,
-    worldAdapter = null
+    worldAdapter = null,
+    economyAdapter = null
   } = {}
 ) {
   if (initialized) return getMultiplayerFoundationSnapshot();
@@ -95,13 +98,23 @@ export function initializeMultiplayerFoundation(
     localPlayerId: playerId
   });
 
+  economyManager = new MultiplayerEconomyManager({
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    players: multiplayerPlayers,
+    player,
+    adapter: economyAdapter
+  });
+
   sharedWorldManager = new SharedWorldManager({
     scene,
     eventBus: multiplayerEvents,
     runtime: multiplayerRuntime,
     session: multiplayerSession,
     player,
-    adapter: worldAdapter
+    adapter: worldAdapter,
+    economy: economyManager
   });
 
   lobbyController = new MultiplayerLobbyController({
@@ -122,6 +135,7 @@ export function initializeMultiplayerFoundation(
     onRunEnded: (details = {}) => {
       pendingOnlineRun = null;
       sharedWorldManager?.endRun();
+      economyManager?.endRun();
       multiplayerRuntime.endRun();
       remotePlayerManager?.endRun();
 
@@ -144,7 +158,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.1-M3.2] Shared host-authoritative horde and operative hit forwarding ready.'
+    '[M3.3-M3.4] Shared horde, authoritative economy, and synchronized interactions ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -173,6 +187,7 @@ export function beginMultiplayerRun({
 
   multiplayerRuntime.beginRun(sessionSnapshot);
   remotePlayerManager?.beginRun();
+  economyManager?.beginRun();
   sharedWorldManager?.beginRun();
   return sessionSnapshot;
 }
@@ -191,6 +206,7 @@ export function endMultiplayerRun({
   );
 
   sharedWorldManager?.endRun();
+  economyManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun();
 
@@ -218,6 +234,45 @@ export function isOnlineMultiplayerRun() {
       multiplayerSession.mode === 'host'
       || multiplayerSession.mode === 'client'
     );
+}
+
+export function initializeSharedMultiplayerEconomy() {
+  if (!initialized) return;
+  economyManager?.initializeWorld();
+}
+
+export function updateSharedMultiplayerEconomy(
+  now = performance.now()
+) {
+  if (!initialized) return;
+  economyManager?.update(now);
+}
+
+export function requestMultiplayerInteraction(request) {
+  if (!initialized) return false;
+  return economyManager?.requestInteraction?.(request) === true;
+}
+
+export function awardMultiplayerCombat(payload = {}) {
+  if (!initialized) return false;
+  return economyManager?.awardCombat?.({
+    ...payload,
+    playerId: payload.playerId || multiplayerRuntime.localPlayerId
+  }) === true;
+}
+
+export function getLocalMultiplayerPlayerId() {
+  return multiplayerRuntime.localPlayerId || null;
+}
+
+export function refundMultiplayerPoints(playerId, points, label) {
+  if (!initialized) return false;
+  return economyManager?.refundPlayer?.(playerId, points, label) === true;
+}
+
+export function isSharedMultiplayerEconomyAuthority() {
+  if (!initialized) return true;
+  return economyManager?.isAuthority?.() !== false;
 }
 
 export function initializeSharedMultiplayerEnemies() {
@@ -287,7 +342,8 @@ export function getMultiplayerFoundationSnapshot() {
     runtime: multiplayerRuntime.getSnapshot(),
     lobby: lobbyController?.getSnapshot?.() || null,
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
-    sharedWorld: sharedWorldManager?.getSnapshot?.() || null
+    sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
+    economy: economyManager?.getSnapshot?.() || null
   };
 }
 

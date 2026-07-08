@@ -1476,7 +1476,19 @@ if (!e.alive) continue;
       if (t.state === 'ACTIVE') {
         const inX = t.isZAxis ? Math.abs(e.mesh.position.x - t.center.x) < 0.5 : Math.abs(e.mesh.position.x - t.center.x) < t.width / 2;
         const inZ = t.isZAxis ? Math.abs(e.mesh.position.z - t.center.z) < t.width / 2 : Math.abs(e.mesh.position.z - t.center.z) < 0.5;
-        if (inX && inZ) { e.health = 0; killEnemy(e); zapped = true; break; }
+        if (inX && inZ) {
+          e.health = 0;
+          const trapCreditPlayerId = t.activatedByPlayerId
+            || multiplayerEnemyAuthority?.localPlayerId
+            || null;
+          killEnemy(e, {
+            source: 'TRAP',
+            creditPlayerId: trapCreditPlayerId,
+            creditLocal: trapCreditPlayerId === multiplayerEnemyAuthority?.localPlayerId
+          });
+          zapped = true;
+          break;
+        }
       }
     }
     if (zapped) continue;
@@ -1968,12 +1980,33 @@ export function killEnemy(e, context = {}) {
   if (!e.alive) return;
 
   const headshot = context.headshot === true;
-  const distance = Math.max(0, Number(context.distance) || player.pos.distanceTo(e.mesh.position));
-  recordProgressionKill({ headshot });
-  recordRunKill({ headshot });
-  recordChallengeKill({ headshot, enemyType: e.type });
-  recordObjectiveKill({ headshot, distance, enemyType: e.type, position: e.mesh.position });
-  announceC11Events();
+  const distance = Math.max(
+    0,
+    Number(context.distance) || player.pos.distanceTo(e.mesh.position)
+  );
+  const localPlayerId = multiplayerEnemyAuthority?.localPlayerId || null;
+  const creditPlayerId = context.creditPlayerId
+    || context.playerId
+    || localPlayerId;
+  const onlineCredit = Boolean(
+    multiplayerEnemyAuthority?.awardKill
+    && creditPlayerId
+  );
+  const creditLocal = context.creditLocal !== false
+    && (!onlineCredit || creditPlayerId === localPlayerId);
+
+  if (creditLocal) {
+    recordProgressionKill({ headshot });
+    recordRunKill({ headshot });
+    recordChallengeKill({ headshot, enemyType: e.type });
+    recordObjectiveKill({
+      headshot,
+      distance,
+      enemyType: e.type,
+      position: e.mesh.position
+    });
+    announceC11Events();
+  }
 
   cancelEnemyAttack(e, 'ENEMY REMOVED');
   recordSquadEnemyDeath(e);
@@ -2004,7 +2037,28 @@ export function killEnemy(e, context = {}) {
     });
   }
   
-player.kills++; updateKillsHUD(player.kills);
+  if (onlineCredit) {
+    const reward = getEnemyPointReward(e, headshot);
+    const multiplier = context.doublePoints === true ? 2 : 1;
+    const points = Math.max(
+      0,
+      (Number(reward?.basePoints) || 0)
+      + (Number(reward?.bonusPoints) || 0)
+    ) * multiplier;
+
+    multiplayerEnemyAuthority.awardKill({
+      playerId: creditPlayerId,
+      points,
+      kills: 1,
+      label: headshot
+        ? `${String(reward?.label || e.type).toUpperCase()} HEADSHOT`
+        : String(reward?.label || e.type).toUpperCase(),
+      headshot
+    });
+  } else {
+    player.kills++;
+    updateKillsHUD(player.kills);
+  }
   
   // ── GUARANTEED MAX AMMO ON SPECIAL ROUND COMPLETION ──
   const isLastSwarmZombie = isSpecialRound && zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 1;

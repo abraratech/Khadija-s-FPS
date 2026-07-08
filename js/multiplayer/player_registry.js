@@ -30,6 +30,8 @@ function capturePlayerState(player) {
     alive: player?.alive === true,
     kills: Number(player?.kills || 0),
     score: Number(player?.score || 0),
+    instaKillTimer: Number(player?.instaKillTimer || 0),
+    doublePointsTimer: Number(player?.doublePointsTimer || 0),
     isADS: player?.isADS === true,
     isSprinting: player?.isSprinting === true,
     reloading: player?.reloading === true,
@@ -61,6 +63,8 @@ function statesEqual(a, b) {
     && a.alive === b.alive
     && a.kills === b.kills
     && a.score === b.score
+    && a.instaKillTimer === b.instaKillTimer
+    && a.doublePointsTimer === b.doublePointsTimer
     && a.isADS === b.isADS
     && a.isSprinting === b.isSprinting
     && a.reloading === b.reloading

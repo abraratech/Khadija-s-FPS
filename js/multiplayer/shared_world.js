@@ -105,7 +105,8 @@ export class SharedWorldManager {
     runtime,
     session,
     player,
-    adapter
+    adapter,
+    economy
   } = {}) {
     this.scene = scene;
     this.eventBus = eventBus;
@@ -113,6 +114,7 @@ export class SharedWorldManager {
     this.session = session;
     this.player = player;
     this.adapter = adapter || {};
+    this.economy = economy || null;
     this.active = false;
     this.initializedForRun = false;
     this.lastSnapshotSentAt = -Infinity;
@@ -122,6 +124,7 @@ export class SharedWorldManager {
     this.proxies = new Map();
     this.remoteTargets = new Map();
     this.hitWindows = new Map();
+    this.scoredRemoteShots = new Set();
     this.unsubscribe = [];
 
     this.unsubscribe.push(
@@ -162,6 +165,7 @@ export class SharedWorldManager {
     this.authorityCounter = 0;
     this.enemyIdentity = new WeakMap();
     this.hitWindows.clear();
+    this.scoredRemoteShots.clear();
     this.remoteTargets.clear();
     this.clearProxies();
 
@@ -176,7 +180,8 @@ export class SharedWorldManager {
             sourcePosition,
             damageType
           )
-        )
+        ),
+        awardKill: (payload) => this.economy?.awardCombat?.(payload) === true
       });
     } else {
       this.adapter.configureMultiplayerEnemyAuthority?.(null);
@@ -222,6 +227,7 @@ export class SharedWorldManager {
     this.clearProxies();
     this.remoteTargets.clear();
     this.hitWindows.clear();
+    this.scoredRemoteShots.clear();
   }
 
   buildSnapshot(now) {
@@ -576,9 +582,34 @@ export class SharedWorldManager {
       1,
       Math.min(MAX_REMOTE_DAMAGE, Math.round(Number(hit?.damage) || 1))
     );
+    const previousHealth = Math.max(0, Number(enemy.health) || 0);
+    const killed = previousHealth > 0 && previousHealth - damage <= 0;
+
+    if (!killed) {
+      const shotId = String(hit?.shotId || envelope.sequence || 'shot');
+      const scoreKey = `${envelope.playerId}:${shotId}:${enemyId}`;
+      if (!this.scoredRemoteShots.has(scoreKey)) {
+        this.scoredRemoteShots.add(scoreKey);
+        if (this.scoredRemoteShots.size > 1024) {
+          const oldest = this.scoredRemoteShots.values().next().value;
+          if (oldest) this.scoredRemoteShots.delete(oldest);
+        }
+        const multiplier = Number(remoteState?.doublePointsTimer || 0) > 0 ? 2 : 1;
+        this.economy?.awardCombat?.({
+          playerId: envelope.playerId,
+          points: 10 * multiplier,
+          kills: 0,
+          label: 'HIT',
+          headshot: hit?.headshot === true
+        });
+      }
+    }
 
     enemy.health -= damage;
-    enemy.hitReactT = Math.max(enemy.hitReactT || 0, hit?.headshot ? 0.22 : 0.15);
+    enemy.hitReactT = Math.max(
+      enemy.hitReactT || 0,
+      hit?.headshot ? 0.22 : 0.15
+    );
 
     if (enemy.health <= 0 && enemy.alive) {
       this.adapter.killEnemy?.(enemy, {
@@ -587,7 +618,10 @@ export class SharedWorldManager {
         weaponFamily: String(hit?.weaponFamily || 'REMOTE'),
         damage,
         source: 'REMOTE_PLAYER',
-        playerId: envelope.playerId
+        playerId: envelope.playerId,
+        creditPlayerId: envelope.playerId,
+        creditLocal: false,
+        doublePoints: Number(remoteState?.doublePointsTimer || 0) > 0
       });
     }
   }

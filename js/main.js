@@ -58,7 +58,7 @@ import {
   initializeMultiplayerFoundation,
   beginMultiplayerRun,
   endMultiplayerRun,
-  syncMultiplayerLocalPlayer
+  syncMultiplayerFrame
 } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
@@ -1040,7 +1040,12 @@ const frameStart = performance.now();
 let mark = frameStart;
 
 updatePlayer(dt, frameKeys, mdx, mdy);
-syncMultiplayerLocalPlayer(player, performance.now());
+syncMultiplayerFrame(player, frameKeys, {
+    dt,
+    now: performance.now(),
+    lookDeltaX: mdx,
+    lookDeltaY: mdy
+  });
 updateLowHealthHeartbeat(player, dt);
 
 updateAIDirector(dt, {

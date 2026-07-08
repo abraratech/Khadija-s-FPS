@@ -1,5 +1,6 @@
 // js/map.js
 import * as THREE from 'three';
+import { getMotionScale } from './accessibility.js';
 import { MAP_IDS, getMapMeta, normalizeMapId } from './maps/map_registry.js';
 import { buildGridBunker } from './maps/grid_bunker.js';
 import { buildIndustrialYard } from './maps/industrial_yard.js';
@@ -781,7 +782,10 @@ export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
   });
 }
 export let shakeIntensity = 0;
-export function addScreenShake(amount) { shakeIntensity = Math.min(shakeIntensity + amount, 0.5); }
+export function addScreenShake(amount) {
+  const scaled = Math.max(0, Number(amount) || 0) * getMotionScale();
+  shakeIntensity = Math.min(shakeIntensity + scaled, 0.5);
+}
 export function applyScreenShake(dt) {
   if (shakeIntensity > 0) {
     camera.position.x += (Math.random() - 0.5) * shakeIntensity;

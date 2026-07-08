@@ -310,5 +310,4 @@ export function resetPersistentProgression() {
 if (typeof window !== 'undefined') {
   window.KAGetProgression = getProgressionSnapshot;
   window.KAResetProgression = resetPersistentProgression;
-  window.KAAddXP = (amount = 100) => awardProgressionXP(amount, 'DEBUG');
 }

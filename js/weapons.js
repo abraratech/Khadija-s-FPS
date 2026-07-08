@@ -7,6 +7,7 @@ import { updateAmmoHUD, showHitMarker, updateWeaponNameHUD, setInteractionPrompt
 import { spawnBulletHole, spawnBloodBurst, spawnShell, spawnGunSmoke, spawnImpactSpark } from './particles.js'; 
 import { playWeaponSound, playWeaponReloadSound, playWorldSound, playUISound } from './audio.js';
 import { getGameplayPointsForMap } from './maps/gameplay_points.js';
+import { getBindingLabel } from './controls.js';
 import {
   getClosestMapGameplayInteractable,
   getMapGameplayInteractionPrompt,
@@ -2284,7 +2285,7 @@ export function updateShops(dt) {
             showStatusToast(`${shop.finalWeapon.name} READY`, '#ffaa00', 1600);
             showMysteryFeedbackIfNear(shop, {
               title: 'MYSTERY BOX READY',
-              body: `${shop.finalWeapon.name} ready · press [E] before it expires`,
+              body: `${shop.finalWeapon.name} ready · press [${getBindingLabel('interact')}] before it expires`,
               tone: 'ready',
               durationMs: 0,
               progress: 1

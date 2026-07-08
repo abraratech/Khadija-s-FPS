@@ -1,6 +1,6 @@
 // js/main.js
 import { renderer, scene, camera, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
-import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, getMouseSensitivityMultiplier, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
+import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, getEnemyVisualStats } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom } from './weapons.js';
@@ -15,8 +15,7 @@ import {
 import {
   resetAIDirectorRun,
   endAIDirectorRun,
-  updateAIDirector,
-  bindAIDirectorDebugHotkey
+  updateAIDirector
 } from './ai_director.js';
 import {
   bindAIMemoryControls,
@@ -30,8 +29,38 @@ import {
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
 import { resetRunSummary, finalizeRunSummary } from './run_summary.js';
+import {
+  CONTROL_ACTIONS,
+  initControlsUI,
+  getKeyboardAction,
+  getMouseAction,
+  getCanonicalCode,
+  getBindingLabel,
+  isKeybindingCaptureActive,
+  pollGamepadInput,
+  populateFrameKeys,
+  getMobileLookSensitivityMultiplier,
+  getMobileAutoSprintEnabled,
+  triggerMobileHaptic
+} from './controls.js';
+import { initAccessibilityControls } from './accessibility.js';
+import {
+  initTutorialControls,
+  resetTutorialRun,
+  endTutorialRun,
+  updateTutorial,
+  consumeTutorialEvents,
+  recordTutorialAction
+} from './tutorial.js';
+import { runReleaseValidation } from './release_validation.js';
+import { getMapValidationSnapshot } from './map_validation.js';
 
 const canvas = document.getElementById('c');
+export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+// Public playable-demo build. Development cheats and AI debug hotkeys stay disabled.
+export const DEV_MODE = false;
+document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
 let usePostProcessing = true;
 const _minimapCamDir = new THREE.Vector3();
@@ -336,12 +365,6 @@ function hideDeathScreen() {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (DEV_MODE && e.code === 'F4') {
-    e.preventDefault();
-    usePostProcessing = !usePostProcessing;
-    console.log("Post Processing:", usePostProcessing ? "ON" : "OFF");
-  }
-
   if (e.code === 'F6') {
     e.preventDefault();
 
@@ -354,8 +377,11 @@ window.addEventListener('keydown', (e) => {
 initGraphicsQualityControls();
 bindCoreSettingsControls();
 bindAIMemoryControls();
-bindAIDirectorDebugHotkey();
-console.log(`Khadija's Arena static ES-module demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle · F7 AI Director.`);
+initControlsUI();
+initAccessibilityControls();
+initTutorialControls();
+runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
+console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
 
 function renderGameFrame() {
   renderer.info.reset();
@@ -366,60 +392,133 @@ function renderGameFrame() {
     renderer.render(scene, camera);
   }
 }
-export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-// ════════════ DEMO SAFETY ════════════
-// Keep disabled for public/demo builds. When true, testing cheats add points and enable the nuke hotkey.
-export const DEV_MODE = true;
-// ══════════════════════════════════════
 
 // ════════════ INPUT STATE ════════════
 const keys = {};
-let mdx = 0, mdy = 0, locked = false, pendingShot = false;
+const frameKeys = {};
+let mdx = 0, mdy = 0, locked = false, pendingShot = false, mouseADS = false;
+let mobileSprintIntent = false;
+let pauseTransitionAt = -Infinity;
 
-window.addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (e.code === 'KeyR' && gs === 'playing' && player.alive) startReload();
-  if (e.code === 'ShiftLeft') player.isSprinting = true;
-  if (e.code === 'KeyQ' && gs === 'playing' && player.alive) cycleWeapon();
-  if (e.code === 'KeyE' && gs === 'playing' && player.alive) checkWorldInteractions(true); 
+function setActionKeyState(action, pressed) {
+  const canonical = getCanonicalCode(action);
+  if (canonical) keys[canonical] = pressed === true;
+}
 
-  // ── DEV MODE: INSTANT NUKE ──
-  if (DEV_MODE && e.code === 'Digit0' && gs === 'playing') {
-    getActiveEnemies().forEach(enemy => { enemy.health = 0; });
-    console.log("DEV MODE: NUKED ALL ZOMBIES!");
+function pauseGameplay(source = 'input') {
+  if (gs !== 'playing' || !player.alive) return false;
+
+  pauseTransitionAt = performance.now();
+  gs = 'paused';
+  clearInputState();
+  showPauseScreen();
+
+  if (!isMobile && document.pointerLockElement) {
+    document.exitPointerLock();
   }
 
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  console.log(`Game paused from ${source}.`);
+  return true;
+}
+
+function resumeGameplay(source = 'input') {
+  if (gs !== 'paused' || !player.alive) return false;
+
+  // Escape can release pointer lock before its key event reaches the page.
+  // This guard prevents that single press from pausing and immediately resuming.
+  if (performance.now() - pauseTransitionAt < 180) return false;
+
+  pauseTransitionAt = performance.now();
+  resetFrameStats();
+  clearInputState();
+  setLockHintVisible(false);
+  hidePauseScreen();
+  gs = 'playing';
+
+  if (!isMobile) {
+    canvas.requestPointerLock();
+  }
+
+  console.log(`Game resumed from ${source}.`);
+  return true;
+}
+
+function togglePauseGameplay(source = 'input') {
+  if (gs === 'paused') return resumeGameplay(source);
+  return pauseGameplay(source);
+}
+
+function triggerGameplayAction(action) {
+  if (!action) return;
+
+  if (action === CONTROL_ACTIONS.PAUSE) {
+    togglePauseGameplay('control');
+    return;
+  }
+
+  if (gs !== 'playing' || !player.alive) return;
+
+  if (action === CONTROL_ACTIONS.FIRE) {
+    pendingShot = true;
+    recordTutorialAction('FIRE');
+  } else if (action === CONTROL_ACTIONS.RELOAD) {
+    startReload();
+    recordTutorialAction('RELOAD');
+  } else if (action === CONTROL_ACTIONS.SWITCH_WEAPON) {
+    cycleWeapon();
+    recordTutorialAction('SWITCH');
+  } else if (action === CONTROL_ACTIONS.INTERACT) {
+    checkWorldInteractions(true);
+    recordTutorialAction('INTERACT');
+  }
+}
+
+window.addEventListener('keydown', e => {
+  if (isKeybindingCaptureActive()) return;
+
+  const action = getKeyboardAction(e.code);
+  if (action) {
+    setActionKeyState(action, true);
+    if (!e.repeat) triggerGameplayAction(action);
+  }
+
+  if (action === CONTROL_ACTIONS.JUMP || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+    e.preventDefault();
+  }
 });
 
-window.addEventListener('keyup', e => { 
-  keys[e.code] = false; 
-  if (e.code === 'ShiftLeft') player.isSprinting = false;
+window.addEventListener('keyup', e => {
+  const action = getKeyboardAction(e.code);
+  if (action) setActionKeyState(action, false);
 });
 
 window.addEventListener('mousemove', e => { 
   if (locked) { mdx += e.movementX; mdy += e.movementY; } 
 });
 
-window.addEventListener('mousedown', e => { 
+window.addEventListener('mousedown', e => {
+  if (isKeybindingCaptureActive()) return;
   if (gs !== 'playing' || (!locked && !isMobile) || !player.alive) return;
-  
-  const activeW = getActiveWeapon();
-  if (activeW && activeW.reloading) return; 
 
-  if (e.button === 0) {
-    keys['MousedownLeft'] = true; 
-    pendingShot = true; 
-  }
-  if (e.button === 2) player.isADS = true; 
+  const activeW = getActiveWeapon();
+  if (activeW && activeW.reloading) return;
+
+  const action = getMouseAction(e.button);
+  if (!action) return;
+
+  setActionKeyState(action, true);
+  triggerGameplayAction(action);
+  if (action === CONTROL_ACTIONS.AIM) mouseADS = true;
 });
 
-window.addEventListener('mouseup', e => { 
+window.addEventListener('mouseup', e => {
   if (!locked && !isMobile) return;
-  
-  if (e.button === 0) keys['MousedownLeft'] = false;
-  if (e.button === 2) player.isADS = false; 
+
+  const action = getMouseAction(e.button);
+  if (!action) return;
+
+  setActionKeyState(action, false);
+  if (action === CONTROL_ACTIONS.AIM) mouseADS = false;
 });
 
 window.addEventListener('wheel', e => {
@@ -442,13 +541,13 @@ document.addEventListener('pointerlockchange', () => {
     return;
   }
 
+  mouseADS = false;
   player.isADS = false;
   player.isSprinting = false;
   keys['MousedownLeft'] = false;
 
   if (gs === 'playing' && player.alive) {
-    gs = 'paused';
-    showPauseScreen();
+    pauseGameplay('pointer-lock');
     return;
   }
 
@@ -458,14 +557,7 @@ document.addEventListener('pointerlockchange', () => {
 
 // ── PAUSE MENU BUTTON LISTENERS ──
 document.getElementById('resume-btn').addEventListener('click', () => {
-  resetFrameStats();
-  setLockHintVisible(false);
-  hidePauseScreen();
-  gs = 'playing';
-
-  if (!isMobile) {
-    canvas.requestPointerLock();
-  }
+  resumeGameplay('pause-menu');
 });
 
 document.getElementById('quit-btn').addEventListener('click', () => {
@@ -480,8 +572,7 @@ canvas.addEventListener('click', () => {
 document.getElementById('btn-mobile-pause').addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (gs === 'playing' && player.alive) {
-    gs = 'paused';
-    showPauseScreen();
+    pauseGameplay('mobile');
   }
 }, { passive: false });  
 
@@ -619,10 +710,15 @@ function clearInputState() {
   Object.keys(keys).forEach((key) => {
     keys[key] = false;
   });
+  Object.keys(frameKeys).forEach((key) => {
+    frameKeys[key] = false;
+  });
 
   mdx = 0;
   mdy = 0;
   pendingShot = false;
+  mouseADS = false;
+  mobileSprintIntent = false;
   player.isADS = false;
   player.isSprinting = false;
 }
@@ -668,13 +764,6 @@ function placePlayerAtRandomSpawn() {
   }
 
   camera.position.copy(player.pos);
-}
-
-function applyDevModeScore() {
-  if (!DEV_MODE) return;
-
-  player.score = 999999;
-  console.log("DEV MODE ACTIVE: Infinite Points & Nuke Hotkey ('0') Enabled!");
 }
 
 function syncHudFromPlayer() {
@@ -765,8 +854,10 @@ async function beginRun({ fromRespawn = false } = {}) {
     resetMapGameplay({ mapId: chosenMap, scene });
     resetChallengesRun();
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
+    runReleaseValidation({ phase: 'RUN_START', mapId: chosenMap, isMobile, devMode: DEV_MODE, mapValidation: getMapValidationSnapshot() });
 
     placePlayerAtRandomSpawn();
+    resetTutorialRun({ mapId: chosenMap, isMobile, player });
 
     scene.add(camera);
     initAudio();
@@ -776,11 +867,10 @@ async function beginRun({ fromRespawn = false } = {}) {
     initEnemies();
     clearAllDecals();
 
-    applyDevModeScore();
     syncHudFromPlayer();
 
     gs = 'playing';
-    showStatusToast('SURVIVE THE WAVE · E INTERACT · R RELOAD · Q SWITCH', '#00d4ff', 3200);
+    showStatusToast(`SURVIVE · ${getBindingLabel(CONTROL_ACTIONS.INTERACT)} INTERACT · ${getBindingLabel(CONTROL_ACTIONS.RELOAD)} RELOAD · ${getBindingLabel(CONTROL_ACTIONS.SWITCH_WEAPON)} SWITCH`, '#00d4ff', 3200);
     await enterGameplayPresentation();
     ensureGameLoopStarted();
 
@@ -797,6 +887,7 @@ function returnToMenu(source = 'pause') {
   saveRunRecords();
   endAIDirectorRun();
   endMapGameplay();
+  endTutorialRun();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -822,7 +913,7 @@ function returnToMenu(source = 'pause') {
 
 // ── MAIN MENU SIZES SLIDER LOGIC ──
 const sizeSlider = document.getElementById('btn-size-slider');
-const savedSize = localStorage.getItem('mobile_btn_size') || '60';
+const savedSize = localStorage.getItem('mobile_btn_size') || '52';
 if (sizeSlider) {
   sizeSlider.value = savedSize;
   document.documentElement.style.setProperty('--mobile-btn-size', savedSize + 'px');
@@ -830,7 +921,7 @@ if (sizeSlider) {
     const newSize = e.target.value;
     document.documentElement.style.setProperty('--mobile-btn-size', newSize + 'px');
     localStorage.setItem('mobile_btn_size', newSize);
-    ['joy', 'switch', 'interact', 'reload', 'jump', 'shoot'].forEach(key => {
+    ['joy', 'switch', 'interact', 'reload', 'jump', 'ads', 'shoot'].forEach(key => {
       document.documentElement.style.removeProperty(`--sz-${key}`);
     });
   });
@@ -870,16 +961,55 @@ if (gs === 'playing') {
   if (rawFrameMs > 25) {
     lastSpike = `${rawFrameMs.toFixed(1)} ms`;
   }
-}  
-  if (gs !== 'playing') { 
-    renderGameFrame();
-    return; 
+}
+
+const gamepadInput = pollGamepadInput();
+
+if (gs !== 'playing') {
+  if (gs === 'paused' && gamepadInput.pausePressed) {
+    resumeGameplay('gamepad');
   }
-  
+  renderGameFrame();
+  return;
+}
+
+if (gamepadInput.pausePressed) {
+  pauseGameplay('gamepad');
+  renderGameFrame();
+  return;
+}
+
+populateFrameKeys(keys, gamepadInput, frameKeys);
+player.isADS = mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld;
+
+// Mobile auto-sprint replaces another large on-screen button. It activates
+// only when the joystick is pushed strongly forward and immediately releases
+// while aiming, moving backward, or returning the stick toward center.
+if (
+  isMobile &&
+  getMobileAutoSprintEnabled() &&
+  mobileSprintIntent &&
+  !player.isADS
+) {
+  frameKeys.ShiftLeft = true;
+}
+player.isSprinting = Boolean(frameKeys.ShiftLeft);
+
+if (gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
+if (gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
+if (gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
+if (gamepadInput.firePressed) {
+  pendingShot = true;
+  recordTutorialAction('FIRE');
+}
+
+mdx += gamepadInput.lookX * 1050 * dt;
+mdy += gamepadInput.lookY * 1050 * dt;
+
 const frameStart = performance.now();
 let mark = frameStart;
 
-updatePlayer(dt, keys, mdx, mdy);
+updatePlayer(dt, frameKeys, mdx, mdy);
 updateLowHealthHeartbeat(player, dt);
 
 updateAIDirector(dt, {
@@ -910,12 +1040,28 @@ for (const event of consumeMapGameplayEvents()) {
   });
 }
 
+updateTutorial(dt, {
+  player,
+  wave: currentWave,
+  enemies: getActiveEnemies()
+});
+
+for (const event of consumeTutorialEvents()) {
+  showStatusToast(event.text, event.color || '#00d4ff', event.duration || 1900);
+  playUISound('warning', 0.12, true, {
+    cooldownKey: `tutorial_${event.type}`,
+    cooldownMs: 500,
+    pitchMin: 0.96,
+    pitchMax: 1.08
+  });
+}
+
 updateEnemies(dt);
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
-const isMoving = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) && player.onGround;
-updateGun(dt, keys, isMoving);
+const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;
+updateGun(dt, frameKeys, isMoving);
 updateShops(dt);
 checkWorldInteractions(false); 
 
@@ -936,6 +1082,7 @@ const effectsMs = performance.now() - mark;
     endAIDirectorRun();
     finalizeCurrentRun('DEATH');
     endMapGameplay();
+    endTutorialRun();
     refreshAIMemoryControls();
     gs = 'dead';
     clearInputState();
@@ -1073,7 +1220,8 @@ if (isMobile) {
       if (e.changedTouches[i].identifier === joyTouchId) {
         joyTouchId = null;
         joyKnob.style.transform = `translate(-50%, -50%)`;
-        keys['KeyW'] = keys['KeyS'] = keys['KeyA'] = keys['KeyD'] = false; 
+        keys['KeyW'] = keys['KeyS'] = keys['KeyA'] = keys['KeyD'] = false;
+        mobileSprintIntent = false;
       }
     }
   }, { passive: false });
@@ -1091,6 +1239,15 @@ if (isMobile) {
     keys['KeyS'] = dy > thresh;
     keys['KeyA'] = dx < -thresh;
     keys['KeyD'] = dx > thresh;
+
+    const forwardStrength = Math.max(0, -dy / maxD);
+    const stickStrength = Math.min(1, Math.hypot(dx, dy) / maxD);
+    mobileSprintIntent = (
+      keys['KeyW'] &&
+      !keys['KeyS'] &&
+      forwardStrength >= 0.68 &&
+      stickStrength >= 0.72
+    );
   }
 
   const lookArea = document.getElementById('touch-look-area');
@@ -1115,7 +1272,7 @@ if (isMobile) {
         const dy = touch.clientY - lastLook.y;
         lastLook = { x: touch.clientX, y: touch.clientY };
 
-        const touchSensitivity = 0.007 * getMouseSensitivityMultiplier();
+        const touchSensitivity = 0.007 * getMobileLookSensitivityMultiplier();
         player.yaw -= dx * touchSensitivity; 
         player.pitch -= dy * touchSensitivity;
         player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
@@ -1131,29 +1288,45 @@ if (isMobile) {
     }
   }, { passive: false });
 
-  function bindTouchBtn(id, keyStr, isMouse = false) {
+  function bindTouchBtn(id, action, isMouse = false) {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('touchstart', (e) => {
-      if (isCustomizingLayout) return; 
+
+    const release = (e) => {
+      if (isCustomizingLayout) return;
       e.preventDefault();
-      if (isMouse) { keys['MousedownLeft'] = true; window.dispatchEvent(new MouseEvent('mousedown', { button: 0 })); }
-      else { keys[keyStr] = true; window.dispatchEvent(new KeyboardEvent('keydown', { code: keyStr })); }
+      el.classList.remove('is-held');
+
+      if (isMouse) setActionKeyState(CONTROL_ACTIONS.FIRE, false);
+      else setActionKeyState(action, false);
+    };
+
+    el.addEventListener('touchstart', (e) => {
+      if (isCustomizingLayout) return;
+      e.preventDefault();
+      el.classList.add('is-held');
+      triggerMobileHaptic(isMouse ? 9 : 12);
+
+      if (isMouse) {
+        setActionKeyState(CONTROL_ACTIONS.FIRE, true);
+        pendingShot = true;
+        recordTutorialAction('FIRE');
+      } else {
+        setActionKeyState(action, true);
+        triggerGameplayAction(action);
+      }
     }, { passive: false });
 
-    el.addEventListener('touchend', (e) => {
-      if (isCustomizingLayout) return; 
-      e.preventDefault();
-      if (isMouse) { keys['MousedownLeft'] = false; window.dispatchEvent(new MouseEvent('mouseup', { button: 0 })); }
-      else { keys[keyStr] = false; window.dispatchEvent(new KeyboardEvent('keyup', { code: keyStr })); }
-    }, { passive: false });
+    el.addEventListener('touchend', release, { passive: false });
+    el.addEventListener('touchcancel', release, { passive: false });
   }
 
-  bindTouchBtn('btn-switch', 'KeyQ');
-  bindTouchBtn('btn-jump', 'Space');
-  bindTouchBtn('btn-reload', 'KeyR');
-  bindTouchBtn('btn-interact', 'KeyE');
-  bindTouchBtn('btn-shoot', '', true);
+  bindTouchBtn('btn-switch', CONTROL_ACTIONS.SWITCH_WEAPON);
+  bindTouchBtn('btn-jump', CONTROL_ACTIONS.JUMP);
+  bindTouchBtn('btn-reload', CONTROL_ACTIONS.RELOAD);
+  bindTouchBtn('btn-interact', CONTROL_ACTIONS.INTERACT);
+  bindTouchBtn('btn-ads', CONTROL_ACTIONS.AIM);
+  bindTouchBtn('btn-shoot', null, true);
 
   // ── PUBG-STYLE INTERACTIVE LAYOUT CONFIGURATOR ──
   function applySavedLayout() {

@@ -1,27 +1,16 @@
 // js/map_validation.js
-// C12 — Build-time map and spawn validation.
-// Runs only when an arena is built, so gameplay frames do not pay the cost.
+// C12/C13.1 — Build-time map and spawn validation.
+// Locked spawn regions are treated as deferred navigation areas when a map has
+// an explicit unlock route, preventing false failures before doors are opened.
 
 const state = {
-  mapId: 'unknown',
-  valid: false,
-  checkedAt: 0,
-  width: 0,
-  depth: 0,
-  zombieSpawns: 0,
-  playerSpawns: 0,
-  lockedSpawns: 0,
-  insideWallSpawns: [],
-  outOfBoundsSpawns: [],
-  duplicateSpawns: [],
-  unsafePlayerPairs: [],
-  unreachableZombieSpawns: [],
-  reachableSpawnCount: 0,
-  openCells: 0,
-  reachableCells: 0,
-  coverage: 0,
-  warnings: [],
-  errors: []
+  mapId: 'unknown', valid: false, checkedAt: 0, width: 0, depth: 0,
+  zombieSpawns: 0, playerSpawns: 0, lockedSpawns: 0,
+  deferredLockedSpawns: 0, deferredNavigationCells: 0,
+  insideWallSpawns: [], outOfBoundsSpawns: [], duplicateSpawns: [],
+  unsafePlayerPairs: [], unreachableZombieSpawns: [],
+  reachableSpawnCount: 0, openCells: 0, reachableCells: 0,
+  coverage: 0, warnings: [], errors: []
 };
 
 let lastContext = null;
@@ -69,14 +58,10 @@ function buildReachabilityGrid({ width, depth, walls, cellSize = 2.5 }) {
   const minX = -width * 0.5 + cellSize * 0.5;
   const minZ = -depth * 0.5 + cellSize * 0.5;
   const open = new Uint8Array(cols * rows);
-
   const index = (col, row) => row * cols + col;
-  const world = (col, row) => ({
-    x: minX + col * cellSize,
-    z: minZ + row * cellSize
-  });
-
+  const world = (col, row) => ({ x: minX + col * cellSize, z: minZ + row * cellSize });
   let openCount = 0;
+
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const point = world(col, row);
@@ -121,8 +106,8 @@ function buildReachabilityGrid({ width, depth, walls, cellSize = 2.5 }) {
     tail++;
     visited[index(start.col, start.row)] = 1;
     let count = 0;
-
     const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
     while (head < tail) {
       const col = queueCols[head];
       const row = queueRows[head];
@@ -141,11 +126,31 @@ function buildReachabilityGrid({ width, depth, walls, cellSize = 2.5 }) {
         tail++;
       }
     }
-
     return { visited, count };
   }
 
   return { cols, rows, open, openCount, index, nearestOpenCell, floodFrom };
+}
+
+function collectDeferredNavigationCells(grid, playerFlood, lockedSpawns, hasUnlockRoute) {
+  const visited = new Uint8Array(grid.open.length);
+  if (!hasUnlockRoute || lockedSpawns.length === 0) return { visited, count: 0 };
+
+  for (const point of lockedSpawns) {
+    const cell = grid.nearestOpenCell(point);
+    if (!cell) continue;
+    const cellIndex = grid.index(cell.col, cell.row);
+    if (playerFlood.visited[cellIndex] || visited[cellIndex]) continue;
+
+    const lockedFlood = grid.floodFrom(point);
+    for (let i = 0; i < lockedFlood.visited.length; i++) {
+      if (lockedFlood.visited[i] && !playerFlood.visited[i]) visited[i] = 1;
+    }
+  }
+
+  let count = 0;
+  for (const value of visited) count += value ? 1 : 0;
+  return { visited, count };
 }
 
 function validate(context) {
@@ -154,37 +159,29 @@ function validate(context) {
   const zombieSpawns = Array.isArray(context?.spawnPoints) ? context.spawnPoints : [];
   const playerSpawns = Array.isArray(context?.playerSpawnPoints) ? context.playerSpawnPoints : [];
   const lockedSpawns = Array.isArray(context?.lockedSpawnPoints) ? context.lockedSpawnPoints : [];
+  const hasUnlockRoute = context?.hasUnlockRoute === true;
   const width = Math.max(20, finite(context?.width, 80));
   const depth = Math.max(20, finite(context?.depth, 80));
   const cellSize = Math.max(1.75, finite(context?.navigationCellSize, 2.5));
-
   const allZombieSpawns = [...zombieSpawns, ...lockedSpawns];
   const insideWallSpawns = [];
   const outOfBoundsSpawns = [];
   const unsafePlayerPairs = [];
 
   allZombieSpawns.forEach((point, index) => {
-    if (walls.some((wall) => pointInsideWall(point, wall, 0.28))) {
-      insideWallSpawns.push(`Z${index + 1}`);
-    }
-    if (!pointInsideBounds(point, width, depth, 0.25)) {
-      outOfBoundsSpawns.push(`Z${index + 1}`);
-    }
+    if (walls.some((wall) => pointInsideWall(point, wall, 0.28))) insideWallSpawns.push(`Z${index + 1}`);
+    if (!pointInsideBounds(point, width, depth, 0.25)) outOfBoundsSpawns.push(`Z${index + 1}`);
   });
 
   playerSpawns.forEach((point, index) => {
-    if (walls.some((wall) => pointInsideWall(point, wall, 0.42))) {
-      insideWallSpawns.push(`P${index + 1}`);
-    }
-    if (!pointInsideBounds(point, width, depth, 0.25)) {
-      outOfBoundsSpawns.push(`P${index + 1}`);
-    }
+    if (walls.some((wall) => pointInsideWall(point, wall, 0.42))) insideWallSpawns.push(`P${index + 1}`);
+    if (!pointInsideBounds(point, width, depth, 0.25)) outOfBoundsSpawns.push(`P${index + 1}`);
 
-    allZombieSpawns.forEach((zombiePoint, zIndex) => {
+    // Locked spawn regions cannot activate until their route is purchased, so
+    // only open-at-start spawns are part of initial player-clearance checks.
+    zombieSpawns.forEach((zombiePoint, zIndex) => {
       const distance = flatDistance(point, zombiePoint);
-      if (distance < 6.0) {
-        unsafePlayerPairs.push(`P${index + 1}-Z${zIndex + 1}:${distance.toFixed(1)}m`);
-      }
+      if (distance < 6.0) unsafePlayerPairs.push(`P${index + 1}-Z${zIndex + 1}:${distance.toFixed(1)}m`);
     });
   });
 
@@ -194,34 +191,47 @@ function validate(context) {
   ];
 
   const grid = buildReachabilityGrid({ width, depth, walls, cellSize });
-  const flood = grid.floodFrom(playerSpawns[0] || { x: 0, z: 0 });
+  const playerFlood = grid.floodFrom(playerSpawns[0] || { x: 0, z: 0 });
+  const deferred = collectDeferredNavigationCells(grid, playerFlood, lockedSpawns, hasUnlockRoute);
   const unreachableZombieSpawns = [];
   let reachableSpawnCount = 0;
+  let deferredLockedSpawns = 0;
 
-  allZombieSpawns.forEach((point, index) => {
+  zombieSpawns.forEach((point, index) => {
     const cell = grid.nearestOpenCell(point);
-    if (!cell || !flood.visited[grid.index(cell.col, cell.row)]) {
+    if (!cell || !playerFlood.visited[grid.index(cell.col, cell.row)]) {
       unreachableZombieSpawns.push(`Z${index + 1}`);
     } else {
       reachableSpawnCount++;
     }
   });
 
+  lockedSpawns.forEach((point, index) => {
+    const cell = grid.nearestOpenCell(point);
+    const id = `L${index + 1}`;
+    if (!cell) {
+      unreachableZombieSpawns.push(id);
+      return;
+    }
+    const cellIndex = grid.index(cell.col, cell.row);
+    if (playerFlood.visited[cellIndex]) reachableSpawnCount++;
+    else if (hasUnlockRoute && deferred.visited[cellIndex]) deferredLockedSpawns++;
+    else unreachableZombieSpawns.push(id);
+  });
+
   const warnings = [];
   const errors = [];
-
   if (zombieSpawns.length < 8) warnings.push('Fewer than 8 open zombie spawns.');
   if (playerSpawns.length < 3) warnings.push('Fewer than 3 player spawn options.');
-  if (lockedSpawns.length > 0 && !context?.hasUnlockRoute) {
-    warnings.push('Locked spawns exist without an explicit unlock route.');
-  }
+  if (lockedSpawns.length > 0 && !hasUnlockRoute) warnings.push('Locked spawns exist without an explicit unlock route.');
   if (unsafePlayerPairs.length > 0) warnings.push(`${unsafePlayerPairs.length} player/zombie spawn pairs are closer than 6m.`);
   if (duplicateSpawns.length > 0) warnings.push(`${duplicateSpawns.length} duplicate or near-duplicate spawn pairs found.`);
   if (insideWallSpawns.length > 0) errors.push(`${insideWallSpawns.length} spawn points overlap collision.`);
   if (outOfBoundsSpawns.length > 0) errors.push(`${outOfBoundsSpawns.length} spawn points are outside arena bounds.`);
   if (unreachableZombieSpawns.length > 0) errors.push(`${unreachableZombieSpawns.length} zombie spawns are disconnected from the player navigation region.`);
 
-  const coverage = grid.openCount > 0 ? flood.count / grid.openCount : 0;
+  const activeRegionOpenCells = Math.max(0, grid.openCount - deferred.count);
+  const coverage = activeRegionOpenCells > 0 ? playerFlood.count / activeRegionOpenCells : 0;
   if (coverage < 0.82) warnings.push(`Navigation coverage is only ${(coverage * 100).toFixed(1)}%.`);
 
   Object.assign(state, {
@@ -233,6 +243,8 @@ function validate(context) {
     zombieSpawns: zombieSpawns.length,
     playerSpawns: playerSpawns.length,
     lockedSpawns: lockedSpawns.length,
+    deferredLockedSpawns,
+    deferredNavigationCells: deferred.count,
     insideWallSpawns,
     outOfBoundsSpawns,
     duplicateSpawns,
@@ -240,7 +252,7 @@ function validate(context) {
     unreachableZombieSpawns,
     reachableSpawnCount,
     openCells: grid.openCount,
-    reachableCells: flood.count,
+    reachableCells: playerFlood.count,
     coverage,
     warnings,
     errors
@@ -253,7 +265,14 @@ export function configureMapValidation(context = {}) {
   lastContext = context;
   const report = validate(context);
   if (report.valid) {
-    console.log(`[MAP VALIDATION] ${report.mapId}: PASS · ${report.reachableSpawnCount}/${report.zombieSpawns + report.lockedSpawns} zombie spawns reachable · ${(report.coverage * 100).toFixed(1)}% coverage`);
+    const deferredText = report.deferredLockedSpawns > 0
+      ? ` · ${report.deferredLockedSpawns} locked spawns deferred until doors open`
+      : '';
+    console.log(
+      `[MAP VALIDATION] ${report.mapId}: PASS · ` +
+      `${report.reachableSpawnCount}/${report.zombieSpawns} open/current spawns reachable` +
+      `${deferredText} · ${(report.coverage * 100).toFixed(1)}% active-region coverage`
+    );
   } else {
     console.warn(`[MAP VALIDATION] ${report.mapId}: FAIL`, report.errors, report.warnings);
   }

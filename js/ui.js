@@ -4,6 +4,8 @@ import { getObjectiveSnapshot } from './objectives.js';
 import { getChallengesSnapshot } from './challenges.js';
 import { getRunSummarySnapshot } from './run_summary.js';
 import { getMapGameplaySnapshot, getMapGameplayMinimapMarkers } from './map_gameplay.js';
+import { getDamageFlashScale } from './accessibility.js';
+import { getBindingLabel } from './controls.js';
 
 
 // ════════════ HUD HELPERS ════════════
@@ -137,7 +139,13 @@ export function showHitMarker(options = {}) {
 }
 
 export function triggerDamageFlash() {
-  uiTimers.dmgFlashT = 0.22;
+  const scale = getDamageFlashScale();
+  uiTimers.dmgFlashT = scale > 0 ? 0.22 : 0;
+
+  if (scale <= 0) {
+    const damageFlash = document.getElementById('damage-flash');
+    if (damageFlash) damageFlash.style.opacity = '0';
+  }
 }
 
 export function updateUIEffects(dt) {
@@ -159,7 +167,7 @@ export function updateUIEffects(dt) {
     uiTimers.dmgFlashT -= dt;
     const damageFlash = document.getElementById('damage-flash');
     if (damageFlash) {
-      damageFlash.style.opacity = Math.max(0, (uiTimers.dmgFlashT / 0.22) * 0.5);
+      damageFlash.style.opacity = Math.max(0, (uiTimers.dmgFlashT / 0.22) * 0.5 * getDamageFlashScale());
       if (uiTimers.dmgFlashT <= 0) {
         damageFlash.style.opacity = '0';
       }
@@ -172,7 +180,7 @@ function getPromptTone(text = '') {
 
   if (value.includes('NOT ENOUGH') || value.includes('NEED ') || value.includes('RECHARGING') || value.includes('COOLDOWN') || value.includes('ROLLING') || value.includes('MOVE CLOSER')) return 'warning';
   if (value.includes('ALREADY') || value.includes('FULLY REPAIRED') || value.includes('FULL')) return 'muted';
-  if (value.includes('PRESS [E]') || value.includes('TAKE')) return 'ready';
+  if (value.includes('PRESS [') || value.includes('TAKE')) return 'ready';
 
   return 'default';
 }
@@ -181,6 +189,9 @@ export function setInteractionPrompt(visible, text = "Press [E] to interact") {
   const el = document.getElementById('interaction-prompt');
   if (!el) return;
 
+  const interactLabel = getBindingLabel('interact');
+  const displayText = String(text).replace(/\[E\]/g, `[${interactLabel}]`);
+
   el.style.display = visible ? 'block' : 'none';
 
   if (!visible) {
@@ -188,12 +199,11 @@ export function setInteractionPrompt(visible, text = "Press [E] to interact") {
     return;
   }
 
-  const nextText = String(text || "Press [E] to interact");
-  if (el.textContent !== nextText) {
-    el.textContent = nextText;
+  if (el.textContent !== displayText) {
+    el.textContent = displayText;
   }
 
-  const tone = getPromptTone(nextText);
+  const tone = getPromptTone(displayText);
   el.classList.toggle('prompt-ready', tone === 'ready');
   el.classList.toggle('prompt-warning', tone === 'warning');
   el.classList.toggle('prompt-muted', tone === 'muted');

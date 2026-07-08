@@ -69,6 +69,12 @@ export class MultiplayerLobbyUI {
     openButton.addEventListener('click', () => this.open());
     menu.appendChild(openButton);
 
+    const menuCard = document.getElementById('ka-coop-menu-card');
+    if (menuCard) {
+      menuCard.addEventListener('click', () => this.open());
+      openButton.hidden = true;
+    }
+
     const modal = document.createElement('div');
     modal.id = 'ka-coop-modal';
     modal.setAttribute('aria-hidden', 'true');
@@ -166,7 +172,10 @@ export class MultiplayerLobbyUI {
     };
 
     this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
-    this.elements.server.value = readStored(SERVER_STORAGE_KEY, '');
+    this.elements.server.value = readStored(
+      SERVER_STORAGE_KEY,
+      'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
+    );
 
     appendOptions(
       this.elements.map,

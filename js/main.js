@@ -91,7 +91,7 @@ registerMultiplayerRunLauncher(({ mapId, difficulty }) => {
   if (difficultySelect && difficulty !== undefined) {
     difficultySelect.value = String(difficulty);
   }
-  void beginRun();
+  void beginRun({ deferPointerLock: true });
 });
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
@@ -835,7 +835,7 @@ function showMenuScreen(name = 'home') {
   });
 }
 
-async function enterGameplayPresentation() {
+async function enterGameplayPresentation({ requestPointerLock = true } = {}) {
   if (isMobile) {
     try {
       if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
@@ -848,12 +848,26 @@ async function enterGameplayPresentation() {
     } catch (err) {
       console.warn("Fullscreen or orientation lock failed:", err);
     }
+  } else if (requestPointerLock) {
+    try {
+      const lockResult = canvas.requestPointerLock();
+      if (lockResult && typeof lockResult.then === 'function') {
+        await lockResult;
+      }
+    } catch (error) {
+      if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+        console.info('[Input] Pointer lock is waiting for a direct player click.');
+      } else {
+        console.warn('[Input] Pointer lock request failed.', error);
+      }
+      setLockHintVisible(true);
+    }
   } else {
-    canvas.requestPointerLock();
+    setLockHintVisible(true);
   }
 }
 
-async function beginRun({ fromRespawn = false } = {}) {
+async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) {
   if (runTransitionInProgress) return;
 
   runTransitionInProgress = true;
@@ -908,7 +922,7 @@ async function beginRun({ fromRespawn = false } = {}) {
 
     gs = 'playing';
     showStatusToast(`SURVIVE · ${getBindingLabel(CONTROL_ACTIONS.INTERACT)} INTERACT · ${getBindingLabel(CONTROL_ACTIONS.RELOAD)} RELOAD · ${getBindingLabel(CONTROL_ACTIONS.SWITCH_WEAPON)} SWITCH`, '#00d4ff', 3200);
-    await enterGameplayPresentation();
+    await enterGameplayPresentation({ requestPointerLock: !deferPointerLock });
     ensureGameLoopStarted();
 
     if (fromRespawn) {

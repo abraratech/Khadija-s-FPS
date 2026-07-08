@@ -23,6 +23,7 @@
 <link href="css/game.css" rel="stylesheet"/>
 <link href="css/hud.css" rel="stylesheet"/>
 <link href="css/menu.css" rel="stylesheet"/>
+<link href="css/multiplayer.css" rel="stylesheet"/>
 <style>
     /* ── KHADIJA'S ARENA MULTI-STAGE MENU OVERHAUL ── */
     .ka-menu-shell {
@@ -680,11 +681,11 @@
 <strong>Single Player</strong>
 <small>Wave survival with procedural weapons and procedural zombies. Choose from six arenas, pick a difficulty, then deploy.</small>
 </button>
-<button aria-disabled="true" class="ka-mode-card locked" type="button">
-<span class="ka-card-kicker">Coming soon</span>
-<strong>Multiplayer</strong>
-<small>PVP / PVPVE planned later. This demo is focused on the single-player survival loop.</small>
-</button>
+<button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" type="button">
+          <span class="ka-card-kicker">Online alpha</span>
+          <strong>Co-op Multiplayer</strong>
+          <small>Create or join a private 2–4 player room. Lobby, synchronized launch, movement, aim, sprint, weapon state, and remote firing effects are active.</small>
+        </button>
 <button class="ka-nav-btn" data-next-screen="map" type="button">Continue to Arena Select →</button>
 <button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
 </div>

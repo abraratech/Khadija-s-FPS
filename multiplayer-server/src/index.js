@@ -9,7 +9,7 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 5;
-const SERVER_BUILD = 'm3-tactical-awareness-r1';
+const SERVER_BUILD = 'm3-coop-scoreboard-r1';
 const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
 
 function json(data, init = {}) {
@@ -72,6 +72,14 @@ function publicPlayer(player) {
   };
 }
 
+function validStatsSnapshot(value) {
+  return Boolean(value && Array.isArray(value.players) && value.team);
+}
+
+function validFinalSummary(value) {
+  return Boolean(value && Array.isArray(value.players) && value.team);
+}
+
 function defaultRoom(roomCode) {
   return {
     roomId: makeId('room'),
@@ -89,6 +97,7 @@ function defaultRoom(roomCode) {
     runId: null,
     authorityEpoch: 0,
     authorityCheckpoint: null,
+    finalSummary: null,
     revision: 0,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -344,7 +353,8 @@ export class ArenaRoom extends DurableObject {
       players: Object.values(this.room.players).map(publicPlayer),
       runId: this.room.runId,
       authorityEpoch: Math.max(0, Number(this.room.authorityEpoch) || 0),
-      revision: this.room.revision
+      revision: this.room.revision,
+      finalSummary: this.room.finalSummary || null
     };
   }
 
@@ -402,6 +412,30 @@ export class ArenaRoom extends DurableObject {
         serverReceivedAt: Date.now()
       };
 
+      if (
+        envelope.type === 'run-stats'
+        && (
+          envelope.payload?.kind === 'snapshot'
+          || envelope.payload?.kind === 'final'
+        )
+        && player.playerId !== this.room.hostPlayerId
+      ) {
+        this.sendError(socket, 'Only the current host can publish run statistics snapshots.');
+        return;
+      }
+
+      if (
+        envelope.type === 'run-stats'
+        && envelope.payload?.kind === 'final'
+        && validFinalSummary(envelope.payload.summary)
+        && this.room.status !== 'in-run'
+        && !this.room.finalSummary
+      ) {
+        this.room.finalSummary = envelope.payload.summary;
+        await this.commit();
+        this.broadcastRoomState();
+      }
+
       if (this.isAuthorityCheckpointEnvelope(envelope)) {
         if (player.playerId !== this.room.hostPlayerId) {
           this.sendError(socket, 'Only the current host can publish authority snapshots.');
@@ -424,6 +458,15 @@ export class ArenaRoom extends DurableObject {
     if (!envelope || this.room?.status !== 'in-run') return false;
     if (envelope.type === 'world-snapshot') return true;
     if (envelope.type === 'economy-snapshot') return true;
+    if (
+      envelope.type === 'run-stats'
+      && (
+        envelope.payload?.kind === 'snapshot'
+        || envelope.payload?.kind === 'final'
+      )
+    ) {
+      return true;
+    }
     return envelope.type === 'revive-state'
       && envelope.payload?.kind === 'snapshot';
   }
@@ -436,7 +479,9 @@ export class ArenaRoom extends DurableObject {
       updatedAt: 0,
       world: null,
       economy: null,
-      revive: null
+      revive: null,
+      stats: null,
+      finalSummary: this.room.finalSummary || null
     };
 
     checkpoint.runId = this.room.runId;
@@ -452,6 +497,23 @@ export class ArenaRoom extends DurableObject {
       checkpoint.economy = envelope.payload;
     } else if (envelope.type === 'revive-state') {
       checkpoint.revive = envelope.payload?.snapshot || null;
+    } else if (envelope.type === 'run-stats') {
+      if (
+        envelope.payload?.kind === 'snapshot'
+        && validStatsSnapshot(envelope.payload.snapshot)
+      ) {
+        checkpoint.stats = envelope.payload.snapshot;
+        if (validFinalSummary(envelope.payload.snapshot.finalSummary)) {
+          this.room.finalSummary = envelope.payload.snapshot.finalSummary;
+          checkpoint.finalSummary = this.room.finalSummary;
+        }
+      } else if (
+        envelope.payload?.kind === 'final'
+        && validFinalSummary(envelope.payload.summary)
+      ) {
+        this.room.finalSummary = envelope.payload.summary;
+        checkpoint.finalSummary = this.room.finalSummary;
+      }
     }
 
     this.room.authorityCheckpoint = checkpoint;
@@ -614,13 +676,16 @@ export class ArenaRoom extends DurableObject {
       this.room.status = 'in-run';
       this.room.runId = makeId('run');
       this.room.authorityEpoch = 0;
+      this.room.finalSummary = null;
       this.room.authorityCheckpoint = {
         runId: this.room.runId,
         authorityEpoch: 0,
         updatedAt: Date.now(),
         world: null,
         economy: null,
-        revive: null
+        revive: null,
+        stats: null,
+        finalSummary: null
       };
       await this.commit();
 
@@ -812,6 +877,7 @@ export class ArenaRoom extends DurableObject {
       this.room.status = 'waiting';
       this.room.runId = null;
       this.room.authorityCheckpoint = null;
+      this.room.finalSummary = null;
       changed = true;
     }
 

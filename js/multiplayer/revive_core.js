@@ -263,7 +263,7 @@ export class ReviveAuthority {
       });
     }
 
-    const validTargets = new Set();
+    const validTargets = new Map();
     for (const [reviverId, hold] of this.holds) {
       if (currentNow - hold.updatedAt > this.holdStaleMs) {
         this.holds.delete(reviverId);
@@ -286,7 +286,9 @@ export class ReviveAuthority {
       ) {
         continue;
       }
-      validTargets.add(target.playerId);
+      if (!validTargets.has(target.playerId)) {
+        validTargets.set(target.playerId, reviverId);
+      }
     }
 
     this.players.forEach((target) => {
@@ -303,7 +305,11 @@ export class ReviveAuthority {
           target.downedAt = 0;
           target.bleedoutEndsAt = 0;
           target.updatedAt = currentNow;
-          this.events.push({ type: 'REVIVED', playerId: target.playerId });
+          this.events.push({
+            type: 'REVIVED',
+            playerId: target.playerId,
+            reviverId: validTargets.get(target.playerId) || null
+          });
           for (const [reviverId, hold] of this.holds) {
             if (hold.targetPlayerId === target.playerId) {
               this.holds.delete(reviverId);

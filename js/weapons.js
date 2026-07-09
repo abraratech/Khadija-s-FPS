@@ -44,6 +44,7 @@ import {
   recordRunShot,
   recordRunHit,
   recordRunDamageDealt,
+  recordRunKill,
   recordRunPointsEarned,
   recordRunPointsSpent,
   recordRunPerk,
@@ -1753,6 +1754,9 @@ export function applyMultiplayerInteractionResult(result = {}) {
     );
     recordRunPointsEarned(points);
   }
+  if (result.kind === 'combat-award' && result.killsAwarded > 0) {
+    recordRunKill({ headshot: result.headshot === true });
+  }
 
   const feedback = result.feedback;
   if (feedback) {
@@ -2809,6 +2813,7 @@ if (e.isNetworkProxy && typeof e.handleNetworkHit === 'function') {
     shotContext.directorHitRegistered = true;
     recordRunHit({ headshot: hs });
   }
+  recordRunDamageDealt(finalDamage);
   return;
 }
 

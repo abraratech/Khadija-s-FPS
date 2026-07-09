@@ -26,6 +26,7 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received',
   REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received',
   REMOTE_TACTICAL_PING_RECEIVED: 'multiplayer:remote-tactical-ping-received',
+  REMOTE_RUN_STATS_RECEIVED: 'multiplayer:remote-run-stats-received',
   AUTHORITY_EPOCH_CHANGED: 'multiplayer:authority-epoch-changed', NETWORK_QUALITY_CHANGED: 'multiplayer:network-quality-changed'
 });
 
@@ -67,6 +68,7 @@ export class MultiplayerRuntime {
     this.economySnapshotSequence = 0;
     this.reviveStateSequence = 0;
     this.tacticalPingSequence = 0;
+    this.runStatsSequence = 0;
     this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.authorityEpoch = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
@@ -93,6 +95,8 @@ export class MultiplayerRuntime {
       reviveStatesReceived: 0,
       tacticalPingsSent: 0,
       tacticalPingsReceived: 0,
+      runStatsSent: 0,
+      runStatsReceived: 0,
       staleAuthorityEnvelopesRejected: 0,
       authorityMigrations: 0, heartbeatsSent: 0, heartbeatsReceived: 0, heartbeatPongsReceived: 0
     };
@@ -159,7 +163,8 @@ export class MultiplayerRuntime {
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
     this.reviveStateSequence = 0;
-    this.tacticalPingSequence = 0; this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.networkQuality.reset(Date.now());
+    this.tacticalPingSequence = 0;
+    this.runStatsSequence = 0; this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.networkQuality.reset(Date.now());
     this.authorityEpoch = Math.max(
       0,
       Math.floor(Number(
@@ -362,6 +367,21 @@ export class MultiplayerRuntime {
       this.tacticalPingSequence
     );
     this.metrics.tacticalPingsSent += 1;
+    return envelope;
+  }
+
+  sendRunStats(payload) {
+    if (!this.initialized || !this.session?.run?.active || !payload) {
+      return null;
+    }
+
+    this.runStatsSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.RUN_STATS,
+      payload,
+      this.runStatsSequence
+    );
+    this.metrics.runStatsSent += 1;
     return envelope;
   }
 
@@ -618,6 +638,15 @@ sendRoomState() {
       this.metrics.tacticalPingsReceived += 1;
       this.eventBus?.emit(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_TACTICAL_PING_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.RUN_STATS) {
+      this.metrics.runStatsReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_RUN_STATS_RECEIVED,
         { envelope }
       );
       return { accepted: true };

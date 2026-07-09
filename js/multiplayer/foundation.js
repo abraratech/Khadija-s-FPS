@@ -12,6 +12,8 @@ import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
 import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
 import { MultiplayerTacticalAwareness } from './tactical_ping.js';
+import { MultiplayerCoopStatsManager } from './coop_stats.js';
+import { MultiplayerCoopScoreboard } from './coop_scoreboard.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -21,7 +23,7 @@ let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
-let reviveManager = null; let networkHud = null; let tacticalAwareness = null;
+let reviveManager = null; let networkHud = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null;
 const hostMigrationState = new HostMigrationState();
 
@@ -110,6 +112,11 @@ function applyHostMigration(details = {}) {
     checkpoint: details.checkpoint,
     becameHost
   });
+  coopStatsManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
   tacticalAwareness?.handleHostMigration?.({
     authorityEpoch,
     checkpoint: details.checkpoint,
@@ -131,7 +138,8 @@ export function initializeMultiplayerFoundation(
     worldAdapter = null,
     economyAdapter = null,
     reviveAdapter = null,
-    tacticalAdapter = null
+    tacticalAdapter = null,
+    statsAdapter = null
   } = {}
 ) {
   if (initialized) return getMultiplayerFoundationSnapshot();
@@ -163,6 +171,21 @@ export function initializeMultiplayerFoundation(
     adapter: economyAdapter
   });
 
+  coopStatsManager = new MultiplayerCoopStatsManager({
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    players: multiplayerPlayers,
+    getEconomySnapshot:
+      () => economyManager?.getSnapshot?.() || null,
+    getReviveSnapshot:
+      () => reviveManager?.getSnapshot?.() || null,
+    getRunSummarySnapshot:
+      statsAdapter?.getRunSummarySnapshot || (() => null),
+    getWave:
+      statsAdapter?.getWave || (() => 1)
+  });
+
   sharedWorldManager = new SharedWorldManager({
     scene,
     eventBus: multiplayerEvents,
@@ -179,7 +202,13 @@ export function initializeMultiplayerFoundation(
     session: multiplayerSession,
     player,
     scene,
-    adapter: reviveAdapter
+    adapter: {
+      ...(reviveAdapter || {}),
+      onReviveEvent: (event) => {
+        reviveAdapter?.onReviveEvent?.(event);
+        coopStatsManager?.recordReviveEvent?.(event);
+      }
+    }
   }); networkHud = new MultiplayerNetworkHud({
       runtime: multiplayerRuntime,
       session: multiplayerSession,
@@ -205,6 +234,14 @@ export function initializeMultiplayerFoundation(
       () => reviveManager?.getSnapshot?.() || null
   });
 
+  coopScoreboard = new MultiplayerCoopScoreboard({
+    stats: coopStatsManager,
+    session: multiplayerSession
+  });
+  multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, () => {
+    coopScoreboard?.update?.(performance.now(), { force: true });
+  });
+
   lobbyController = new MultiplayerLobbyController({
     eventBus: multiplayerEvents,
     transport: multiplayerTransport,
@@ -223,6 +260,9 @@ export function initializeMultiplayerFoundation(
     onRunEnded: (details = {}) => {
       pendingOnlineRun = null;
       pendingResumeCheckpoint = null;
+      coopStatsManager?.finalizeRun?.(details.reason || 'ended');
+      coopStatsManager?.endRun?.({ preserveFinal: true });
+      coopScoreboard?.setHeld?.(false);
       sharedWorldManager?.endRun();
       reviveManager?.endRun();
       economyManager?.endRun();
@@ -242,9 +282,15 @@ export function initializeMultiplayerFoundation(
       });
 
       runEndHandler?.(details);
+      coopScoreboard?.update?.(performance.now(), { force: true });
     },
     onHostMigrated: (details = {}) => {
       applyHostMigration(details);
+    },
+    onLeftRoom: () => {
+      coopStatsManager?.endRun?.({ preserveFinal: false });
+      coopStatsManager?.clearFinalSummary?.();
+      coopScoreboard?.hideAll?.();
     }
   });
   lobbyController.initialize();
@@ -293,6 +339,8 @@ export function beginMultiplayerRun({
   reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
   tacticalAwareness?.beginRun();
+  coopStatsManager?.beginRun();
+  coopScoreboard?.hideAll?.();
 
   pendingResumeCheckpoint = pending?.checkpoint
     ? {
@@ -337,6 +385,9 @@ export function endMultiplayerRun({
     { force: true }
   );
 
+  coopStatsManager?.finalizeRun?.(reason);
+  coopStatsManager?.endRun?.({ preserveFinal: true });
+  coopScoreboard?.setHeld?.(false);
   sharedWorldManager?.endRun();
   reviveManager?.endRun();
   economyManager?.endRun();
@@ -347,6 +398,7 @@ export function endMultiplayerRun({
   if (notifyServer) {
     lobbyController?.notifyRunEnded?.(reason);
   }
+  coopScoreboard?.update?.(performance.now(), { force: true });
 
   return multiplayerSession.endRun({
     reason,
@@ -457,6 +509,11 @@ export function placeMultiplayerTacticalPing(now = performance.now()) {
     || { accepted: false, reason: 'not-ready' };
 }
 
+export function setMultiplayerScoreboardHeld(held) {
+  if (!initialized) return false;
+  return coopScoreboard?.setHeld?.(held) === true;
+}
+
 // Retained for compatibility with M1.1 callers and tests.
 export function syncMultiplayerLocalPlayer(player, now = performance.now()) {
   if (!initialized) return null;
@@ -485,7 +542,7 @@ export function syncMultiplayerFrame(
     now
   });
 
-  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now);
+  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -508,7 +565,7 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot()
   };
 }

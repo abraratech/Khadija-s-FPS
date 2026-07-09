@@ -43,6 +43,7 @@ export class MultiplayerRoomState {
     this.runId = null;
     this.authorityEpoch = 0;
     this.revision = 0;
+    this.finalSummary = null;
   }
 
   createLocalRoom({
@@ -61,6 +62,7 @@ export class MultiplayerRoomState {
     this.hostPlayerId = hostPlayer.playerId;
     this.runId = null;
     this.authorityEpoch = 0;
+    this.finalSummary = null;
     this.players.clear();
     this.settings = {
       ...this.settings,
@@ -151,6 +153,7 @@ export class MultiplayerRoomState {
     }
     this.runId = runId || this.runId;
     this.status = ROOM_STATUS.IN_RUN;
+    this.finalSummary = null;
     return this.commit('run-started');
   }
 
@@ -164,6 +167,7 @@ export class MultiplayerRoomState {
   close() {
     this.status = ROOM_STATUS.CLOSED;
     this.runId = null;
+    this.finalSummary = null;
     return this.commit('closed');
   }
 
@@ -178,6 +182,7 @@ export class MultiplayerRoomState {
     this.hostPlayerId = snapshot.hostPlayerId || null;
     this.settings = { ...this.settings, ...(snapshot.settings || {}) };
     this.runId = snapshot.runId || null;
+    this.finalSummary = snapshot.finalSummary || null;
     this.authorityEpoch = Math.max(
       0,
       Math.floor(Number(snapshot.authorityEpoch) || 0)
@@ -217,7 +222,8 @@ export class MultiplayerRoomState {
       players: Array.from(this.players.values(), serializePlayer),
       runId: this.runId,
       authorityEpoch: this.authorityEpoch,
-      revision: this.revision
+      revision: this.revision,
+      finalSummary: this.finalSummary
     };
   }
 }

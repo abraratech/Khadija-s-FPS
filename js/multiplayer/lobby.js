@@ -65,7 +65,8 @@ export class MultiplayerLobbyController {
     localPlayerId,
     onStartRun,
     onRunEnded,
-    onHostMigrated
+    onHostMigrated,
+    onLeftRoom
   } = {}) {
     this.eventBus = eventBus;
     this.transport = transport;
@@ -76,6 +77,7 @@ export class MultiplayerLobbyController {
     this.onStartRun = onStartRun;
     this.onRunEnded = onRunEnded;
     this.onHostMigrated = onHostMigrated;
+    this.onLeftRoom = onLeftRoom;
     this.lastAuthorityEpoch = 0;
     this.ui = null;
     this.unsubscribe = [];
@@ -493,6 +495,7 @@ export class MultiplayerLobbyController {
       hostPlayerId: this.localPlayerId
     });
     this.runtime.resetToLocalRoom();
+    this.onLeftRoom?.();
     this.render();
   }
 

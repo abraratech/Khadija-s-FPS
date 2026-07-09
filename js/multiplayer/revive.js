@@ -470,6 +470,18 @@ export class MultiplayerReviveManager {
 
   processAuthorityEvents() {
     this.core.consumeEvents().forEach((event) => {
+      const stampedEvent = {
+        ...event,
+        at: nowMs(),
+        eventId: [
+          event.type,
+          event.playerId || '',
+          event.reviverId || '',
+          this.core?.wave || 1,
+          Math.floor(nowMs())
+        ].join(':')
+      };
+      this.adapter.onReviveEvent?.(stampedEvent);
       if (event.type === 'TEAM_ELIMINATED') {
         if (!this.teamEndRequested) {
           this.teamEndRequested = true;

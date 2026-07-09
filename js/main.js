@@ -28,7 +28,7 @@ import {
 } from './progression.js';
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
-import { resetRunSummary, finalizeRunSummary } from './run_summary.js';
+import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot } from './run_summary.js';
 import {
   CONTROL_ACTIONS,
   initControlsUI,
@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, placeMultiplayerTacticalPing, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -138,6 +138,10 @@ initializeMultiplayerFoundation(player, {
     camera,
     getActiveEnemies,
     getWorldTargets: () => mapMeshes
+  },
+  statsAdapter: {
+    getRunSummarySnapshot,
+    getWave: () => currentWave
   }
 });
 configureMultiplayerEconomy({
@@ -148,8 +152,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-tactical-awareness-r1';
-console.info('[Multiplayer Build] m3-tactical-awareness-r1 · protocol 5');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-coop-scoreboard-r1';
+console.info('[Multiplayer Build] m3-coop-scoreboard-r1 | protocol 5');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -645,6 +649,12 @@ function pauseGameplay(source = 'input') {
 
   const action = getKeyboardAction(e.code);
 
+  if (e.code === 'Tab' && isOnlineCoOpRun() && gs === 'playing' && player.alive && !coOpMenuOpen) {
+    setMultiplayerScoreboardHeld(true);
+    e.preventDefault();
+    return;
+  }
+
   if (coOpMenuOpen && action !== CONTROL_ACTIONS.PAUSE) {
     if (action) e.preventDefault();
     return;
@@ -671,6 +681,15 @@ function pauseGameplay(source = 'input') {
   }
 }); window.addEventListener('keyup', e => {
   if (isEditableInputTarget(e.target)) return;
+
+  if (e.code === 'Tab') {
+    const activeOnlineGameplay = isOnlineCoOpRun() && gs === 'playing' && !coOpMenuOpen;
+    setMultiplayerScoreboardHeld(false);
+    if (activeOnlineGameplay) {
+      e.preventDefault();
+      return;
+    }
+  }
 
   const action = getKeyboardAction(e.code);
   if (action) setActionKeyState(action, false);
@@ -899,6 +918,7 @@ function clearInputState() {
   pendingShot = false;
   mouseADS = false;
   mobileSprintIntent = false;
+  setMultiplayerScoreboardHeld(false);
   player.isADS = false;
   player.isSprinting = false;
 }

@@ -287,6 +287,173 @@
   color: #9dffc2;
 }
 
+#multiplayer-coop-scoreboard {
+  position: fixed;
+  inset: 0;
+  z-index: 12100;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 56px 16px 16px;
+  box-sizing: border-box;
+  color: #f3fbff;
+  font-family: system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.ka-scoreboard-root-final {
+  align-items: center;
+  padding-top: 16px;
+  background: rgba(0, 4, 8, 0.76);
+  pointer-events: auto;
+}
+
+.ka-scoreboard-panel {
+  width: min(980px, 96vw);
+  max-height: min(86vh, 780px);
+  overflow: auto;
+  border: 1px solid rgba(126, 222, 255, 0.36);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(4, 12, 20, 0.91);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.54);
+}
+
+.ka-scoreboard-final-panel {
+  pointer-events: auto;
+}
+
+.ka-scoreboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.ka-scoreboard-header span,
+.ka-scoreboard-meta {
+  color: #8bdff0;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.ka-scoreboard-header strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+}
+
+.ka-scoreboard-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ka-scoreboard-stat {
+  min-width: 68px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.045);
+  text-align: right;
+}
+
+.ka-scoreboard-stat span {
+  display: block;
+  color: #8aa7b5;
+  font-size: 9px;
+}
+
+.ka-scoreboard-stat strong {
+  font-size: 15px;
+}
+
+.ka-scoreboard-meta {
+  margin-bottom: 10px;
+  color: #b9d8ea;
+}
+
+.ka-scoreboard-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.7fr) repeat(9, minmax(58px, 0.7fr));
+  gap: 1px;
+  overflow-x: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ka-scoreboard-final-grid {
+  grid-template-columns: minmax(150px, 1.7fr) repeat(11, minmax(58px, 0.7fr));
+}
+
+.ka-scoreboard-grid span {
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ka-scoreboard-grid-head {
+  color: #7fdff1;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.ka-scoreboard-name {
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.ka-scoreboard-cell,
+.ka-scoreboard-status {
+  text-align: right;
+  font-weight: 800;
+}
+
+.ka-scoreboard-status-host {
+  color: #ffd166;
+}
+
+.ka-scoreboard-status-ally {
+  color: #8dffb2;
+}
+
+.ka-scoreboard-status-downed,
+.ka-scoreboard-status-eliminated {
+  color: #ff8a74;
+}
+
+.ka-scoreboard-status-spectating {
+  color: #9edbff;
+}
+
+.ka-scoreboard-status-reconnecting {
+  color: #ff6fd8;
+}
+
+.ka-scoreboard-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.ka-scoreboard-actions button {
+  border: 1px solid rgba(0, 212, 255, 0.72);
+  border-radius: 7px;
+  padding: 10px 14px;
+  background: rgba(8, 125, 158, 0.92);
+  color: #f4fdff;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
 @media (max-width: 680px), (max-height: 560px) {
   #ka-coop-open {
     top: 8px;
@@ -310,5 +477,22 @@
 
   .ka-coop-note {
     font-size: 12px;
+  }
+
+  #multiplayer-coop-scoreboard {
+    padding: 38px 8px 8px;
+  }
+
+  .ka-scoreboard-panel {
+    padding: 10px;
+  }
+
+  .ka-scoreboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ka-scoreboard-stats {
+    justify-content: flex-start;
   }
 }

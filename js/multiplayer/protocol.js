@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-tactical-awareness-r1';
+export const MULTIPLAYER_BUILD_ID = 'm3-coop-scoreboard-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 5;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([4, 5]);
 
@@ -17,6 +17,7 @@ export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   ECONOMY_SNAPSHOT: 'economy-snapshot',
   REVIVE_STATE: 'revive-state',
   TACTICAL_PING: 'tactical-ping',
+  RUN_STATS: 'run-stats',
   HEARTBEAT: 'heartbeat'
 });
 

@@ -9,7 +9,7 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 5;
-const SERVER_BUILD = 'm3-scaling-latejoin-r1';
+const SERVER_BUILD = 'm3-host-controls-r1';
 const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
 
 function json(data, init = {}) {
@@ -32,6 +32,9 @@ function safeName(value) {
     .trim()
     .replace(/[<>]/g, '')
     .slice(0, 24) || 'Player';
+}
+function normalizeMaxPlayers(value) {
+  return Math.max(2, Math.min(4, Math.floor(Number(value) || 4)));
 }
 
 function makeId(prefix) {
@@ -87,13 +90,8 @@ function defaultRoom(roomCode) {
     sessionId: makeId('session'),
     status: 'waiting',
     hostPlayerId: null,
-    settings: {
-      maxPlayers: MAX_PLAYERS,
-      mapId: 'grid_bunker',
-      difficulty: 1,
-      privacy: 'private'
-    },
-    players: {},
+    settings: { maxPlayers: MAX_PLAYERS, mapId: 'grid_bunker', difficulty: 1, privacy: 'private', locked: false, allowLateJoin: true },
+    players: {}, kickedPlayers: {},
     runId: null,
     authorityEpoch: 0,
     authorityCheckpoint: null,
@@ -120,6 +118,17 @@ export class ArenaRoom extends DurableObject {
       this.room = await this.ctx.storage.get('room') || null;
       if (this.room) {
         this.reconcileConnections();
+      }
+      if (this.room) {
+        this.room.settings ||= {};
+        this.room.settings.maxPlayers = normalizeMaxPlayers(
+          this.room.settings.maxPlayers
+        );
+        this.room.settings.locked =
+          this.room.settings.locked === true;
+        this.room.settings.allowLateJoin =
+          this.room.settings.allowLateJoin !== false;
+        this.room.kickedPlayers ||= {};
       }
     });
   }
@@ -311,7 +320,26 @@ export class ArenaRoom extends DurableObject {
       return 'Room code mismatch.';
     }
 
-    if (!existing && connected.length >= MAX_PLAYERS) {
+    const maxPlayers = normalizeMaxPlayers(
+      this.room.settings?.maxPlayers
+    );
+    const kickedUntil = Number(
+      this.room.kickedPlayers?.[playerId] || 0
+    );
+    if (!existing && kickedUntil > Date.now()) {
+      return 'You were removed from this room by the host.';
+    }
+    if (!existing && this.room.settings?.locked === true) {
+      return 'This room is locked by the host.';
+    }
+    if (
+      !existing
+      && this.room.status === 'in-run'
+      && this.room.settings?.allowLateJoin === false
+    ) {
+      return 'Late joining is disabled for this run.';
+    }
+    if (!existing && connected.length >= maxPlayers) {
       return 'Room is full.';
     }
 
@@ -657,16 +685,37 @@ export class ArenaRoom extends DurableObject {
     }
 
     if (action === 'update-settings') {
-      if (!player.isHost || this.room.status === 'in-run') {
+      if (!player.isHost) {
         this.sendError(socket, 'Only the host can change room settings.');
         return;
       }
 
-      if (payload.mapId) {
-        this.room.settings.mapId = String(payload.mapId).slice(0, 80);
+      const connectedCount = this.connectedPlayers().length;
+      if (
+        payload.maxPlayers !== undefined
+        && this.room.status !== 'in-run'
+      ) {
+        this.room.settings.maxPlayers = Math.max(
+          connectedCount,
+          normalizeMaxPlayers(payload.maxPlayers)
+        );
       }
-      if (payload.difficulty !== undefined) {
-        this.room.settings.difficulty = Number(payload.difficulty) || 1;
+      if (payload.locked !== undefined) {
+        this.room.settings.locked = payload.locked === true;
+      }
+      if (payload.allowLateJoin !== undefined) {
+        this.room.settings.allowLateJoin =
+          payload.allowLateJoin === true;
+      }
+
+      if (this.room.status !== 'in-run') {
+        if (payload.mapId) {
+          this.room.settings.mapId = String(payload.mapId).slice(0, 80);
+        }
+        if (payload.difficulty !== undefined) {
+          this.room.settings.difficulty =
+            Number(payload.difficulty) || 1;
+        }
       }
 
       await this.commit();
@@ -674,7 +723,79 @@ export class ArenaRoom extends DurableObject {
       return;
     }
 
-    if (action === 'start-run') {
+    
+    if (action === 'kick-player') {
+      if (!player.isHost) {
+        this.sendError(socket, 'Only the host can remove players.');
+        return;
+      }
+      const targetPlayerId = String(payload.playerId || '').slice(0, 160);
+      const target = this.room.players?.[targetPlayerId] || null;
+      if (
+        !target
+        || targetPlayerId === player.playerId
+        || target.isHost === true
+      ) {
+        this.sendError(socket, 'Choose a valid operative to remove.');
+        return;
+      }
+
+      this.room.kickedPlayers ||= {};
+      this.room.kickedPlayers[targetPlayerId] = Date.now() + 600_000;
+      delete this.room.players[targetPlayerId];
+
+      this.ctx.getWebSockets(`player:${targetPlayerId}`).forEach(
+        (targetSocket) => {
+          try {
+            targetSocket.send(JSON.stringify({
+              kind: 'control',
+              action: 'kicked',
+              payload: { message: 'Removed from room by host.' }
+            }));
+            targetSocket.close(4003, 'Removed by host');
+          } catch {
+            // Ignore already-closed sockets.
+          }
+        }
+      );
+
+      await this.commit();
+      this.broadcastRoomState();
+      return;
+    }
+
+    if (action === 'transfer-host') {
+      if (!player.isHost) {
+        this.sendError(socket, 'Only the host can transfer authority.');
+        return;
+      }
+      const targetPlayerId = String(payload.playerId || '').slice(0, 160);
+      const target = this.room.players?.[targetPlayerId] || null;
+      if (
+        !target
+        || targetPlayerId === player.playerId
+        || target.connected !== true
+      ) {
+        this.sendError(socket, 'Choose a connected operative.');
+        return;
+      }
+
+      const previousHostPlayerId = player.playerId;
+      this.promoteHost(target, previousHostPlayerId);
+      await this.commit();
+
+      if (this.room.status === 'in-run') {
+        this.broadcastHostMigration({
+          previousHostPlayerId,
+          hostPlayerId: target.playerId,
+          reason: 'manual-host-transfer'
+        });
+      }
+      this.broadcastRoomState();
+      return;
+    }
+
+if (action === 'start-run') {
       if (!player.isHost) {
         this.sendError(socket, 'Only the host can start the run.');
         return;

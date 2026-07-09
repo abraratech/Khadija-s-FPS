@@ -190,7 +190,7 @@ export class MultiplayerLobbyUI {
       leave: modal.querySelector('#ka-coop-leave')
     };
 
-    this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
+    this.installHostControls(); this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
     this.elements.server.value = readStored(
       SERVER_STORAGE_KEY,
       'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
@@ -224,7 +224,70 @@ export class MultiplayerLobbyUI {
     });
   }
 
-  bindEvents() {
+  
+  installHostControls() {
+    const panel = document.createElement('section');
+    panel.id = 'ka-coop-host-controls';
+    panel.className = 'ka-coop-host-controls';
+    panel.hidden = true;
+    panel.innerHTML = `
+      <div class="ka-coop-host-controls-title">HOST CONTROLS</div>
+      <label>
+        PLAYER LIMIT
+        <select id="ka-coop-max-players">
+          <option value="2">2 PLAYERS</option>
+          <option value="3">3 PLAYERS</option>
+          <option value="4">4 PLAYERS</option>
+        </select>
+      </label>
+      <label class="ka-coop-toggle">
+        <input id="ka-coop-room-locked" type="checkbox">
+        LOCK ROOM
+      </label>
+      <label class="ka-coop-toggle">
+        <input id="ka-coop-late-join" type="checkbox" checked>
+        ALLOW LATE JOIN
+      </label>
+    `;
+
+    const actionRow = this.elements.ready?.closest(
+      '.ka-coop-actions, .ka-coop-room-actions'
+    ) || this.elements.ready;
+    if (actionRow?.parentElement) {
+      actionRow.parentElement.insertBefore(panel, actionRow);
+    } else {
+      this.elements.roomView?.appendChild(panel);
+    }
+
+    this.elements.hostControls = panel;
+    this.elements.maxPlayers = panel.querySelector(
+      '#ka-coop-max-players'
+    );
+    this.elements.roomLocked = panel.querySelector(
+      '#ka-coop-room-locked'
+    );
+    this.elements.allowLateJoin = panel.querySelector(
+      '#ka-coop-late-join'
+    );
+
+    this.elements.maxPlayers?.addEventListener('change', () => {
+      this.actions.updateSettings?.({
+        maxPlayers: Number(this.elements.maxPlayers.value) || 4
+      });
+    });
+    this.elements.roomLocked?.addEventListener('change', () => {
+      this.actions.updateSettings?.({
+        locked: this.elements.roomLocked.checked === true
+      });
+    });
+    this.elements.allowLateJoin?.addEventListener('change', () => {
+      this.actions.updateSettings?.({
+        allowLateJoin: this.elements.allowLateJoin.checked === true
+      });
+    });
+  }
+
+bindEvents() {
     this.elements.close.addEventListener('click', () => this.close());
     this.elements.modal.addEventListener('click', (event) => {
       if (event.target === this.elements.modal) this.close();
@@ -429,7 +492,33 @@ export class MultiplayerLobbyUI {
           : 'NOT READY';
 
       row.append(identity, state);
-      this.elements.playerList.appendChild(row);
+      
+      if (isHost && player.playerId !== local?.playerId) {
+        const controls = document.createElement('div');
+        controls.className = 'ka-coop-player-controls';
+
+        const transfer = document.createElement('button');
+        transfer.type = 'button';
+        transfer.className = 'ka-coop-player-transfer';
+        transfer.textContent = 'MAKE HOST';
+        transfer.disabled = player.connected === false;
+        transfer.addEventListener('click', () => {
+          this.actions.transferHost?.(player.playerId);
+        });
+
+        const kick = document.createElement('button');
+        kick.type = 'button';
+        kick.className = 'ka-coop-player-kick';
+        kick.textContent = 'REMOVE';
+        kick.addEventListener('click', () => {
+          this.actions.kickPlayer?.(player.playerId);
+        });
+
+        controls.append(transfer, kick);
+        row.appendChild(controls);
+      }
+
+this.elements.playerList.appendChild(row);
     });
 
     this.elements.map.value = String(room.settings?.mapId || 'grid_bunker');
@@ -440,6 +529,27 @@ export class MultiplayerLobbyUI {
     );
     this.elements.map.disabled = !isHost || room.status === 'in-run';
     this.elements.difficulty.disabled = !isHost || room.status === 'in-run';
+    if (this.elements.hostControls) {
+      this.elements.hostControls.hidden = !isHost;
+    }
+    if (this.elements.maxPlayers) {
+      this.elements.maxPlayers.value = String(
+        Math.max(2, Math.min(4, Number(room.settings?.maxPlayers) || 4))
+      );
+      this.elements.maxPlayers.disabled =
+        !isHost || room.status === 'in-run';
+    }
+    if (this.elements.roomLocked) {
+      this.elements.roomLocked.checked = room.settings?.locked === true;
+      this.elements.roomLocked.disabled = !isHost;
+    }
+    if (this.elements.allowLateJoin) {
+      this.elements.allowLateJoin.checked =
+        room.settings?.allowLateJoin !== false;
+      this.elements.allowLateJoin.disabled = !isHost;
+    }
+
+
 
     this.elements.ready.textContent = local?.ready ? 'READY' : 'NOT READY';
     this.elements.ready.dataset.ready = local?.ready ? 'true' : 'false';

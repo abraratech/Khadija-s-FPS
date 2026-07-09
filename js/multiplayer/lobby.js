@@ -94,7 +94,7 @@ export class MultiplayerLobbyController {
         setReady: (ready) => this.setReady(ready),
         updateSettings: (settings) => this.updateSettings(settings),
         startRun: () => this.startRun(),
-        leaveRoom: () => this.leaveRoom()
+        leaveRoom: () => this.leaveRoom(), kickPlayer: (playerId) => this.kickPlayer(playerId), transferHost: (playerId) => this.transferHost(playerId)
       }
     });
     this.ui.initialize();
@@ -438,7 +438,22 @@ export class MultiplayerLobbyController {
       return;
     }
 
-    if (action === 'left-room') {
+    
+    if (action === 'kicked') {
+      const message = String(
+        payload.message || 'REMOVED FROM ROOM BY HOST'
+      ).toUpperCase();
+      void this.transport.disconnect('kicked', {
+        fallbackLocal: true
+      });
+      this.finishLeave();
+      this.error = message;
+      this.ui?.open();
+      this.render();
+      return;
+    }
+
+if (action === 'left-room') {
       this.finishLeave();
     }
   }
@@ -472,7 +487,22 @@ export class MultiplayerLobbyController {
     });
   }
 
-  openLobby() {
+  
+  kickPlayer(playerId) {
+    if (!this.connected) return false;
+    return this.transport.sendControl('kick-player', {
+      playerId: String(playerId || '').slice(0, 160)
+    });
+  }
+
+  transferHost(playerId) {
+    if (!this.connected) return false;
+    return this.transport.sendControl('transfer-host', {
+      playerId: String(playerId || '').slice(0, 160)
+    });
+  }
+
+openLobby() {
     this.ui?.open();
     this.render();
   }

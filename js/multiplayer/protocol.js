@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-host-migration-r1';
+export const MULTIPLAYER_BUILD_ID = 'm3-network-quality-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 5;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([4, 5]);
 

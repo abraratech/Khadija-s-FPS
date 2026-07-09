@@ -7,7 +7,7 @@ import {
   validateProtocolEnvelope
 } from './protocol.js';
 import { MultiplayerCommandStream } from './command_stream.js';
-import { RemoteSnapshotBuffer } from './snapshot_buffer.js';
+import { RemoteSnapshotBuffer } from './snapshot_buffer.js'; import { NetworkQualityTracker } from './network_quality.js';
 import { MultiplayerRoomState } from './room.js';
 import { TRANSPORT_MODES } from './transport.js';
 
@@ -25,7 +25,7 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_ECONOMY_RESULT_RECEIVED: 'multiplayer:remote-economy-result-received',
   REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received',
   REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received',
-  AUTHORITY_EPOCH_CHANGED: 'multiplayer:authority-epoch-changed'
+  AUTHORITY_EPOCH_CHANGED: 'multiplayer:authority-epoch-changed', NETWORK_QUALITY_CHANGED: 'multiplayer:network-quality-changed'
 });
 
 function nowMs() {
@@ -52,7 +52,7 @@ export class MultiplayerRuntime {
     });
     this.remoteSnapshots = new RemoteSnapshotBuffer({
       interpolationDelayMs: snapshotInterpolationDelayMs
-    });
+    }); this.networkQuality = new NetworkQualityTracker(); this.lastNetworkQualityLevel = 'WAITING';
     this.room = new MultiplayerRoomState({ eventBus });
     this.initialized = false;
     this.localPlayerId = null;
@@ -65,7 +65,7 @@ export class MultiplayerRuntime {
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
     this.reviveStateSequence = 0;
-    this.authorityEpoch = 0;
+    this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.authorityEpoch = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -90,7 +90,7 @@ export class MultiplayerRuntime {
       reviveStatesSent: 0,
       reviveStatesReceived: 0,
       staleAuthorityEnvelopesRejected: 0,
-      authorityMigrations: 0
+      authorityMigrations: 0, heartbeatsSent: 0, heartbeatsReceived: 0, heartbeatPongsReceived: 0
     };
   }
 
@@ -154,7 +154,7 @@ export class MultiplayerRuntime {
     this.economyRequestSequence = 0;
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
-    this.reviveStateSequence = 0;
+    this.reviveStateSequence = 0; this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.networkQuality.reset(Date.now());
     this.authorityEpoch = Math.max(
       0,
       Math.floor(Number(
@@ -174,7 +174,7 @@ export class MultiplayerRuntime {
     this.sendRoomState();
   }
 
-  endRun() {
+  endRun() { this.networkQuality.reset(Date.now());
     this.commandStream.endRun();
     this.room.endRun();
     this.sendRoomState();
@@ -192,7 +192,7 @@ export class MultiplayerRuntime {
       return { command: null, actions: [] };
     }
 
-    const captured = this.commandStream.capture({
+    this.updateNetworkQuality(Date.now()); const captured = this.commandStream.capture({
       frameKeys,
       player,
       dt,
@@ -345,7 +345,90 @@ export class MultiplayerRuntime {
     return envelope;
   }
 
-  sendRoomState() {
+  
+  updateNetworkQuality(now = Date.now()) {
+    if (!this.initialized || !this.session?.run?.active) {
+      return this.networkQuality.getSnapshot(now);
+    }
+    this.networkQuality.prune(now);
+    if (this.networkQuality.shouldPing(now)) {
+      this.sendHeartbeatPing(now);
+    }
+    const snapshot = this.networkQuality.getSnapshot(now);
+    this.remoteSnapshots.interpolationDelayMs =
+      snapshot.interpolationDelayMs;
+    if (snapshot.level !== this.lastNetworkQualityLevel) {
+      const previousLevel = this.lastNetworkQualityLevel;
+      this.lastNetworkQualityLevel = snapshot.level;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.NETWORK_QUALITY_CHANGED,
+        { previousLevel, snapshot }
+      );
+    }
+    return snapshot;
+  }
+
+  sendHeartbeatPing(now = Date.now()) {
+    this.heartbeatSequence += 1;
+    const pingId =
+      `${this.localPlayerId || 'player'}-`
+      + `${this.heartbeatSequence}-${now}`;
+    if (!this.networkQuality.startPing(pingId, now)) return null;
+    this.lastHeartbeatSentAt = now;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.HEARTBEAT,
+      { kind: 'ping', pingId, pingSentAt: now },
+      this.heartbeatSequence
+    );
+    this.metrics.heartbeatsSent += 1;
+    return envelope;
+  }
+
+  handleHeartbeatEnvelope(envelope) {
+    const payload = envelope?.payload || {};
+    this.metrics.heartbeatsReceived += 1;
+
+    if (payload.kind === 'ping' && payload.pingId) {
+      this.heartbeatSequence += 1;
+      return this.sendEnvelope(
+        MULTIPLAYER_MESSAGE_TYPES.HEARTBEAT,
+        {
+          kind: 'pong',
+          pingId: payload.pingId,
+          pingSentAt: payload.pingSentAt,
+          targetPlayerId: envelope.playerId,
+          responderPlayerId: this.localPlayerId
+        },
+        this.heartbeatSequence
+      );
+    }
+
+    if (
+      payload.kind === 'pong'
+      && payload.pingId
+      && (
+        !payload.targetPlayerId
+        || payload.targetPlayerId === this.localPlayerId
+      )
+    ) {
+      const rtt = this.networkQuality.recordPong(
+        payload.pingId,
+        Date.now()
+      );
+      if (rtt !== null) {
+        this.metrics.heartbeatPongsReceived += 1;
+      }
+      return { accepted: rtt !== null, rtt };
+    }
+
+    return { accepted: true };
+  }
+
+  getNetworkQualitySnapshot(now = Date.now()) {
+    return this.networkQuality.getSnapshot(now);
+  }
+
+sendRoomState() {
     if (!this.room.roomId) return null;
     if (this.transport?.getMode?.() === TRANSPORT_MODES.ONLINE) return null;
 
@@ -401,7 +484,7 @@ export class MultiplayerRuntime {
       return;
     }
 
-    if (envelope.playerId && envelope.playerId === this.localPlayerId) {
+    this.networkQuality.markEnvelopeReceived(Date.now()); if (envelope.playerId && envelope.playerId === this.localPlayerId) {
       this.metrics.loopbackIgnored += 1;
       return;
     }
@@ -511,7 +594,7 @@ export class MultiplayerRuntime {
       return { accepted: true };
     }
 
-    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.INPUT_COMMAND) {
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.HEARTBEAT) { return this.handleHeartbeatEnvelope(envelope); } if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.INPUT_COMMAND) {
       this.lastRemoteCommands.set(envelope.playerId, envelope.payload);
       this.eventBus?.emit(MULTIPLAYER_RUNTIME_EVENTS.REMOTE_COMMAND_RECEIVED, {
         envelope
@@ -598,7 +681,7 @@ export class MultiplayerRuntime {
       room: this.room.getSnapshot(),
       remoteCommandPlayers: Array.from(this.lastRemoteCommands.keys()),
       queuedRemoteActions: this.remoteActions.length,
-      authorityEpoch: this.authorityEpoch,
+      authorityEpoch: this.authorityEpoch, networkQuality: this.getNetworkQualitySnapshot(Date.now()),
       metrics: { ...this.metrics }
     };
   }

@@ -143,8 +143,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-host-migration-r1';
-console.info('[Multiplayer Build] m3-host-migration-r1 · protocol 5');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-network-quality-r1';
+console.info('[Multiplayer Build] m3-network-quality-r1 · protocol 5');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

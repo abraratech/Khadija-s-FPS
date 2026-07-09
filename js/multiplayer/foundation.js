@@ -10,7 +10,7 @@ import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
-import { HostMigrationState } from './migration_core.js';
+import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -20,7 +20,7 @@ let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
-let reviveManager = null;
+let reviveManager = null; let networkHud = null;
 let lobbyController = null;
 const hostMigrationState = new HostMigrationState();
 
@@ -173,7 +173,17 @@ export function initializeMultiplayerFoundation(
     player,
     scene,
     adapter: reviveAdapter
-  });
+  }); networkHud = new MultiplayerNetworkHud({
+      runtime: multiplayerRuntime,
+      session: multiplayerSession,
+      players: multiplayerPlayers,
+      getEconomySnapshot:
+        () => economyManager?.getSnapshot?.() || null,
+      getReviveSnapshot:
+        () => reviveManager?.getSnapshot?.() || null,
+      getMigrationSnapshot:
+        () => hostMigrationState.getSnapshot()
+    });
 
   lobbyController = new MultiplayerLobbyController({
     eventBus: multiplayerEvents,
@@ -197,7 +207,7 @@ export function initializeMultiplayerFoundation(
       reviveManager?.endRun();
       economyManager?.endRun();
       multiplayerRuntime.endRun();
-      remotePlayerManager?.endRun();
+      remotePlayerManager?.endRun(); networkHud?.reset();
       hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
@@ -222,7 +232,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.7-M3.8] Host migration and session resilience ready.'
+    '[M3.9-M3.10] Network quality, adaptive interpolation, and co-op HUD ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -310,7 +320,7 @@ export function endMultiplayerRun({
   reviveManager?.endRun();
   economyManager?.endRun();
   multiplayerRuntime.endRun();
-  remotePlayerManager?.endRun();
+  remotePlayerManager?.endRun(); networkHud?.reset();
   hostMigrationState.reset();
 
   if (notifyServer) {
@@ -448,7 +458,7 @@ export function syncMultiplayerFrame(
     now
   });
 
-  remotePlayerManager?.update(now);
+  remotePlayerManager?.update(now); networkHud?.update(now);
   return { state, input };
 }
 
@@ -471,7 +481,7 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot()
   };
 }

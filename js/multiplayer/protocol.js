@@ -1,8 +1,8 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-revive-r1';
-export const MULTIPLAYER_PROTOCOL_VERSION = 4;
-export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([3, 4]);
+export const MULTIPLAYER_BUILD_ID = 'm3-host-migration-r1';
+export const MULTIPLAYER_PROTOCOL_VERSION = 5;
+export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([4, 5]);
 
 export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   INPUT_COMMAND: 'input-command',
@@ -48,6 +48,7 @@ export function createProtocolEnvelope({
   playerId = null,
   sequence = 0,
   payload = {},
+  authorityEpoch = 0,
   sentAt = nowMs()
 } = {}) {
   if (!VALID_MESSAGE_TYPES.has(type)) {
@@ -76,6 +77,7 @@ export function createProtocolEnvelope({
     sessionId: normalizedSessionId,
     runId: normalizedRunId,
     playerId: normalizedPlayerId,
+    authorityEpoch: Math.max(0, Math.floor(Number(authorityEpoch) || 0)),
     sequence: normalizedSequence,
     sentAt: Number(sentAt) || nowMs(),
     payload
@@ -111,6 +113,14 @@ export function validateProtocolEnvelope(candidate, {
 
   if (expectedSessionId && candidate.sessionId !== expectedSessionId) {
     errors.push('Envelope belongs to a different session.');
+  }
+
+  const candidateAuthorityEpoch = candidate.authorityEpoch === undefined
+    && Number(candidate.protocolVersion) === 4
+    ? 0
+    : candidate.authorityEpoch;
+  if (!Number.isInteger(candidateAuthorityEpoch) || candidateAuthorityEpoch < 0) {
+    errors.push('authorityEpoch must be a non-negative integer.');
   }
 
   if (!Number.isInteger(candidate.sequence) || candidate.sequence < 0) {

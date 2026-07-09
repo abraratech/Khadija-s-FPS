@@ -6,9 +6,11 @@ const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/;
 const MAX_PLAYERS = 4;
 const MAX_MESSAGE_BYTES = 64 * 1024;
 const RATE_LIMIT_PER_SECOND = 180;
-const DISCONNECT_GRACE_MS = 30_000;
-const SERVER_PROTOCOL = 4;
-const SERVER_BUILD = 'm3-revive-r1';
+const DISCONNECT_GRACE_MS = 45_000;
+const CHECKPOINT_WRITE_INTERVAL_MS = 750;
+const SERVER_PROTOCOL = 5;
+const SERVER_BUILD = 'm3-host-migration-r1';
+const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -85,6 +87,8 @@ function defaultRoom(roomCode) {
     },
     players: {},
     runId: null,
+    authorityEpoch: 0,
+    authorityCheckpoint: null,
     revision: 0,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -97,6 +101,7 @@ export class ArenaRoom extends DurableObject {
     this.ctx = ctx;
     this.env = env;
     this.room = null;
+    this.lastCheckpointWriteAt = 0;
 
     this.ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair('ka-ping', 'ka-pong')
@@ -175,11 +180,19 @@ export class ArenaRoom extends DurableObject {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    if (!this.room || this.connectedPlayers().length === 0 && mode === 'create') {
+    if (
+      !this.room
+      || (
+        this.connectedPlayers().length === 0
+        && mode === 'create'
+        && !this.room.players?.[playerId]
+      )
+    ) {
       this.room = defaultRoom(roomCode);
     }
 
     const existing = this.room.players[playerId] || null;
+    const previousHostPlayerId = this.room.hostPlayerId || null;
     const token = existing?.reconnectToken || makeId('reconnect');
     const isFirstPlayer = this.connectedPlayers().length === 0;
     const isHost = existing?.isHost === true
@@ -191,6 +204,15 @@ export class ArenaRoom extends DurableObject {
         player.isHost = false;
       });
       this.room.hostPlayerId = playerId;
+      if (
+        this.room.status === 'in-run'
+        && previousHostPlayerId !== playerId
+      ) {
+        this.room.authorityEpoch = Math.max(
+          0,
+          Number(this.room.authorityEpoch) || 0
+        ) + 1;
+      }
     }
 
     this.closeDuplicateSocket(playerId, server);
@@ -226,10 +248,24 @@ export class ArenaRoom extends DurableObject {
         protocol: SERVER_PROTOCOL,
         build: SERVER_BUILD,
         reconnectToken: token,
+        checkpoint: this.room.status === 'in-run'
+          ? this.room.authorityCheckpoint
+          : null,
         room: this.snapshot()
       }
     }));
 
+    if (
+      this.room.status === 'in-run'
+      && isHost
+      && previousHostPlayerId !== playerId
+    ) {
+      this.broadcastHostMigration({
+        previousHostPlayerId,
+        hostPlayerId: playerId,
+        reason: 'host-reconnected-or-elected'
+      });
+    }
     this.broadcastRoomState();
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -307,6 +343,7 @@ export class ArenaRoom extends DurableObject {
       settings: { ...this.room.settings },
       players: Object.values(this.room.players).map(publicPlayer),
       runId: this.room.runId,
+      authorityEpoch: Math.max(0, Number(this.room.authorityEpoch) || 0),
       revision: this.room.revision
     };
   }
@@ -347,13 +384,31 @@ export class ArenaRoom extends DurableObject {
     }
 
     if (parsed?.kind === 'envelope' && parsed.envelope) {
+      if (!COMPATIBLE_PROTOCOLS.has(Number(parsed.envelope.protocolVersion))) {
+        this.sendError(socket, 'Unsupported multiplayer protocol.');
+        return;
+      }
+
       const envelope = {
         ...parsed.envelope,
+        protocolVersion: SERVER_PROTOCOL,
         sessionId: this.room.sessionId,
         runId: this.room.runId || parsed.envelope.runId || null,
         playerId: player.playerId,
+        authorityEpoch: Math.max(
+          0,
+          Number(this.room.authorityEpoch) || 0
+        ),
         serverReceivedAt: Date.now()
       };
+
+      if (this.isAuthorityCheckpointEnvelope(envelope)) {
+        if (player.playerId !== this.room.hostPlayerId) {
+          this.sendError(socket, 'Only the current host can publish authority snapshots.');
+          return;
+        }
+        await this.captureAuthorityCheckpoint(envelope);
+      }
 
       this.broadcast({
         kind: 'envelope',
@@ -363,6 +418,106 @@ export class ArenaRoom extends DurableObject {
     }
 
     this.sendError(socket, 'Unsupported message type.');
+  }
+
+  isAuthorityCheckpointEnvelope(envelope) {
+    if (!envelope || this.room?.status !== 'in-run') return false;
+    if (envelope.type === 'world-snapshot') return true;
+    if (envelope.type === 'economy-snapshot') return true;
+    return envelope.type === 'revive-state'
+      && envelope.payload?.kind === 'snapshot';
+  }
+
+  async captureAuthorityCheckpoint(envelope) {
+    if (!this.room || !this.room.runId) return false;
+    const checkpoint = this.room.authorityCheckpoint || {
+      runId: this.room.runId,
+      authorityEpoch: this.room.authorityEpoch || 0,
+      updatedAt: 0,
+      world: null,
+      economy: null,
+      revive: null
+    };
+
+    checkpoint.runId = this.room.runId;
+    checkpoint.authorityEpoch = Math.max(
+      0,
+      Number(this.room.authorityEpoch) || 0
+    );
+    checkpoint.updatedAt = Date.now();
+
+    if (envelope.type === 'world-snapshot') {
+      checkpoint.world = envelope.payload;
+    } else if (envelope.type === 'economy-snapshot') {
+      checkpoint.economy = envelope.payload;
+    } else if (envelope.type === 'revive-state') {
+      checkpoint.revive = envelope.payload?.snapshot || null;
+    }
+
+    this.room.authorityCheckpoint = checkpoint;
+    const now = Date.now();
+    if (now - this.lastCheckpointWriteAt >= CHECKPOINT_WRITE_INTERVAL_MS) {
+      this.lastCheckpointWriteAt = now;
+      await this.ctx.storage.put('room', this.room);
+    }
+    return true;
+  }
+
+  electHost(excludePlayerId = null) {
+    return this.connectedPlayers()
+      .filter((entry) => entry.playerId !== excludePlayerId)
+      .slice()
+      .sort((a, b) => {
+        const joinedDelta = (Number(a.joinedAt) || 0) - (Number(b.joinedAt) || 0);
+        if (joinedDelta !== 0) return joinedDelta;
+        return String(a.playerId).localeCompare(String(b.playerId));
+      })[0] || null;
+  }
+
+  promoteHost(replacement, previousHostPlayerId = null) {
+    Object.values(this.room.players || {}).forEach((entry) => {
+      entry.isHost = false;
+    });
+    this.room.hostPlayerId = replacement?.playerId || null;
+    if (replacement) {
+      replacement.isHost = true;
+      replacement.ready = true;
+    }
+    if (
+      replacement
+      && this.room.status === 'in-run'
+      && replacement.playerId !== previousHostPlayerId
+    ) {
+      this.room.authorityEpoch = Math.max(
+        0,
+        Number(this.room.authorityEpoch) || 0
+      ) + 1;
+      if (this.room.authorityCheckpoint) {
+        this.room.authorityCheckpoint.authorityEpoch = this.room.authorityEpoch;
+      }
+    }
+    return replacement;
+  }
+
+  broadcastHostMigration({
+    previousHostPlayerId = null,
+    hostPlayerId = this.room?.hostPlayerId || null,
+    reason = 'host-disconnected'
+  } = {}) {
+    if (!this.room || this.room.status !== 'in-run' || !hostPlayerId) return;
+    this.broadcast({
+      kind: 'control',
+      action: 'host-migrated',
+      payload: {
+        previousHostPlayerId,
+        hostPlayerId,
+        authorityEpoch: Math.max(0, Number(this.room.authorityEpoch) || 0),
+        checkpoint: this.room.authorityCheckpoint || null,
+        reason,
+        room: this.snapshot(),
+        serverTime: Date.now()
+      }
+    });
   }
 
   consumeRateLimit(socket, attachment) {
@@ -385,6 +540,7 @@ export class ArenaRoom extends DurableObject {
 
     this.room.status = 'waiting';
     this.room.runId = null;
+    this.room.authorityCheckpoint = null;
 
     Object.values(this.room.players).forEach((entry) => {
       entry.ready = entry.isHost === true && entry.connected === true;
@@ -457,6 +613,15 @@ export class ArenaRoom extends DurableObject {
 
       this.room.status = 'in-run';
       this.room.runId = makeId('run');
+      this.room.authorityEpoch = 0;
+      this.room.authorityCheckpoint = {
+        runId: this.room.runId,
+        authorityEpoch: 0,
+        updatedAt: Date.now(),
+        world: null,
+        economy: null,
+        revive: null
+      };
       await this.commit();
 
       this.broadcast({
@@ -467,6 +632,7 @@ export class ArenaRoom extends DurableObject {
           runId: this.room.runId,
           mapId: this.room.settings.mapId,
           difficulty: this.room.settings.difficulty,
+          authorityEpoch: this.room.authorityEpoch,
           serverTime: Date.now()
         }
       });
@@ -543,7 +709,12 @@ export class ArenaRoom extends DurableObject {
     this.broadcast({
       kind: 'control',
       action: 'room-state',
-      payload: { room: this.snapshot() }
+      payload: {
+        room: this.snapshot(),
+        checkpoint: this.room.status === 'in-run'
+          ? this.room.authorityCheckpoint
+          : null
+      }
     });
   }
 
@@ -569,23 +740,25 @@ export class ArenaRoom extends DurableObject {
     player.disconnectedAt = Date.now();
     player.disconnectExpiresAt = Date.now() + DISCONNECT_GRACE_MS;
 
-    if (player.isHost) {
+    let replacement = null;
+    const wasHost = player.isHost === true;
+    if (wasHost) {
       player.isHost = false;
-      const replacement = this.connectedPlayers()
-        .find((entry) => entry.playerId !== playerId) || null;
-      this.room.hostPlayerId = replacement?.playerId || null;
-      if (replacement) {
-        replacement.isHost = true;
-        replacement.ready = true;
-      }
+      replacement = this.electHost(playerId);
+      this.promoteHost(replacement, playerId);
     }
 
     if (wasInRun) {
-      await this.finishRun({
-        reason: 'player-disconnected',
-        endedByPlayerId: playerId
-      });
+      await this.commit();
+      if (replacement) {
+        this.broadcastHostMigration({
+          previousHostPlayerId: playerId,
+          hostPlayerId: replacement.playerId,
+          reason: 'host-disconnected'
+        });
+      }
       await this.scheduleCleanup();
+      this.broadcastRoomState();
       return;
     }
 
@@ -625,18 +798,32 @@ export class ArenaRoom extends DurableObject {
       }
     });
 
+    let migrated = null;
     if (!this.room.hostPlayerId) {
-      const replacement = this.connectedPlayers()[0] || null;
+      const replacement = this.electHost();
       if (replacement) {
-        replacement.isHost = true;
-        replacement.ready = true;
-        this.room.hostPlayerId = replacement.playerId;
+        this.promoteHost(replacement, null);
+        migrated = replacement;
         changed = true;
       }
     }
 
+    if (this.connectedPlayers().length === 0 && Object.keys(this.room.players).length === 0) {
+      this.room.status = 'waiting';
+      this.room.runId = null;
+      this.room.authorityCheckpoint = null;
+      changed = true;
+    }
+
     if (changed) {
       await this.commit();
+      if (migrated && this.room.status === 'in-run') {
+        this.broadcastHostMigration({
+          previousHostPlayerId: null,
+          hostPlayerId: migrated.playerId,
+          reason: 'grace-election'
+        });
+      }
       this.broadcastRoomState();
     }
 

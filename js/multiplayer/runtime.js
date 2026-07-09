@@ -24,7 +24,8 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_ECONOMY_REQUEST_RECEIVED: 'multiplayer:remote-economy-request-received',
   REMOTE_ECONOMY_RESULT_RECEIVED: 'multiplayer:remote-economy-result-received',
   REMOTE_ECONOMY_SNAPSHOT_RECEIVED: 'multiplayer:remote-economy-snapshot-received',
-  REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received'
+  REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received',
+  AUTHORITY_EPOCH_CHANGED: 'multiplayer:authority-epoch-changed'
 });
 
 function nowMs() {
@@ -64,7 +65,7 @@ export class MultiplayerRuntime {
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
     this.reviveStateSequence = 0;
-    this.reviveStateSequence = 0;
+    this.authorityEpoch = 0;
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -87,7 +88,9 @@ export class MultiplayerRuntime {
       economySnapshotsSent: 0,
       economySnapshotsReceived: 0,
       reviveStatesSent: 0,
-      reviveStatesReceived: 0
+      reviveStatesReceived: 0,
+      staleAuthorityEnvelopesRejected: 0,
+      authorityMigrations: 0
     };
   }
 
@@ -152,7 +155,14 @@ export class MultiplayerRuntime {
     this.economyResultSequence = 0;
     this.economySnapshotSequence = 0;
     this.reviveStateSequence = 0;
-    this.reviveStateSequence = 0;
+    this.authorityEpoch = Math.max(
+      0,
+      Math.floor(Number(
+        this.room?.authorityEpoch
+        ?? run?.authorityEpoch
+        ?? 0
+      ) || 0)
+    );
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -361,6 +371,9 @@ export class MultiplayerRuntime {
         : this.localPlayerId,
       sequence,
       payload,
+      authorityEpoch: overrides.authorityEpoch !== undefined
+        ? overrides.authorityEpoch
+        : this.authorityEpoch,
       sentAt: nowMs()
     });
 
@@ -390,6 +403,11 @@ export class MultiplayerRuntime {
 
     if (envelope.playerId && envelope.playerId === this.localPlayerId) {
       this.metrics.loopbackIgnored += 1;
+      return;
+    }
+
+    if (Number(envelope.authorityEpoch) < this.authorityEpoch) {
+      this.metrics.staleAuthorityEnvelopesRejected += 1;
       return;
     }
 
@@ -522,6 +540,46 @@ export class MultiplayerRuntime {
     return { accepted: true };
   }
 
+  setAuthorityEpoch(authorityEpoch, {
+    hostPlayerId = null,
+    reason = 'host-migration'
+  } = {}) {
+    const nextEpoch = Math.max(
+      0,
+      Math.floor(Number(authorityEpoch) || 0)
+    );
+    if (nextEpoch < this.authorityEpoch) return false;
+
+    const previousEpoch = this.authorityEpoch;
+    this.authorityEpoch = nextEpoch;
+    this.room.authorityEpoch = nextEpoch;
+    if (hostPlayerId) this.room.hostPlayerId = hostPlayerId;
+
+    if (nextEpoch !== previousEpoch) {
+      this.metrics.authorityMigrations += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.AUTHORITY_EPOCH_CHANGED,
+        {
+          previousEpoch,
+          authorityEpoch: nextEpoch,
+          hostPlayerId,
+          reason
+        }
+      );
+    }
+    return true;
+  }
+
+  handleHostMigration({
+    authorityEpoch = 0,
+    hostPlayerId = null
+  } = {}) {
+    return this.setAuthorityEpoch(authorityEpoch, {
+      hostPlayerId,
+      reason: 'server-host-migrated'
+    });
+  }
+
   sampleRemotePlayer(playerId, now = nowMs()) {
     return this.remoteSnapshots.sample(playerId, now);
   }
@@ -540,6 +598,7 @@ export class MultiplayerRuntime {
       room: this.room.getSnapshot(),
       remoteCommandPlayers: Array.from(this.lastRemoteCommands.keys()),
       queuedRemoteActions: this.remoteActions.length,
+      authorityEpoch: this.authorityEpoch,
       metrics: { ...this.metrics }
     };
   }

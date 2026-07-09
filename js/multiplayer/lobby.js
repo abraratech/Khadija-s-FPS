@@ -64,7 +64,8 @@ export class MultiplayerLobbyController {
     players,
     localPlayerId,
     onStartRun,
-    onRunEnded
+    onRunEnded,
+    onHostMigrated
   } = {}) {
     this.eventBus = eventBus;
     this.transport = transport;
@@ -74,6 +75,8 @@ export class MultiplayerLobbyController {
     this.localPlayerId = localPlayerId;
     this.onStartRun = onStartRun;
     this.onRunEnded = onRunEnded;
+    this.onHostMigrated = onHostMigrated;
+    this.lastAuthorityEpoch = 0;
     this.ui = null;
     this.unsubscribe = [];
     this.error = null;
@@ -230,15 +233,53 @@ export class MultiplayerLobbyController {
         (player) => player.playerId === this.localPlayerId
       );
       const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
+      const previousHostPlayerId = this.session.hostPlayerId;
+      const preserveRun = localRunWasActive && room.status === 'in-run';
 
       this.session.configureOnlineSession({
         mode,
         roomId: room.roomId,
         sessionId: payload.sessionId,
-        hostPlayerId: room.hostPlayerId
+        hostPlayerId: room.hostPlayerId,
+        preserveRun
       });
 
       this.runtime.room.replaceFromSnapshot(room, 'server-welcome');
+      this.runtime.handleHostMigration?.({
+        authorityEpoch: room.authorityEpoch,
+        hostPlayerId: room.hostPlayerId
+      });
+      this.lastAuthorityEpoch = Math.max(
+        this.lastAuthorityEpoch,
+        Number(room.authorityEpoch) || 0
+      );
+
+      if (room.status === 'in-run' && !localRunWasActive) {
+        this.ui?.close();
+        this.onStartRun?.({
+          runId: room.runId,
+          mapId: room.settings?.mapId || 'grid_bunker',
+          difficulty: Number(room.settings?.difficulty) || 1,
+          roomCode: room.roomCode,
+          resume: true,
+          authorityEpoch: room.authorityEpoch,
+          checkpoint: payload.checkpoint || null
+        });
+      } else if (room.status === 'in-run') {
+        this.session.updateOnlineAuthority?.({
+          mode,
+          hostPlayerId: room.hostPlayerId,
+          authorityEpoch: room.authorityEpoch
+        });
+        this.onHostMigrated?.({
+          previousHostPlayerId,
+          hostPlayerId: room.hostPlayerId,
+          authorityEpoch: room.authorityEpoch,
+          checkpoint: payload.checkpoint || null,
+          becameHost: local?.isHost === true,
+          reason: 'reconnect-welcome'
+        });
+      }
 
       if (localRunWasActive && room.status !== 'in-run') {
         this.onRunEnded?.({
@@ -260,10 +301,42 @@ export class MultiplayerLobbyController {
       const local = payload.room.players?.find(
         (player) => player.playerId === this.localPlayerId
       );
-      this.session.mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
-      this.session.hostPlayerId = payload.room.hostPlayerId || null;
+      const previousHostPlayerId = this.session.hostPlayerId;
+      const previousEpoch = this.lastAuthorityEpoch;
+      const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
+      this.session.updateOnlineAuthority?.({
+        mode,
+        hostPlayerId: payload.room.hostPlayerId,
+        authorityEpoch: payload.room.authorityEpoch
+      });
 
       this.runtime.room.replaceFromSnapshot(payload.room, 'server-room-state');
+      this.runtime.handleHostMigration?.({
+        authorityEpoch: payload.room.authorityEpoch,
+        hostPlayerId: payload.room.hostPlayerId
+      });
+      this.lastAuthorityEpoch = Math.max(
+        this.lastAuthorityEpoch,
+        Number(payload.room.authorityEpoch) || 0
+      );
+
+      if (
+        this.session.run?.active === true
+        && payload.room.status === 'in-run'
+        && (
+          previousHostPlayerId !== payload.room.hostPlayerId
+          || previousEpoch !== this.lastAuthorityEpoch
+        )
+      ) {
+        this.onHostMigrated?.({
+          previousHostPlayerId,
+          hostPlayerId: payload.room.hostPlayerId,
+          authorityEpoch: payload.room.authorityEpoch,
+          checkpoint: payload.checkpoint || null,
+          becameHost: local?.isHost === true,
+          reason: 'room-state-authority-change'
+        });
+      }
 
       if (
         this.session.run?.active === true
@@ -285,7 +358,10 @@ export class MultiplayerLobbyController {
         runId: payload.runId,
         mapId: payload.mapId,
         difficulty: Number(payload.difficulty) || 1,
-        roomCode: payload.roomCode
+        roomCode: payload.roomCode,
+        authorityEpoch: payload.authorityEpoch || this.room?.authorityEpoch || 0,
+        resume: false,
+        checkpoint: null
       };
 
       if (!start.runId || !start.mapId) {
@@ -296,6 +372,48 @@ export class MultiplayerLobbyController {
 
       this.ui?.close();
       this.onStartRun?.(start);
+      return;
+    }
+
+    if (action === 'host-migrated') {
+      const room = payload.room || this.room;
+      if (room) {
+        this.connected = true;
+        this.room = room;
+        this.runtime.room.replaceFromSnapshot(room, 'server-host-migrated');
+      }
+
+      const local = room?.players?.find(
+        (entry) => entry?.playerId === this.localPlayerId
+      );
+      const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
+      const previousHostPlayerId = payload.previousHostPlayerId
+        || this.session.hostPlayerId
+        || null;
+
+      this.session.updateOnlineAuthority?.({
+        mode,
+        hostPlayerId: payload.hostPlayerId || room?.hostPlayerId,
+        authorityEpoch: payload.authorityEpoch || room?.authorityEpoch
+      });
+      this.runtime.handleHostMigration?.({
+        authorityEpoch: payload.authorityEpoch || room?.authorityEpoch,
+        hostPlayerId: payload.hostPlayerId || room?.hostPlayerId
+      });
+      this.lastAuthorityEpoch = Math.max(
+        this.lastAuthorityEpoch,
+        Number(payload.authorityEpoch || room?.authorityEpoch) || 0
+      );
+
+      this.onHostMigrated?.({
+        previousHostPlayerId,
+        hostPlayerId: payload.hostPlayerId || room?.hostPlayerId || null,
+        authorityEpoch: payload.authorityEpoch || room?.authorityEpoch || 0,
+        checkpoint: payload.checkpoint || null,
+        becameHost: local?.isHost === true,
+        reason: String(payload.reason || 'host-disconnected')
+      });
+      this.render();
       return;
     }
 
@@ -370,6 +488,7 @@ export class MultiplayerLobbyController {
     this.connected = false;
     this.room = null;
     this.error = null;
+    this.lastAuthorityEpoch = 0;
     this.session.returnToLocalSession({
       hostPlayerId: this.localPlayerId
     });

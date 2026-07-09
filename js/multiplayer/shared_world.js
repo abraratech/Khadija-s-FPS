@@ -120,6 +120,8 @@ export class SharedWorldManager {
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotReceivedAt = -Infinity;
     this.authorityCounter = 0;
+    this.authorityEpoch = 0;
+    this.latestRemoteSnapshot = null;
     this.enemyIdentity = new WeakMap();
     this.proxies = new Map();
     this.remoteTargets = new Map();
@@ -163,6 +165,8 @@ export class SharedWorldManager {
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotReceivedAt = -Infinity;
     this.authorityCounter = 0;
+    this.authorityEpoch = Math.max(0, Number(this.runtime?.authorityEpoch) || 0);
+    this.latestRemoteSnapshot = null;
     this.enemyIdentity = new WeakMap();
     this.hitWindows.clear();
     this.scoredRemoteShots.clear();
@@ -234,8 +238,11 @@ export class SharedWorldManager {
     const enemies = this.adapter.getActiveEnemies?.() || [];
     return {
       serverFrameTime: now,
+      authorityEpoch: this.authorityEpoch,
       wave: Math.max(1, Number(this.adapter.getCurrentWave?.()) || 1),
       specialRound: this.adapter.getSpecialRound?.() === true,
+      waveState: this.adapter.getNetworkEnemyWaveState?.() || null,
+      scoredShotKeys: Array.from(this.scoredRemoteShots).slice(-512),
       enemies: enemies.map((enemy) => this.serializeEnemy(enemy))
     };
   }
@@ -244,9 +251,11 @@ export class SharedWorldManager {
     let identity = this.enemyIdentity.get(enemy);
 
     if (!identity || (enemy.alive && identity.lastAlive === false)) {
-      this.authorityCounter += 1;
+      const existingId = enemy.networkId || null;
+      if (!existingId) this.authorityCounter += 1;
       identity = {
-        id: `enemy-${this.session?.run?.runId || 'run'}-${this.authorityCounter}`,
+        id: existingId
+          || `enemy-${this.session?.run?.runId || 'run'}-${this.authorityCounter}`,
         lastAlive: enemy.alive === true
       };
       this.enemyIdentity.set(enemy, identity);
@@ -284,6 +293,11 @@ export class SharedWorldManager {
     const snapshot = envelope?.payload;
     if (!snapshot || !Array.isArray(snapshot.enemies)) return;
 
+    this.latestRemoteSnapshot = JSON.parse(JSON.stringify(snapshot));
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(envelope?.authorityEpoch ?? snapshot.authorityEpoch) || 0
+    );
     this.lastSnapshotReceivedAt = nowMs();
     this.adapter.applyNetworkWaveState?.(
       snapshot.wave,
@@ -432,6 +446,105 @@ export class SharedWorldManager {
       // Damage is authoritative on the host and arrives through
       // PLAYER_DAMAGE envelopes. Client proxies are visual/raycast targets only.
     });
+  }
+
+  configureAuthorityAdapter() {
+    if (!this.isAuthority()) {
+      this.adapter.configureMultiplayerEnemyAuthority?.(null);
+      return;
+    }
+
+    this.adapter.configureMultiplayerEnemyAuthority?.({
+      localPlayerId: this.runtime?.localPlayerId || null,
+      getTargets: () => this.getRemoteAuthorityTargets(),
+      damageTarget: (target, damage, sourcePosition, damageType) => (
+        this.damageAuthorityTarget(target, damage, sourcePosition, damageType)
+      ),
+      awardKill: (payload) => this.economy?.awardCombat?.(payload) === true
+    });
+  }
+
+  applyMigrationCheckpoint(checkpoint = null, {
+    becameHost = this.isAuthority()
+  } = {}) {
+    const snapshot = checkpoint?.world || this.latestRemoteSnapshot;
+    if (!snapshot || !Array.isArray(snapshot.enemies)) {
+      if (!becameHost) return false;
+      this.clearProxies();
+      this.adapter.initEnemies?.();
+      this.initializedForRun = true;
+      this.configureAuthorityAdapter();
+      return true;
+    }
+
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(checkpoint?.authorityEpoch ?? snapshot.authorityEpoch) || 0
+    );
+
+    if (becameHost) {
+      this.clearProxies();
+      this.scoredRemoteShots = new Set(
+        Array.isArray(snapshot.scoredShotKeys)
+          ? snapshot.scoredShotKeys.slice(-512)
+          : []
+      );
+      this.adapter.restoreNetworkEnemySnapshot?.(snapshot);
+      this.initializedForRun = true;
+      this.enemyIdentity = new WeakMap();
+      this.authorityCounter = 0;
+      (this.adapter.getActiveEnemies?.() || []).forEach((enemy) => {
+        if (!enemy?.networkId) return;
+        const suffix = Number(String(enemy.networkId).split('-').pop()) || 0;
+        this.authorityCounter = Math.max(this.authorityCounter, suffix);
+        this.enemyIdentity.set(enemy, {
+          id: enemy.networkId,
+          lastAlive: enemy.alive === true
+        });
+      });
+      this.configureAuthorityAdapter();
+      this.lastSnapshotSentAt = -Infinity;
+      this.runtime?.sendWorldSnapshot?.(this.buildSnapshot(nowMs()));
+      return true;
+    }
+
+    this.adapter.clearEnemiesForNetworkProxyMode?.();
+    this.clearProxies();
+    this.latestRemoteSnapshot = JSON.parse(JSON.stringify(snapshot));
+    this.adapter.applyNetworkWaveState?.(
+      snapshot.wave,
+      snapshot.specialRound === true
+    );
+    const seen = new Set();
+    snapshot.enemies.forEach((state) => {
+      if (!state?.id) return;
+      seen.add(state.id);
+      let proxy = this.proxies.get(state.id);
+      if (!proxy) proxy = this.createProxy(state);
+      this.applyProxyState(proxy, state);
+    });
+    Array.from(this.proxies.entries()).forEach(([enemyId, proxy]) => {
+      if (!seen.has(enemyId)) this.removeProxy(enemyId, proxy);
+    });
+    this.initializedForRun = true;
+    return true;
+  }
+
+  handleHostMigration({
+    authorityEpoch = 0,
+    checkpoint = null,
+    becameHost = false
+  } = {}) {
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(authorityEpoch) || 0
+    );
+    if (!this.active) return false;
+    if (becameHost) {
+      return this.applyMigrationCheckpoint(checkpoint, { becameHost: true });
+    }
+    this.configureAuthorityAdapter();
+    return true;
   }
 
   getRemoteAuthorityTargets(now = nowMs()) {
@@ -671,6 +784,8 @@ export class SharedWorldManager {
       active: this.active,
       authority: this.isAuthority(),
       mode: this.session?.mode || 'singleplayer',
+      authorityEpoch: this.authorityEpoch,
+      hasMigrationCheckpoint: Boolean(this.latestRemoteSnapshot),
       proxies: this.proxies.size,
       lastSnapshotReceivedAt: this.lastSnapshotReceivedAt,
       lastSnapshotSentAt: this.lastSnapshotSentAt

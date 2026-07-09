@@ -10,16 +10,19 @@ import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
+import { HostMigrationState } from './migration_core.js';
 
 let sessionRef = null;
 let runLauncher = null;
 let runEndHandler = null;
 let pendingOnlineRun = null;
+let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
 let reviveManager = null;
 let lobbyController = null;
+const hostMigrationState = new HostMigrationState();
 
 export const multiplayerEvents = new MultiplayerEventBus({
   sourceIdProvider: () => sessionRef?.clientId || 'bootstrap'
@@ -70,6 +73,49 @@ export function registerMultiplayerRunEndHandler(handler) {
     );
   }
   runEndHandler = handler;
+}
+
+function applyHostMigration(details = {}) {
+  const authorityEpoch = Math.max(
+    0,
+    Math.floor(Number(details.authorityEpoch) || 0)
+  );
+  const becameHost = details.becameHost === true;
+
+  hostMigrationState.begin({
+    authorityEpoch,
+    hostPlayerId: details.hostPlayerId,
+    previousHostPlayerId: details.previousHostPlayerId,
+    checkpoint: details.checkpoint,
+    migratedAt: Date.now()
+  });
+
+  multiplayerRuntime.handleHostMigration?.({
+    authorityEpoch,
+    hostPlayerId: details.hostPlayerId
+  });
+  sharedWorldManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
+  economyManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
+  reviveManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
+
+  hostMigrationState.markResumed();
+  console.info(
+    becameHost
+      ? '[M3.7-M3.8] Local player promoted to host; authority restored.'
+      : '[M3.7-M3.8] Host migration applied; run remains active.'
+  );
 }
 
 export function initializeMultiplayerFoundation(
@@ -146,11 +192,13 @@ export function initializeMultiplayerFoundation(
     },
     onRunEnded: (details = {}) => {
       pendingOnlineRun = null;
+      pendingResumeCheckpoint = null;
       sharedWorldManager?.endRun();
       reviveManager?.endRun();
       economyManager?.endRun();
       multiplayerRuntime.endRun();
       remotePlayerManager?.endRun();
+      hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
         player,
@@ -164,6 +212,9 @@ export function initializeMultiplayerFoundation(
       });
 
       runEndHandler?.(details);
+    },
+    onHostMigrated: (details = {}) => {
+      applyHostMigration(details);
     }
   });
   lobbyController.initialize();
@@ -171,7 +222,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.5-M3.6] Downed, revive, spectating, and team elimination ready.'
+    '[M3.7-M3.8] Host migration and session resilience ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -197,13 +248,48 @@ export function beginMultiplayerRun({
     difficulty: pending?.difficulty ?? difficulty,
     fromRespawn
   });
+  multiplayerSession.updateOnlineAuthority?.({
+    mode: multiplayerSession.mode,
+    hostPlayerId: multiplayerSession.hostPlayerId,
+    authorityEpoch: pending?.authorityEpoch || 0
+  });
+  if (multiplayerSession.run) {
+    multiplayerSession.run.resumed = pending?.resume === true;
+  }
 
-  multiplayerRuntime.beginRun(sessionSnapshot);
+  multiplayerRuntime.beginRun(multiplayerSession.getSnapshot());
   remotePlayerManager?.beginRun();
   economyManager?.beginRun();
   reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
-  return sessionSnapshot;
+
+  pendingResumeCheckpoint = pending?.checkpoint
+    ? {
+        previousHostPlayerId: null,
+        hostPlayerId: multiplayerSession.hostPlayerId,
+        authorityEpoch: pending.authorityEpoch || 0,
+        checkpoint: pending.checkpoint,
+        becameHost: multiplayerSession.mode === 'host',
+        reason: pending.resume ? 'reconnect-resume' : 'run-start-checkpoint'
+      }
+    : null;
+
+  if (!pendingResumeCheckpoint) {
+    hostMigrationState.reset({
+      authorityEpoch: pending?.authorityEpoch || 0,
+      hostPlayerId: multiplayerSession.hostPlayerId
+    });
+  }
+
+  return multiplayerSession.getSnapshot();
+}
+
+export function finalizeMultiplayerResume() {
+  if (!initialized || !pendingResumeCheckpoint) return false;
+  const details = pendingResumeCheckpoint;
+  pendingResumeCheckpoint = null;
+  applyHostMigration(details);
+  return true;
 }
 
 export function endMultiplayerRun({
@@ -212,6 +298,7 @@ export function endMultiplayerRun({
   notifyServer = true
 } = {}) {
   if (!initialized) return null;
+  pendingResumeCheckpoint = null;
 
   const state = multiplayerPlayers.syncLocalPlayer(
     player,
@@ -224,6 +311,7 @@ export function endMultiplayerRun({
   economyManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun();
+  hostMigrationState.reset();
 
   if (notifyServer) {
     lobbyController?.notifyRunEnded?.(reason);
@@ -383,7 +471,8 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null
+    revive: reviveManager?.getSnapshot?.() || null,
+    hostMigration: hostMigrationState.getSnapshot()
   };
 }
 

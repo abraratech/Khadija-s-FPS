@@ -70,7 +70,8 @@ export class MultiplayerSession {
     mode,
     roomId,
     sessionId,
-    hostPlayerId
+    hostPlayerId,
+    preserveRun = false
   } = {}) {
     if (![SESSION_MODES.HOST, SESSION_MODES.CLIENT].includes(mode)) {
       throw new TypeError('Online session mode must be host or client.');
@@ -84,14 +85,65 @@ export class MultiplayerSession {
     this.roomId = String(roomId);
     this.sessionId = String(sessionId);
     this.hostPlayerId = hostPlayerId || null;
-    this.run = null;
+    if (!preserveRun) this.run = null;
 
-    this.setStatus(SESSION_STATUS.READY, {
-      mode,
-      roomId: this.roomId,
-      previousSessionId
+    this.setStatus(
+      preserveRun && this.run?.active
+        ? SESSION_STATUS.IN_RUN
+        : SESSION_STATUS.READY,
+      {
+        mode,
+        roomId: this.roomId,
+        previousSessionId,
+        preserveRun
+      }
+    );
+
+    return this.getSnapshot();
+  }
+
+
+  updateOnlineAuthority({
+    mode,
+    hostPlayerId,
+    authorityEpoch = 0
+  } = {}) {
+    if ([SESSION_MODES.HOST, SESSION_MODES.CLIENT].includes(mode)) {
+      this.mode = mode;
+    }
+    this.hostPlayerId = hostPlayerId || null;
+    if (this.run) {
+      this.run.authorityEpoch = Math.max(
+        0,
+        Math.floor(Number(authorityEpoch) || 0)
+      );
+    }
+    return this.getSnapshot();
+  }
+
+  restoreOnlineRun({
+    runId,
+    mapId = 'grid_bunker',
+    difficulty = 1,
+    authorityEpoch = 0
+  } = {}) {
+    if (!runId) return this.getSnapshot();
+    this.run = {
+      runId: String(runId),
+      active: true,
+      mapId,
+      difficulty: Number(difficulty) || 1,
+      fromRespawn: false,
+      authorityEpoch: Math.max(0, Math.floor(Number(authorityEpoch) || 0)),
+      resumed: true,
+      startedAt: nowMs(),
+      endedAt: null,
+      endReason: null
+    };
+    this.setStatus(SESSION_STATUS.IN_RUN, {
+      runId: this.run.runId,
+      resumed: true
     });
-
     return this.getSnapshot();
   }
 
@@ -125,6 +177,8 @@ export class MultiplayerSession {
       mapId,
       difficulty: Number(difficulty) || 1,
       fromRespawn: fromRespawn === true,
+      authorityEpoch: 0,
+      resumed: false,
       startedAt: nowMs(),
       endedAt: null,
       endReason: null

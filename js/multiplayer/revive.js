@@ -81,6 +81,7 @@ export class MultiplayerReviveManager {
     this.core = new ReviveAuthority();
     this.active = false;
     this.latestSnapshot = null;
+    this.authorityEpoch = 0;
     this.room = null;
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotReceivedAt = -Infinity;
@@ -148,6 +149,7 @@ export class MultiplayerReviveManager {
   beginRun() {
     this.active = this.isOnline();
     this.latestSnapshot = null;
+    this.authorityEpoch = Math.max(0, Number(this.runtime?.authorityEpoch) || 0);
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotReceivedAt = -Infinity;
     this.lastSnapshotRequestAt = -Infinity;
@@ -403,6 +405,10 @@ export class MultiplayerReviveManager {
         })
       };
       this.latestSnapshot = snapshot;
+      this.authorityEpoch = Math.max(
+        this.authorityEpoch,
+        Number(envelope?.authorityEpoch ?? snapshot.authorityEpoch) || 0
+      );
       this.core.replaceSnapshot(snapshot);
       this.lastSnapshotReceivedAt = receivedAt;
       this.applyLocalFromSnapshot(snapshot);
@@ -511,7 +517,10 @@ export class MultiplayerReviveManager {
       return false;
     }
     this.lastSnapshotSentAt = now;
-    const snapshot = this.core.getSnapshot(now);
+    const snapshot = {
+      ...this.core.getSnapshot(now),
+      authorityEpoch: this.authorityEpoch
+    };
     this.latestSnapshot = snapshot;
     this.runtime?.sendReviveState?.({
       kind: REVIVE_MESSAGE_KIND.SNAPSHOT,
@@ -534,6 +543,73 @@ export class MultiplayerReviveManager {
       action: REVIVE_ACTIONS.SNAPSHOT_REQUEST
     });
     return true;
+  }
+
+  normalizeCheckpointSnapshot(snapshot, receivedAt = nowMs()) {
+    if (!snapshot?.players) return null;
+    const authorityTime = Number(snapshot.serverTime || receivedAt);
+    return {
+      ...snapshot,
+      serverTime: receivedAt,
+      players: snapshot.players.map((entry) => {
+        if (
+          entry?.lifeState !== MULTIPLAYER_LIFE_STATES.DOWNED
+          || !Number.isFinite(Number(entry.bleedoutEndsAt))
+        ) {
+          return { ...entry };
+        }
+        const remaining = Math.max(
+          0,
+          Number(entry.bleedoutEndsAt) - authorityTime
+        );
+        return {
+          ...entry,
+          downedAt: receivedAt - Math.max(
+            0,
+            Number(snapshot.bleedoutMs || 30_000) - remaining
+          ),
+          bleedoutEndsAt: receivedAt + remaining
+        };
+      })
+    };
+  }
+
+  applyMigrationCheckpoint(checkpoint = null, {
+    becameHost = this.isAuthority()
+  } = {}) {
+    const source = checkpoint?.revive || this.latestSnapshot;
+    const snapshot = this.normalizeCheckpointSnapshot(source);
+    if (!snapshot) return false;
+
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(checkpoint?.authorityEpoch ?? source.authorityEpoch) || 0
+    );
+    snapshot.authorityEpoch = this.authorityEpoch;
+    this.latestSnapshot = snapshot;
+    this.core.replaceSnapshot(snapshot);
+    this.lastSnapshotReceivedAt = nowMs();
+    this.syncRoomPlayers(nowMs());
+    this.applyLocalFromSnapshot(snapshot);
+
+    if (becameHost) {
+      this.teamEndRequested = false;
+      this.publishSnapshot(nowMs(), true);
+    }
+    return true;
+  }
+
+  handleHostMigration({
+    authorityEpoch = 0,
+    checkpoint = null,
+    becameHost = false
+  } = {}) {
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(authorityEpoch) || 0
+    );
+    if (!this.active) return false;
+    return this.applyMigrationCheckpoint(checkpoint, { becameHost });
   }
 
   findNearestDownedTarget() {
@@ -914,6 +990,7 @@ export class MultiplayerReviveManager {
     return {
       active: this.active,
       authority: this.isAuthority(),
+      authorityEpoch: this.authorityEpoch,
       localLifeState: this.localAppliedState,
       currentReviveTargetId: this.currentReviveTarget?.playerId || null,
       spectatorTargetId: this.spectatorTargetId,

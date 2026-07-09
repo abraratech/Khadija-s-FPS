@@ -41,6 +41,7 @@ export class MultiplayerRoomState {
       privacy: 'private'
     };
     this.runId = null;
+    this.authorityEpoch = 0;
     this.revision = 0;
   }
 
@@ -59,6 +60,7 @@ export class MultiplayerRoomState {
     this.status = ROOM_STATUS.WAITING;
     this.hostPlayerId = hostPlayer.playerId;
     this.runId = null;
+    this.authorityEpoch = 0;
     this.players.clear();
     this.settings = {
       ...this.settings,
@@ -176,6 +178,10 @@ export class MultiplayerRoomState {
     this.hostPlayerId = snapshot.hostPlayerId || null;
     this.settings = { ...this.settings, ...(snapshot.settings || {}) };
     this.runId = snapshot.runId || null;
+    this.authorityEpoch = Math.max(
+      0,
+      Math.floor(Number(snapshot.authorityEpoch) || 0)
+    );
     this.revision = Math.max(this.revision, Number(snapshot.revision) || 0);
     this.players.clear();
 
@@ -210,6 +216,7 @@ export class MultiplayerRoomState {
       settings: { ...this.settings },
       players: Array.from(this.players.values(), serializePlayer),
       runId: this.runId,
+      authorityEpoch: this.authorityEpoch,
       revision: this.revision
     };
   }

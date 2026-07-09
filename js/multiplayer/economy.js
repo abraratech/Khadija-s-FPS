@@ -50,6 +50,17 @@ function makeAccount({ score = 0, kills = 0 } = {}) {
   };
 }
 
+function makeAccountFromSnapshot(entry = {}) {
+  const account = makeAccount({
+    score: entry.score,
+    kills: entry.kills
+  });
+  account.profile.weapons = new Set(entry.profile?.weapons || ['PISTOL']);
+  account.profile.perks = new Set(entry.profile?.perks || []);
+  account.profile.upgrades = { ...(entry.profile?.upgrades || {}) };
+  return account;
+}
+
 export class MultiplayerEconomyManager {
   constructor({
     eventBus,
@@ -74,6 +85,8 @@ export class MultiplayerEconomyManager {
     this.snapshotVersion = 0;
     this.lastSnapshotAt = -Infinity;
     this.snapshotDirty = false;
+    this.latestSnapshot = null;
+    this.authorityEpoch = 0;
     this.unsubscribe = [];
     this.metrics = {
       requestsSent: 0,
@@ -124,6 +137,8 @@ export class MultiplayerEconomyManager {
     this.snapshotVersion = 0;
     this.lastSnapshotAt = -Infinity;
     this.snapshotDirty = true;
+    this.latestSnapshot = null;
+    this.authorityEpoch = Math.max(0, Number(this.runtime?.authorityEpoch) || 0);
 
     const localPlayerId = this.runtime?.localPlayerId;
     if (localPlayerId) {
@@ -464,9 +479,12 @@ export class MultiplayerEconomyManager {
 
     const snapshot = {
       version: this.snapshotVersion,
+      authorityEpoch: this.authorityEpoch,
+      processedRequestIds: Array.from(this.processedRequests).slice(-256),
       players,
       world: this.adapter.buildMultiplayerWorldState?.() || null
     };
+    this.latestSnapshot = JSON.parse(JSON.stringify(snapshot));
 
     this.metrics.snapshotsSent += 1;
     return this.runtime?.sendEconomySnapshot?.(snapshot);
@@ -485,6 +503,11 @@ export class MultiplayerEconomyManager {
     if (!snapshot || !Array.isArray(snapshot.players)) return;
 
     this.metrics.snapshotsReceived += 1;
+    this.latestSnapshot = JSON.parse(JSON.stringify(snapshot));
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(envelope?.authorityEpoch ?? snapshot.authorityEpoch) || 0
+    );
     this.snapshotVersion = Math.max(
       this.snapshotVersion,
       Number(snapshot.version) || 0
@@ -507,6 +530,74 @@ export class MultiplayerEconomyManager {
     }
 
     this.adapter.applyMultiplayerWorldState?.(snapshot.world || {});
+  }
+
+  applyMigrationCheckpoint(checkpoint = null, {
+    becameHost = this.isAuthority()
+  } = {}) {
+    const snapshot = checkpoint?.economy || this.latestSnapshot;
+    if (!snapshot || !Array.isArray(snapshot.players)) return false;
+
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(checkpoint?.authorityEpoch ?? snapshot.authorityEpoch) || 0
+    );
+    this.latestSnapshot = JSON.parse(JSON.stringify(snapshot));
+    if (!this.worldReady) {
+      this.adapter.prepareMultiplayerWorld?.();
+      this.worldReady = true;
+    }
+    this.snapshotVersion = Math.max(
+      this.snapshotVersion,
+      Number(snapshot.version) || 0
+    );
+
+    if (becameHost) {
+      this.accounts.clear();
+      this.processedRequests = new Set(
+        Array.isArray(snapshot.processedRequestIds)
+          ? snapshot.processedRequestIds.slice(-256)
+          : []
+      );
+      snapshot.players.forEach((entry) => {
+        if (!entry?.playerId) return;
+        this.accounts.set(entry.playerId, makeAccountFromSnapshot(entry));
+      });
+      this.ensureRoomAccounts();
+      this.snapshotDirty = true;
+    }
+
+    const local = snapshot.players.find(
+      (entry) => entry?.playerId === this.runtime?.localPlayerId
+    );
+    if (local) {
+      if (this.player) {
+        this.player.score = normalizeScore(local.score);
+        this.player.kills = normalizeKills(local.kills);
+      }
+      this.adapter.applyLocalEconomyState?.({
+        score: normalizeScore(local.score),
+        kills: normalizeKills(local.kills)
+      });
+      this.adapter.applyMultiplayerProfile?.(local.profile || {});
+    }
+    this.adapter.applyMultiplayerWorldState?.(snapshot.world || {});
+
+    if (becameHost) this.sendSnapshot(true);
+    return true;
+  }
+
+  handleHostMigration({
+    authorityEpoch = 0,
+    checkpoint = null,
+    becameHost = false
+  } = {}) {
+    this.authorityEpoch = Math.max(
+      this.authorityEpoch,
+      Number(authorityEpoch) || 0
+    );
+    if (!this.active) return false;
+    return this.applyMigrationCheckpoint(checkpoint, { becameHost });
   }
 
   applyProfilePatch(profile, patch = null) {
@@ -558,6 +649,8 @@ export class MultiplayerEconomyManager {
       active: this.active,
       worldReady: this.worldReady,
       authority: this.isAuthority(),
+      authorityEpoch: this.authorityEpoch,
+      hasMigrationCheckpoint: Boolean(this.latestSnapshot),
       snapshotVersion: this.snapshotVersion,
       accounts: Array.from(this.accounts.entries(), ([playerId, account]) => ({
         playerId,

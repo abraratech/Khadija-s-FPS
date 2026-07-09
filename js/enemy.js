@@ -522,6 +522,168 @@ export function initEnemies() {
   startWave(currentWave);
 }
 
+export function clearEnemiesForNetworkProxyMode() {
+  initPools();
+  if (nextWaveTimeout) {
+    clearTimeout(nextWaveTimeout);
+    nextWaveTimeout = null;
+  }
+  actorManager.clear();
+  for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
+    const enemy = activeEnemies[index];
+    if (enemy?.isNetworkProxy) continue;
+    if (enemy?.mesh) enemy.mesh.visible = false;
+    zombiePool.push(enemy);
+    activeEnemies.splice(index, 1);
+  }
+  projectilePool.items.forEach((projectile) => {
+    projectile.mesh.visible = false;
+  });
+  explosionPool.items.forEach((explosion) => {
+    explosion.mesh.visible = false;
+  });
+}
+
+export function getNetworkEnemyWaveState() {
+  return {
+    wave: currentWave,
+    specialRound: isSpecialRound === true,
+    zombiesToSpawn: Math.max(0, Number(zombiesToSpawnThisRound) || 0),
+    zombiesSpawned: Math.max(0, Number(zombiesSpawnedSoFar) || 0),
+    goliathsRemaining: Math.max(0, Number(goliathsToSpawn) || 0),
+    spawnTimer: Number(spawnTimer) || 0
+  };
+}
+
+export function restoreNetworkEnemySnapshot(snapshot = {}) {
+  initPools();
+
+  if (nextWaveTimeout) {
+    clearTimeout(nextWaveTimeout);
+    nextWaveTimeout = null;
+  }
+
+  actorManager.clear();
+  campWarningTimer = 0;
+  meleeDamageGraceT = 0;
+
+  for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
+    const enemy = activeEnemies[index];
+    enemy.mesh?.parent && (enemy.mesh.visible = false);
+    if (!enemy?.isNetworkProxy) zombiePool.push(enemy);
+  }
+  activeEnemies.length = 0;
+
+  const waveState = snapshot.waveState || {};
+  currentWave = Math.max(
+    1,
+    Math.floor(Number(waveState.wave ?? snapshot.wave) || 1)
+  );
+  isSpecialRound = waveState.specialRound === true
+    || snapshot.specialRound === true;
+  zombiesToSpawnThisRound = Math.max(
+    0,
+    Math.floor(Number(waveState.zombiesToSpawn) || 0)
+  );
+  zombiesSpawnedSoFar = Math.max(
+    0,
+    Math.floor(Number(waveState.zombiesSpawned) || 0)
+  );
+  goliathsToSpawn = Math.max(
+    0,
+    Math.floor(Number(waveState.goliathsRemaining) || 0)
+  );
+  spawnTimer = Number(waveState.spawnTimer) || 0;
+  announcedTypesThisWave = new Set();
+
+  const states = Array.isArray(snapshot.enemies)
+    ? snapshot.enemies.filter((state) => state?.alive !== false)
+    : [];
+
+  if (zombiesToSpawnThisRound < states.length) {
+    zombiesToSpawnThisRound = states.length;
+  }
+  if (zombiesSpawnedSoFar < states.length) {
+    zombiesSpawnedSoFar = states.length;
+  }
+
+  states.slice(0, zombiePool.length).forEach((state) => {
+    const config = getEnemyTypeMeta(state.type);
+    const restored = zombiePool.pop();
+    if (!restored) return;
+
+    restored.networkId = state.id || null;
+    restored.isNetworkProxy = false;
+    restored.handleNetworkHit = null;
+    restored.type = config.name;
+    restored.health = Math.max(1, Number(state.health) || config.maxHealth);
+    restored.maxHealth = Math.max(1, Number(state.maxHealth) || config.maxHealth);
+    restored.speed = (
+      config.speed + getWaveSpeedBonus(config)
+    ) * getAIDirectorTuning().speedScale;
+    restored.directorRole = assignEnemyDirectorRole(config.name);
+    restored.damage = config.damage;
+    restored.attackRate = config.attackCooldown;
+    restored.aiTimer = Math.random() * 0.08;
+    restored.atkCD = Math.max(0, Number(state.atkCD) || 0);
+    restored.attackRange = config.attackRange;
+    restored.colRadius = config.colRadius;
+    restored.walkT = Number(state.walkT) || 0;
+    restored.hitReactT = Number(state.hitReactT) || 0;
+    restored.hitReactDir = 1;
+    restored.attackAnimT = Number(state.attackAnimT) || 0;
+    restored.attackAnimDuration = config.name === 'CRAWLER' ? 0.46 : 0.30;
+    restored.rangedLosTimer = 0;
+    restored.rangedHasLos = false;
+    restored.lastHitDamage = 0;
+    restored.lastHitHeadshot = false;
+    restored.lastHitAt = 0;
+    restored.attackState = String(state.attackState || 'IDLE');
+    restored.targetPlayerId = state.targetPlayerId || null;
+    restored.dyingT = -1;
+    restored.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
+    restored.cachedGroundY = Number(state.position?.y) || 0;
+    restored.alive = true;
+    restored.originalScale.copy(config.scale);
+    restored.scoreReward = config.killScore || 50;
+    restored.headshotReward = config.headshotScore || 100;
+    restored.bossBounty = config.bossBounty || 0;
+    restored.role = config.role || 'standard';
+
+    registerAttackEnemy(restored);
+    restored.mesh.scale.copy(config.scale);
+    restored.mesh.rotation.set(0, Number(state.yaw) || 0, 0);
+    restored.mesh.position.set(
+      Number(state.position?.x) || 0,
+      Number(state.position?.y) || 0,
+      Number(state.position?.z) || 0
+    );
+    restored.mesh.visible = true;
+
+    restored.mesh.traverse((child) => {
+      if (child.isMesh || child.isSkinnedMesh) {
+        if (child.userData.keepMaterial) return;
+        child.material = getZombieMaterial(config, child.material);
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
+
+    updateProceduralZombieStyle(restored.lodMesh, config);
+    activeEnemies.push(restored);
+    registerSquadEnemy(restored);
+    registerArchetypeEnemy(restored);
+    registerFormationEnemy(restored);
+    registerNavigationEnemy(restored);
+    actorManager.register(restored);
+  });
+
+  toggleSwarmLighting(isSpecialRound);
+  updateRoundHUD(currentWave);
+  beginAIDirectorWave(currentWave);
+  return activeEnemies.length;
+}
+
 function getDifficultyScalar() {
   const scalar = Number(difficultyMultiplier);
   return Number.isFinite(scalar) && scalar > 0 ? scalar : 1;

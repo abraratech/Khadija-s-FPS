@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
+<meta content="Khadija's Arena is a browser-based single-player wave survival FPS demo." name="description"/>
+<meta content="#03070c" name="theme-color"/>
+<title>Khadija's Arena</title>
+<link crossorigin="" href="https://cdn.jsdelivr.net" rel="preconnect"/>
+<style>
+  /* ── NEW: PORTRAIT MODE BLOCKER ── */
+    #portrait-warning {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #050505; color: #fff; z-index: 9999;
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; font-family: sans-serif;
+    }
+    @media screen and (orientation: portrait) and (max-width: 768px) {
+      #portrait-warning { display: flex; }
+    }
+  </style>
+<link href="css/game.css" rel="stylesheet"/>
+<link href="css/hud.css" rel="stylesheet"/>
+<link href="css/menu.css" rel="stylesheet"/>
+<link href="css/multiplayer.css" rel="stylesheet"/>
+<style>
+    /* ── KHADIJA'S ARENA MULTI-STAGE MENU OVERHAUL ── */
+    .ka-menu-shell {
+      position: absolute;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      overflow: auto;
+      background:
+        radial-gradient(circle at 15% 20%, rgba(0, 212, 255, 0.18), transparent 34%),
+        radial-gradient(circle at 86% 22%, rgba(255, 34, 0, 0.13), transparent 32%),
+        radial-gradient(circle at 50% 100%, rgba(34, 255, 136, 0.08), transparent 30%),
+        linear-gradient(135deg, rgba(2, 8, 14, 0.98), rgba(5, 7, 12, 0.97));
+      color: #fff;
+      font-family: system-ui, Arial, sans-serif;
+    }
+    .ka-menu-shell::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0, 212, 255, 0.055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 255, 0.055) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: radial-gradient(circle at center, black, transparent 76%);
+    }
+    .ka-menu-bg-orb {
+      position: fixed;
+      width: 380px;
+      height: 380px;
+      border-radius: 50%;
+      filter: blur(36px);
+      opacity: 0.34;
+      pointer-events: none;
+    }
+    .ka-orb-a { left: -110px; bottom: -90px; background: #00d4ff; }
+    .ka-orb-b { right: -130px; top: -100px; background: #ff2200; }
+    .ka-menu-panel {
+      position: relative;
+      width: min(1120px, calc(100vw - 48px));
+      min-height: min(720px, calc(100vh - 48px));
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+      padding: 28px;
+      border: 1px solid rgba(0, 212, 255, 0.30);
+      border-radius: 24px;
+      background: rgba(4, 10, 17, 0.86);
+      box-shadow: 0 0 44px rgba(0,0,0,0.58), inset 0 0 34px rgba(0, 212, 255, 0.045);
+      backdrop-filter: blur(10px);
+    }
+    .ka-topline { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .ka-brand-row { display: flex; align-items: center; gap: 14px; }
+    .ka-brand-chip {
+      width: 50px; height: 50px; border-radius: 15px;
+      display: flex; align-items: center; justify-content: center;
+      color: #001018; background: #00d4ff;
+      font-weight: 1000; letter-spacing: -1px;
+      box-shadow: 0 0 22px rgba(0, 212, 255, 0.45);
+    }
+    .ka-eyebrow { color: #9fefff; text-transform: uppercase; font-size: 12px; letter-spacing: 2px; font-weight: 900; }
+    .ka-status-dot { color: #b9c9d4; font-size: 13px; margin-top: 3px; }
+    .ka-status-dot span { display: inline-block; width: 8px; height: 8px; background: #22ff88; border-radius: 50%; box-shadow: 0 0 10px #22ff88; margin-right: 6px; }
+    .ka-stepper { display: flex; gap: 8px; align-items: center; }
+    .ka-step {
+      min-width: 78px;
+      padding: 7px 10px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 999px;
+      color: #7f8e99;
+      background: rgba(255,255,255,0.04);
+      text-align: center;
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .ka-step.active { color: #001018; border-color: #00d4ff; background: #00d4ff; box-shadow: 0 0 16px rgba(0,212,255,0.35); }
+    .ka-step.done { color: #22ff88; border-color: rgba(34,255,136,0.42); }
+    #menu-title {
+      font-size: clamp(44px, 7vw, 88px);
+      font-weight: 1000;
+      line-height: 0.88;
+      letter-spacing: 2px;
+      color: #fff;
+      text-shadow: 0 0 18px rgba(0, 212, 255, 0.35), 4px 4px 0 #000;
+    }
+    #menu-sub { color: #ffaa00; font-size: 16px; font-weight: 850; letter-spacing: 2px; text-transform: uppercase; margin: 12px 0 22px; }
+    .ka-menu-screen { display: none; animation: kaFade .18s ease-out; }
+    .ka-menu-screen.active { display: block; }
+    @keyframes kaFade { from { opacity: .35; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .ka-hero-layout { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 18px; align-items: stretch; }
+    .ka-hero-copy {
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 20px;
+      padding: 24px;
+      background:
+        linear-gradient(135deg, rgba(0,212,255,0.10), rgba(255,255,255,0.035)),
+        rgba(0,0,0,0.22);
+      min-height: 340px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .ka-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
+    .ka-stat-card { border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.055); border-radius: 14px; padding: 12px 14px; }
+    .ka-stat-card span { color: #8898a5; font-size: 11px; font-weight: 950; letter-spacing: 1.4px; text-transform: uppercase; }
+    .ka-stat-card b { display: block; margin-top: 4px; color: #fff; font-size: 22px; }
+    .ka-stat-card small { display:block; margin-top:3px; color:#708592; font-size:9px; font-weight:850; letter-spacing:.7px; text-transform:uppercase; }
+    .ka-stat-muted b { color: #00d4ff; font-size: 16px; }
+    .ka-mode-stack { display: grid; gap: 12px; }
+    .ka-mode-card, .ka-map-card, .ka-diff-card, .ka-nav-btn, .ka-link-btn {
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.055);
+      color: #fff;
+      border-radius: 16px;
+      padding: 16px;
+      text-align: left;
+      cursor: pointer;
+      transition: transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+      font-family: inherit;
+    }
+    .ka-mode-card:hover, .ka-map-card:not(.disabled):hover, .ka-diff-card:hover, .ka-nav-btn:hover, .ka-link-btn:hover { transform: translateY(-1px); border-color: rgba(0, 212, 255, 0.55); }
+    .ka-mode-card.active, .ka-map-card.selected, .ka-diff-card.selected { border-color: #00d4ff; background: rgba(0, 212, 255, 0.13); box-shadow: inset 0 0 20px rgba(0,212,255,0.06); }
+    .ka-mode-card.locked, .ka-map-card.disabled { opacity: 0.52; cursor: not-allowed; }
+    .ka-card-kicker { display: block; color: #ffaa00; font-size: 11px; font-weight: 950; letter-spacing: 1.6px; margin-bottom: 7px; text-transform: uppercase; }
+    .ka-mode-card strong, .ka-map-card strong, .ka-diff-card strong { display: block; font-size: 22px; margin-bottom: 5px; }
+    .ka-mode-card small, .ka-map-card small, .ka-diff-card small { color: #b6c0c8; font-size: 13px; line-height: 1.35; }
+    .ka-section-title { color: #d9f8ff; margin: 4px 0 11px; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; font-weight: 950; }
+    .ka-map-layout { display: grid; grid-template-columns: minmax(360px, 1.05fr) 0.95fr; gap: 18px; align-items: stretch; }
+    .ka-preview-stage {
+      position: relative;
+      min-height: 454px;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(0,212,255,0.30);
+      background: #060b10;
+      box-shadow: inset 0 0 32px rgba(0,212,255,0.05);
+    }
+    .ka-preview-stage::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.46)),
+        radial-gradient(circle at 50% 18%, transparent, rgba(0,0,0,0.30) 70%);
+    }
+    .ka-map-shot {
+      position: absolute;
+      inset: 0;
+      display: none;
+      background-size: cover;
+      background-position: center;
+    }
+    .ka-map-shot.active { display: block; }
+    .ka-map-shot.grid-bunker {
+      background:
+        radial-gradient(circle at 50% 42%, rgba(0,212,255,0.20), transparent 20%),
+        linear-gradient(90deg, transparent 0 15%, rgba(60,72,86,0.92) 15% 25%, transparent 25% 75%, rgba(60,72,86,0.92) 75% 85%, transparent 85%),
+        linear-gradient(0deg, transparent 0 15%, rgba(60,72,86,0.92) 15% 25%, transparent 25% 75%, rgba(60,72,86,0.92) 75% 85%, transparent 85%),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 42px),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.045) 0 2px, transparent 2px 42px),
+        linear-gradient(135deg, #1b1e28, #0c1017 62%, #141922);
+    }
+    .ka-map-shot.industrial-yard {
+      background:
+        linear-gradient(135deg, transparent 0 16%, rgba(255,96,34,0.75) 16% 24%, transparent 24% 38%, rgba(0,212,255,0.35) 38% 46%, transparent 46%),
+        repeating-linear-gradient(90deg, rgba(150,170,180,0.18) 0 4px, transparent 4px 64px),
+        linear-gradient(135deg, #161b20, #090e12);
+    }
+    .ka-map-shot.parking-garage {
+      background:
+        radial-gradient(circle at 28% 34%, rgba(255,170,0,0.25), transparent 8%),
+        radial-gradient(circle at 68% 62%, rgba(0,212,255,0.20), transparent 10%),
+        repeating-linear-gradient(90deg, rgba(210,210,210,0.16) 0 8px, transparent 8px 92px),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0 2px, transparent 2px 70px),
+        linear-gradient(135deg, #202026, #0b0d11);
+    }
+    .ka-map-shot.hospital-wing {
+      background:
+        linear-gradient(90deg, transparent 0 20%, rgba(225,235,235,0.15) 20% 22%, transparent 22% 78%, rgba(225,235,235,0.15) 78% 80%, transparent 80%),
+        linear-gradient(0deg, rgba(60,120,120,0.20) 0 12%, transparent 12% 88%, rgba(60,120,120,0.16) 88%),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0 3px, transparent 3px 54px),
+        linear-gradient(135deg, #1b2525, #070c0d);
+    }
+    .ka-preview-overlay {
+      position: absolute;
+      z-index: 2;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      display: grid;
+      gap: 10px;
+    }
+    .ka-preview-title { font-size: 34px; font-weight: 1000; line-height: 0.95; text-shadow: 3px 3px 0 #000; }
+    .ka-preview-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ka-pill { border-radius: 999px; padding: 5px 9px; background: rgba(0,0,0,0.52); border: 1px solid rgba(255,255,255,0.12); color: #dff8ff; font-size: 11px; font-weight: 950; letter-spacing: 1px; text-transform: uppercase; }
+    .ka-pill.good { color: #00140a; background: #22ff88; border-color: #22ff88; }
+    .ka-map-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .ka-map-card { display: grid; grid-template-columns: 104px 1fr; gap: 12px; align-items: center; min-height: 96px; padding: 10px; }
+    .ka-map-thumb {
+      height: 78px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.12);
+      background-size: cover;
+      background-position: center;
+      position: relative;
+    }
+    .ka-map-thumb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.28)); }
+    .ka-map-thumb.grid-bunker { background: linear-gradient(90deg, transparent 0 18%, #4c5661 18% 28%, transparent 28% 72%, #4c5661 72% 82%, transparent 82%), linear-gradient(0deg, transparent 0 18%, #4c5661 18% 28%, transparent 28% 72%, #4c5661 72% 82%, transparent 82%), #141923; }
+    .ka-map-thumb.industrial-yard { background: linear-gradient(135deg, transparent 0 18%, #c64b1b 18% 30%, transparent 30% 58%, #1690a8 58% 70%, transparent 70%), #12181d; }
+    .ka-map-thumb.parking-garage { background: repeating-linear-gradient(90deg, #333944 0 12px, transparent 12px 54px), repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 3px, transparent 3px 34px), #171a20; }
+    .ka-map-thumb.hospital-wing { background: linear-gradient(90deg, transparent 0 22%, rgba(200,230,230,.35) 22% 25%, transparent 25% 75%, rgba(200,230,230,.30) 75% 78%, transparent 78%), #162020; }
+    .ka-map-tag { display: inline-block; border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 950; letter-spacing: 1px; margin-bottom: 6px; text-transform: uppercase; }
+    .ka-map-tag.stable { color: #00140a; background: #22ff88; }
+    .ka-map-tag.soon { color: #130800; background: #ffaa00; }
+    .ka-map-detail { margin-top: 12px; display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+    .ka-map-detail div { background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; padding: 10px; color: #b6c0c8; font-size: 12px; }
+    .ka-map-detail b { display: block; color: #fff; font-size: 16px; margin-bottom: 2px; }
+    .ka-diff-layout { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; align-items: stretch; }
+    .ka-brief-card, .ka-diff-stack {
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(255,255,255,0.045);
+    }
+    .ka-diff-stack { display: grid; gap: 10px; }
+    .ka-diff-card { width: 100%; }
+    .ka-diff-card strong { font-size: 24px; }
+    .ka-diff-card .ka-diff-line { display: flex; justify-content: space-between; gap: 12px; color: #b6c0c8; font-size: 13px; margin-top: 8px; }
+    .ka-controls-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 18px; }
+    .ka-controls-grid .key-info { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #b9c9d4; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+    .ka-controls-grid .key-badge { color: #001018; background: #00d4ff; border-radius: 6px; padding: 4px 6px; font-weight: 950; white-space: nowrap; }
+    .ka-mobile-size-panel { margin: 16px 0 0; color: #fff; font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .ka-mobile-size-panel label { color: #00d4ff; text-transform: uppercase; font-weight: 950; letter-spacing: 1px; }
+    .ka-mobile-size-panel input { accent-color: #00d4ff; }
+    .ka-mobile-preview { display: flex; align-items: center; gap: 8px; color: #7f8e99; background: rgba(255,255,255,0.04); padding: 7px 9px; border-radius: 10px; }
+    .ka-preview-btn, .ka-preview-fire { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 950; color: #fff; border-radius: 50%; }
+    .ka-preview-btn { width: var(--mobile-btn-size, 52px); height: var(--mobile-btn-size, 52px); background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); }
+    .ka-preview-fire { width: calc(var(--mobile-btn-size, 52px) * 1.25); height: calc(var(--mobile-btn-size, 52px) * 1.25); background: rgba(255,34,0,0.4); border: 2px solid rgba(255,34,0,0.8); }
+    .ka-loading-wrap { margin-top: 18px; text-align: center; }
+    #loading-label { color: #00d4ff; font-size: 13px; font-weight: 950; letter-spacing: 1.8px; margin-bottom: 8px; }
+    #loading-bar-bg { width: min(360px, 100%); height: 9px; margin: 0 auto 14px; background: rgba(0,0,0,0.55); border: 1px solid #00d4ff; border-radius: 999px; overflow: hidden; }
+    #loading-bar-fill { width: 0%; height: 100%; background: linear-gradient(90deg, #00d4ff, #22ff88); transition: width 0.1s; }
+    .ka-nav-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
+    .ka-link-btn { color: #d9f8ff; background: transparent; padding: 13px 16px; }
+    .ka-nav-btn { color: #001018; background: linear-gradient(90deg, #00d4ff, #22ff88); font-weight: 1000; letter-spacing: 1.6px; text-align: center; padding: 14px 20px; }
+    #start-btn {
+      display: none;
+      width: 100%;
+      margin-top: 10px;
+      padding: 16px 22px;
+      border: 0;
+      border-radius: 14px;
+      color: #02070a;
+      background: linear-gradient(90deg, #00d4ff, #22ff88);
+      font-size: 22px;
+      font-weight: 1000;
+      letter-spacing: 2px;
+      cursor: pointer;
+      box-shadow: 0 0 24px rgba(0,212,255,0.35);
+    }
+    #start-btn:hover { filter: brightness(1.08); }
+
+    .ka-map-shot.neon-depot {
+      background:
+        radial-gradient(circle at 28% 30%, rgba(0,229,255,0.30), transparent 16%),
+        radial-gradient(circle at 72% 68%, rgba(255,59,213,0.25), transparent 18%),
+        linear-gradient(90deg, transparent 0 18%, rgba(0,229,255,0.26) 18% 20%, transparent 20% 80%, rgba(255,59,213,0.24) 80% 82%, transparent 82%),
+        repeating-linear-gradient(0deg, rgba(0,229,255,0.06) 0 2px, transparent 2px 48px),
+        repeating-linear-gradient(90deg, rgba(255,59,213,0.05) 0 2px, transparent 2px 48px),
+        linear-gradient(135deg, #101722, #050911 64%, #16091d);
+    }
+    .ka-map-thumb.neon-depot {
+      background:
+        linear-gradient(90deg, rgba(0,229,255,0.32) 0 8px, transparent 8px 34px, rgba(255,59,213,0.28) 34px 42px, transparent 42px),
+        linear-gradient(0deg, rgba(0,229,255,0.14), rgba(255,59,213,0.16)),
+        #071018;
+    }
+
+    .ka-map-shot.reactor-courtyard {
+      background:
+        radial-gradient(circle at 50% 48%, rgba(25,216,255,0.34), transparent 15%),
+        radial-gradient(circle at 24% 28%, rgba(255,138,34,0.24), transparent 13%),
+        radial-gradient(circle at 76% 72%, rgba(25,216,255,0.20), transparent 14%),
+        linear-gradient(90deg, transparent 0 12%, rgba(120,145,160,0.20) 12% 15%, transparent 15% 85%, rgba(120,145,160,0.20) 85% 88%, transparent 88%),
+        repeating-linear-gradient(0deg, rgba(255,204,34,0.07) 0 2px, transparent 2px 46px),
+        linear-gradient(135deg, #172127, #071015 62%, #1c1209);
+    }
+    .ka-map-thumb.reactor-courtyard {
+      background:
+        radial-gradient(circle at 50% 50%, rgba(25,216,255,0.58) 0 10px, transparent 11px),
+        linear-gradient(90deg, rgba(255,138,34,0.24) 0 9px, transparent 9px 38px, rgba(25,216,255,0.24) 38px 47px, transparent 47px),
+        #111a20;
+    }
+    .ka-settings-layout {
+      display: grid;
+      grid-template-columns: 0.85fr 1.15fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+    .ka-settings-card {
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255,255,255,0.045);
+    }
+    .ka-settings-grid {
+      display: grid;
+      gap: 10px;
+    }
+    .ka-setting-row {
+      display: grid;
+      grid-template-columns: 1fr 190px;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 14px;
+      background: rgba(0,0,0,0.22);
+    }
+    .ka-setting-row.disabled {
+      opacity: 0.46;
+    }
+    .ka-setting-row strong {
+      display: block;
+      color: #fff;
+      font-size: 15px;
+      margin-bottom: 3px;
+    }
+    .ka-setting-row small {
+      color: #9babb7;
+      line-height: 1.35;
+    }
+    .ka-setting-control,
+    .ka-setting-row select {
+      width: 100%;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(0,212,255,0.42);
+      background: #061018;
+      color: #fff;
+      font-weight: 850;
+    }
+    .ka-setting-row input[type="range"] {
+      width: 100%;
+      accent-color: #00d4ff;
+    }
+    .ka-disabled-pill {
+      display: inline-block;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(255,170,0,0.16);
+      color: #ffaa00;
+      border: 1px solid rgba(255,170,0,0.30);
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+
+    /* ── RESPONSIVE MENU POLISH ──
+       Keep the menu as one game panel, prevent browser-level scrollbars,
+       and allow only the active menu page to scroll on short / scaled displays. */
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+    * { box-sizing: border-box; }
+    .ka-menu-shell {
+      position: fixed;
+      overflow: hidden;
+      padding: clamp(10px, 1.8vw, 24px);
+    }
+    .ka-menu-panel {
+      width: min(1120px, calc(100vw - clamp(20px, 3vw, 48px)));
+      height: min(760px, calc(100dvh - clamp(20px, 3vw, 48px)));
+      min-height: 0;
+      max-height: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: clamp(16px, 2vw, 28px);
+    }
+    .ka-topline {
+      flex: 0 0 auto;
+      margin-bottom: clamp(10px, 1.6vh, 20px);
+    }
+    .ka-menu-screen {
+      min-height: 0;
+      overflow: hidden;
+    }
+    .ka-menu-screen.active {
+      display: flex;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      flex-direction: column;
+      scrollbar-gutter: stable;
+      padding-right: 4px;
+    }
+    #menu-title {
+      font-size: clamp(38px, 7vmin, 82px);
+    }
+    #menu-sub {
+      margin: clamp(8px, 1.3vh, 12px) 0 clamp(14px, 2vh, 22px);
+    }
+    .ka-hero-copy {
+      min-height: clamp(230px, 42vh, 340px);
+    }
+    .ka-preview-stage {
+      min-height: clamp(290px, 50vh, 454px);
+    }
+    .ka-map-card {
+      min-height: 88px;
+    }
+    .ka-setting-row {
+      grid-template-columns: minmax(0, 1fr) minmax(160px, 190px);
+    }
+
+    @media (max-height: 760px) {
+      .ka-menu-panel {
+        height: calc(100dvh - 16px);
+        padding: 14px;
+        border-radius: 18px;
+      }
+      .ka-topline { margin-bottom: 10px; }
+      .ka-brand-chip { width: 42px; height: 42px; border-radius: 12px; }
+      .ka-status-dot { font-size: 12px; }
+      .ka-hero-copy { min-height: 220px; padding: 16px; }
+      .ka-stats-row { margin-top: 14px; }
+      .ka-mode-card, .ka-map-card, .ka-diff-card, .ka-nav-btn, .ka-link-btn { padding: 12px; }
+      .ka-preview-stage { min-height: 300px; }
+      .ka-map-thumb { height: 64px; }
+      .ka-settings-card { padding: 14px; }
+      .ka-setting-row { padding: 10px 12px; }
+    }
+
+    @media (max-width: 980px), (max-height: 700px) {
+      .ka-hero-layout,
+      .ka-map-layout,
+      .ka-diff-layout,
+      .ka-settings-layout,
+      .ka-stats-row {
+        grid-template-columns: 1fr;
+      }
+      .ka-controls-grid { display: none; }
+      .ka-preview-stage { min-height: 300px; }
+    }
+
+    @media (max-width: 920px) {
+      .ka-menu-panel { padding: 20px; }
+      .ka-hero-layout, .ka-map-layout, .ka-diff-layout, .ka-settings-layout, .ka-stats-row { grid-template-columns: 1fr; }
+      .ka-stepper { display: none; }
+      .ka-controls-grid { display: none; }
+      .ka-preview-stage { min-height: 340px; }
+      .ka-map-card { grid-template-columns: 88px 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="portrait-warning">
+<div style="font-size: 60px; margin-bottom: 20px;">🔄</div>
+<h2 style="letter-spacing: 2px;">PLEASE ROTATE DEVICE</h2>
+<p style="color: #888;">This game requires landscape mode.</p>
+</div>
+<canvas id="c"></canvas>
+<div id="hud">
+<style>
+      @keyframes radar-spin { from { transform: translateY(-50%) rotate(0deg); } to { transform: translateY(-50%) rotate(360deg); } }
+    </style>
+<div id="minimap-wrap" style="position: absolute; top: 20px; left: 20px; width: 140px; height: 140px; border-radius: 50%; border: 3px solid #00d4ff; background: rgba(0, 15, 30, 0.7); box-shadow: 0 0 15px rgba(0, 212, 255, 0.4); overflow: hidden; z-index: 10;">
+<canvas height="140" id="minimap" style="position: absolute; top: 0; left: 0; z-index: 1;" width="140"></canvas>
+<div style="position: absolute; top: 50%; left: 50%; width: 50%; height: 2px; background: linear-gradient(90deg, rgba(0,212,255,0), #00d4ff); transform-origin: left center; animation: radar-spin 2s linear infinite; z-index: 2;"></div>
+</div>
+<div id="crosshair">
+<div class="ch ch-t"></div><div class="ch ch-b"></div>
+<div class="ch ch-l"></div><div class="ch ch-r"></div>
+</div>
+<div id="damage-indicators-container" style="position: absolute; top: 50%; left: 50%; width: 0; height: 0; z-index: 10; pointer-events: none;"></div>
+<div id="hit-marker">
+<div class="hm hm-tl"></div><div class="hm hm-tr"></div>
+<div class="hm hm-bl"></div><div class="hm hm-br"></div>
+</div>
+<div id="kills-display" style="position: absolute; top: 20px; right: 20px; color: #fff; font-family: sans-serif; font-size: 20px; font-weight: bold; letter-spacing: 1px; text-shadow: 2px 2px 4px #000; z-index: 10;">0 KILLS</div>
+<div id="health-wrap">
+<span id="health-icon">♥</span>
+<div id="health-bar-bg"><div id="health-fill"></div></div>
+<span id="health-label">100</span>
+</div>
+<div id="score-display" style="position: absolute; top: 60px; right: 20px; text-align: right; color: #ffaa00; font-family: sans-serif; font-size: 38px; font-weight: bold; letter-spacing: 2px; text-shadow: 3px 3px 0 #000; z-index: 10;">
+      0 <span style="font-size: 20px; color: #fff;">PTS</span>
+</div>
+<div id="round-counter-wrap" style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); color: #fff; font-family: sans-serif; font-size: 24px; font-weight: bold; letter-spacing: 2px; text-shadow: 2px 2px 4px #000; z-index: 10;">
+      ROUND: <span id="round-num" style="color: #ff2200;">1</span>
+</div>
+<div id="wave-banner" style="display: none; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); color: #ff2200; font-family: sans-serif; font-size: 48px; font-weight: bold; letter-spacing: 5px; text-shadow: 3px 3px 6px #000; z-index: 10; pointer-events: none; text-align: center; animation: pulse 1.5s infinite;">
+      WAVE 1 BEGINS
+    </div>
+<div id="interaction-prompt" style="
+      display: none; 
+      position: absolute; 
+      top: 58%; 
+      left: 50%; 
+      transform: translate(-50%, -50%); 
+      color: #00d4ff; 
+      font-family: sans-serif; 
+      font-weight: bold; 
+      text-shadow: 2px 2px 4px #000; 
+      font-size: 18px; 
+      pointer-events: none;
+      z-index: 10;">
+      Press [E] to pick up Weapon
+    </div>
+<div id="ammo-wrap" style="position: absolute; top: 65px; left: 50%; transform: translateX(-50%); text-align: center; font-family: sans-serif; z-index: 10; text-shadow: 2px 2px 4px #000;">
+<div id="weapon-name" style="color: #00d4ff; font-size: 14px; font-weight: bold; letter-spacing: 1px; margin-bottom: 2px;">AR · 15</div>
+<div style="display: flex; justify-content: center; align-items: baseline; gap: 2px;">
+<span id="ammo-current" style="color: #fff; font-size: 32px; font-weight: bold;">30</span>
+<span id="ammo-reserve" style="color: #888; font-size: 18px; font-weight: bold;">/ 90</span>
+</div>
+</div>
+<div id="reload-wrap" style="display: none; position: absolute; top: 58%; left: 50%; transform: translate(-50%, -50%); width: 160px; text-align: center; z-index: 10; font-family: sans-serif;">
+<div id="reload-label" style="color: #ffaa00; font-size: 12px; font-weight: bold; letter-spacing: 2px; margin-bottom: 5px; text-shadow: 1px 1px 2px #000;">RELOADING</div>
+<div id="reload-bar-bg" style="width: 100%; height: 6px; background: rgba(0,0,0,0.5); border: 1px solid #ffaa00; border-radius: 3px; overflow: hidden;">
+<div id="reload-bar" style="width: 0%; height: 100%; background: #ffaa00;"></div>
+</div>
+</div>
+<div aria-live="polite" class="hud-status-rail" id="hud-status-rail">
+<div class="hud-chip-group" id="powerup-timers"></div>
+<div class="hud-chip-group" id="perk-indicators"></div>
+</div>
+<div aria-live="polite" class="progression-panel" id="progression-panel">
+<div class="progression-level-badge">LV <b id="progression-level">1</b></div>
+<div class="progression-xp" id="progression-xp">0/575 XP</div>
+</div>
+<div aria-live="polite" class="objective-panel" id="objective-panel">
+<div class="objective-kicker">MAP CONTRACT</div>
+<div class="objective-title" id="objective-title">BUNKER CLEARANCE</div>
+<div class="objective-description" id="objective-description">Eliminate 25 enemies.</div>
+<div class="objective-meter"><div id="objective-progress-fill"></div></div>
+<div class="objective-progress" id="objective-progress">0/25</div>
+</div>
+<div aria-live="polite" class="map-system-panel" id="map-system-panel" style="display:none;">
+<div class="map-system-kicker">REACTOR SYSTEMS</div>
+<div class="map-system-row"><span>STEAM VENTS</span><b id="map-system-hazard">IDLE</b></div>
+<div class="map-system-row"><span>COOLANT OVERRIDE</span><b id="map-system-defense">READY</b></div>
+</div>
+<div class="challenge-panel-wrap">
+<div class="challenge-panel-title">RUN CHALLENGES</div>
+<div aria-live="polite" class="challenge-panel" id="challenge-panel"></div>
+</div>
+<div aria-live="polite" class="hud-warning-stack" id="hud-warning-stack">
+<div class="hud-warning danger" id="low-health-warning">LOW HEALTH</div>
+<div class="hud-warning ammo" id="low-ammo-warning">LOW AMMO</div>
+</div>
+<div aria-live="polite" class="shop-feedback-panel" id="shop-feedback-panel">
+<div class="shop-feedback-title" id="shop-feedback-title">SHOP</div>
+<div class="shop-feedback-body" id="shop-feedback-body">Ready</div>
+<div class="shop-feedback-meter" id="shop-feedback-meter"><div id="shop-feedback-fill"></div></div>
+</div>
+
+<div class="tutorial-panel" id="tutorial-panel" style="display:none;">
+<div class="tutorial-kicker">FIELD TRAINING <span id="tutorial-progress">1/5</span></div>
+<strong id="tutorial-title">MOVE</strong>
+<p id="tutorial-body">Use your movement controls to leave the spawn point.</p>
+</div>
+<div id="performance-stats-panel" style="display:none; position:absolute; left:20px; bottom:24px; min-width:190px; padding:10px 12px; border:1px solid rgba(0,212,255,0.45); border-radius:10px; background:rgba(0,10,18,0.72); color:#d9f8ff; font-family:sans-serif; font-size:12px; font-weight:bold; letter-spacing:1px; line-height:1.65; text-shadow:1px 1px 2px #000; z-index:11; pointer-events:none;">
+<div style="color:#00d4ff; margin-bottom:4px;">PERFORMANCE</div>
+<div>FPS: <span id="perf-fps" style="color:#ffaa00;">60</span></div>
+<div>FRAME: <span id="perf-frame-ms" style="color:#fff;">0 ms</span></div>
+<div>WORST: <span id="perf-worst-ms" style="color:#fff;">0 ms</span></div>
+<div>ENEMIES: <span id="perf-enemies" style="color:#fff;">0</span></div>
+<div>DRAWS: <span id="perf-draw-calls" style="color:#fff;">0</span></div>
+</div>
+<div id="damage-flash"></div>
+</div>
+<div id="mobile-ui" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 50; pointer-events: none; touch-action: none;">
+<button id="btn-mobile-pause" style="position: absolute; top: 20px; right: 20px; width: 45px; height: 45px; border-radius: 8px; background: rgba(0, 0, 0, 0.6); color: #ffaa00; border: 2px solid #ffaa00; font-weight: bold; font-size: 16px; pointer-events: auto; z-index: 60; cursor: pointer;">║║</button>
+<div class="draggable-btn" data-key="joy" id="joystick-left" style="position: absolute; bottom: 40px; left: 40px; width: var(--sz-joy, calc(var(--mobile-btn-size, 52px) * 2.33)); height: var(--sz-joy, calc(var(--mobile-btn-size, 52px) * 2.33)); background: rgba(255,255,255,0.05); border: 2px solid rgba(255,255,255,0.15); border-radius: 50%; pointer-events: auto;">
+<div id="joystick-knob" style="position: absolute; top: 50%; left: 50%; width: 60px; height: 60px; background: rgba(0, 212, 255, 0.4); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none;"></div>
+</div>
+<div id="touch-look-area" style="position: absolute; top: 0; right: 0; width: 50%; height: 100%; pointer-events: auto;"></div>
+<button class="draggable-btn" data-key="switch" id="btn-switch" style="position: absolute; bottom: 105px; right: 175px; width: var(--sz-switch, var(--mobile-btn-size, 52px)); height: var(--sz-switch, var(--mobile-btn-size, 52px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">SWP</button>
+<button class="draggable-btn" data-key="interact" id="btn-interact" style="position: absolute; bottom: 105px; right: 100px; width: var(--sz-interact, var(--mobile-btn-size, 52px)); height: var(--sz-interact, var(--mobile-btn-size, 52px)); border-radius: 50%; background: rgba(255,170,0,0.3); color: white; border: 1px solid rgba(255,170,0,0.5); font-weight: bold; font-size: 12px; pointer-events: auto;">USE</button>
+<button class="draggable-btn" data-key="reload" id="btn-reload" style="position: absolute; bottom: 105px; right: 25px; width: var(--sz-reload, var(--mobile-btn-size, 52px)); height: var(--sz-reload, var(--mobile-btn-size, 52px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">RLD</button>
+<button class="draggable-btn" data-key="jump" id="btn-jump" style="position: absolute; bottom: 25px; right: 115px; width: var(--sz-jump, var(--mobile-btn-size, 52px)); height: var(--sz-jump, var(--mobile-btn-size, 52px)); border-radius: 50%; background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.3); font-weight: bold; font-size: 12px; pointer-events: auto;">JMP</button>
+<button class="draggable-btn mobile-ads-btn" data-key="ads" id="btn-ads" aria-label="Hold to aim down sights" style="position: absolute; bottom: 175px; right: 70px; width: var(--sz-ads, 46px); height: var(--sz-ads, 46px); border-radius: 50%; background: rgba(0,212,255,0.18); color: white; border: 1px solid rgba(0,212,255,0.62); font-weight: bold; font-size: 11px; pointer-events: auto; box-shadow: 0 0 8px rgba(0,212,255,0.16);">ADS</button>
+<button class="draggable-btn" data-key="shoot" id="btn-shoot" style="position: absolute; bottom: 25px; right: 25px; width: var(--sz-shoot, calc(var(--mobile-btn-size, 52px) * 1.25)); height: var(--sz-shoot, calc(var(--mobile-btn-size, 52px) * 1.25)); border-radius: 50%; background: rgba(255,34,0,0.45); color: white; border: 2px solid rgba(255,34,0,0.8); font-weight: bold; font-size: 14px; pointer-events: auto; box-shadow: 0 0 10px rgba(255,34,0,0.2);">FIRE</button>
+<div id="layout-editor-bar" style="display: none; position: absolute; top: 15px; left: 50%; transform: translateX(-50%); width: 85%; background: rgba(0,0,0,0.9); border: 2px solid #00d4ff; padding: 10px; border-radius: 8px; z-index: 70; justify-content: space-between; align-items: center; pointer-events: auto; font-family: sans-serif; box-shadow: 0 0 20px rgba(0,212,255,0.3); touch-action: auto;">
+<div style="color: #fff; font-size: 12px; font-weight: bold;">
+        SELECT A BUTTON, DRAG IT, AND ADJUST SIZE:
+        <input id="layout-element-size" max="120" min="40" style="margin-left: 10px; vertical-align: middle; width: 130px; touch-action: auto;" type="range" value="60"/>
+</div>
+<div>
+<button id="layout-save-btn" style="background: #00d4ff; color: #000; border: none; font-weight: bold; padding: 6px 15px; border-radius: 4px; margin-right: 10px; cursor: pointer;">SAVE</button>
+<button id="layout-cancel-btn" style="background: transparent; color: #ff2200; border: 1px solid #ff2200; font-weight: bold; padding: 5px 12px; border-radius: 4px; cursor: pointer;">CANCEL</button>
+</div>
+</div>
+</div>
+<div id="floating-texts-container" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; overflow: hidden;"></div>
+<div class="ka-menu-shell" id="menu">
+<div class="ka-menu-bg-orb ka-orb-a"></div>
+<div class="ka-menu-bg-orb ka-orb-b"></div>
+<div class="ka-menu-panel">
+<div class="ka-topline">
+<div class="ka-brand-row">
+<div class="ka-brand-chip">KA</div>
+<div>
+<div class="ka-eyebrow">Khadija Protocol</div>
+<div class="ka-status-dot"><span></span> Procedural weapons + zombie survival</div>
+</div>
+</div>
+<div aria-label="Menu progress" class="ka-stepper">
+<div class="ka-step active" data-step-dot="home">Mode</div>
+<div class="ka-step" data-step-dot="map">Arena</div>
+<div class="ka-step" data-step-dot="difficulty">Loadout</div>
+</div>
+</div>
+<select aria-label="Map Select" id="map-select" style="display:none;">
+<option selected="" value="grid_bunker">Grid Bunker</option>
+<option value="industrial_yard">Industrial Yard</option>
+<option value="neon_depot">Neon Depot</option>
+<option value="parking_garage">Parking Garage</option>
+<option value="hospital_wing">Hospital Wing</option>
+<option value="reactor_courtyard">Reactor Courtyard</option>
+</select>
+<select aria-label="Difficulty Select" id="diff-select" style="display:none;">
+<option value="0.75">Easy</option>
+<option selected="" value="1.0">Normal</option>
+<option value="1.5">Hard</option>
+</select>
+<section class="ka-menu-screen active" data-menu-screen="home">
+<div class="ka-hero-layout">
+<div class="ka-hero-copy">
+<div id="menu-title">KHADIJA'S ARENA</div>
+<div id="menu-sub">Survive waves. Learn each arena. Master the rotation.</div>
+<div class="ka-stats-row">
+<div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
+<div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
+<div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-achievements">0</span> achievements</small></div>
+<div class="ka-stat-card ka-stat-muted"><span>Build</span><b>RELEASE CANDIDATE</b></div>
+</div>
+</div>
+<div class="ka-mode-stack">
+<button class="ka-mode-card active" data-next-screen="map" type="button">
+<span class="ka-card-kicker">Mode</span>
+<strong>Single Player</strong>
+<small>Wave survival with procedural weapons and procedural zombies. Choose from six arenas, pick a difficulty, then deploy.</small>
+</button>
+<button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" type="button">
+          <span class="ka-card-kicker">Online alpha</span>
+          <strong>Co-op Multiplayer</strong>
+          <small>Create or join a private 2–4 player room. Lobby, synchronized launch, movement, aim, sprint, weapon state, and remote firing effects are active.</small>
+        </button>
+<button class="ka-nav-btn" data-next-screen="map" type="button">Continue to Arena Select →</button>
+<button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
+</div>
+</div>
+</section>
+<section class="ka-menu-screen" data-menu-screen="map">
+<div class="ka-section-title">Select arena</div>
+<div class="ka-map-layout">
+<div aria-label="Selected map preview" class="ka-preview-stage">
+<div class="ka-map-shot grid-bunker active" data-preview-shot="grid_bunker"></div>
+<div class="ka-map-shot industrial-yard" data-preview-shot="industrial_yard"></div>
+<div class="ka-map-shot neon-depot" data-preview-shot="neon_depot"></div>
+<div class="ka-map-shot parking-garage" data-preview-shot="parking_garage"></div>
+<div class="ka-map-shot hospital-wing" data-preview-shot="hospital_wing"></div>
+<div class="ka-map-shot reactor-courtyard" data-preview-shot="reactor_courtyard"></div>
+<div class="ka-preview-overlay">
+<div class="ka-preview-title" id="ka-preview-title">The Grid Bunker</div>
+<div class="ka-preview-meta">
+<span class="ka-pill good" id="ka-preview-status">Stable</span>
+<span class="ka-pill" id="ka-preview-size">10 × 10 grid</span>
+<span class="ka-pill" id="ka-preview-style">Close quarters</span>
+<span class="ka-pill" id="ka-preview-recommend">Normal</span>
+</div>
+<div class="ka-map-detail">
+<div><b id="ka-preview-spawns">Open</b> Spawn style</div>
+<div><b id="ka-preview-risk">Medium</b> Difficulty feel</div>
+<div><b id="ka-preview-nav">Simple</b> Zombie pathing</div>
+</div>
+</div>
+</div>
+<div class="ka-map-grid">
+<button class="ka-map-card selected" data-map="grid_bunker" type="button">
+<div class="ka-map-thumb grid-bunker"></div>
+<div>
+<span class="ka-map-tag stable">Playable</span>
+<strong>Grid Bunker</strong>
+<small>Classic survival baseline with tight lanes, gates, traps, and clear training flow.</small>
+</div>
+</button>
+<button class="ka-map-card" data-map="industrial_yard" type="button">
+<div class="ka-map-thumb industrial-yard"></div>
+<div>
+<span class="ka-map-tag stable">Playable</span>
+<strong>Industrial Yard</strong>
+<small>Open warm-lit container yard with wider lanes, long sightlines, and trap zones.</small>
+</div>
+</button>
+<button class="ka-map-card" data-map="neon_depot" type="button">
+<div class="ka-map-thumb neon-depot"></div>
+<div>
+<span class="ka-map-tag stable">Playable</span>
+<strong>Neon Depot</strong>
+<small>Neon transit arena with open lanes, security gates, side barricades, and outer pressure.</small>
+</div>
+</button>
+<button class="ka-map-card" data-map="parking_garage" type="button">
+<div class="ka-map-thumb parking-garage"></div>
+<div>
+<span class="ka-map-tag stable">Playable</span>
+<strong>Parking Garage</strong>
+<small>Concrete deck with pillars, parked cars, security gate flow, and corner pressure.</small>
+</div>
+</button>
+<button class="ka-map-card" data-map="hospital_wing" type="button">
+<div class="ka-map-thumb hospital-wing"></div>
+<div>
+<span class="ka-map-tag stable">Playable</span>
+<strong>Hospital Wing</strong>
+<small>Horror corridor ward with treatment rooms, quarantine gate flow, and locked pressure.</small>
+</div>
+</button>
+<button class="ka-map-card" data-map="reactor_courtyard" type="button">
+<div class="ka-map-thumb reactor-courtyard"></div>
+<div>
+<span class="ka-map-tag stable">New</span>
+<strong>Reactor Courtyard</strong>
+<small>Single-floor coolant yard with randomized contract zones, steam vents, and a purchasable reactor defense.</small>
+</div>
+</button>
+</div>
+</div>
+<div class="ka-nav-row">
+<button class="ka-link-btn" data-next-screen="home" type="button">← Back</button>
+<button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
+<button class="ka-nav-btn" data-next-screen="difficulty" type="button">Continue to Loadout →</button>
+</div>
+</section>
+<section class="ka-menu-screen" data-menu-screen="difficulty">
+<div class="ka-section-title">Mission setup</div>
+<div class="ka-diff-layout">
+<div class="ka-brief-card">
+<span class="ka-card-kicker">Selected arena</span>
+<strong id="ka-brief-map" style="display:block;font-size:32px;margin-bottom:8px;">The Grid Bunker</strong>
+<small id="ka-brief-desc" style="color:#b6c0c8;line-height:1.5;display:block;">Classic containment bunker flow with tight lanes, doors, traps, and reliable survival pacing.</small>
+<div class="ka-controls-grid" id="controls-grid">
+<div class="key-info"><span class="key-badge">W A S D</span><span>MOVE</span></div>
+<div class="key-info"><span class="key-badge">MOUSE</span><span>AIM</span></div>
+<div class="key-info"><span class="key-badge">CLICK</span><span>SHOOT</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="reload">R</span><span>RELOAD</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="interact">E</span><span>INTERACT</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="switchWeapon">Q</span><span>SWITCH</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="jump">SPACE</span><span>JUMP</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="sprint">SHIFT</span><span>SPRINT</span></div>
+<div class="key-info"><span class="key-badge" data-binding-action="pause">ESC</span><span>PAUSE</span></div>
+<div class="key-info"><span class="key-badge">F6</span><span>GRAPHICS</span></div>
+</div>
+</div>
+<div class="ka-diff-stack">
+<button class="ka-diff-card" data-diff="0.75" type="button">
+<span class="ka-card-kicker">Difficulty</span>
+<strong>Easy</strong>
+<small>Lower pressure while testing maps, controls, and mobile layout.</small>
+<div class="ka-diff-line"><span>Enemy pressure</span><b>Low</b></div>
+</button>
+<button class="ka-diff-card selected" data-diff="1.0" type="button">
+<span class="ka-card-kicker">Recommended</span>
+<strong>Normal</strong>
+<small>Balanced wave survival for the current procedural zombie system.</small>
+<div class="ka-diff-line"><span>Enemy pressure</span><b>Standard</b></div>
+</button>
+<button class="ka-diff-card" data-diff="1.5" type="button">
+<span class="ka-card-kicker">Challenge</span>
+<strong>Hard</strong>
+<small>More aggressive tuning for high-score runs.</small>
+<div class="ka-diff-line"><span>Enemy pressure</span><b>High</b></div>
+</button>
+<div class="ka-loading-wrap" id="loading-container">
+<div id="loading-label">LOADING ARENA ASSETS... <span id="loading-pct">0%</span></div>
+<div id="loading-bar-bg"><div id="loading-bar-fill"></div></div>
+</div>
+<button id="start-btn" style="display:none;">▶ DEPLOY TO ARENA</button>
+</div>
+</div>
+<div class="ka-nav-row">
+<button class="ka-link-btn" data-next-screen="map" type="button">← Back to Arena</button>
+<button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
+</div>
+</section>
+<section class="ka-menu-screen" data-menu-screen="settings">
+<div class="ka-section-title">Settings</div>
+<div class="ka-settings-layout">
+<div class="ka-settings-card">
+<span class="ka-card-kicker">Player settings</span>
+<strong style="display:block;font-size:32px;margin-bottom:8px;">Game Options</strong>
+<small style="color:#b6c0c8;line-height:1.5;display:block;">Graphics, audio, rebindable controls, controller tuning, mobile aim, accessibility, and release checks are active.</small>
+<div class="ka-mobile-size-panel" style="margin-top:18px;">
+<label for="btn-size-slider">Mobile button size</label>
+<input id="btn-size-slider" max="90" min="42" type="range" value="52"/>
+<div class="ka-mobile-preview">
+<span>Preview</span>
+<div class="ka-preview-btn">SWP</div>
+<div class="ka-preview-fire">FIRE</div>
+</div>
+</div>
+
+<div class="release-readiness-card">
+<span>BUILD READINESS</span>
+<b data-state="checking" id="release-validation-status">CHECKING…</b>
+<small>Use <code>KAValidateRelease()</code> for the full browser report.</small>
+</div>
+</div>
+<div class="ka-settings-grid">
+<div class="ka-setting-row">
+<div>
+<strong>Graphics Quality</strong>
+<small>Auto can choose a safe profile, promote when FPS is healthy, and downgrade if FPS is weak.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="graphics-quality-select">
+<option value="auto">Auto Recommended</option>
+<option value="low">Low Performance</option>
+<option value="medium">Medium Balanced</option>
+<option value="high">High Quality</option>
+</select>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="graphics-quality-current" style="color:#ffaa00;font-weight:900;">AUTO</span></small>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Master Volume</strong>
+<small>Controls all game sound effects. Saved automatically.</small>
+</div>
+<div>
+<input id="master-volume-slider" max="100" min="0" type="range" value="80"/>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="master-volume-current" style="color:#ffaa00;font-weight:900;">80%</span></small>
+</div>
+</div>
+<div class="ka-setting-row disabled">
+<div>
+<strong>Music Volume</strong>
+<small>Reserved for future menu/combat music.</small>
+</div>
+<div><input disabled="" max="100" min="0" type="range" value="60"/><span class="ka-disabled-pill">Disabled</span></div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Mouse Sensitivity</strong>
+<small>Controls desktop mouse look and mobile look drag speed. Saved automatically.</small>
+</div>
+<div>
+<input id="mouse-sensitivity-slider" max="150" min="50" type="range" value="100"/>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="mouse-sensitivity-current" style="color:#ffaa00;font-weight:900;">100%</span></small>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Field of View</strong>
+<small>Controls normal camera FOV. ADS FOV is tuned automatically from this value.</small>
+</div>
+<div>
+<input id="fov-slider" max="100" min="70" type="range" value="82"/>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="fov-current" style="color:#ffaa00;font-weight:900;">82°</span></small>
+</div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>Crosshair Style</strong><small>Choose a classic four-line, compact dot, or ring sight.</small></div>
+<div><select class="ka-setting-control" id="crosshair-style-select"><option value="classic">Classic</option><option value="dot">Dot</option><option value="ring">Ring</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Crosshair Color</strong><small>Use a high-visibility color without changing hit-marker feedback.</small></div>
+<div><select class="ka-setting-control" id="crosshair-color-select"><option value="white">White</option><option value="cyan">Cyan</option><option value="green">Green</option><option value="yellow">Yellow</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Crosshair Size</strong><small>Scale the aiming reticle from 80% to 150%.</small></div>
+<div><input id="crosshair-size-slider" max="150" min="80" type="range" value="100"/><small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="crosshair-size-current" style="color:#ffaa00;font-weight:900;">100%</span></small></div>
+</div>
+
+<div class="ka-setting-row">
+<div>
+<strong>Damage Indicators</strong>
+<small>Toggle directional red hit arcs when enemies damage you.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="damage-indicators-select">
+<option value="on">On</option>
+<option value="off">Off</option>
+</select>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Show Performance Stats</strong>
+<small>Show a small FPS / frame-time panel during gameplay.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="performance-stats-select">
+<option value="off">Off</option>
+<option value="on">On</option>
+</select>
+</div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>Controller</strong><small id="controller-status">NOT CONNECTED</small><small>Standard Xbox/PlayStation browser mapping: left stick move, right stick aim, triggers aim/fire.</small></div>
+<div><input id="controller-sensitivity-slider" max="180" min="50" type="range" value="100"/><small style="display:block;margin-top:6px;color:#8aa;">Look: <span id="controller-sensitivity-current" style="color:#ffaa00;font-weight:900;">100%</span></small></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Controller Deadzone</strong><small>Increase this if a stick drifts while untouched.</small></div>
+<div><input id="controller-deadzone-slider" max="35" min="8" type="range" value="16"/><small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="controller-deadzone-current" style="color:#ffaa00;font-weight:900;">16%</span></small></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Controller Invert Y</strong><small>Invert vertical right-stick aiming.</small></div>
+<div><select class="ka-setting-control" id="controller-invert-y-select"><option value="off">Off</option><option value="on">On</option></select></div>
+</div>
+<div class="ka-setting-row mobile-only-setting">
+<div><strong>Mobile Look Sensitivity</strong><small>Separate touch-look speed from desktop mouse sensitivity.</small></div>
+<div><input id="mobile-look-sensitivity-slider" max="170" min="55" type="range" value="100"/><small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="mobile-look-sensitivity-current" style="color:#ffaa00;font-weight:900;">100%</span></small></div>
+</div>
+<div class="ka-setting-row mobile-only-setting">
+<div><strong>Mobile Haptics</strong><small>Short vibration feedback when action buttons are pressed, where supported.</small></div>
+<div><select class="ka-setting-control" id="mobile-haptics-select"><option value="on">On</option><option value="off">Off</option></select></div>
+</div>
+<div class="ka-setting-row mobile-only-setting">
+<div><strong>Mobile Auto Sprint</strong><small>Push the left joystick strongly forward to sprint automatically. No extra sprint button is required.</small></div>
+<div><select class="ka-setting-control" id="mobile-auto-sprint-select"><option value="on">On</option><option value="off">Off</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>HUD Scale</strong><small>Scale core combat HUD elements between 85% and 130%.</small></div>
+<div><input id="hud-scale-slider" max="130" min="85" type="range" value="100"/><small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="hud-scale-current" style="color:#ffaa00;font-weight:900;">100%</span></small></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Reduced Motion</strong><small>Greatly reduces screen shake and disables nonessential HUD animation.</small></div>
+<div><select class="ka-setting-control" id="reduced-motion-select"><option value="off">Off</option><option value="on">On</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>High Contrast HUD</strong><small>Strengthens panel backgrounds, borders, labels, and reticle visibility.</small></div>
+<div><select class="ka-setting-control" id="high-contrast-select"><option value="off">Off</option><option value="on">On</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Damage Flash</strong><small>Use normal, reduced, or disabled full-screen red damage feedback.</small></div>
+<div><select class="ka-setting-control" id="damage-flash-select"><option value="normal">Normal</option><option value="low">Reduced</option><option value="off">Off</option></select></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Tutorial Prompts</strong><small id="tutorial-status">Training available on the next run</small><small>Includes first-run controls and one-time enemy introductions.</small></div>
+<div><select class="ka-setting-control" id="tutorial-prompts-select"><option value="on">On</option><option value="off">Off</option></select><button class="ka-link-btn" id="reset-tutorial-btn" style="width:100%;margin-top:8px;text-align:center;" type="button">Reset Training</button></div>
+</div>
+<div class="ka-setting-row">
+<div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
+<div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Adaptive AI Memory</strong>
+<small>The Director remembers recent playstyle separately for each map. Current-run evidence and mercy rules always take priority.</small>
+<small id="ai-memory-status" style="display:block;margin-top:6px;color:#8aa;">No learned runs stored yet</small>
+</div>
+<div>
+<button class="ka-link-btn" id="reset-ai-memory-btn" style="width:100%;text-align:center;border-color:rgba(255,102,255,0.42);" type="button">Reset AI Learning</button>
+</div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>Keyboard Bindings</strong><small>Rebind movement, jump, sprint, reload, interact, weapon switch, and pause.</small></div>
+<div><button class="ka-link-btn" id="open-keybinds-btn" style="width:100%;text-align:center;" type="button">Configure</button></div>
+</div>
+
+</div>
+</div>
+<div class="ka-nav-row">
+<button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
+<button class="ka-nav-btn" data-next-screen="difficulty" type="button">Return to Loadout →</button>
+</div>
+</section>
+<script>
+      (() => {
+        const screenNames = ['home', 'map', 'difficulty', 'settings'];
+        const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
+        const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
+        const mapSelect = document.getElementById('map-select');
+        const diffSelect = document.getElementById('diff-select');
+
+        const STORAGE_KEYS = {
+          map: 'ka_selected_map',
+          difficulty: 'ka_selected_difficulty'
+        };
+
+        const previewData = {
+          grid_bunker: {
+            title: 'Grid Bunker',
+            status: 'Playable',
+            size: 'Compact',
+            style: 'Classic bunker',
+            spawns: 'Outer + locked',
+            risk: 'Medium',
+            nav: 'Simple',
+            recommend: 'Normal',
+            brief: 'Classic containment bunker flow with tight lanes, doors, traps, and reliable survival pacing.'
+          },
+          industrial_yard: {
+            title: 'Industrial Yard',
+            status: 'Playable',
+            size: 'Large',
+            style: 'Open yard',
+            spawns: 'Outer lanes',
+            risk: 'Medium+',
+            nav: 'Open',
+            recommend: 'Normal',
+            brief: 'Wider outdoor-style lanes with container cover, warm lighting, and room to kite enemies.'
+          },
+          neon_depot: {
+            title: 'Neon Depot',
+            status: 'Playable',
+            size: 'Transit',
+            style: 'Neon lanes',
+            spawns: 'Outer + locked',
+            risk: 'Medium+',
+            nav: 'Open',
+            recommend: 'Normal',
+            brief: 'Fast visual read, glowing transit lanes, security gates, side barricades, and outer spawn pressure.'
+          },
+          parking_garage: {
+            title: 'Parking Garage',
+            status: 'Playable',
+            size: 'Single level',
+            style: 'Pillars + cars',
+            spawns: 'Corners + locked',
+            risk: 'High',
+            nav: 'Medium',
+            recommend: 'Normal / Hard',
+            brief: 'Concrete deck combat with pillars, parked cars, security gate flow, and corner pressure.'
+          },
+          hospital_wing: {
+            title: 'Hospital Wing',
+            status: 'Playable',
+            size: 'Emergency ward',
+            style: 'Horror corridors',
+            spawns: 'Outer + locked',
+            risk: 'High',
+            nav: 'Corridor',
+            recommend: 'Normal / Hard',
+            brief: 'Dark corridor survival with treatment rooms, quarantine gate pressure, and tighter horror pacing.'
+          },
+          reactor_courtyard: {
+            title: 'Reactor Courtyard',
+            status: 'Playable',
+            size: 'Large single level',
+            style: 'Hazard control',
+            spawns: 'Outer ring',
+            risk: 'High',
+            nav: 'Open-medium',
+            recommend: 'Normal / Hard',
+            brief: 'Broad reactor lanes with randomized containment zones, warning-based steam vents, and a coolant override defense.'
+          }
+        };
+
+        function isKnownMap(id) {
+          return Boolean(previewData[id]);
+        }
+
+        function showScreen(name) {
+          screens.forEach(screen => screen.classList.toggle('active', screen.dataset.menuScreen === name));
+          const activeIndex = screenNames.indexOf(name);
+          steps.forEach((step, index) => {
+            step.classList.toggle('active', step.dataset.stepDot === name);
+            step.classList.toggle('done', index < activeIndex);
+          });
+        }
+
+        function setPreview(id) {
+          const data = previewData[id] || previewData.grid_bunker;
+
+          document.querySelectorAll('[data-preview-shot]').forEach(shot => {
+            shot.classList.toggle('active', shot.dataset.previewShot === id);
+          });
+
+          const title = document.getElementById('ka-preview-title');
+          const status = document.getElementById('ka-preview-status');
+          const size = document.getElementById('ka-preview-size');
+          const style = document.getElementById('ka-preview-style');
+          const spawns = document.getElementById('ka-preview-spawns');
+          const risk = document.getElementById('ka-preview-risk');
+          const nav = document.getElementById('ka-preview-nav');
+          const recommend = document.getElementById('ka-preview-recommend');
+          const briefMap = document.getElementById('ka-brief-map');
+          const briefDesc = document.getElementById('ka-brief-desc');
+
+          if (title) title.textContent = data.title;
+          if (status) {
+            status.textContent = data.status;
+            status.classList.toggle('good', data.status === 'Playable');
+          }
+          if (size) size.textContent = data.size;
+          if (style) style.textContent = data.style;
+          if (spawns) spawns.textContent = data.spawns;
+          if (risk) risk.textContent = data.risk;
+          if (nav) nav.textContent = data.nav;
+          if (recommend) recommend.textContent = `Recommended: ${data.recommend}`;
+          if (briefMap) briefMap.textContent = data.title;
+          if (briefDesc) briefDesc.textContent = data.brief;
+        }
+
+        function applyMapSelection(mapId, options = {}) {
+          const safeMapId = isKnownMap(mapId) ? mapId : 'grid_bunker';
+
+          document.querySelectorAll('.ka-map-card[data-map]').forEach((card) => {
+            card.classList.toggle('selected', card.dataset.map === safeMapId);
+          });
+
+          if (mapSelect) mapSelect.value = safeMapId;
+
+          setPreview(safeMapId);
+
+          if (options.save !== false) {
+            localStorage.setItem(STORAGE_KEYS.map, safeMapId);
+          }
+        }
+
+        function applyDifficultySelection(value, options = {}) {
+          const safeValue = ['0.75', '1.0', '1.5'].includes(String(value)) ? String(value) : '1.0';
+
+          document.querySelectorAll('.ka-diff-card').forEach((card) => {
+            card.classList.toggle('selected', String(card.dataset.diff) === safeValue);
+          });
+
+          if (diffSelect) diffSelect.value = safeValue;
+
+          if (options.save !== false) {
+            localStorage.setItem(STORAGE_KEYS.difficulty, safeValue);
+          }
+        }
+
+        document.querySelectorAll('[data-next-screen]').forEach((btn) => {
+          btn.addEventListener('click', () => showScreen(btn.dataset.nextScreen));
+        });
+
+        document.querySelectorAll('.ka-map-card[data-map]').forEach((btn) => {
+          btn.addEventListener('click', () => applyMapSelection(btn.dataset.map));
+        });
+
+        document.querySelectorAll('.ka-diff-card').forEach((btn) => {
+          btn.addEventListener('click', () => applyDifficultySelection(btn.dataset.diff));
+        });
+
+        const savedMap = localStorage.getItem(STORAGE_KEYS.map);
+        const savedDifficulty = localStorage.getItem(STORAGE_KEYS.difficulty);
+
+        applyMapSelection(savedMap || mapSelect?.value || 'grid_bunker', { save: false });
+        applyDifficultySelection(savedDifficulty || diffSelect?.value || '1.0', { save: false });
+      })();
+    </script>
+</div>
+</div>
+
+<div aria-hidden="true" aria-labelledby="keybind-title" aria-modal="true" class="keybind-modal" id="keybind-modal" role="dialog" style="display:none;">
+<div class="keybind-dialog">
+<div class="keybind-header"><div><span>CONTROLS</span><h2 id="keybind-title">Keyboard Bindings</h2></div><button aria-label="Close" id="close-keybinds-btn" type="button">×</button></div>
+<p>Choose an action, then press a keyboard key or mouse button. Duplicate inputs are swapped automatically. Press Escape to cancel capture. F6 remains reserved for graphics quality.</p>
+<div id="keybind-list"></div>
+<div id="keybind-warning">Bindings are saved automatically.</div>
+<div class="keybind-actions"><button class="ka-link-btn" id="reset-keybinds-btn" type="button">Reset Defaults</button><button class="ka-nav-btn" id="close-keybinds-btn-bottom" type="button">Done</button></div>
+</div>
+</div>
+<div id="pause-screen" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 5, 10, 0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px); padding: 24px; overflow: auto;">
+<div style="color: #fff; font-family: sans-serif; font-size: 54px; font-weight: bold; letter-spacing: 5px; margin-bottom: 18px; text-shadow: 3px 3px 0 #000;">PAUSED</div>
+<div id="pause-summary-panel" style="width: min(520px, 90%); margin-bottom: 22px; padding: 14px 16px; border: 1px solid rgba(0,212,255,0.35); background: rgba(0,20,35,0.65); border-radius: 8px; font-family: sans-serif; color: #fff; box-shadow: 0 0 18px rgba(0,212,255,0.12);">
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; font-size: 13px; letter-spacing: 1px;">
+<div style="color: #8aa;">ARENA<br/><span id="pause-map-name" style="color: #00d4ff; font-weight: bold; font-size: 15px;">GRID BUNKER</span></div>
+<div style="color: #8aa;">GRAPHICS<br/><span id="pause-graphics-label" style="color: #ffaa00; font-weight: bold; font-size: 15px;">AUTO</span></div>
+<div style="color: #8aa;">FOV<br/><span id="pause-fov-label" style="color: #00d4ff; font-weight: bold; font-size: 15px;">82° / ADS 55°</span></div>
+<div style="color: #8aa;">WAVE<br/><span id="pause-wave-label" style="color: #fff; font-weight: bold; font-size: 15px;">1</span></div>
+<div style="color: #8aa;">SCORE<br/><span id="pause-score-label" style="color: #ffaa00; font-weight: bold; font-size: 15px;">0</span></div>
+<div style="color: #8aa;">KILLS<br/><span id="pause-kills-label" style="color: #fff; font-weight: bold; font-size: 15px;">0</span></div>
+<div style="color: #8aa;">STATUS<br/><span id="pause-status-label" style="color: #7cff7c; font-weight: bold; font-size: 15px;">ALIVE</span></div>
+</div>
+</div>
+<button id="resume-btn" style="padding: 15px 40px; font-size: 24px; font-weight: bold; background: #00d4ff; color: #000; border: none; border-radius: 4px; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">RESUME</button>
+<div id="pause-graphics-panel" style="width: min(420px, 88%); margin-bottom: 20px; padding: 12px 14px; border: 1px solid rgba(0,212,255,0.35); background: rgba(0,20,35,0.65); border-radius: 8px; font-family: sans-serif; color: #fff; text-align: left;">
+<label for="pause-graphics-quality-select" style="display: block; color: #00d4ff; font-size: 12px; font-weight: bold; letter-spacing: 2px; margin-bottom: 8px;">
+        GRAPHICS QUALITY
+      </label>
+<select id="pause-graphics-quality-select" style="width: 100%; padding: 10px; background: #061018; color: #fff; border: 1px solid #00d4ff; border-radius: 4px; font-weight: bold; cursor: pointer;">
+<option value="auto">Auto Recommended</option>
+<option value="low">Low Performance</option>
+<option value="medium">Medium Balanced</option>
+<option value="high">High Quality</option>
+</select>
+<div style="margin-top: 8px; color: #8aa; font-size: 12px;">
+        Current: <span id="pause-graphics-quality-current" style="color: #ffaa00; font-weight: bold;">AUTO</span>
+</div>
+</div>
+<div id="pause-core-settings-panel" style="width: min(420px, 88%); margin-bottom: 20px; padding: 12px 14px; border: 1px solid rgba(255,170,0,0.30); background: rgba(20,12,0,0.48); border-radius: 8px; font-family: sans-serif; color: #fff; text-align: left;">
+<label for="pause-master-volume-slider" style="display: block; color: #ffaa00; font-size: 12px; font-weight: bold; letter-spacing: 2px; margin-bottom: 8px;">
+        MASTER VOLUME
+      </label>
+<input id="pause-master-volume-slider" max="100" min="0" style="width:100%; accent-color:#ffaa00; cursor:pointer;" type="range" value="80"/>
+<div style="margin-top: 6px; color: #8aa; font-size: 12px;">Current: <span id="pause-master-volume-current" style="color:#ffaa00; font-weight:bold;">80%</span></div>
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;">
+<div>
+<label for="pause-mouse-sensitivity-slider" style="display:block; color:#00d4ff; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">MOUSE SENSITIVITY</label>
+<input id="pause-mouse-sensitivity-slider" max="150" min="50" style="width:100%; accent-color:#00d4ff; cursor:pointer;" type="range" value="100"/>
+<div style="margin-top:5px; color:#8aa; font-size:11px;">Current: <span id="pause-mouse-sensitivity-current" style="color:#ffaa00; font-weight:bold;">100%</span></div>
+</div>
+<div>
+<label for="pause-fov-slider" style="display:block; color:#00d4ff; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">FIELD OF VIEW</label>
+<input id="pause-fov-slider" max="100" min="70" style="width:100%; accent-color:#00d4ff; cursor:pointer;" type="range" value="82"/>
+<div style="margin-top:5px; color:#8aa; font-size:11px;">Current: <span id="pause-fov-current" style="color:#ffaa00; font-weight:bold;">82°</span> <span id="pause-ads-fov-current" style="color:#8aa;">55° ADS</span></div>
+</div>
+</div>
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;">
+<div>
+<label for="pause-damage-indicators-select" style="display:block; color:#00d4ff; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">DAMAGE INDICATORS</label>
+<select id="pause-damage-indicators-select" style="width:100%; padding:8px; background:#061018; color:#fff; border:1px solid #00d4ff; border-radius:4px; font-weight:bold;">
+<option value="on">On</option>
+<option value="off">Off</option>
+</select>
+</div>
+<div>
+<label for="pause-performance-stats-select" style="display:block; color:#00d4ff; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">PERFORMANCE STATS</label>
+<select id="pause-performance-stats-select" style="width:100%; padding:8px; background:#061018; color:#fff; border:1px solid #00d4ff; border-radius:4px; font-weight:bold;">
+<option value="off">Off</option>
+<option value="on">On</option>
+</select>
+</div>
+</div>
+
+<div class="pause-c13-grid">
+<div>
+<label for="pause-controller-sensitivity-slider">CONTROLLER LOOK</label>
+<input id="pause-controller-sensitivity-slider" max="180" min="50" type="range" value="100"/>
+<small><span id="pause-controller-sensitivity-current">100%</span> · <span id="pause-controller-status">NOT CONNECTED</span></small>
+</div>
+<div>
+<label for="pause-hud-scale-slider">HUD SCALE</label>
+<input id="pause-hud-scale-slider" max="130" min="85" type="range" value="100"/>
+<small id="pause-hud-scale-current">100%</small>
+</div>
+<div>
+<label for="pause-reduced-motion-select">REDUCED MOTION</label>
+<select id="pause-reduced-motion-select"><option value="off">Off</option><option value="on">On</option></select>
+</div>
+</div>
+</div>
+<button id="mobile-customize-btn" style="padding: 12px 30px; font-size: 18px; font-weight: bold; background: rgba(0,212,255,0.15); color: #00d4ff; border: 2px solid #00d4ff; border-radius: 4px; cursor: pointer; margin-bottom: 20px; transition: 0.2s;">CUSTOMIZE CONTROLS</button>
+<button id="quit-btn" style="padding: 15px 40px; font-size: 18px; font-weight: bold; background: transparent; color: #ff2200; border: 2px solid #ff2200; border-radius: 4px; cursor: pointer; transition: 0.2s;">QUIT TO MENU</button>
+</div>
+<div id="death-screen">
+<div id="death-title">YOU DIED</div>
+<div id="death-sub">Eliminations</div>
+<div id="final-kills">0</div>
+<div id="death-stats-panel" style="margin: 22px auto 0 auto; width: min(520px, 90%); padding: 14px 16px; border: 1px solid rgba(255,34,0,0.38); background: rgba(30,0,0,0.42); border-radius: 8px; font-family: sans-serif; color: #fff; box-shadow: 0 0 20px rgba(255,34,0,0.12);">
+<div class="run-summary-grid">
+<div><span>FINAL SCORE</span><b id="final-score">0</b></div>
+<div><span>FINAL WAVE</span><b id="final-wave">1</b></div>
+<div><span>ACCURACY</span><b id="final-accuracy">0%</b></div>
+<div><span>HEADSHOT KILLS</span><b id="final-headshots">0</b></div>
+<div><span>DAMAGE DEALT</span><b id="final-damage">0</b></div>
+<div><span>SURVIVAL TIME</span><b id="final-time">0:00</b></div>
+<div><span>XP EARNED</span><b id="final-xp">+0</b></div>
+<div><span>PROFILE LEVEL</span><b id="final-level">1</b></div>
+<div><span>OBJECTIVES</span><b id="final-objectives">0</b></div>
+<div><span>CHALLENGES</span><b id="final-challenges">0</b></div>
+<div><span>CONTRACT</span><b id="final-contract-status">Incomplete</b></div>
+<div><span>ACHIEVEMENTS</span><b id="final-achievements">0</b></div>
+<div><span>BEST SCORE</span><b id="final-best-score">0</b></div>
+<div><span>BEST WAVE</span><b id="final-best-wave">1</b></div>
+</div>
+</div>
+<div id="death-flow-note">Restart keeps your selected arena and difficulty. Quit returns to the main menu without a page reload.</div>
+<div style="display: flex; gap: 20px; justify-content: center; margin-top: 26px; flex-wrap: wrap;">
+<button id="respawn-btn">↺ RESTART ARENA</button>
+<button id="death-quit-btn" style="padding: 15px 30px; font-size: 20px; font-weight: bold; background: rgba(255, 0, 0, 0.1); color: #ff2200; border: 2px solid #ff2200; border-radius: 4px; cursor: pointer; transition: 0.2s;">QUIT TO MENU</button>
+</div>
+</div>
+<div id="lock-hint">Click to resume mouse look</div>
+<!-- Static ES-module deployment: index.html is the public entry; no package.json or Wrangler config is required for the current Cloudflare Pages demo. -->
+<script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/",
+        "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.3/build/index.module.js",
+        "three/addons/utils/BufferGeometryUtils.js": "https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/utils/BufferGeometryUtils.js"
+      }
+    }
+  </script>
+<script type="module">
+    import * as THREE_Core from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+
+    // Instead of modifying the locked module, we create a brand new object
+    // that combines the core library (...THREE_Core) with all of our addons!
+    window.THREE = {
+      ...THREE_Core,
+      GLTFLoader,
+      EffectComposer,
+      RenderPass,
+      UnrealBloomPass,
+      SkeletonUtils
+    };
+  </script>
+<script src="js/engine/asset_manager.js"></script>
+<script src="js/engine/animation_manager.js"></script>
+<script src="js/engine/actor_manager.js"></script>
+<!-- C9.6: active weapons are procedural ES modules; weapon GLB preloads were removed from js/main.js. -->
+<script src="js/main.js" type="module"></script>
+</body>
+</html>

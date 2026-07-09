@@ -1,0 +1,608 @@
+/* ── MENU ── */
+#menu {
+  position:fixed; inset:0; z-index:50;
+  background:radial-gradient(ellipse at 50% 60%, #0d1a2e 0%, #050810 100%);
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px;
+  pointer-events:all;
+}
+#menu-title {
+  font-size:60px; font-weight:900; color:#fff; letter-spacing:8px;
+  text-shadow:0 0 40px #00d4ff, 0 0 80px #00d4ff44;
+  margin-bottom:4px;
+}
+#menu-sub { font-size:11px; color:rgba(255,255,255,0.35); letter-spacing:4px; text-transform:uppercase; }
+#controls-grid { display:flex; gap:20px; margin:12px 0 4px; flex-wrap:wrap; justify-content:center; max-width: 600px; }
+.key-info { display:flex; flex-direction:column; align-items:center; gap:5px; color:rgba(255,255,255,0.5); font-size:11px; letter-spacing:1px; }
+.key-badge {
+  background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.18);
+  border-radius:5px; padding:5px 10px; font-size:12px; color:rgba(255,255,255,0.9); font-weight:600;
+  box-shadow:0 1px 0 rgba(255,255,255,0.06);
+}
+#start-btn {
+  margin-top:4px; padding:15px 50px;
+  background:#00d4ff; color:#000; border:none;
+  font-size:15px; font-weight:800; letter-spacing:3px; text-transform:uppercase;
+  border-radius:6px; cursor:pointer; transition:background 0.15s, transform 0.1s;
+}
+#start-btn:hover { background:#33ddff; transform:scale(1.03); }
+
+/* ── DEATH ── */
+#death-screen {
+  display:none; position:fixed; inset:0; z-index:100;
+  background:rgba(0,0,0,0.88); backdrop-filter:blur(6px);
+  flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  pointer-events:all; padding:24px; overflow:auto;
+}
+#death-title { font-size:clamp(42px, 7vw, 58px); font-weight:900; color:#ff3322; letter-spacing:5px; text-shadow:0 0 30px #ff332288; }
+#death-sub { font-size:13px; color:rgba(255,255,255,0.4); letter-spacing:3px; text-transform:uppercase; }
+#final-kills { font-size:clamp(52px, 8vw, 72px); font-weight:900; color:#fff; line-height:1; text-shadow:0 0 20px #00d4ff66; }
+#respawn-btn {
+  margin-top:8px; padding:14px 44px;
+  background:#00d4ff; color:#000; border:none;
+  font-size:14px; font-weight:800; letter-spacing:3px; text-transform:uppercase;
+  border-radius:6px; cursor:pointer; transition:background 0.15s;
+}
+#respawn-btn:hover { background:#33ddff; }
+/* ── MAIN MENU MAP SELECTOR ── */
+#mission-select-panel {
+  width: min(920px, calc(100vw - 28px));
+  margin: 22px auto 14px auto;
+  padding: 16px;
+  border: 1px solid rgba(0, 212, 255, 0.28);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(0, 20, 32, 0.72), rgba(0, 0, 0, 0.52));
+  box-shadow: 0 0 28px rgba(0, 212, 255, 0.12);
+  font-family: sans-serif;
+}
+
+#mission-select-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+#mission-select-header h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 18px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+}
+
+#mission-select-header p {
+  margin: 4px 0 0 0;
+  color: #9fc2cf;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+}
+
+#selected-map-pill {
+  color: #00d4ff;
+  border: 1px solid rgba(0, 212, 255, 0.45);
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(0, 212, 255, 0.08);
+  white-space: nowrap;
+}
+
+#menu-map-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.menu-map-card {
+  position: relative;
+  min-height: 132px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.menu-map-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 0 22px rgba(0, 212, 255, 0.13);
+}
+
+.menu-map-card.active {
+  border-color: #00d4ff;
+  box-shadow: 0 0 26px rgba(0, 212, 255, 0.25);
+}
+
+.menu-map-card-inner {
+  position: relative;
+  display: grid;
+  grid-template-columns: 126px 1fr;
+  min-height: 132px;
+  z-index: 1;
+}
+
+.menu-map-thumb {
+  position: relative;
+  margin: 12px;
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(0,212,255,0.12) 1px, transparent 1px),
+    linear-gradient(rgba(0,212,255,0.12) 1px, transparent 1px),
+    radial-gradient(circle at 30% 30%, rgba(0,212,255,0.25), transparent 32%),
+    #071018;
+  background-size: 18px 18px, 18px 18px, 100% 100%, 100% 100%;
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  overflow: hidden;
+}
+
+.menu-map-card[data-map-id="industrial_yard"] .menu-map-thumb {
+  background:
+    linear-gradient(35deg, transparent 43%, rgba(255,170,0,0.32) 44%, rgba(255,170,0,0.32) 48%, transparent 49%),
+    linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+    radial-gradient(circle at 70% 35%, rgba(255,170,0,0.18), transparent 28%),
+    #15140f;
+  background-size: 100% 100%, 18px 18px, 18px 18px, 100% 100%, 100% 100%;
+}
+
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb {
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.09) 0 3px, transparent 3px 32px),
+    repeating-linear-gradient(0deg, rgba(255,170,0,0.10) 0 2px, transparent 2px 36px),
+    radial-gradient(circle at 30% 35%, rgba(255,170,0,0.18), transparent 26%),
+    radial-gradient(circle at 70% 68%, rgba(0,212,255,0.16), transparent 30%),
+    #171a20;
+}
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb::before {
+  width: 58px;
+  height: 12px;
+  left: 18px;
+  top: 28px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.menu-map-card[data-map-id="parking_garage"] .menu-map-thumb::after {
+  width: 34px;
+  height: 42px;
+  right: 22px;
+  bottom: 18px;
+  background: rgba(255, 170, 0, 0.24);
+}
+
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb {
+  background:
+    linear-gradient(90deg, transparent 0 21%, rgba(210,245,235,0.22) 21% 24%, transparent 24% 76%, rgba(210,245,235,0.18) 76% 79%, transparent 79%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.055) 0 3px, transparent 3px 30px),
+    radial-gradient(circle at 28% 32%, rgba(80,255,210,0.16), transparent 24%),
+    radial-gradient(circle at 72% 66%, rgba(255,60,60,0.13), transparent 28%),
+    #101919;
+}
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb::before {
+  width: 58px;
+  height: 14px;
+  left: 20px;
+  top: 30px;
+  background: rgba(210, 245, 235, 0.20);
+  box-shadow: 0 0 12px rgba(120, 255, 220, 0.22);
+}
+
+.menu-map-card[data-map-id="hospital_wing"] .menu-map-thumb::after {
+  width: 38px;
+  height: 38px;
+  right: 22px;
+  bottom: 20px;
+  background: rgba(255, 60, 60, 0.22);
+  box-shadow: 0 0 12px rgba(255, 60, 60, 0.18);
+}
+
+.menu-map-thumb::before,
+.menu-map-thumb::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb {
+  background:
+    linear-gradient(90deg, rgba(0,229,255,0.16) 1px, transparent 1px),
+    linear-gradient(rgba(255,59,213,0.14) 1px, transparent 1px),
+    radial-gradient(circle at 35% 35%, rgba(0,229,255,0.28), transparent 30%),
+    radial-gradient(circle at 70% 65%, rgba(255,59,213,0.22), transparent 32%),
+    #071018;
+  background-size: 16px 16px, 16px 16px, 100% 100%, 100% 100%, 100% 100%;
+}
+
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb::before {
+  width: 74px;
+  height: 10px;
+  left: 20px;
+  top: 30px;
+  background: rgba(0, 229, 255, 0.28);
+  box-shadow: 0 0 14px rgba(0, 229, 255, 0.35);
+}
+
+.menu-map-card[data-map-id="neon_depot"] .menu-map-thumb::after {
+  width: 46px;
+  height: 36px;
+  right: 18px;
+  bottom: 22px;
+  background: rgba(255, 59, 213, 0.22);
+  box-shadow: 0 0 14px rgba(255, 59, 213, 0.30);
+}
+
+.menu-map-card[data-map-id="grid_bunker"] .menu-map-thumb::before {
+  width: 48px;
+  height: 34px;
+  left: 34px;
+  top: 34px;
+}
+
+.menu-map-card[data-map-id="grid_bunker"] .menu-map-thumb::after {
+  width: 74px;
+  height: 8px;
+  left: 22px;
+  bottom: 18px;
+}
+
+.menu-map-card[data-map-id="industrial_yard"] .menu-map-thumb::before {
+  width: 64px;
+  height: 12px;
+  left: 18px;
+  top: 24px;
+  transform: rotate(-10deg);
+  background: rgba(0, 212, 255, 0.25);
+}
+
+.menu-map-card[data-map-id="industrial_yard"] .menu-map-thumb::after {
+  width: 52px;
+  height: 12px;
+  right: 12px;
+  bottom: 28px;
+  transform: rotate(12deg);
+  background: rgba(255, 120, 40, 0.25);
+}
+
+.menu-map-info {
+  padding: 14px 14px 12px 0;
+}
+
+.menu-map-name {
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+}
+
+.menu-map-subtitle {
+  color: #00d4ff;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.menu-map-desc {
+  color: #a9c0ca;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.menu-map-status {
+  display: inline-block;
+  margin-top: 10px;
+  color: #061118;
+  background: #00d4ff;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#menu-difficulty-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.menu-diff-card {
+  min-width: 120px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255,255,255,0.045);
+  color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.menu-diff-card.active {
+  border-color: #ff2200;
+  color: #ff8866;
+  box-shadow: 0 0 18px rgba(255, 34, 0, 0.18);
+}
+
+.menu-hidden-selects {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  #mission-select-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #menu-map-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-map-card-inner {
+    grid-template-columns: 106px 1fr;
+  }
+
+  #mission-select-panel {
+    max-height: 44vh;
+    overflow: auto;
+  }
+}
+/* ── STAGED MENU FLOW ── */
+.mission-stage {
+  display: none;
+}
+
+.mission-stage.active {
+  display: block;
+}
+
+.menu-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.menu-mode-card {
+  min-height: 150px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  padding: 18px;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.menu-mode-card:hover:not(.locked) {
+  transform: translateY(-2px);
+  border-color: rgba(0, 212, 255, 0.6);
+  box-shadow: 0 0 22px rgba(0, 212, 255, 0.13);
+}
+
+.menu-mode-card.active {
+  border-color: #00d4ff;
+  box-shadow: 0 0 26px rgba(0, 212, 255, 0.25);
+}
+
+.menu-mode-card.locked {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.menu-mode-title {
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+
+.menu-mode-subtitle {
+  color: #a9c0ca;
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 14px;
+}
+
+.mission-nav-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.mission-next-btn,
+.mission-back-btn {
+  min-width: 130px;
+  padding: 11px 16px;
+  border-radius: 10px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  cursor: pointer;
+}
+
+.mission-next-btn {
+  border: 1px solid #00d4ff;
+  background: #00d4ff;
+  color: #061118;
+}
+
+.mission-back-btn {
+  border: 1px solid rgba(255,255,255,0.22);
+  background: rgba(255,255,255,0.05);
+  color: #dff7ff;
+}
+
+#mission-summary-card {
+  margin: 0 auto 12px auto;
+  max-width: 560px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 212, 255, 0.28);
+  background: rgba(255,255,255,0.045);
+  text-align: center;
+}
+
+.summary-label {
+  color: #00d4ff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+#mission-summary-map {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+#mission-summary-desc {
+  color: #a9c0ca;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#setup-ready-btn {
+  background: #ff2200;
+  border-color: #ff2200;
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .menu-mode-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-nav-row {
+    flex-direction: column;
+  }
+
+  .mission-next-btn,
+  .mission-back-btn {
+    width: 100%;
+  }
+}
+/* ── START MISSION BRIDGE ── */
+#start-btn.engine-start-hidden {
+  position: absolute !important;
+  left: -9999px !important;
+  top: auto !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+#setup-ready-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.65);
+}
+
+#setup-ready-btn.loading {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.65);
+}
+
+#setup-ready-btn.ready {
+  background: #ff2200;
+  border-color: #ff2200;
+  color: #fff;
+}
+
+/* ── B5 MAP ROTATION / IDENTITY CLEANUP ── */
+.ka-map-card[data-map] {
+  position: relative;
+}
+
+.ka-map-card[data-map]::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  pointer-events: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.ka-map-card[data-map].selected::after {
+  border-color: rgba(34, 255, 136, 0.42);
+  box-shadow: inset 0 0 18px rgba(34, 255, 136, 0.07);
+}
+
+#ka-preview-recommend {
+  color: #170c00;
+  background: #ffaa00;
+  border-color: #ffaa00;
+}
+
+#ka-brief-desc {
+  min-height: 42px;
+}
+
+.ka-map-card[data-map="grid_bunker"] .ka-map-tag.stable {
+  background: #22ff88;
+  color: #00140a;
+}
+
+.ka-map-card[data-map="industrial_yard"] .ka-map-tag.stable {
+  background: #ffaa00;
+  color: #180c00;
+}
+
+.ka-map-card[data-map="neon_depot"] .ka-map-tag.stable {
+  background: #00d4ff;
+  color: #001018;
+}
+
+.ka-map-card[data-map="parking_garage"] .ka-map-tag.stable {
+  background: #d6dce8;
+  color: #101217;
+}
+
+.ka-map-card[data-map="hospital_wing"] .ka-map-tag.stable {
+  background: #ff5555;
+  color: #180000;
+}
+
+.ka-map-card[data-map="hospital_wing"].selected,
+.ka-map-card[data-map="parking_garage"].selected {
+  box-shadow: inset 0 0 20px rgba(255,255,255,0.055), 0 0 18px rgba(0,212,255,0.10);
+}
+
+
+/* ── D1 FINAL DEMO FLOW POLISH ── */
+#pause-screen button,
+#death-screen button {
+  min-height: 48px;
+}
+
+@media (max-height: 760px) {
+  #death-screen {
+    justify-content: flex-start;
+  }
+}

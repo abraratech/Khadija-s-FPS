@@ -1,0 +1,11 @@
+# Local development and packaging artifacts
+*.zip
+*.log
+.DS_Store
+Thumbs.db
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!/.env.example

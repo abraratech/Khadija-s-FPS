@@ -59,19 +59,32 @@ export class RemoteSnapshotBuffer {
     this.interpolationDelayMs = Math.max(0, Number(interpolationDelayMs) || 0);
     this.maxSnapshotsPerPlayer = Math.max(4, Math.floor(maxSnapshotsPerPlayer));
     this.buffers = new Map();
-    this.latestSequences = new Map();
+    this.latestSequences = new Map(); this.connectionEpochs = new Map();
   }
 
-  push(playerId, {
-    sequence,
-    sentAt = nowMs(),
-    receivedAt = nowMs(),
-    state
-  } = {}) {
+  push(playerId, { sequence, connectionEpoch = 0, sentAt = nowMs(), receivedAt = nowMs(), state } = {}) {
     if (!playerId || !state || !Number.isInteger(sequence) || sequence < 0) {
       return { accepted: false, reason: 'invalid-snapshot' };
+    } const normalizedConnectionEpoch = Math.max(
+      0,
+      Math.floor(Number(connectionEpoch) || 0)
+    );
+    const previousConnectionEpoch = this.connectionEpochs.get(playerId);
+    if (
+      previousConnectionEpoch !== undefined
+      && normalizedConnectionEpoch < previousConnectionEpoch
+    ) {
+      return { accepted: false, reason: 'stale-connection-epoch' };
     }
-
+    const reset = (
+      previousConnectionEpoch !== undefined
+      && normalizedConnectionEpoch > previousConnectionEpoch
+    );
+    if (reset) {
+      this.buffers.delete(playerId);
+      this.latestSequences.delete(playerId);
+    }
+    this.connectionEpochs.set(playerId, normalizedConnectionEpoch);
     const latestSequence = this.latestSequences.get(playerId) ?? -1;
     if (sequence <= latestSequence) {
       return { accepted: false, reason: 'stale-sequence' };
@@ -95,7 +108,7 @@ export class RemoteSnapshotBuffer {
     this.buffers.set(playerId, buffer);
     this.latestSequences.set(playerId, sequence);
 
-    return { accepted: true, entry };
+    return { accepted: true, entry, reset };
   }
 
   sample(playerId, now = nowMs()) {
@@ -145,19 +158,19 @@ export class RemoteSnapshotBuffer {
 
   removePlayer(playerId) {
     this.buffers.delete(playerId);
-    this.latestSequences.delete(playerId);
+    this.latestSequences.delete(playerId); this.connectionEpochs.delete(playerId);
   }
 
   clear() {
     this.buffers.clear();
-    this.latestSequences.clear();
+    this.latestSequences.clear(); this.connectionEpochs.clear();
   }
 
   getSnapshot() {
     return Array.from(this.buffers.entries(), ([playerId, entries]) => ({
       playerId,
       count: entries.length,
-      latestSequence: this.latestSequences.get(playerId) ?? -1
+      latestSequence: this.latestSequences.get(playerId) ?? -1, connectionEpoch: this.connectionEpochs.get(playerId) ?? 0
     }));
   }
 }

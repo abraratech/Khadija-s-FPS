@@ -17,7 +17,8 @@ export const MULTIPLAYER_RECONCILIATION_STATUS = Object.freeze({
 const AUTHORITATIVE_STREAMS = Object.freeze([
     'world',
     'economy',
-    'revive'
+    'revive',
+    'stats'
 ]);
 
 function finiteInteger(value, fallback = 0) {
@@ -27,12 +28,15 @@ function finiteInteger(value, fallback = 0) {
 }
 
 function envelopeIdentity(envelope = {}) {
-    if (envelope.messageId) return String(envelope.messageId);
+    if (envelope.messageId) {
+    return `${finiteInteger(envelope.connectionEpoch)}:${String(envelope.messageId)}`;
+  }
     return [
         envelope.sessionId || 'session',
         envelope.runId || 'run',
         envelope.playerId || 'player',
-        envelope.type || 'type',
+    finiteInteger(envelope.connectionEpoch),
+    envelope.type || 'type',
         finiteInteger(envelope.authorityEpoch),
         finiteInteger(envelope.sequence)
     ].join(':');
@@ -47,6 +51,12 @@ function authoritativeStream(envelope = {}) {
     ) {
         return 'revive';
     }
+    if (
+        envelope.type === 'run-stats'
+        && envelope.payload?.kind === 'snapshot'
+    ) {
+        return 'stats';
+    }
     return null;
 }
 
@@ -56,7 +66,8 @@ function streamKey(envelope = {}, stream = authoritativeStream(envelope)) {
         envelope.runId || 'run',
         finiteInteger(envelope.authorityEpoch),
         envelope.playerId || 'authority',
-        stream
+    finiteInteger(envelope.connectionEpoch),
+    stream
     ].join(':');
 }
 
@@ -86,10 +97,12 @@ export class MultiplayerReconciliationTracker {
         this.seenMessageIds = new Set();
         this.seenMessageQueue = [];
         this.streams = new Map();
+        this.connectionEpochs = new Map();
         this.lastSnapshots = {
             world: -Infinity,
             economy: -Infinity,
-            revive: -Infinity
+            revive: -Infinity,
+            stats: -Infinity
         };
         this.status = MULTIPLAYER_RECONCILIATION_STATUS.WAITING;
         this.pendingReason = null;
@@ -107,7 +120,7 @@ export class MultiplayerReconciliationTracker {
             recoveriesCompleted: 0,
             authorityChanges: 0,
             reconnects: 0
-        };
+        , connectionEpochChanges: 0, staleConnectionEpochRejected: 0};
     }
 
     beginRun({ now = Date.now(), authorityEpoch = 0 } = {}) {
@@ -163,6 +176,7 @@ export class MultiplayerReconciliationTracker {
         this.lastSnapshots.world = -Infinity;
         this.lastSnapshots.economy = -Infinity;
         this.lastSnapshots.revive = -Infinity;
+        this.lastSnapshots.stats = -Infinity;
         this.markPending('authority-epoch-changed', {
             authorityEpoch: nextEpoch,
             at: now
@@ -171,6 +185,35 @@ export class MultiplayerReconciliationTracker {
     }
 
     observe(envelope, now = Date.now(), { expectedHostPlayerId = null } = {}) {
+    const connectionEpoch = finiteInteger(envelope?.connectionEpoch);
+    const playerId = envelope?.playerId || null;
+    const previousConnectionEpoch = playerId
+      ? this.connectionEpochs.get(playerId)
+      : undefined;
+    if (
+      previousConnectionEpoch !== undefined
+      && connectionEpoch < previousConnectionEpoch
+    ) {
+      this.metrics.staleConnectionEpochRejected += 1;
+      return {
+        accepted: false,
+        reason: 'stale-connection-epoch',
+        messageId: envelopeIdentity(envelope),
+        gap: 0
+      };
+    }
+    if (
+      playerId
+      && previousConnectionEpoch !== undefined
+      && connectionEpoch > previousConnectionEpoch
+    ) {
+      this.metrics.connectionEpochChanges += 1;
+      Array.from(this.streams.entries()).forEach(([key, entry]) => {
+        if (entry?.playerId === playerId) this.streams.delete(key);
+      });
+    }
+    if (playerId) this.connectionEpochs.set(playerId, connectionEpoch);
+
         const messageId = envelopeIdentity(envelope);
         if (this.seenMessageIds.has(messageId)) {
             this.metrics.duplicatesRejected += 1;
@@ -215,7 +258,7 @@ export class MultiplayerReconciliationTracker {
             this.metrics.sequenceGaps += gap;
             this.metrics.largestGap = Math.max(this.metrics.largestGap, gap);
         }
-        this.streams.set(key, { sequence, receivedAt: now, stream });
+        this.streams.set(key, { sequence, receivedAt: now, stream, playerId, connectionEpoch });
         this.lastSnapshots[stream] = now;
 
         if (stream === 'world' && gap >= WORLD_GAP_RESYNC_THRESHOLD) {
@@ -324,6 +367,7 @@ export class MultiplayerReconciliationTracker {
             worldAgeMs: age(this.lastSnapshots.world),
             economyAgeMs: age(this.lastSnapshots.economy),
             reviveAgeMs: age(this.lastSnapshots.revive),
+            statsAgeMs: age(this.lastSnapshots.stats),
             trackedMessageIds: this.seenMessageIds.size,
             trackedStreams: this.streams.size,
             metrics: { ...this.metrics }

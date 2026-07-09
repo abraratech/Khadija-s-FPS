@@ -1,7 +1,7 @@
 // js/main.js
 import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, clearEnemiesForNetworkProxyMode } from './enemy.js';
+import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -95,6 +95,7 @@ initializeMultiplayerFoundation(player, {
     applyNetworkWaveState,
     getNetworkEnemyWaveState,
     restoreNetworkEnemySnapshot,
+    resumeNetworkWaveAfterMigration,
     clearEnemiesForNetworkProxyMode,
     configureMultiplayerEnemyAuthority,
     damagePlayer
@@ -111,7 +112,7 @@ initializeMultiplayerFoundation(player, {
                 weapon.meshGroup.visible = visible === true;
             }
         },
-        requestTeamGameOver: () => requestOnlineRunEnd('team-eliminated'),
+        requestTeamGameOver: () => requestTeamEliminationEnd(),
     reviveLocalPlayer: ({ health = 40 } = {}) => {
       player.alive = true;
       player.health = Math.max(1, Math.round(Number(health) || 40));
@@ -159,8 +160,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-reconciliation-soak-r1';
-console.info('[Multiplayer Build] m3-reconciliation-soak-r1 | protocol 6');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-migration-combat-leave-r4';
+console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
+console.info('[Multiplayer Patch] m3-migration-combat-leave-r4');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -543,6 +546,7 @@ let mobileSprintIntent = false;
 let pauseTransitionAt = -Infinity;
 let coOpMenuOpen = false;
 let onlineDeathReportPending = false;
+let onlineRunEndHandled = false;
 function isOnlineCoOpRun() {
   return multiplayerSession?.run?.active === true
     && (multiplayerSession.mode === 'host'
@@ -1056,6 +1060,7 @@ async function enterGameplayPresentation({ requestPointerLock = true } = {}) {
 }
 
 async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) {
+  onlineRunEndHandled = false;
   if (runTransitionInProgress) return;
 
   runTransitionInProgress = true;
@@ -1127,11 +1132,16 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
 }
 
 function handleOnlineRunEnded(details = {}) {
+  if (onlineRunEndHandled) return;
+  onlineRunEndHandled = true;
   onlineDeathReportPending = false;
   coOpMenuOpen = false;
 
-  finalizeCurrentRun(`CO-OP ${details.reason || 'ENDED'}`);
-  saveRunRecords();
+  const leavingRoom = details.reason === 'left-room';
+  if (!leavingRoom) {
+    finalizeCurrentRun(`CO-OP ${details.reason || 'ENDED'}`);
+    saveRunRecords();
+  }
   endAIDirectorRun();
   endMapGameplay();
   endTutorialRun();
@@ -1162,6 +1172,20 @@ function handleOnlineRunEnded(details = {}) {
   );
 }
 
+function requestTeamEliminationEnd() {
+  if (onlineRunEndHandled) return true;
+  if (!isOnlineMultiplayerRun()) return false;
+  onlineDeathReportPending = true;
+  clearInputState();
+  endMultiplayerRun({
+    reason: 'team-eliminated',
+    player,
+    notifyServer: true
+  });
+  handleOnlineRunEnded({ reason: 'team-eliminated' });
+  return true;
+}
+
 function requestOnlineRunEnd(reason = 'ended') {
   if (onlineDeathReportPending) return true;
 
@@ -1183,7 +1207,15 @@ function requestOnlineRunEnd(reason = 'ended') {
 
 function returnToMenu(source = 'pause') {
   if (isOnlineMultiplayerRun()) {
-    requestOnlineRunEnd(source);
+    clearInputState();
+    endMultiplayerRun({
+      reason: 'left-room',
+      player,
+      notifyServer: false,
+      preserveFinalSummary: false
+    });
+    handleOnlineRunEnded({ reason: 'left-room' });
+    void leaveMultiplayerRoom();
     return;
   }
 

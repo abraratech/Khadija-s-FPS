@@ -62,6 +62,11 @@ export class MultiplayerCoopStatsManager {
     this.active = false;
     this.reportSequence = 0;
     this.snapshotVersion = 0;
+        this.lastRemoteSnapshotVersion = 0;
+        this.lastRemoteSnapshotAt = -Infinity;
+        this.lastRemoteAuthorityEpoch = -1;
+        this.lastRemoteHostPlayerId = null;
+        this.lastRemoteConnectionEpoch = -1;
     this.lastReportAt = -Infinity;
     this.lastSnapshotAt = -Infinity;
     this.lastSnapshot = null;
@@ -106,6 +111,11 @@ export class MultiplayerCoopStatsManager {
     this.active = this.isOnlineRun();
     this.reportSequence = 0;
     this.snapshotVersion = 0;
+        this.lastRemoteSnapshotVersion = 0;
+        this.lastRemoteSnapshotAt = -Infinity;
+        this.lastRemoteAuthorityEpoch = -1;
+        this.lastRemoteHostPlayerId = null;
+        this.lastRemoteConnectionEpoch = -1;
     this.lastReportAt = -Infinity;
     this.lastSnapshotAt = -Infinity;
     this.closedFinalRunId = null;
@@ -206,13 +216,48 @@ export class MultiplayerCoopStatsManager {
       : null;
   }
 
-  publishSnapshot(force = false, now = nowMs()) {
+  applyClientLocalSources(now = nowMs()) {
+    if (!this.active || this.isAuthority()) return this.lastSnapshot;
+    const localId = this.runtime?.localPlayerId;
+    if (!localId) return this.lastSnapshot;
+    const snapshot = clone(this.lastSnapshot || this.core.getSnapshot(now));
+    const local = snapshot?.players?.find((entry) => entry?.playerId === localId);
+    if (!local) return this.lastSnapshot;
+
+    const economy = this.getEconomySnapshot?.() || null;
+    const accounts = economy?.accounts;
+    const account = Array.isArray(accounts)
+      ? accounts.find((entry) => entry?.playerId === localId)
+      : accounts?.[localId] || null;
+    if (account) {
+      local.currentPoints = Math.max(
+        0,
+        Math.floor(Number(account.score ?? account.points ?? local.currentPoints) || 0)
+      );
+    }
+
+    const revive = this.getReviveSnapshot?.() || null;
+    const localLife = revive?.state?.players?.find(
+      (entry) => entry?.playerId === localId
+    );
+    if (localLife) {
+      local.health = Math.max(0, Math.round(Number(localLife.health) || 0));
+      local.maxHealth = Math.max(1, Math.round(Number(localLife.maxHealth) || 100));
+      local.lifeState = localLife.lifeState || local.lifeState;
+    }
+    this.lastSnapshot = snapshot;
+    return snapshot;
+  }
+
+publishSnapshot(force = false, now = nowMs()) {
     if (!this.active || !this.isAuthority()) return null;
     if (!force && now - this.lastSnapshotAt < HOST_SNAPSHOT_INTERVAL_MS) return null;
     this.applyHostSources(now);
     this.lastSnapshotAt = now;
     this.snapshotVersion += 1;
     this.lastSnapshot = this.core.getSnapshot(now);
+        this.lastSnapshot.snapshotVersion = this.snapshotVersion;
+        this.lastSnapshot.publishedAt = now;
     this.runtime?.sendRunStats?.({
       kind: COOP_STATS_MESSAGE_KIND.SNAPSHOT,
       snapshot: this.lastSnapshot
@@ -226,7 +271,9 @@ export class MultiplayerCoopStatsManager {
     this.localReport(now);
     if (this.isAuthority()) {
       this.publishSnapshot(false, now);
-    }
+    } else {
+            this.applyClientLocalSources(now);
+        }
   }
 
   handleStatsEnvelope(envelope) {
@@ -248,11 +295,51 @@ export class MultiplayerCoopStatsManager {
       return;
     }
 
-    const expectedHost = this.runtime?.room?.hostPlayerId || this.session?.hostPlayerId || null;
+    const expectedHost = (
+            this.runtime?.room?.getSnapshot?.()?.hostPlayerId
+            || this.session?.hostPlayerId
+            || null
+        );
     if (expectedHost && envelope.playerId !== expectedHost) return;
 
     if (payload.kind === COOP_STATS_MESSAGE_KIND.SNAPSHOT && payload.snapshot) {
-      if (this.isAuthority()) return;
+            if (this.isAuthority()) return;
+            const authorityEpoch = Math.max(
+                0,
+                Math.floor(Number(envelope.authorityEpoch ?? payload.snapshot.authorityEpoch) || 0)
+            );
+            const connectionEpoch = Math.max(
+                0,
+                Math.floor(Number(envelope.connectionEpoch) || 0)
+            );
+            const hostChanged = envelope.playerId !== this.lastRemoteHostPlayerId;
+            const epochAdvanced = authorityEpoch > this.lastRemoteAuthorityEpoch;
+            const sameHost = envelope.playerId === this.lastRemoteHostPlayerId;
+            if (
+                sameHost
+                && this.lastRemoteConnectionEpoch >= 0
+                && connectionEpoch < this.lastRemoteConnectionEpoch
+            ) return;
+            const connectionChanged = (
+                sameHost
+                && this.lastRemoteConnectionEpoch >= 0
+                && connectionEpoch > this.lastRemoteConnectionEpoch
+            );
+            if (hostChanged || epochAdvanced || connectionChanged) {
+                this.lastRemoteSnapshotVersion = 0;
+                this.lastRemoteHostPlayerId = envelope.playerId || null;
+                this.lastRemoteAuthorityEpoch = authorityEpoch;
+                this.lastRemoteConnectionEpoch = connectionEpoch;
+            }
+            if (authorityEpoch < this.lastRemoteAuthorityEpoch) return;
+            const version = Math.max(0, Math.floor(Number(payload.snapshot.snapshotVersion) || 0));
+            if (version > 0 && version <= this.lastRemoteSnapshotVersion) return;
+            this.lastRemoteSnapshotVersion = Math.max(this.lastRemoteSnapshotVersion, version);
+            this.lastRemoteConnectionEpoch = Math.max(
+                this.lastRemoteConnectionEpoch,
+                connectionEpoch
+            );
+            this.lastRemoteSnapshotAt = nowMs();
       this.core.replaceSnapshot(payload.snapshot);
       this.lastSnapshot = clone(payload.snapshot);
       if (payload.snapshot.finalSummary) {
@@ -284,9 +371,12 @@ export class MultiplayerCoopStatsManager {
       this.finalSummary = clone(room.finalSummary);
       this.lastSnapshot = this.core.getSnapshot(now);
       this.lastSnapshot.finalSummary = clone(room.finalSummary);
-    } else if (this.active) {
-      this.lastSnapshot = this.core.getSnapshot(now);
-    }
+    } else if (
+            this.active
+            && (this.isAuthority() || now - this.lastRemoteSnapshotAt > 1200)
+        ) {
+            this.lastSnapshot = this.core.getSnapshot(now);
+        }
     return true;
   }
 
@@ -324,15 +414,27 @@ export class MultiplayerCoopStatsManager {
       this.core.authorityEpoch,
       Math.max(0, Math.floor(Number(authorityEpoch) || 0))
     );
+    const room = this.runtime?.room?.getSnapshot?.() || null;
+    const runStillActive = (
+      this.session?.run?.active === true
+      && room?.status === 'in-run'
+    );
     const stats = checkpoint?.stats || null;
     if (stats) {
       this.core.replaceSnapshot(stats);
       this.lastSnapshot = clone(stats);
-      if (stats.finalSummary) this.finalSummary = clone(stats.finalSummary);
+      if (stats.finalSummary && !runStillActive) {
+        this.finalSummary = clone(stats.finalSummary);
+      }
     }
-    if (checkpoint?.finalSummary) {
+    if (checkpoint?.finalSummary && !runStillActive) {
       this.core.restoreFinal(checkpoint.finalSummary);
       this.finalSummary = clone(checkpoint.finalSummary);
+    }
+    if (runStillActive) {
+      this.finalSummary = null;
+      this.closedFinalRunId = null;
+      if (this.lastSnapshot) this.lastSnapshot.finalSummary = null;
     }
     if (becameHost && this.active) {
       this.applyHostSources(nowMs());

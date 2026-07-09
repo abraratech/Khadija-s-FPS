@@ -9,7 +9,7 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm3-reconciliation-soak-r1';
+const SERVER_BUILD = 'm3-team-final-world-reconnect-r3';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
 function json(data, init = {}) {
@@ -71,7 +71,7 @@ function publicPlayer(player) {
     displayName: player.displayName,
     ready: player.ready === true,
     connected: player.connected === true,
-    isHost: player.isHost === true, joinedAt: Math.max(0, Number(player.joinedAt) || 0), joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)), lateJoin: player.lateJoin === true, lateJoinProtectionUntil: Math.max(0, Number(player.lateJoinProtectionUntil) || 0), catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
+    isHost: player.isHost === true, joinedAt: Math.max(0, Number(player.joinedAt) || 0), joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)), lateJoin: player.lateJoin === true, lateJoinProtectionUntil: Math.max(0, Number(player.lateJoinProtectionUntil) || 0), catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0)), connectionEpoch: Math.max(1, Math.floor(Number(player.connectionEpoch) || 1))
   };
 }
 
@@ -209,7 +209,7 @@ export class ArenaRoom extends DurableObject {
       this.room = defaultRoom(roomCode);
     }
 
-    const existing = this.room.players[playerId] || null;
+    const existing = this.room.players[playerId] || null; const connectionEpoch = Math.max(1, Math.floor(Number(existing?.connectionEpoch) || 0) + 1);
     const isLateJoin = this.room.status === 'in-run' && !existing;
     const joinedWave = Math.max(
       1,
@@ -257,16 +257,14 @@ export class ArenaRoom extends DurableObject {
       ready: isHost ? true : existing?.ready === true,
       connected: true,
       isHost,
-      reconnectToken: token,
+      reconnectToken: token, connectionEpoch,
       disconnectedAt: null,
       disconnectExpiresAt: null,
       joinedAt: existing?.joinedAt || Date.now(), joinedWave: isLateJoin ? joinedWave : Math.max(1, Math.floor(Number(existing?.joinedWave) || 1)), lateJoin: isLateJoin || existing?.lateJoin === true, lateJoinProtectionUntil, catchUpScore,
       lastSeenAt: Date.now()
     };
 
-    server.serializeAttachment({
-      playerId,
-      reconnectToken: token,
+    server.serializeAttachment({ playerId, reconnectToken: token, connectionEpoch,
       windowStartedAt: Date.now(),
       messagesInWindow: 0,
       connectedAt: Date.now()
@@ -281,7 +279,7 @@ export class ArenaRoom extends DurableObject {
         sessionId: this.room.sessionId,
         protocol: SERVER_PROTOCOL,
         build: SERVER_BUILD,
-        reconnectToken: token,
+        reconnectToken: token, connectionEpoch,
         checkpoint: this.room.status === 'in-run'
           ? this.room.authorityCheckpoint
           : null, lateJoin: isLateJoin ? { playerId, joinedWave, catchUpScore, protectionUntil: lateJoinProtectionUntil, protectionMs: 8000 } : null,
@@ -427,7 +425,7 @@ export class ArenaRoom extends DurableObject {
     }
 
     const player = this.room.players[attachment.playerId];
-    if (!player || player.connected !== true) return;
+    if (!player || player.connected !== true) return; if (Math.max(0, Math.floor(Number(player.connectionEpoch) || 0)) > 0 && Math.max(0, Math.floor(Number(attachment.connectionEpoch) || 0)) !== Math.max(0, Math.floor(Number(player.connectionEpoch) || 0))) return;
     player.lastSeenAt = Date.now();
 
     if (parsed?.kind === 'control') {
@@ -450,7 +448,7 @@ export class ArenaRoom extends DurableObject {
         authorityEpoch: Math.max(
           0,
           Number(this.room.authorityEpoch) || 0
-        ),
+        ), connectionEpoch: Math.max(1, Math.floor(Number(player.connectionEpoch) || 1)), messageId: `${String(parsed.envelope.messageId || `${player.playerId}:${parsed.envelope.type}:${parsed.envelope.sequence}`)}:connection-${Math.max(1, Math.floor(Number(player.connectionEpoch) || 1))}`,
         serverReceivedAt: Date.now()
       };
 
@@ -485,7 +483,13 @@ export class ArenaRoom extends DurableObject {
         }
         await this.captureAuthorityCheckpoint(envelope);
       }
-
+      if (this.isTeamEliminatedReviveEnvelope(envelope)) {
+        await this.finishRun({
+          reason: 'team-eliminated',
+          endedByPlayerId: player.playerId
+        });
+        return;
+      }
       this.broadcast({
         kind: 'envelope',
         envelope
@@ -496,7 +500,30 @@ export class ArenaRoom extends DurableObject {
     this.sendError(socket, 'Unsupported message type.');
   }
 
-  isAuthorityCheckpointEnvelope(envelope) {
+  isTeamEliminatedReviveEnvelope(envelope) {
+    if (
+      envelope?.type !== 'revive-state'
+      || envelope?.payload?.kind !== 'snapshot'
+    ) return false;
+    const players = Array.isArray(envelope.payload?.snapshot?.players)
+      ? envelope.payload.snapshot.players
+      : [];
+    const connectedIds = new Set(
+      this.connectedPlayers().map((entry) => entry.playerId)
+    );
+    if (!connectedIds.size) return false;
+    const lifeStateByPlayerId = new Map(
+      players
+        .filter((entry) => connectedIds.has(entry?.playerId))
+        .map((entry) => [entry.playerId, entry.lifeState])
+    );
+    return Array.from(connectedIds).every((playerId) => {
+      const state = lifeStateByPlayerId.get(playerId);
+      return state === 'DOWNED' || state === 'SPECTATING' || state === 'ELIMINATED';
+    });
+  }
+
+isAuthorityCheckpointEnvelope(envelope) {
     if (!envelope || this.room?.status !== 'in-run') return false;
     if (envelope.type === 'world-snapshot') return true;
     if (envelope.type === 'economy-snapshot') return true;
@@ -517,7 +544,7 @@ export class ArenaRoom extends DurableObject {
     if (!this.room || !this.room.runId) return false;
     const checkpoint = this.room.authorityCheckpoint || {
       runId: this.room.runId,
-      authorityEpoch: this.room.authorityEpoch || 0,
+      authorityEpoch: this.room.authorityEpoch || 0, authorityConnectionEpoch: Math.max(1, Math.floor(Number(envelope.connectionEpoch) || 1)),
       updatedAt: 0,
       world: null,
       economy: null,
@@ -530,7 +557,7 @@ export class ArenaRoom extends DurableObject {
     checkpoint.authorityEpoch = Math.max(
       0,
       Number(this.room.authorityEpoch) || 0
-    );
+    ); checkpoint.authorityConnectionEpoch = Math.max(1, Math.floor(Number(envelope.connectionEpoch) || 1));
     checkpoint.updatedAt = Date.now();
 
     if (envelope.type === 'world-snapshot') {
@@ -814,7 +841,7 @@ if (action === 'start-run') {
       this.room.finalSummary = null;
       this.room.authorityCheckpoint = {
         runId: this.room.runId,
-        authorityEpoch: 0,
+        authorityEpoch: 0, authorityConnectionEpoch: Math.max(1, Math.floor(Number(player.connectionEpoch) || 1)),
         updatedAt: Date.now(),
         world: null,
         economy: null,
@@ -841,10 +868,9 @@ if (action === 'start-run') {
     }
 
     if (action === 'player-death') {
-      await this.finishRun({
-        reason: String(payload.reason || 'player-death'),
-        endedByPlayerId: player.playerId
-      });
+      // Individual down/bleedout state is authoritative in revive snapshots.
+      // Never finish the whole co-op run from a single client death notice.
+      this.broadcastRoomState();
       return;
     }
 
@@ -862,6 +888,29 @@ if (action === 'start-run') {
       const wasHost = player.isHost === true;
       const previousStatus = this.room.status;
       delete this.room.players[leavingPlayerId];
+      const checkpoint = this.room.authorityCheckpoint;
+      if (previousStatus === 'in-run') {
+        // A voluntary leave is not a completed team run. Remove any final
+        // summary that the departing authority may have published locally.
+        this.room.finalSummary = null;
+        if (checkpoint) checkpoint.finalSummary = null;
+        if (checkpoint?.stats) checkpoint.stats.finalSummary = null;
+      }
+      if (checkpoint?.revive && Array.isArray(checkpoint.revive.players)) {
+        checkpoint.revive.players = checkpoint.revive.players.filter(
+          (entry) => entry?.playerId !== leavingPlayerId
+        );
+      }
+      if (checkpoint?.stats && Array.isArray(checkpoint.stats.players)) {
+        checkpoint.stats.players = checkpoint.stats.players.filter(
+          (entry) => entry?.playerId !== leavingPlayerId
+        );
+      }
+      if (checkpoint?.world && Array.isArray(checkpoint.world.enemies)) {
+        checkpoint.world.enemies.forEach((enemy) => {
+          if (enemy?.targetPlayerId === leavingPlayerId) enemy.targetPlayerId = null;
+        });
+      }
 
       let replacement = null;
       if (wasHost) {
@@ -960,13 +1009,20 @@ if (action === 'start-run') {
     const attachment = this.readAttachment(socket);
     const playerId = attachment?.playerId;
     const player = this.room.players?.[playerId];
-    if (!player || player.connected === false) return;
+    if (!player || player.connected === false) return; if (Math.max(0, Math.floor(Number(player.connectionEpoch) || 0)) > 0 && Math.max(0, Math.floor(Number(attachment?.connectionEpoch) || 0)) !== Math.max(0, Math.floor(Number(player.connectionEpoch) || 0))) return;
 
     const wasInRun = this.room.status === 'in-run';
     player.connected = false;
     player.ready = false;
     player.disconnectedAt = Date.now();
     player.disconnectExpiresAt = Date.now() + DISCONNECT_GRACE_MS;
+    const checkpointWorld = this.room.authorityCheckpoint?.world;
+    if (Array.isArray(checkpointWorld?.enemies)) {
+      checkpointWorld.enemies.forEach((enemy) => {
+        if (enemy?.targetPlayerId === playerId) enemy.targetPlayerId = null;
+      });
+    }
+
 
     let replacement = null;
     const wasHost = player.isHost === true;

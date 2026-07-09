@@ -313,6 +313,11 @@ export class MultiplayerReviveManager {
       this.updateReviveHold(interactHeld, now);
     }
 
+    if (this.isTeamEliminated(this.latestSnapshot)) {
+      this.currentReviveTarget = null;
+      this.releaseHold(true);
+      this.clearMarkers();
+    }
     this.updateSpectatorCamera();
     this.renderHud(now);
     this.updateMarkers();
@@ -471,7 +476,20 @@ export class MultiplayerReviveManager {
     );
   }
 
-  ensureTeamElimination(snapshot = this.latestSnapshot) {
+  isTeamEliminated(snapshot = this.latestSnapshot) {
+    if (!snapshot?.players) return false;
+    if (snapshot.teamEliminated === true) return true;
+    const connected = snapshot.players.filter(
+      (entry) => entry?.connected !== false
+    );
+    return connected.length > 0 && connected.every((entry) => (
+      entry.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED
+      || entry.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
+      || entry.lifeState === 'ELIMINATED'
+    ));
+  }
+
+ensureTeamElimination(snapshot = this.latestSnapshot) {
         if (
             !this.active
             || !this.isAuthority()
@@ -480,15 +498,7 @@ export class MultiplayerReviveManager {
         ) {
             return false;
         }
-        const connected = snapshot.players.filter(
-            (entry) => entry?.connected !== false
-        );
-        const eliminated = (
-            connected.length > 0
-            && connected.every((entry) => (
-                entry.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
-            ))
-        );
+        const eliminated = this.isTeamEliminated(snapshot);
         if (!eliminated) return false;
         this.teamEndRequested = true;
         this.adapter.requestTeamGameOver?.();
@@ -652,7 +662,15 @@ export class MultiplayerReviveManager {
   }
 
   findNearestDownedTarget() {
-    if (!this.latestSnapshot?.players || this.isInputBlocked()) return null;
+    if (
+      !this.latestSnapshot?.players
+      || this.isInputBlocked()
+      || this.isTeamEliminated()
+    ) return null;
+    const localState = this.latestSnapshot.players.find(
+      (entry) => entry?.playerId === this.runtime?.localPlayerId
+    )?.lifeState;
+    if (localState !== MULTIPLAYER_LIFE_STATES.ACTIVE) return null;
     const localId = this.runtime?.localPlayerId;
     const localPosition = this.player?.pos;
     const range = Number(this.latestSnapshot.reviveRange || 3.2);
@@ -973,7 +991,10 @@ export class MultiplayerReviveManager {
     let status = '';
     let border = '#ff4a36';
 
-    if (local?.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED) {
+    if (this.isTeamEliminated()) {
+      status = 'TEAM ELIMINATED · RETURNING TO LOBBY';
+      border = '#ff4a36';
+    } else if (local?.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED) {
       const seconds = Math.max(
         0,
         Math.ceil((Number(local.bleedoutEndsAt || 0) - now) / 1000)
@@ -1012,6 +1033,10 @@ export class MultiplayerReviveManager {
   }
 
   updateMarkers() {
+    if (this.isTeamEliminated()) {
+      this.clearMarkers();
+      return;
+    }
     if (!this.scene || !this.latestSnapshot?.players) return;
     const localId = this.runtime?.localPlayerId;
     const visible = new Set();

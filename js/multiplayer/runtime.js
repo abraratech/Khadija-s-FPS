@@ -82,7 +82,7 @@ export class MultiplayerRuntime {
       envelopesAccepted: 0,
       envelopesRejected: 0,
       loopbackIgnored: 0,
-      staleSnapshotsRejected: 0,
+      staleSnapshotsRejected: 0, remoteIncarnationResets: 0,
       worldSnapshotsSent: 0,
       worldSnapshotsReceived: 0,
       hitRequestsSent: 0,
@@ -645,10 +645,12 @@ sendRoomState() {
       const receivedAt = nowMs();
       const result = this.remoteSnapshots.push(envelope.playerId, {
         sequence: envelope.sequence,
+        connectionEpoch: envelope.connectionEpoch,
         sentAt: receivedAt,
         receivedAt,
         state: envelope.payload?.state
       });
+      if (result.reset === true) this.metrics.remoteIncarnationResets += 1;
 
       if (!result.accepted && result.reason === 'stale-sequence') {
         this.metrics.staleSnapshotsRejected += 1;

@@ -552,7 +552,8 @@ export function getNetworkEnemyWaveState() {
     zombiesToSpawn: Math.max(0, Number(zombiesToSpawnThisRound) || 0),
     zombiesSpawned: Math.max(0, Number(zombiesSpawnedSoFar) || 0),
     goliathsRemaining: Math.max(0, Number(goliathsToSpawn) || 0),
-    spawnTimer: Number(spawnTimer) || 0
+    spawnTimer: Number(spawnTimer) || 0,
+    nextWavePending: nextWaveTimeout !== null
   };
 }
 
@@ -685,6 +686,34 @@ export function restoreNetworkEnemySnapshot(snapshot = {}) {
   return activeEnemies.length;
 }
 
+export function resumeNetworkWaveAfterMigration(snapshot = {}) {
+  if (nextWaveTimeout) return true;
+
+  const waveState = snapshot?.waveState || {};
+  const living = activeEnemies.reduce((count, enemy) => (
+    count + (enemy?.alive && enemy.dyingT < 0 ? 1 : 0)
+  ), 0);
+  const total = Math.max(0, Math.floor(Number(
+    waveState.zombiesToSpawn
+  ) || 0));
+  const spawned = Math.max(0, Math.floor(Number(
+    waveState.zombiesSpawned
+  ) || 0));
+  const waveWasCleared = living === 0 && total > 0 && spawned >= total;
+
+  if (waveState.nextWavePending !== true && !waveWasCleared) {
+    return false;
+  }
+
+  // The old host's timeout cannot survive migration. The checkpoint already
+  // carries the incremented next-wave number, so restart that wave directly.
+  nextWaveTimeout = setTimeout(() => {
+    nextWaveTimeout = null;
+    if (getEnemyTargetCandidates().length > 0) startWave(currentWave);
+  }, 1200);
+  return true;
+}
+
 function getDifficultyScalar() {
   const scalar = Number(difficultyMultiplier);
   return Number.isFinite(scalar) && scalar > 0 ? scalar : 1;
@@ -794,7 +823,7 @@ function completeCurrentWave() {
 
   nextWaveTimeout = setTimeout(() => {
     nextWaveTimeout = null;
-    if (player.alive) startWave(currentWave);
+    if (getEnemyTargetCandidates().length > 0) startWave(currentWave);
   }, 5000);
 }
 

@@ -121,7 +121,7 @@ export class SharedWorldManager {
     this.lastSnapshotReceivedAt = -Infinity;
     this.authorityCounter = 0;
     this.authorityEpoch = 0;
-    this.latestRemoteSnapshot = null;
+    this.latestRemoteSnapshot = null; this.remoteAuthorityConnectionEpoch = null;
     this.enemyIdentity = new WeakMap();
     this.proxies = new Map();
     this.remoteTargets = new Map();
@@ -166,12 +166,13 @@ export class SharedWorldManager {
     this.lastSnapshotReceivedAt = -Infinity;
     this.authorityCounter = 0;
     this.authorityEpoch = Math.max(0, Number(this.runtime?.authorityEpoch) || 0);
-    this.latestRemoteSnapshot = null;
+    this.latestRemoteSnapshot = null; this.remoteAuthorityConnectionEpoch = null;
     this.enemyIdentity = new WeakMap();
     this.hitWindows.clear();
     this.scoredRemoteShots.clear();
     this.remoteTargets.clear();
     this.clearProxies();
+    if (!this.isAuthority()) this.adapter.clearEnemiesForNetworkProxyMode?.();
 
     if (this.isAuthority()) {
       this.adapter.configureMultiplayerEnemyAuthority?.({
@@ -201,7 +202,10 @@ export class SharedWorldManager {
       return;
     }
 
-    this.clearProxyArray();
+    this.adapter.clearEnemiesForNetworkProxyMode?.();
+    this.clearProxies();
+    this.latestRemoteSnapshot = null;
+    this.remoteAuthorityConnectionEpoch = null;
     this.adapter.applyNetworkWaveState?.(1, false);
   }
 
@@ -238,6 +242,13 @@ forceAuthoritativeSnapshot(reason = 'manual') {
     this.initializedForRun = false;
     this.adapter.configureMultiplayerEnemyAuthority?.(null);
     this.clearProxies();
+    if (!this.isAuthority()) this.adapter.clearEnemiesForNetworkProxyMode?.();
+    this.latestRemoteSnapshot = null;
+    this.remoteAuthorityConnectionEpoch = null;
+    this.lastSnapshotReceivedAt = -Infinity;
+    this.lastSnapshotSentAt = -Infinity;
+    this.authorityCounter = 0;
+    this.enemyIdentity = new WeakMap();
     this.remoteTargets.clear();
     this.hitWindows.clear();
     this.scoredRemoteShots.clear();
@@ -245,8 +256,7 @@ forceAuthoritativeSnapshot(reason = 'manual') {
 
   buildSnapshot(now) {
     const enemies = this.adapter.getActiveEnemies?.() || [];
-    return {
-      serverFrameTime: now,
+    return { runId: this.session?.run?.runId || null, serverFrameTime: now,
       authorityEpoch: this.authorityEpoch,
       wave: Math.max(1, Number(this.adapter.getCurrentWave?.()) || 1),
       specialRound: this.adapter.getSpecialRound?.() === true,
@@ -302,6 +312,29 @@ forceAuthoritativeSnapshot(reason = 'manual') {
     const snapshot = envelope?.payload;
     if (!snapshot || !Array.isArray(snapshot.enemies)) return;
 
+    if (snapshot.runId && snapshot.runId !== this.session?.run?.runId) return;
+    const incomingConnectionEpoch = Math.max(
+      0,
+      Math.floor(Number(envelope?.connectionEpoch) || 0)
+    );
+    if (
+      this.remoteAuthorityConnectionEpoch !== null
+      && incomingConnectionEpoch < this.remoteAuthorityConnectionEpoch
+    ) return;
+    if (
+      this.remoteAuthorityConnectionEpoch !== null
+      && incomingConnectionEpoch > this.remoteAuthorityConnectionEpoch
+    ) {
+      this.clearProxies();
+      this.latestRemoteSnapshot = null;
+      this.lastSnapshotReceivedAt = -Infinity;
+    }
+    this.remoteAuthorityConnectionEpoch = incomingConnectionEpoch;
+    const incomingFrame = Number(snapshot.serverFrameTime) || 0;
+    const previousFrame = Number(this.latestRemoteSnapshot?.serverFrameTime) || -Infinity;
+    const incomingEpoch = Number(envelope?.authorityEpoch ?? snapshot.authorityEpoch) || 0;
+    if (incomingEpoch < this.authorityEpoch) return;
+    if (incomingEpoch === this.authorityEpoch && incomingFrame <= previousFrame) return;
     this.latestRemoteSnapshot = JSON.parse(JSON.stringify(snapshot));
     this.authorityEpoch = Math.max(
       this.authorityEpoch,
@@ -516,6 +549,10 @@ forceAuthoritativeSnapshot(reason = 'manual') {
   applyMigrationCheckpoint(checkpoint = null, {
     becameHost = this.isAuthority()
   } = {}) {
+    const checkpointConnectionEpoch = Math.max(
+      0,
+      Math.floor(Number(checkpoint?.authorityConnectionEpoch) || 0)
+    );
     const snapshot = checkpoint?.world || this.latestRemoteSnapshot;
     if (!snapshot || !Array.isArray(snapshot.enemies)) {
       if (!becameHost) return false;
@@ -532,6 +569,7 @@ forceAuthoritativeSnapshot(reason = 'manual') {
     );
 
     if (becameHost) {
+      this.remoteAuthorityConnectionEpoch = null;
       this.clearProxies();
       this.scoredRemoteShots = new Set(
         Array.isArray(snapshot.scoredShotKeys)
@@ -539,6 +577,7 @@ forceAuthoritativeSnapshot(reason = 'manual') {
           : []
       );
       this.adapter.restoreNetworkEnemySnapshot?.(snapshot);
+      this.adapter.resumeNetworkWaveAfterMigration?.(snapshot);
       this.initializedForRun = true;
       this.enemyIdentity = new WeakMap();
       this.authorityCounter = 0;
@@ -559,6 +598,7 @@ forceAuthoritativeSnapshot(reason = 'manual') {
 
     this.adapter.clearEnemiesForNetworkProxyMode?.();
     this.clearProxies();
+    this.remoteAuthorityConnectionEpoch = checkpointConnectionEpoch || null;
     this.latestRemoteSnapshot = JSON.parse(JSON.stringify(snapshot));
     this.adapter.applyNetworkWaveState?.(
       snapshot.wave,
@@ -592,8 +632,27 @@ forceAuthoritativeSnapshot(reason = 'manual') {
     if (becameHost) {
       return this.applyMigrationCheckpoint(checkpoint, { becameHost: true });
     }
+
     this.configureAuthorityAdapter();
-    return true;
+    const applied = this.applyMigrationCheckpoint(
+      checkpoint,
+      { becameHost: false }
+    );
+    if (applied) return true;
+
+    // Never keep enemy proxies from the previous authority when a migration
+    // checkpoint is missing. Clear them and request a fresh host snapshot.
+    this.adapter.clearEnemiesForNetworkProxyMode?.();
+    this.clearProxies();
+    this.latestRemoteSnapshot = null;
+    this.remoteAuthorityConnectionEpoch = null;
+    this.lastSnapshotReceivedAt = -Infinity;
+    this.initializedForRun = true;
+    this.runtime?.sendStateResyncRequest?.({
+      reason: 'host-migration-checkpoint-missing',
+      targetHostPlayerId: this.session?.hostPlayerId || null
+    });
+    return false;
   }
 
 

@@ -284,6 +284,7 @@ export function initializeMultiplayerFoundation(
             sharedWorldManager?.forceAuthoritativeSnapshot?.(reason);
             economyManager?.sendSnapshot?.(true);
             reviveManager?.publishSnapshot?.(now, true);
+            coopStatsManager?.publishSnapshot?.(true, now);
         }
     );
     lobbyController = new MultiplayerLobbyController({
@@ -342,7 +343,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.21-M3.22] Reconciliation watchdog and network soak hardening ready.'
+    '[M3.23-M3.24 R3] Team finalization, world reset, and reconnect incarnations ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -356,8 +357,6 @@ export function beginMultiplayerRun({
   if (!initialized) {
     throw new Error('Multiplayer foundation must be initialized before a run starts.');
   }
-
-  multiplayerPlayers.syncLocalPlayer(null, performance.now(), { force: true });
 
   const pending = pendingOnlineRun;
   pendingOnlineRun = null;
@@ -386,6 +385,15 @@ export function beginMultiplayerRun({
   coopStatsManager?.beginRun();
   coopScoreboard?.hideAll?.();
 
+  // The runtime must already be inside the resumed run before the forced
+  // state event is emitted. Otherwise the first reconnect snapshot is dropped
+  // and the authority cannot target or validate this player.
+  multiplayerPlayers.syncLocalPlayer(
+    null,
+    performance.now(),
+    { force: true }
+  );
+
   pendingResumeCheckpoint = pending?.checkpoint
     ? {
         previousHostPlayerId: null,
@@ -408,17 +416,27 @@ export function beginMultiplayerRun({
 }
 
 export function finalizeMultiplayerResume() {
-  if (!initialized || !pendingResumeCheckpoint) return false;
+  if (!initialized) return false;
   const details = pendingResumeCheckpoint;
   pendingResumeCheckpoint = null;
-  applyHostMigration(details);
-  return true;
+  if (details) applyHostMigration(details);
+
+  // This runs after main.js places the player in the rebuilt map. Always send
+  // that authoritative local state, even when the reconnect checkpoint was
+  // temporarily unavailable.
+  multiplayerPlayers.syncLocalPlayer(
+    null,
+    performance.now(),
+    { force: true }
+  );
+  return Boolean(details);
 }
 
 export function endMultiplayerRun({
   reason = 'ended',
   player = null,
-  notifyServer = true
+  notifyServer = true,
+  preserveFinalSummary = true
 } = {}) {
   if (!initialized) return null;
   pendingResumeCheckpoint = null;
@@ -429,9 +447,16 @@ export function endMultiplayerRun({
     { force: true }
   );
 
-  coopStatsManager?.finalizeRun?.(reason);
-  coopStatsManager?.endRun?.({ preserveFinal: true });
-  coopScoreboard?.setHeld?.(false);
+  if (preserveFinalSummary) {
+    coopStatsManager?.finalizeRun?.(reason);
+  }
+  coopStatsManager?.endRun?.({ preserveFinal: preserveFinalSummary });
+  if (!preserveFinalSummary) {
+    coopStatsManager?.clearFinalSummary?.();
+    coopScoreboard?.hideAll?.();
+  } else {
+    coopScoreboard?.setHeld?.(false);
+  }
   sharedWorldManager?.endRun();
   reviveManager?.endRun();
   economyManager?.endRun();
@@ -452,6 +477,12 @@ export function endMultiplayerRun({
 
 export function notifyMultiplayerPlayerDeath(reason = 'death') {
   return lobbyController?.notifyPlayerDied?.(reason) === true;
+}
+
+export async function leaveMultiplayerRoom() {
+  if (!initialized) return false;
+  await lobbyController?.leaveRoom?.();
+  return true;
 }
 
 export function openMultiplayerLobby() {

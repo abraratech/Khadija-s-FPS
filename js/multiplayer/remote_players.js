@@ -295,23 +295,33 @@ export class RemotePlayerManager {
       }
 
       const state = sampled.state;
-      avatar.visible = state.alive !== false;
+            const lifeState = String(
+                state.lifeState
+                || (state.alive === false ? 'DOWNED' : 'ACTIVE')
+            );
+            const isDowned = lifeState === 'DOWNED';
+            const isSpectating = lifeState === 'SPECTATING';
+            avatar.visible = !isSpectating;
       avatar.position.set(
         Number(state.position?.x || 0),
         Number(state.position?.y || PLAYER_EYE_HEIGHT) - PLAYER_EYE_HEIGHT,
         Number(state.position?.z || 0)
       );
       avatar.rotation.y = Number(state.yaw || 0);
-
-      const remote = avatar.userData.remote;
+            avatar.rotation.z = isDowned ? Math.PI * 0.5 : 0;
+            const remote = avatar.userData.remote;
       if (remote) {
         remote.arms.rotation.x = Number(state.pitch || 0) * 0.72;
         remote.weapon.rotation.x = Number(state.pitch || 0) * 0.72;
         remote.weapon.position.y = state.isADS ? 1.34 : 1.25;
         remote.weapon.position.x = state.isADS ? 0.02 : 0.12;
         remote.body.scale.y = state.isSprinting ? 0.97 : 1;
-        remote.muzzleFlash.visible = now < remote.muzzleFlashUntil;
-        updateWeaponShape(avatar, state.weaponKey);
+        remote.arms.visible = !isDowned;
+                remote.weapon.visible = !isDowned;
+                remote.muzzleFlash.visible = (
+                    !isDowned && now < remote.muzzleFlashUntil
+                );
+                updateWeaponShape(avatar, state.weaponKey);
       }
     });
   }

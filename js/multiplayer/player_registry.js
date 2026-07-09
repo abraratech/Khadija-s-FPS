@@ -28,7 +28,11 @@ function capturePlayerState(player) {
     health: Number(player?.health || 0),
     maxHealth: Number(player?.maxHealth || 0),
     alive: player?.alive === true,
-    kills: Number(player?.kills || 0),
+        lifeState: String(
+            player?.multiplayerLifeState
+            || (player?.alive === true ? 'ACTIVE' : 'DOWNED')
+        ),
+        kills: Number(player?.kills || 0),
     score: Number(player?.score || 0),
     instaKillTimer: Number(player?.instaKillTimer || 0),
     doublePointsTimer: Number(player?.doublePointsTimer || 0),
@@ -61,7 +65,8 @@ function statesEqual(a, b) {
     && a.health === b.health
     && a.maxHealth === b.maxHealth
     && a.alive === b.alive
-    && a.kills === b.kills
+        && a.lifeState === b.lifeState
+        && a.kills === b.kills
     && a.score === b.score
     && a.instaKillTimer === b.instaKillTimer
     && a.doublePointsTimer === b.doublePointsTimer

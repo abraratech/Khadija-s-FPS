@@ -9,7 +9,7 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 5;
-const SERVER_BUILD = 'm3-host-controls-r1';
+const SERVER_BUILD = 'm3-combat-rejoin-r3';
 const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
 
 function json(data, init = {}) {
@@ -858,6 +858,34 @@ if (action === 'start-run') {
     }
 
     if (action === 'leave') {
+      const leavingPlayerId = player.playerId;
+      const wasHost = player.isHost === true;
+      const previousStatus = this.room.status;
+      delete this.room.players[leavingPlayerId];
+
+      let replacement = null;
+      if (wasHost) {
+        replacement = this.electHost(leavingPlayerId);
+        this.promoteHost(replacement, leavingPlayerId);
+      }
+
+      if (!this.connectedPlayers().length) {
+        this.room.status = 'waiting';
+        this.room.runId = null;
+        this.room.authorityCheckpoint = null;
+      }
+
+      await this.commit();
+
+      if (wasHost && replacement && previousStatus === 'in-run') {
+        this.broadcastHostMigration({
+          previousHostPlayerId: leavingPlayerId,
+          hostPlayerId: replacement.playerId,
+          reason: 'host-left-room'
+        });
+      }
+
+      this.broadcastRoomState();
       socket.send(JSON.stringify({
         kind: 'control',
         action: 'left-room',

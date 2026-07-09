@@ -92,6 +92,7 @@ export class MultiplayerReviveManager {
     this.teamEndRequested = false;
     this.localAppliedState = MULTIPLAYER_LIFE_STATES.ACTIVE;
     this.localRespawnNonce = 0;
+        this.activeHealthInitialized = false;
     this.currentReviveTarget = null;
     this.hudRoot = null;
     this.hudStatus = null;
@@ -159,6 +160,7 @@ export class MultiplayerReviveManager {
     this.teamEndRequested = false;
     this.localAppliedState = MULTIPLAYER_LIFE_STATES.ACTIVE;
     this.localRespawnNonce = 0;
+        this.activeHealthInitialized = false;
     this.currentReviveTarget = null;
     this.spectatorTargetId = null;
     this.core.reset({
@@ -299,7 +301,8 @@ export class MultiplayerReviveManager {
       });
       this.processAuthorityEvents();
       this.latestSnapshot = this.core.getSnapshot(now);
-      this.applyLocalFromSnapshot(this.latestSnapshot);
+            this.ensureTeamElimination(this.latestSnapshot);
+            this.applyLocalFromSnapshot(this.latestSnapshot);
       this.updateReviveHold(interactHeld, now);
       this.publishSnapshot(now);
     } else {
@@ -468,7 +471,31 @@ export class MultiplayerReviveManager {
     );
   }
 
-  processAuthorityEvents() {
+  ensureTeamElimination(snapshot = this.latestSnapshot) {
+        if (
+            !this.active
+            || !this.isAuthority()
+            || this.teamEndRequested
+            || !snapshot?.players
+        ) {
+            return false;
+        }
+        const connected = snapshot.players.filter(
+            (entry) => entry?.connected !== false
+        );
+        const eliminated = (
+            connected.length > 0
+            && connected.every((entry) => (
+                entry.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
+            ))
+        );
+        if (!eliminated) return false;
+        this.teamEndRequested = true;
+        this.adapter.requestTeamGameOver?.();
+        return true;
+    }
+
+    processAuthorityEvents() {
     this.core.consumeEvents().forEach((event) => {
       const stampedEvent = {
         ...event,
@@ -716,82 +743,125 @@ export class MultiplayerReviveManager {
   }
 
   applyLocalFromSnapshot(snapshot) {
-    if (!snapshot?.players) return;
-    const localId = this.runtime?.localPlayerId;
-    const state = snapshot.players.find(
-      (entry) => entry?.playerId === localId
-    );
-    if (!state) return;
+        if (!snapshot?.players) return;
+        const localId = this.runtime?.localPlayerId;
+        const state = snapshot.players.find(
+            (entry) => entry?.playerId === localId
+        );
+        if (!state) return;
 
-    if (
-      state.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
-      && this.pendingDownAt > 0
-      && nowMs() - this.pendingDownAt < SNAPSHOT_STALE_MS
-    ) {
-      return;
+        if (
+            state.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
+            && this.pendingDownAt > 0
+            && nowMs() - this.pendingDownAt < SNAPSHOT_STALE_MS
+        ) {
+            return;
+        }
+
+        if (state.lifeState !== MULTIPLAYER_LIFE_STATES.ACTIVE) {
+            this.pendingDownAt = -Infinity;
+        }
+
+        const previous = this.localAppliedState;
+        const previousNonce = this.localRespawnNonce;
+        const nextNonce = Number(state.respawnNonce || 0);
+        const respawned = (
+            state.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
+            && (
+                previous === MULTIPLAYER_LIFE_STATES.SPECTATING
+                || nextNonce > previousNonce
+            )
+        );
+        const revived = (
+            state.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
+            && previous === MULTIPLAYER_LIFE_STATES.DOWNED
+        );
+
+        // Critical lethal-state latch: updatePlayer() sets health to zero and
+        // alive=false before main.js reports DOWNED. An older ACTIVE network
+        // snapshot must not flip alive back to true during that same frame.
+        const localLethalPending = (
+            state.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
+            && !respawned
+            && !revived
+            && (
+                Number(this.player?.health || 0) <= 0
+                || this.player?.alive === false
+            )
+        );
+        if (localLethalPending) {
+            this.activeHealthInitialized = true;
+            this.adapter.setLocalWeaponVisible?.(false);
+            return;
+        }
+
+        this.localAppliedState = state.lifeState;
+        this.localRespawnNonce = nextNonce;
+
+        if (state.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED) {
+            this.activeHealthInitialized = true;
+            this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.DOWNED);
+            this.player.health = 0;
+            this.player.vel?.set?.(0, 0, 0);
+            this.adapter.clearInput?.();
+            this.adapter.syncHud?.();
+            return;
+        }
+
+        if (state.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING) {
+            this.activeHealthInitialized = true;
+            this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.SPECTATING);
+            this.player.health = 0;
+            this.player.vel?.set?.(0, 0, 0);
+            this.adapter.clearInput?.();
+            this.adapter.syncHud?.();
+            return;
+        }
+
+        this.pendingDownAt = -Infinity;
+        this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.ACTIVE);
+
+        if (respawned) {
+            this.activeHealthInitialized = true;
+            this.adapter.respawnLocalPlayer?.({
+                health: state.health || state.maxHealth || 100
+            });
+        } else if (revived) {
+            this.activeHealthInitialized = true;
+            this.adapter.reviveLocalPlayer?.({
+                health: state.health || Math.round(
+                    Number(state.maxHealth || 100) * 0.4
+                )
+            });
+        } else if (this.activeHealthInitialized !== true) {
+            // Apply authoritative health once when entering/re-entering a run.
+            // Routine ACTIVE snapshots must never heal over live combat damage.
+            this.activeHealthInitialized = true;
+            if (Number.isFinite(Number(state.health))) {
+                this.player.health = Math.max(
+                    1,
+                    Math.min(
+                        Number(state.maxHealth || this.player.maxHealth || 100),
+                        Number(state.health)
+                    )
+                );
+            }
+            this.adapter.syncHud?.();
+        } else {
+            this.adapter.syncHud?.();
+        }
     }
-
-    if (state.lifeState !== MULTIPLAYER_LIFE_STATES.ACTIVE) {
-      this.pendingDownAt = -Infinity;
-    }
-
-    const previous = this.localAppliedState;
-    const previousNonce = this.localRespawnNonce;
-    this.localAppliedState = state.lifeState;
-    this.localRespawnNonce = Number(state.respawnNonce || 0);
-
-    if (state.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED) {
-      this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.DOWNED);
-      this.player.health = 0;
-      this.player.vel?.set?.(0, 0, 0);
-      this.adapter.clearInput?.();
-      this.adapter.syncHud?.();
-      return;
-    }
-
-    if (state.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING) {
-      this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.SPECTATING);
-      this.player.health = 0;
-      this.player.vel?.set?.(0, 0, 0);
-      this.adapter.clearInput?.();
-      this.adapter.syncHud?.();
-      return;
-    }
-
-    this.pendingDownAt = -Infinity;
-    const respawned = (
-      previous === MULTIPLAYER_LIFE_STATES.SPECTATING
-      || this.localRespawnNonce > previousNonce
-    );
-    const revived = previous === MULTIPLAYER_LIFE_STATES.DOWNED;
-    this.applyLocalFlags(MULTIPLAYER_LIFE_STATES.ACTIVE);
-
-    if (respawned) {
-      this.adapter.respawnLocalPlayer?.({
-        health: state.health || state.maxHealth || 100
-      });
-    } else if (revived || this.player?.alive !== true) {
-      this.adapter.reviveLocalPlayer?.({
-        health: state.health || Math.round(
-          Number(state.maxHealth || 100) * 0.4
-        )
-      });
-    } else {
-      this.player.health = Math.max(
-        1,
-        Number(state.health || this.player.health || 100)
-      );
-      this.adapter.syncHud?.();
-    }
-  }
 
   applyLocalFlags(lifeState, { preserveAlive = false } = {}) {
     if (!this.player) return;
     this.player.multiplayerLifeState = lifeState;
     this.player.isDowned = lifeState === MULTIPLAYER_LIFE_STATES.DOWNED;
     this.player.isSpectating = (
-      lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
-    );
+            lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
+        );
+        this.adapter.setLocalWeaponVisible?.(
+            lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
+        );
     if (!preserveAlive) {
       this.player.alive = lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE;
     }
@@ -921,7 +991,7 @@ export class MultiplayerReviveManager {
         / Math.max(1, Number(this.latestSnapshot.reviveHoldMs || 3000))
       );
       status = (
-        `HOLD INTERACT TO REVIVE `
+        `HOLD ${this.adapter.getInteractLabel?.() || 'INTERACT'} TO REVIVE `
         + `${this.currentReviveTarget.displayName} `
         + `· ${this.currentReviveTarget.distance.toFixed(1)}m `
         + `· ${progress}%`

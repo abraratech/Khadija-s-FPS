@@ -35,24 +35,80 @@ function normalizeRoomCode(value) {
     .slice(0, 6);
 }
 
+const LAST_ROOM_STORAGE_KEY = 'ka_multiplayer_last_room';
+
 function reconnectStorageKey(roomCode) {
-  return `ka_multiplayer_reconnect_${roomCode}`;
+    return `ka_multiplayer_reconnect_${roomCode}`;
+}
+
+function readPersistentValue(key) {
+    try {
+        const localValue = localStorage.getItem(key);
+        if (localValue !== null) return localValue;
+    } catch {
+        // Fall through to session storage.
+    }
+    try {
+        return sessionStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function writePersistentValue(key, value) {
+    try {
+        localStorage.setItem(key, value);
+        return;
+    } catch {
+        try {
+            sessionStorage.setItem(key, value);
+        } catch {
+            // Ignore restricted storage modes.
+        }
+    }
 }
 
 function loadReconnectToken(roomCode) {
-  try {
-    return sessionStorage.getItem(reconnectStorageKey(roomCode));
-  } catch {
-    return null;
-  }
+    const normalized = normalizeRoomCode(roomCode);
+    if (!normalized) return null;
+    return readPersistentValue(reconnectStorageKey(normalized));
 }
 
 function saveReconnectToken(roomCode, token) {
-  try {
-    if (token) sessionStorage.setItem(reconnectStorageKey(roomCode), token);
-  } catch {
-    // Ignore restricted session storage.
-  }
+    const normalized = normalizeRoomCode(roomCode);
+    if (!normalized || !token) return;
+    writePersistentValue(reconnectStorageKey(normalized), token);
+}
+
+function loadLastRoom() {
+    try {
+        const parsed = JSON.parse(readPersistentValue(LAST_ROOM_STORAGE_KEY) || 'null');
+        const roomCode = normalizeRoomCode(parsed?.roomCode);
+        const serverUrl = String(parsed?.serverUrl || '').trim();
+        if (roomCode.length !== 6 || !serverUrl) return null;
+        return {
+            roomCode,
+            serverUrl,
+            displayName: String(parsed?.displayName || 'Player').trim().slice(0, 24) || 'Player',
+            savedAt: Math.max(0, Number(parsed?.savedAt) || 0)
+        };
+    } catch {
+        return null;
+    }
+}
+
+function saveLastRoom({ roomCode, serverUrl, displayName } = {}) {
+    const normalized = normalizeRoomCode(roomCode);
+    const normalizedServer = String(serverUrl || '').trim();
+    if (normalized.length !== 6 || !normalizedServer) return null;
+    const value = {
+        roomCode: normalized,
+        serverUrl: normalizedServer,
+        displayName: String(displayName || 'Player').trim().slice(0, 24) || 'Player',
+        savedAt: Date.now()
+    };
+    writePersistentValue(LAST_ROOM_STORAGE_KEY, JSON.stringify(value));
+    return value;
 }
 
 export class MultiplayerLobbyController {
@@ -84,6 +140,8 @@ export class MultiplayerLobbyController {
     this.error = null;
     this.connected = false;
     this.room = null;
+        this.lastRoom = loadLastRoom();
+        this.pendingLeaveResolver = null;
   }
 
   initialize() {
@@ -91,6 +149,7 @@ export class MultiplayerLobbyController {
       actions: {
         createRoom: (options) => this.createRoom(options),
         joinRoom: (options) => this.joinRoom(options),
+                rejoinLastRoom: (options) => this.rejoinLastRoom(options),
         setReady: (ready) => this.setReady(ready),
         updateSettings: (settings) => this.updateSettings(settings),
         startRun: () => this.startRun(),
@@ -155,7 +214,23 @@ export class MultiplayerLobbyController {
     });
   }
 
-  async connect({
+  async rejoinLastRoom({ displayName } = {}) {
+        const saved = loadLastRoom();
+        if (!saved) {
+            this.error = 'NO SAVED CO-OP ROOM';
+            this.render();
+            return false;
+        }
+        this.lastRoom = saved;
+        return this.connect({
+            roomCode: saved.roomCode,
+            displayName: String(displayName || saved.displayName || 'Player'),
+            serverUrl: saved.serverUrl,
+            joinMode: 'join'
+        });
+    }
+
+    async connect({
     roomCode,
     displayName,
     serverUrl,
@@ -172,7 +247,13 @@ export class MultiplayerLobbyController {
       return false;
     }
 
-    try {
+    this.lastRoom = saveLastRoom({
+            roomCode,
+            serverUrl,
+            displayName
+        }) || this.lastRoom;
+
+        try {
       await this.transport.connect({
         serverUrl,
         roomCode,
@@ -230,6 +311,13 @@ export class MultiplayerLobbyController {
       this.room = room;
       this.transport.setReconnectToken(payload.reconnectToken);
       saveReconnectToken(room.roomCode, payload.reconnectToken);
+            this.lastRoom = saveLastRoom({
+                roomCode: room.roomCode,
+                serverUrl: this.transport?.serverUrl || this.lastRoom?.serverUrl,
+                displayName: room.players.find(
+                    (entry) => entry.playerId === this.localPlayerId
+                )?.displayName || this.lastRoom?.displayName
+            }) || this.lastRoom;
 
       const local = room.players.find(
         (player) => player.playerId === this.localPlayerId
@@ -454,8 +542,11 @@ export class MultiplayerLobbyController {
     }
 
 if (action === 'left-room') {
-      this.finishLeave();
-    }
+            const resolveLeave = this.pendingLeaveResolver;
+            this.pendingLeaveResolver = null;
+            resolveLeave?.();
+            this.finishLeave();
+        }
   }
 
   setReady(ready) {
@@ -508,13 +599,23 @@ openLobby() {
   }
 
   async leaveRoom() {
-    try {
-      this.transport.sendControl('leave', { reason: 'manual' });
-    } finally {
-      await this.transport.disconnect('left-room', { fallbackLocal: true });
-      this.finishLeave();
+        const acknowledged = new Promise((resolve) => {
+            this.pendingLeaveResolver = resolve;
+            setTimeout(() => {
+                if (this.pendingLeaveResolver !== resolve) return;
+                this.pendingLeaveResolver = null;
+                resolve();
+            }, 750);
+        });
+        try {
+            this.transport.sendControl('leave', { reason: 'manual' });
+            await acknowledged;
+        } finally {
+            this.pendingLeaveResolver = null;
+            await this.transport.disconnect('left-room', { fallbackLocal: true });
+            this.finishLeave();
+        }
     }
-  }
 
   finishLeave() {
     this.connected = false;
@@ -544,7 +645,8 @@ openLobby() {
       transportState,
       transportMode,
       room: this.room,
-      localPlayerId: this.localPlayerId,
+            lastRoom: this.lastRoom || loadLastRoom(),
+            localPlayerId: this.localPlayerId,
       error: this.error
     });
   }
@@ -553,7 +655,8 @@ openLobby() {
     return {
       connected: this.connected,
       room: this.room,
-      error: this.error,
+            lastRoom: this.lastRoom || loadLastRoom(),
+            error: this.error,
       transport: this.transport.getConnectionSnapshot()
     };
   }

@@ -1,5 +1,5 @@
 // js/multiplayer/network_quality.js
-const DEFAULT_PING_INTERVAL_MS = 2000;
+const DEFAULT_PING_INTERVAL_MS = 1000;
 const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_MAX_SAMPLES = 24;
 function clamp(value, min, max) { return Math.min(max, Math.max(min, Number(value) || 0)); }

@@ -104,7 +104,14 @@ initializeMultiplayerFoundation(player, {
     clearInput: clearInputState,
     syncHud: syncHudFromPlayer,
     showToast: showStatusToast,
-    requestTeamGameOver: () => requestOnlineRunEnd('team-eliminated'),
+        getInteractLabel: () => getBindingLabel(CONTROL_ACTIONS.INTERACT),
+        setLocalWeaponVisible: (visible) => {
+            const weapon = getActiveWeapon();
+            if (weapon?.meshGroup) {
+                weapon.meshGroup.visible = visible === true;
+            }
+        },
+        requestTeamGameOver: () => requestOnlineRunEnd('team-eliminated'),
     reviveLocalPlayer: ({ health = 40 } = {}) => {
       player.alive = true;
       player.health = Math.max(1, Math.round(Number(health) || 40));
@@ -152,8 +159,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-host-controls-r1';
-console.info('[Multiplayer Build] m3-host-controls-r1 | protocol 5');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-combat-rejoin-r3';
+console.info('[Multiplayer Build] m3-combat-rejoin-r3 | protocol 5');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -548,7 +555,12 @@ function setActionKeyState(action, pressed) {
 }
 
 function pauseGameplay(source = 'input') {
-  if (gs !== 'playing' || !player.alive) return false;
+    if (
+        gs !== 'playing'
+        || !player.alive
+        || Number(player.health || 0) <= 0
+        || isMultiplayerLifeInputBlocked()
+    ) return false;
   if (isOnlineCoOpRun() && coOpMenuOpen) return true;
 
   pauseTransitionAt = performance.now();
@@ -571,7 +583,11 @@ function pauseGameplay(source = 'input') {
   console.log(`Game paused from ${source}.`);
   return true;
 } function resumeGameplay(source = 'input') {
-  if (!player.alive) return false;
+    if (
+        !player.alive
+        || Number(player.health || 0) <= 0
+        || isMultiplayerLifeInputBlocked()
+    ) return false;
 
   if (isOnlineCoOpRun() && coOpMenuOpen) {
     if (performance.now() - pauseTransitionAt < 180) return false;
@@ -1347,9 +1363,16 @@ for (const event of consumeTutorialEvents()) {
 
 updateSharedMultiplayerWorld(dt, performance.now());
 updateSharedMultiplayerEconomy(performance.now());
-updateMultiplayerRevive(dt, performance.now(), {
-  interactHeld: Boolean(frameKeys.KeyE || frameKeys.KeyF)
-});
+const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
+            updateMultiplayerRevive(dt, performance.now(), {
+                interactHeld: Boolean(
+                    multiplayerInteractCode
+                    && (
+                        frameKeys[multiplayerInteractCode]
+                        || keys[multiplayerInteractCode]
+                    )
+                )
+            });
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
@@ -1378,8 +1401,13 @@ const effectsMs = performance.now() - mark;
   }
 
   if (!player.alive && gs === 'playing') {
-    if (isOnlineMultiplayerRun()) {
-      if (!onlineDeathReportPending) {
+            if (isOnlineMultiplayerRun()) {
+                // Lethal co-op state owns the screen. Never leave the
+                // live pause overlay open over a DOWNED player.
+                coOpMenuOpen = false;
+                hidePauseScreen();
+                setLockHintVisible(false);
+                if (!onlineDeathReportPending) {
         onlineDeathReportPending = notifyMultiplayerLocalDowned('player-downed');
         showStatusToast(
           'DOWNED · HOLD INTERACT TO REVIVE TEAMMATE',

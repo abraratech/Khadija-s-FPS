@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createProceduralZombieVisual } from '../actors/procedural_zombie.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 
-const SNAPSHOT_INTERVAL_MS = 80;
+const SNAPSHOT_INTERVAL_MS = 50;
 const SNAPSHOT_STALE_MS = 1800;
 const MAX_REMOTE_DAMAGE = 9999;
 const MAX_HIT_REQUESTS_PER_SECOND = 45;
@@ -346,7 +346,8 @@ export class SharedWorldManager {
       attackRange: meta.contactRange,
       attackRate: meta.contactCooldown,
       contactCooldown: 0,
-      targetPosition: new THREE.Vector3(),
+            predictedDeadUntil: 0,
+            targetPosition: new THREE.Vector3(),
       targetYaw: Number(state.yaw || 0),
       walkT: Number(state.walkT || 0),
       attackState: String(state.attackState || 'IDLE'),
@@ -354,15 +355,30 @@ export class SharedWorldManager {
       hitReactT: Number(state.hitReactT || 0),
       targetPlayerId: state.targetPlayerId || null,
       handleNetworkHit: (hit) => {
-        this.runtime?.sendEnemyHitRequest?.({
-          enemyId: state.id,
-          damage: Math.max(1, Math.min(MAX_REMOTE_DAMAGE, Number(hit?.damage) || 1)),
-          headshot: hit?.headshot === true,
-          distance: Math.max(0, Number(hit?.distance) || 0),
-          weaponFamily: String(hit?.weaponFamily || 'UNKNOWN').slice(0, 32),
-          point: hit?.point || null
-        });
-      }
+                const predictedDamage = Math.max(1, Math.min(
+                    MAX_REMOTE_DAMAGE,
+                    Number(hit?.damage) || 1
+                ));
+
+                // Client prediction is visual only. The host remains authoritative,
+                // but hit reaction/death no longer waits a full network round trip.
+                proxy.hitReactT = Math.max(Number(proxy.hitReactT) || 0, 0.16);
+                proxy.health = Math.max(0, Number(proxy.health || 0) - predictedDamage);
+                if (proxy.health <= 0) {
+                    proxy.alive = false;
+                    proxy.predictedDeadUntil = nowMs() + 600;
+                    proxy.mesh.visible = false;
+                }
+
+                this.runtime?.sendEnemyHitRequest?.({
+                    enemyId: state.id,
+                    damage: predictedDamage,
+                    headshot: hit?.headshot === true,
+                    distance: Math.max(0, Number(hit?.distance) || 0),
+                    weaponFamily: String(hit?.weaponFamily || 'UNKNOWN').slice(0, 32),
+                    point: hit?.point || null
+                });
+            }
     };
 
     setEnemyReference(mesh, proxy);
@@ -387,23 +403,47 @@ export class SharedWorldManager {
   }
 
   applyProxyState(proxy, state) {
-    proxy.type = state.type || proxy.type;
-    proxy.health = Math.max(0, Number(state.health) || 0);
-    proxy.maxHealth = Math.max(1, Number(state.maxHealth) || proxy.maxHealth);
-    proxy.alive = state.alive !== false && proxy.health > 0;
-    proxy.walkT = Number(state.walkT || proxy.walkT || 0);
-    proxy.attackState = String(state.attackState || 'IDLE');
-    proxy.attackAnimT = Number(state.attackAnimT || 0);
-    proxy.hitReactT = Number(state.hitReactT || 0);
-    proxy.targetPlayerId = state.targetPlayerId || null;
-    proxy.targetPosition.set(
-      Number(state.position?.x || 0),
-      Number(state.position?.y || 0),
-      Number(state.position?.z || 0)
-    );
-    proxy.targetYaw = Number(state.yaw || 0);
-    proxy.mesh.visible = proxy.alive;
-  }
+        proxy.type = state.type || proxy.type;
+        const authoritativeHealth = Math.max(0, Number(state.health) || 0);
+        const authoritativeAlive = state.alive !== false && authoritativeHealth > 0;
+        const predictionActive = (
+            Number(proxy.predictedDeadUntil || 0) > nowMs()
+            && authoritativeAlive
+        );
+
+        proxy.maxHealth = Math.max(
+            1,
+            Number(state.maxHealth) || proxy.maxHealth
+        );
+
+        if (predictionActive) {
+            proxy.health = Math.min(
+                Math.max(0, Number(proxy.health) || 0),
+                authoritativeHealth
+            );
+            proxy.alive = false;
+        } else {
+            proxy.health = authoritativeHealth;
+            proxy.alive = authoritativeAlive;
+            proxy.predictedDeadUntil = 0;
+        }
+
+        proxy.walkT = Number(state.walkT || proxy.walkT || 0);
+        proxy.attackState = String(state.attackState || 'IDLE');
+        proxy.attackAnimT = Number(state.attackAnimT || 0);
+        proxy.hitReactT = Math.max(
+            Number(state.hitReactT || 0),
+            Number(proxy.hitReactT || 0)
+        );
+        proxy.targetPlayerId = state.targetPlayerId || null;
+        proxy.targetPosition.set(
+            Number(state.position?.x || 0),
+            Number(state.position?.y || 0),
+            Number(state.position?.z || 0)
+        );
+        proxy.targetYaw = Number(state.yaw || 0);
+        proxy.mesh.visible = proxy.alive;
+    }
 
   updateClientProxies(dt, now) {
     const stale = now - this.lastSnapshotReceivedAt > SNAPSHOT_STALE_MS;

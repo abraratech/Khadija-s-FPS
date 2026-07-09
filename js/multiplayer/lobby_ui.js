@@ -190,7 +190,16 @@ export class MultiplayerLobbyUI {
       leave: modal.querySelector('#ka-coop-leave')
     };
 
-    this.installHostControls(); this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
+    const rejoin = document.createElement('button');
+        rejoin.id = 'ka-coop-rejoin';
+        rejoin.className = 'ka-coop-primary';
+        rejoin.type = 'button';
+        rejoin.textContent = 'REJOIN LAST ROOM';
+        rejoin.hidden = true;
+        this.elements.join.insertAdjacentElement('afterend', rejoin);
+        this.elements.rejoin = rejoin;
+
+        this.installHostControls(); this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
     this.elements.server.value = readStored(
       SERVER_STORAGE_KEY,
       'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
@@ -219,7 +228,8 @@ export class MultiplayerLobbyUI {
       transportState: 'connected',
       transportMode: 'local',
       room: null,
-      localPlayerId: null,
+            lastRoom: null,
+            localPlayerId: null,
       error: null
     });
   }
@@ -301,7 +311,13 @@ bindEvents() {
       });
     });
 
-    this.elements.join.addEventListener('click', () => {
+    this.elements.rejoin.addEventListener('click', () => {
+            this.saveIdentity();
+            this.actions.rejoinLastRoom?.({
+                displayName: this.elements.name.value
+            });
+        });
+        this.elements.join.addEventListener('click', () => {
       this.saveIdentity();
       this.actions.joinRoom?.({
         roomCode: this.elements.codeInput.value,
@@ -447,8 +463,13 @@ bindEvents() {
     const disabled = nextState.connecting;
     this.elements.create.disabled = disabled;
     this.elements.join.disabled = disabled;
-
-    if (!online) return;
+        const lastRoom = nextState.lastRoom;
+        this.elements.rejoin.hidden = online || !lastRoom?.roomCode;
+        this.elements.rejoin.disabled = disabled || online;
+        this.elements.rejoin.textContent = lastRoom?.roomCode
+            ? `REJOIN ${lastRoom.roomCode}`
+            : 'REJOIN LAST ROOM';
+        if (!online) return;
 
     this.elements.roomCode.textContent = room.roomCode || '------';
     const local = this.localPlayer();

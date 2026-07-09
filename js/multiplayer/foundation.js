@@ -5,6 +5,7 @@ import { MultiplayerSession } from './session.js';
 import { MultiplayerPlayerRegistry } from './player_registry.js';
 import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
+import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -23,7 +24,7 @@ let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
-let reviveManager = null; let networkHud = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -237,6 +238,14 @@ export function initializeMultiplayerFoundation(
         () => hostMigrationState.getSnapshot()
     });
 
+  recoveryDiagnostics = new MultiplayerRecoveryDiagnostics({
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    transport: multiplayerTransport
+  });
+  recoveryDiagnostics.initialize();
+
   tacticalAwareness = new MultiplayerTacticalAwareness({
     eventBus: multiplayerEvents,
     runtime: multiplayerRuntime,
@@ -343,7 +352,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.23-M3.24 R3] Team finalization, world reset, and reconnect incarnations ready.'
+    '[M3.25-M3.26] Network fault simulation and recovery diagnostics ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -584,6 +593,27 @@ export function placeMultiplayerTacticalPing(now = performance.now()) {
     || { accepted: false, reason: 'not-ready' };
 }
 
+
+export function toggleMultiplayerRecoveryDiagnostics(force = null) {
+  if (!initialized) return false;
+  return recoveryDiagnostics?.toggle?.(force) === true;
+}
+
+export function configureMultiplayerFaultSimulation(config = {}) {
+  if (!initialized) return null;
+  return multiplayerRuntime.configureFaultSimulation(config);
+}
+
+export function getMultiplayerFaultSimulationSnapshot() {
+  if (!initialized) return null;
+  return multiplayerRuntime.getFaultSimulationSnapshot();
+}
+
+export function triggerMultiplayerSimulatedDisconnect() {
+  if (!initialized) return false;
+  return multiplayerRuntime.triggerSimulatedDisconnect();
+}
+
 export function setMultiplayerScoreboardHeld(held) {
   if (!initialized) return false;
   return coopScoreboard?.setHeld?.(held) === true;
@@ -617,7 +647,7 @@ export function syncMultiplayerFrame(
     now
   });
 
-  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -641,7 +671,10 @@ export function getMultiplayerFoundationSnapshot() {
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
     revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
-    hostMigration: hostMigrationState.getSnapshot(), coopScaling: getCoopScalingSnapshot()
+    hostMigration: hostMigrationState.getSnapshot(),
+    coopScaling: getCoopScalingSnapshot(),
+    faultSimulation: multiplayerRuntime.getFaultSimulationSnapshot(),
+    recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null
   };
 }
 

@@ -9,6 +9,7 @@ import {
 import { MultiplayerCommandStream } from './command_stream.js';
 import { RemoteSnapshotBuffer } from './snapshot_buffer.js'; import { NetworkQualityTracker } from './network_quality.js';
 import { MultiplayerReconciliationTracker } from './reconciliation.js';
+import { MultiplayerFaultSimulator } from './fault_simulator.js';
 import { MultiplayerRoomState } from './room.js';
 import { TRANSPORT_MODES, TRANSPORT_STATES } from './transport.js';
 
@@ -57,7 +58,9 @@ export class MultiplayerRuntime {
     this.remoteSnapshots = new RemoteSnapshotBuffer({
       interpolationDelayMs: snapshotInterpolationDelayMs
     }); this.networkQuality = new NetworkQualityTracker();
-    this.reconciliation = new MultiplayerReconciliationTracker(); this.lastNetworkQualityLevel = 'WAITING';
+    this.reconciliation = new MultiplayerReconciliationTracker();
+    this.faultSimulator = new MultiplayerFaultSimulator();
+    this.lastNetworkQualityLevel = 'WAITING';
     this.room = new MultiplayerRoomState({ eventBus });
     this.initialized = false;
     this.localPlayerId = null;
@@ -202,6 +205,7 @@ export class MultiplayerRuntime {
       now: Date.now(),
       authorityEpoch: this.authorityEpoch
     });
+    this.faultSimulator.beginRun(run?.runId || null);
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -214,6 +218,7 @@ export class MultiplayerRuntime {
   }
 
   endRun() { this.networkQuality.reset(Date.now());
+    this.faultSimulator.endRun();
     this.reconciliation.endRun(Date.now());
     this.commandStream.endRun();
     this.room.endRun();
@@ -570,14 +575,32 @@ sendRoomState() {
       sentAt: nowMs()
     });
 
-    if (this.transport?.send(type, envelope)) {
-      this.metrics.envelopesSent += 1;
-    }
+    this.faultSimulator.dispatchOutbound(
+      type,
+      envelope,
+      (outboundType, outboundEnvelope) => {
+        const sent = this.transport?.send(outboundType, outboundEnvelope) === true;
+        if (sent) this.metrics.envelopesSent += 1;
+        return sent;
+      }
+    );
 
     return envelope;
   }
 
-  handleTransportMessage(message) {
+  handleTransportMessage(message, { bypassFaultSimulation = false } = {}) {
+    if (
+      !bypassFaultSimulation
+      && this.faultSimulator.interceptInbound(
+        message,
+        () => this.handleTransportMessage(message, {
+          bypassFaultSimulation: true
+        })
+      )
+    ) {
+      return;
+    }
+
     const envelope = message?.payload;
     if (!envelope) return;
 
@@ -788,6 +811,28 @@ sendRoomState() {
     return { accepted: true };
   }
 
+
+  configureFaultSimulation(config = {}) {
+    return this.faultSimulator.configure(config);
+  }
+
+  applyFaultSimulationPreset(name = 'clean') {
+    return this.faultSimulator.applyPreset(name);
+  }
+
+  getFaultSimulationSnapshot() {
+    return this.faultSimulator.getSnapshot();
+  }
+
+  clearFaultSimulationMetrics() {
+    this.faultSimulator.clearMetrics();
+    return this.faultSimulator.getSnapshot();
+  }
+
+  triggerSimulatedDisconnect() {
+    return this.faultSimulator.triggerDisconnect(this.transport);
+  }
+
   setAuthorityEpoch(authorityEpoch, {
     hostPlayerId = null,
     reason = 'host-migration'
@@ -848,7 +893,9 @@ sendRoomState() {
       remoteCommandPlayers: Array.from(this.lastRemoteCommands.keys()),
       queuedRemoteActions: this.remoteActions.length,
       authorityEpoch: this.authorityEpoch,
-      reconciliation: this.getReconciliationSnapshot(Date.now()), networkQuality: this.getNetworkQualitySnapshot(Date.now()),
+      reconciliation: this.getReconciliationSnapshot(Date.now()),
+      networkQuality: this.getNetworkQualitySnapshot(Date.now()),
+      faultSimulation: this.getFaultSimulationSnapshot(),
       metrics: { ...this.metrics }
     };
   }
@@ -856,6 +903,7 @@ sendRoomState() {
   destroy() {
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
     this.unsubscribe.length = 0;
+    this.faultSimulator.flush('runtime-destroy');
     this.remoteSnapshots.clear();
     this.initialized = false;
   }

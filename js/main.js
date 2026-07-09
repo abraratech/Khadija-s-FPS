@@ -161,9 +161,12 @@ configureMultiplayerEconomy({
   refundPlayer: refundMultiplayerPoints
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-migration-combat-leave-r4';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-network-fault-diagnostics-r1';
 console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-migration-combat-leave-r4');
+console.info('[Multiplayer Patch] m3-network-fault-diagnostics-r1');
+if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
+  console.info('[Multiplayer Debug] Recovery Lab enabled · press F8');
+}
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

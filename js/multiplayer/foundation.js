@@ -4,7 +4,7 @@ import { MultiplayerEventBus, MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MultiplayerSession } from './session.js';
 import { MultiplayerPlayerRegistry } from './player_registry.js';
 import { MultiplayerTransport } from './transport.js';
-import { MultiplayerRuntime } from './runtime.js';
+import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -24,7 +24,7 @@ let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
 let reviveManager = null; let networkHud = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
-let lobbyController = null;
+let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
 export const multiplayerEvents = new MultiplayerEventBus({
@@ -258,7 +258,35 @@ export function initializeMultiplayerFoundation(
     coopScoreboard?.update?.(performance.now(), { force: true });
   });
 
-  lobbyController = new MultiplayerLobbyController({
+  multiplayerEvents.on(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_STATE_RESYNC_REQUEST_RECEIVED,
+        (event) => {
+            if (
+                multiplayerSession?.run?.active !== true
+                || multiplayerSession?.mode !== 'host'
+            ) {
+                return;
+            }
+            const envelope = event?.payload?.envelope;
+            const requestedHost = envelope?.payload?.targetHostPlayerId;
+            if (
+                requestedHost
+                && requestedHost !== multiplayerRuntime.localPlayerId
+            ) {
+                return;
+            }
+            const now = performance.now();
+            if (now - lastAuthoritativeResyncAt < 450) return;
+            lastAuthoritativeResyncAt = now;
+            const reason = String(
+                envelope?.payload?.reason || 'client-resync'
+            ).slice(0, 80);
+            sharedWorldManager?.forceAuthoritativeSnapshot?.(reason);
+            economyManager?.sendSnapshot?.(true);
+            reviveManager?.publishSnapshot?.(now, true);
+        }
+    );
+    lobbyController = new MultiplayerLobbyController({
     eventBus: multiplayerEvents,
     transport: multiplayerTransport,
     session: multiplayerSession,
@@ -314,7 +342,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.9-M3.10] Network quality, adaptive interpolation, and co-op HUD ready.'
+    '[M3.21-M3.22] Reconciliation watchdog and network soak hardening ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -581,7 +609,7 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot(), coopScaling: getCoopScalingSnapshot()
   };
 }

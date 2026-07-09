@@ -1,8 +1,8 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-combat-rejoin-r3';
-export const MULTIPLAYER_PROTOCOL_VERSION = 5;
-export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([4, 5]);
+export const MULTIPLAYER_BUILD_ID = 'm3-reconciliation-soak-r1';
+export const MULTIPLAYER_PROTOCOL_VERSION = 6;
+export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([5, 6]);
 
 export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   INPUT_COMMAND: 'input-command',
@@ -18,6 +18,7 @@ export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   REVIVE_STATE: 'revive-state',
   TACTICAL_PING: 'tactical-ping',
   RUN_STATS: 'run-stats',
+  STATE_RESYNC_REQUEST: 'state-resync-request',
   HEARTBEAT: 'heartbeat'
 });
 

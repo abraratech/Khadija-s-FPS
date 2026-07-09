@@ -159,8 +159,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-combat-rejoin-r3';
-console.info('[Multiplayer Build] m3-combat-rejoin-r3 | protocol 5');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-reconciliation-soak-r1';
+console.info('[Multiplayer Build] m3-reconciliation-soak-r1 | protocol 6');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

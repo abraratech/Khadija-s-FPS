@@ -224,6 +224,15 @@ export class SharedWorldManager {
     this.updateClientProxies(dt, now);
   }
 
+forceAuthoritativeSnapshot(reason = 'manual') {
+    if (!this.active || !this.isOnline() || !this.isAuthority()) return null;
+    const now = nowMs();
+    this.lastSnapshotSentAt = now;
+    const snapshot = this.buildSnapshot(now);
+    snapshot.reconciliationReason = String(reason || 'manual').slice(0, 80);
+    return this.runtime?.sendWorldSnapshot?.(snapshot) || null;
+  }
+
   endRun() {
     this.active = false;
     this.initializedForRun = false;

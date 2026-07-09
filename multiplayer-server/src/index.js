@@ -8,9 +8,9 @@ const MAX_MESSAGE_BYTES = 64 * 1024;
 const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
-const SERVER_PROTOCOL = 5;
-const SERVER_BUILD = 'm3-combat-rejoin-r3';
-const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
+const SERVER_PROTOCOL = 6;
+const SERVER_BUILD = 'm3-reconciliation-soak-r1';
+const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});

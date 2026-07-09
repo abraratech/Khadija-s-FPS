@@ -13,7 +13,7 @@ import { MultiplayerReviveManager } from './revive.js';
 import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
 import { MultiplayerTacticalAwareness } from './tactical_ping.js';
 import { MultiplayerCoopStatsManager } from './coop_stats.js';
-import { MultiplayerCoopScoreboard } from './coop_scoreboard.js';
+import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -57,6 +57,22 @@ export const multiplayerRuntime = new MultiplayerRuntime({
 });
 
 let initialized = false;
+function syncCoopScalingFromRoom() {
+  const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+  const online = multiplayerSession?.run?.active === true
+    && (
+      multiplayerSession.mode === 'host'
+      || multiplayerSession.mode === 'client'
+    );
+  const connectedPlayers = (room?.players || []).filter(
+    (entry) => entry?.connected !== false
+  ).length;
+  return setCoopScalingContext({
+    online,
+    playerCount: online ? connectedPlayers : 1
+  });
+}
+
 
 function localPlayerId() {
   return `player-${multiplayerSession.clientId}`;
@@ -238,7 +254,7 @@ export function initializeMultiplayerFoundation(
     stats: coopStatsManager,
     session: multiplayerSession
   });
-  multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, () => {
+  multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, () => { syncCoopScalingFromRoom();
     coopScoreboard?.update?.(performance.now(), { force: true });
   });
 
@@ -287,7 +303,7 @@ export function initializeMultiplayerFoundation(
     onHostMigrated: (details = {}) => {
       applyHostMigration(details);
     },
-    onLeftRoom: () => {
+    onLeftRoom: () => { setCoopScalingContext({ online: false, playerCount: 1 });
       coopStatsManager?.endRun?.({ preserveFinal: false });
       coopStatsManager?.clearFinalSummary?.();
       coopScoreboard?.hideAll?.();
@@ -331,7 +347,7 @@ export function beginMultiplayerRun({
   });
   if (multiplayerSession.run) {
     multiplayerSession.run.resumed = pending?.resume === true;
-  }
+  } syncCoopScalingFromRoom();
 
   multiplayerRuntime.beginRun(multiplayerSession.getSnapshot());
   remotePlayerManager?.beginRun();
@@ -566,7 +582,7 @@ export function getMultiplayerFoundationSnapshot() {
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
     revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
-    hostMigration: hostMigrationState.getSnapshot()
+    hostMigration: hostMigrationState.getSnapshot(), coopScaling: getCoopScalingSnapshot()
   };
 }
 

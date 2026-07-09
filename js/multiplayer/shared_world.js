@@ -547,7 +547,20 @@ export class SharedWorldManager {
     return true;
   }
 
-  getRemoteAuthorityTargets(now = nowMs()) {
+
+  isLateJoinProtected(playerId, now = Date.now()) {
+    if (!playerId) return false;
+    const roomPlayer = (
+      this.runtime?.room?.getSnapshot?.()?.players || []
+    ).find((entry) => entry?.playerId === playerId);
+    return Boolean(
+      roomPlayer
+      && roomPlayer.connected !== false
+      && Number(roomPlayer.lateJoinProtectionUntil || 0) > Number(now)
+    );
+  }
+
+getRemoteAuthorityTargets(now = nowMs()) {
     if (!this.active || !this.isAuthority() || !this.isOnline()) return [];
 
     const roomPlayers = this.runtime?.room?.getSnapshot?.()?.players || [];
@@ -560,7 +573,7 @@ export class SharedWorldManager {
         !playerId
         || playerId === this.runtime?.localPlayerId
         || roomPlayer.connected === false
-      ) {
+      || this.isLateJoinProtected(playerId, Date.now()) ) {
         return;
       }
 
@@ -607,7 +620,7 @@ export class SharedWorldManager {
     sourcePosition = null,
     damageType = 'UNKNOWN'
   ) {
-    if (!target?.playerId) return false;
+    if (!target?.playerId) return false; if (this.isLateJoinProtected(target.playerId, Date.now())) return false;
 
     const amount = Math.max(0, Number(damage) || 0);
     if (amount <= 0 || target.alive === false) return false;
@@ -640,7 +653,7 @@ export class SharedWorldManager {
     const damage = envelope?.payload;
     if (
       damage?.targetPlayerId !== this.runtime?.localPlayerId
-      || this.player?.alive !== true
+      || this.player?.alive !== true || this.isLateJoinProtected(this.runtime?.localPlayerId, Date.now())
     ) {
       return;
     }

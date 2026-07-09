@@ -69,6 +69,7 @@ import {
   getFormationMovementScale,
   recordFormationEnemyRemoved
 } from './ai_formation.js';
+import { getCoopScalingProfile } from './multiplayer/coop_scaling_core.js';
 import {
   recordProgressionKill,
   recordProgressionWaveClear
@@ -735,15 +736,22 @@ function startWave(waveNumber) {
   toggleSwarmLighting(isSpecialRound);
 
   const diff = getDifficultyScalar();
+  const coopScaling = getCoopScalingProfile();
 
   if (isSpecialRound) {
     goliathsToSpawn = 0;
-    zombiesToSpawnThisRound = Math.min(30, Math.round((7 + waveNumber * 1.65) * diff));
+    zombiesToSpawnThisRound = Math.min(
+      40,
+      Math.round((7 + waveNumber * 1.65) * diff * coopScaling.waveCountScale)
+    );
     flashWaveBanner(`SWARM ROUND ${waveNumber}`);
   } else {
     // Heavy enemies are now staged more clearly so they do not stack unfairly.
     goliathsToSpawn = waveNumber >= 8 ? Math.min(2, 1 + Math.floor((waveNumber - 8) / 8)) : 0;
-    zombiesToSpawnThisRound = Math.min(32, Math.round((5 + waveNumber * 1.65) * diff) + goliathsToSpawn);
+    zombiesToSpawnThisRound = Math.min(
+      40,
+      Math.round((5 + waveNumber * 1.65) * diff * coopScaling.waveCountScale) + goliathsToSpawn
+    );
     flashWaveBanner(`ROUND ${waveNumber}`);
   }
 
@@ -807,7 +815,9 @@ function getSpawnInterval() {
     baseInterval = Math.max(0.72, 1.18 - (currentWave - 4) * 0.045);
   }
 
-  return baseInterval * getAIDirectorTuning().spawnIntervalScale;
+  return baseInterval
+    * getAIDirectorTuning().spawnIntervalScale
+    * getCoopScalingProfile().spawnIntervalScale;
 }
 
 function getActiveZombieCap() {
@@ -827,7 +837,12 @@ function getActiveZombieCap() {
     baseCap = Math.min(20, 8 + Math.floor((currentWave - 4) * 1.05));
   }
 
-  return Math.min(22, baseCap + getAIDirectorTuning().activeCapBonus);
+  return Math.min(
+    40,
+    baseCap
+      + getAIDirectorTuning().activeCapBonus
+      + getCoopScalingProfile().activeCapBonus
+  );
 }
 
 function getMeleeDamageGrace() {
@@ -1110,8 +1125,9 @@ function spawnZombie() {
   const recycled = zombiePool.pop();
   
   recycled.type = config.name;
-  recycled.health = config.maxHealth;
-  recycled.maxHealth = config.maxHealth;
+  const coopScaling = getCoopScalingProfile();
+  recycled.health = Math.max(1, Math.round(config.maxHealth * coopScaling.enemyHealthScale));
+  recycled.maxHealth = recycled.health;
   const directorTuning = getAIDirectorTuning();
   recycled.speed = (
     config.speed +

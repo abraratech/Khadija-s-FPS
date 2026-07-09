@@ -1,6 +1,6 @@
 // js/multiplayer/economy.js
 
-import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
+import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js'; import { getLateJoinCatchUpScore } from './coop_scaling_core.js';
 
 const SNAPSHOT_INTERVAL_MS = 220;
 const REQUEST_WINDOW_MS = 1000;
@@ -94,7 +94,7 @@ export class MultiplayerEconomyManager {
       requestsRejected: 0,
       snapshotsSent: 0,
       snapshotsReceived: 0,
-      combatAwards: 0
+      combatAwards: 0, lateJoinGrants: 0
     };
 
     this.unsubscribe.push(
@@ -174,10 +174,39 @@ export class MultiplayerEconomyManager {
   }
 
   ensureRoomAccounts() {
-    const roomPlayers = this.runtime?.room?.getSnapshot?.()?.players || [];
+    const room = this.runtime?.room?.getSnapshot?.() || {};
+    const roomPlayers = room.players || [];
     roomPlayers.forEach((roomPlayer) => {
-      if (!roomPlayer?.playerId || this.accounts.has(roomPlayer.playerId)) return;
-      this.accounts.set(roomPlayer.playerId, makeAccount());
+      if (!roomPlayer?.playerId || this.accounts.has(roomPlayer.playerId)) {
+        return;
+      }
+
+      const catchUpScore = (
+        room.status === 'in-run'
+        && roomPlayer.lateJoin === true
+      )
+        ? normalizeScore(
+            roomPlayer.catchUpScore
+            || getLateJoinCatchUpScore(roomPlayer.joinedWave || 1)
+          )
+        : 0;
+
+      const account = makeAccount({ score: catchUpScore });
+      this.accounts.set(roomPlayer.playerId, account);
+
+      if (catchUpScore > 0) {
+        this.metrics.lateJoinGrants += 1;
+        this.snapshotDirty = true;
+        this.deliverResult({
+          kind: 'late-join-catch-up',
+          targetPlayerId: cleanId(roomPlayer.playerId),
+          accepted: true,
+          pointsAwarded: catchUpScore,
+          score: account.score,
+          kills: account.kills,
+          label: 'LATE JOIN CATCH-UP'
+        });
+      }
     });
   }
 

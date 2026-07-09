@@ -22,7 +22,7 @@ function serializePlayer(player) {
     displayName: player.displayName || 'Player',
     ready: player.ready === true,
     connected: player.connected !== false,
-    isHost: player.isHost === true
+    isHost: player.isHost === true, joinedAt: Math.max(0, Number(player.joinedAt) || 0), joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)), lateJoin: player.lateJoin === true, lateJoinProtectionUntil: Math.max(0, Number(player.lateJoinProtectionUntil) || 0), catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
   };
 }
 

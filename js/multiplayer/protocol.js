@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm3-coop-scoreboard-r1';
+export const MULTIPLAYER_BUILD_ID = 'm3-scaling-latejoin-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 5;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([4, 5]);
 

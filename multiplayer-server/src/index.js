@@ -9,7 +9,7 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 5;
-const SERVER_BUILD = 'm3-coop-scoreboard-r1';
+const SERVER_BUILD = 'm3-scaling-latejoin-r1';
 const COMPATIBLE_PROTOCOLS = new Set([4, 5]);
 
 function json(data, init = {}) {
@@ -68,7 +68,7 @@ function publicPlayer(player) {
     displayName: player.displayName,
     ready: player.ready === true,
     connected: player.connected === true,
-    isHost: player.isHost === true
+    isHost: player.isHost === true, joinedAt: Math.max(0, Number(player.joinedAt) || 0), joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)), lateJoin: player.lateJoin === true, lateJoinProtectionUntil: Math.max(0, Number(player.lateJoinProtectionUntil) || 0), catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
   };
 }
 
@@ -201,6 +201,22 @@ export class ArenaRoom extends DurableObject {
     }
 
     const existing = this.room.players[playerId] || null;
+    const isLateJoin = this.room.status === 'in-run' && !existing;
+    const joinedWave = Math.max(
+      1,
+      Math.floor(
+        Number(this.room.authorityCheckpoint?.world?.wave) || 1
+      )
+    );
+    const catchUpScore = isLateJoin
+      ? Math.max(500, Math.min(3500, 500 + (joinedWave - 1) * 250))
+      : Math.max(0, Math.floor(Number(existing?.catchUpScore) || 0));
+    const lateJoinProtectionUntil = isLateJoin
+      ? Date.now() + 8_000
+      : Math.max(
+          0,
+          Number(existing?.lateJoinProtectionUntil) || 0
+        );
     const previousHostPlayerId = this.room.hostPlayerId || null;
     const token = existing?.reconnectToken || makeId('reconnect');
     const isFirstPlayer = this.connectedPlayers().length === 0;
@@ -235,7 +251,7 @@ export class ArenaRoom extends DurableObject {
       reconnectToken: token,
       disconnectedAt: null,
       disconnectExpiresAt: null,
-      joinedAt: existing?.joinedAt || Date.now(),
+      joinedAt: existing?.joinedAt || Date.now(), joinedWave: isLateJoin ? joinedWave : Math.max(1, Math.floor(Number(existing?.joinedWave) || 1)), lateJoin: isLateJoin || existing?.lateJoin === true, lateJoinProtectionUntil, catchUpScore,
       lastSeenAt: Date.now()
     };
 
@@ -259,7 +275,7 @@ export class ArenaRoom extends DurableObject {
         reconnectToken: token,
         checkpoint: this.room.status === 'in-run'
           ? this.room.authorityCheckpoint
-          : null,
+          : null, lateJoin: isLateJoin ? { playerId, joinedWave, catchUpScore, protectionUntil: lateJoinProtectionUntil, protectionMs: 8000 } : null,
         room: this.snapshot()
       }
     }));
@@ -313,9 +329,7 @@ export class ArenaRoom extends DurableObject {
       }
     }
 
-    if (this.room.status === 'in-run' && !existing) {
-      return 'This room is already in a run.';
-    }
+
 
     return null;
   }

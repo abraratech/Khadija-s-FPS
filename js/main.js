@@ -152,8 +152,8 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-coop-scoreboard-r1';
-console.info('[Multiplayer Build] m3-coop-scoreboard-r1 | protocol 5');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm3-scaling-latejoin-r1';
+console.info('[Multiplayer Build] m3-scaling-latejoin-r1 | protocol 5');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

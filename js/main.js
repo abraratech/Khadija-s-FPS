@@ -54,7 +54,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -161,9 +161,9 @@ configureMultiplayerEconomy({
   refundPlayer: refundMultiplayerPoints
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-refresh-hydration-seal-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-refresh-recovery-seal-r1';
 console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-refresh-hydration-seal-r1');
+console.info('[Multiplayer Patch] m3-refresh-recovery-seal-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }
@@ -556,7 +556,17 @@ function isOnlineCoOpRun() {
       || multiplayerSession.mode === 'client');
 }
 
+function isGameplayInputBlocked() {
+  return (
+    isMultiplayerLifeInputBlocked()
+    || isMultiplayerRefreshGameplayBlocked()
+  );
+}
+
 function setActionKeyState(action, pressed) {
+  // Releases must still clear held state; only suppress new presses while a
+  // refreshed run is waiting for its sealed gameplay-ready checkpoint.
+  if (pressed && isMultiplayerRefreshGameplayBlocked()) return;
   const canonical = getCanonicalCode(action);
   if (canonical) keys[canonical] = pressed === true;
 }
@@ -566,7 +576,7 @@ function pauseGameplay(source = 'input') {
         gs !== 'playing'
         || !player.alive
         || Number(player.health || 0) <= 0
-        || isMultiplayerLifeInputBlocked()
+        || isGameplayInputBlocked()
     ) return false;
   if (isOnlineCoOpRun() && coOpMenuOpen) return true;
 
@@ -593,7 +603,7 @@ function pauseGameplay(source = 'input') {
     if (
         !player.alive
         || Number(player.health || 0) <= 0
-        || isMultiplayerLifeInputBlocked()
+        || isGameplayInputBlocked()
     ) return false;
 
   if (isOnlineCoOpRun() && coOpMenuOpen) {
@@ -672,7 +682,7 @@ function pauseGameplay(source = 'input') {
 
   const action = getKeyboardAction(e.code);
 
-  if (e.code === 'Tab' && isOnlineCoOpRun() && gs === 'playing' && player.alive && !coOpMenuOpen) {
+  if (e.code === 'Tab' && isOnlineCoOpRun() && gs === 'playing' && player.alive && !coOpMenuOpen && !isGameplayInputBlocked()) {
     setMultiplayerScoreboardHeld(true);
     e.preventDefault();
     return;
@@ -684,7 +694,7 @@ function pauseGameplay(source = 'input') {
   }
 
   if (e.code === 'KeyG' && isOnlineCoOpRun()) {
-    if (!e.repeat && !coOpMenuOpen && gs === 'playing' && player.alive) {
+    if (!e.repeat && !coOpMenuOpen && gs === 'playing' && player.alive && !isGameplayInputBlocked()) {
       placeMultiplayerTacticalPing(performance.now());
     }
     e.preventDefault();
@@ -724,7 +734,7 @@ window.addEventListener('mousemove', e => {
 
 window.addEventListener('mousedown', e => {
   if (isKeybindingCaptureActive()) return;
-  if (gs !== 'playing' || (!locked && !isMobile) || !player.alive) return;
+  if (gs !== 'playing' || (!locked && !isMobile) || !player.alive || isGameplayInputBlocked()) return;
 
   const activeW = getActiveWeapon();
   if (activeW && activeW.reloading) return;
@@ -748,8 +758,7 @@ window.addEventListener('mouseup', e => {
 });
 
 window.addEventListener('wheel', e => {
-  if (coOpMenuOpen || gs !== 'playing' || !player.alive) return;
-
+  if (coOpMenuOpen || gs !== 'playing' || !player.alive || isGameplayInputBlocked()) return;
   if (adjustSniperScopeZoom(e.deltaY)) {
     e.preventDefault();
   }
@@ -1313,8 +1322,8 @@ if (gs !== 'playing') {
 
 if (gamepadInput.pausePressed) { togglePauseGameplay('gamepad'); renderGameFrame(); return; }
 
-populateFrameKeys(keys, gamepadInput, frameKeys); if (coOpMenuOpen || isMultiplayerLifeInputBlocked()) { Object.keys(frameKeys).forEach((key) => { frameKeys[key] = false; }); pendingShot = false; }
-player.isADS = !isMultiplayerLifeInputBlocked() && (mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld);
+populateFrameKeys(keys, gamepadInput, frameKeys); if (coOpMenuOpen || isGameplayInputBlocked()) { Object.keys(frameKeys).forEach((key) => { frameKeys[key] = false; }); pendingShot = false; }
+player.isADS = !isGameplayInputBlocked() && (mouseADS || Boolean(frameKeys.MousedownRight) || gamepadInput.aimHeld);
 
 // Mobile auto-sprint replaces another large on-screen button. It activates
 // only when the joystick is pushed strongly forward and immediately releases
@@ -1327,12 +1336,28 @@ if (
 ) {
   frameKeys.ShiftLeft = true;
 }
-player.isSprinting = Boolean(frameKeys.ShiftLeft);
+if (isMultiplayerRefreshGameplayBlocked()) {
+    Object.keys(frameKeys).forEach((key) => {
+      frameKeys[key] = false;
+    });
+    Object.keys(keys).forEach((key) => {
+      keys[key] = false;
+    });
+    mdx = 0;
+    mdy = 0;
+    pendingShot = false;
+    mouseADS = false;
+    mobileSprintIntent = false;
+    player.isADS = false;
+    player.isSprinting = false;
+  }
 
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
-if (!coOpMenuOpen && !isMultiplayerLifeInputBlocked() && gamepadInput.firePressed) {
+  player.isSprinting = Boolean(frameKeys.ShiftLeft);
+
+if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
+if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
+if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
+if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.firePressed) {
   pendingShot = true;
   recordTutorialAction('FIRE');
 }
@@ -1412,7 +1437,7 @@ const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
 const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;
-if (!isMultiplayerLifeInputBlocked()) {
+if (!isGameplayInputBlocked()) {
 updateGun(dt, frameKeys, isMoving);
 updateShops(dt);
 checkWorldInteractions(false); 

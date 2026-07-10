@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_hydration_core.js
 // M3.47-M3.48 — deterministic proof that refresh-resume checkpoint hydration completed.
 
-export const MULTIPLAYER_REFRESH_HYDRATION_PATCH = 'm3-refresh-hydration-seal-r1';
+export const MULTIPLAYER_REFRESH_HYDRATION_PATCH = 'm3-refresh-recovery-seal-r1';
 export const MULTIPLAYER_REFRESH_HYDRATION_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_HYDRATION_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_REFRESH_HYDRATION_TIMEOUT_MS = 10 * 1000;

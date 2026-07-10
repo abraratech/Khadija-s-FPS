@@ -15,6 +15,13 @@ import {
   getMultiplayerRefreshHydrationSnapshot,
   startMultiplayerRefreshHydration
 } from './refresh_hydration.js';
+import {
+  cancelMultiplayerRefreshReadiness,
+  completeMultiplayerRefreshReadiness,
+  getMultiplayerRefreshReadinessSnapshot,
+  isMultiplayerRefreshReadinessBlocking,
+  startMultiplayerRefreshReadiness
+} from './refresh_readiness.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -344,6 +351,9 @@ export function initializeMultiplayerFoundation(
       cancelMultiplayerRefreshHydration({
         reason: 'multiplayer-run-ended'
       });
+      cancelMultiplayerRefreshReadiness({
+        reason: 'multiplayer-run-ended'
+      });
       coopStatsManager?.finalizeRun?.(details.reason || 'ended');
       coopStatsManager?.endRun?.({ preserveFinal: true });
       coopScoreboard?.setHeld?.(false);
@@ -373,6 +383,9 @@ export function initializeMultiplayerFoundation(
       applyHostMigration(details);
     },
     onLeftRoom: () => { cancelMultiplayerRefreshHydration({
+        reason: 'multiplayer-room-left'
+      });
+    onLeftRoom: () => { cancelMultiplayerRefreshReadiness({
         reason: 'multiplayer-room-left'
       });
       setCoopScalingContext({ online: false, playerCount: 1 });
@@ -475,8 +488,20 @@ export function beginMultiplayerRun({
         ?? 0,
       checkpointExpected: Boolean(pending.checkpoint)
     });
+    startMultiplayerRefreshReadiness({
+      roomCode: pending.roomCode,
+      runId: multiplayerSession.run?.runId || pending.runId,
+      authorityEpoch:
+        multiplayerSession.run?.authorityEpoch
+        ?? pending.authorityEpoch
+        ?? 0,
+      checkpointExpected: Boolean(pending.checkpoint)
+    });
   } else {
     cancelMultiplayerRefreshHydration({
+      reason: 'non-resume-run-started'
+    });
+    cancelMultiplayerRefreshReadiness({
       reason: 'non-resume-run-started'
     });
   }
@@ -497,13 +522,28 @@ export function finalizeMultiplayerResume() {
     performance.now(),
     { force: true }
   );
-  completeMultiplayerRefreshHydration({
+  const refreshHydration = completeMultiplayerRefreshHydration({
     runId: multiplayerSession.run?.runId || null,
     authorityEpoch:
       multiplayerSession.run?.authorityEpoch
       ?? details?.authorityEpoch
       ?? 0,
     checkpointApplied: Boolean(details?.checkpoint)
+  });
+  completeMultiplayerRefreshReadiness({
+    connected: true,
+    runActive: true,
+    runId:
+      refreshHydration?.runId
+      || multiplayerSession.run?.runId
+      || null,
+    authorityEpoch:
+      refreshHydration?.authorityEpoch
+      ?? multiplayerSession.run?.authorityEpoch
+      ?? 0,
+    hydration: refreshHydration,
+    worldReady: true,
+    localStateReady: true
   });
   return Boolean(details);
 }
@@ -517,6 +557,9 @@ export function endMultiplayerRun({
   if (!initialized) return null;
   pendingResumeCheckpoint = null;
   cancelMultiplayerRefreshHydration({
+    reason: 'multiplayer-run-ended'
+  });
+  cancelMultiplayerRefreshReadiness({
     reason: 'multiplayer-run-ended'
   });
 
@@ -767,6 +810,10 @@ export function sampleRemoteMultiplayerPlayer(
   return multiplayerRuntime.sampleRemotePlayer(playerId, now);
 }
 
+export function isMultiplayerRefreshGameplayBlocked() {
+  return isMultiplayerRefreshReadinessBlocking();
+}
+
 export function getMultiplayerFoundationSnapshot() {
   return {
     initialized,
@@ -786,7 +833,8 @@ export function getMultiplayerFoundationSnapshot() {
         recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,
     releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null, releaseSeal: multiplayerReleaseSeal?.getSnapshot?.() || null,
-    refreshHydration: getMultiplayerRefreshHydrationSnapshot()
+    refreshHydration: getMultiplayerRefreshHydrationSnapshot(),
+    refreshReadiness: getMultiplayerRefreshReadinessSnapshot()
   };
 }
 

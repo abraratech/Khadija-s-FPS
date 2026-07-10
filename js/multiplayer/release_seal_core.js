@@ -1,7 +1,7 @@
 // js/multiplayer/release_seal_core.js
 // M3.37-M3.38 — deterministic multiplayer release-seal and deployment-acceptance evaluation.
 
-export const MULTIPLAYER_RELEASE_SEAL_PATCH = 'm3-refresh-hydration-seal-r1';
+export const MULTIPLAYER_RELEASE_SEAL_PATCH = 'm3-refresh-recovery-seal-r1';
 export const MULTIPLAYER_RELEASE_SEAL_PROTOCOL = 6;
 export const MULTIPLAYER_RELEASE_SEAL_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_RELEASE_SEAL_VERSION = 1;

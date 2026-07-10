@@ -1,7 +1,7 @@
 // js/multiplayer/tab_lease_core.js
 // M3.67-M3.68 — ownership lease policy with crash-owner reclaim.
 
-export const MULTIPLAYER_TAB_LEASE_PATCH = 'm3-tab-recovery-seal-r1';
+export const MULTIPLAYER_TAB_LEASE_PATCH = 'm3-final-certification-seal-r1';
 export const MULTIPLAYER_TAB_LEASE_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_LEASE_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_TAB_LEASE_TTL_MS = 6500;

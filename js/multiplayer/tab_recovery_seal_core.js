@@ -1,7 +1,7 @@
 // js/multiplayer/tab_recovery_seal_core.js
 // M3.71-M3.72 — deterministic single-tab recovery final seal.
 
-export const MULTIPLAYER_TAB_RECOVERY_SEAL_PATCH = 'm3-tab-recovery-seal-r1';
+export const MULTIPLAYER_TAB_RECOVERY_SEAL_PATCH = 'm3-final-certification-seal-r1';
 export const MULTIPLAYER_TAB_RECOVERY_SEAL_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_RECOVERY_SEAL_BUILD = 'm3-team-final-world-reconnect-r3';
 

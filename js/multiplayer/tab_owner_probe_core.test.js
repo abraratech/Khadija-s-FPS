@@ -11,7 +11,7 @@ import {
 
 assert.equal(
   MULTIPLAYER_TAB_OWNER_PROBE_PATCH,
-  'm3-tab-recovery-seal-r1'
+  'm3-final-certification-seal-r1'
 );
 assert.equal(MULTIPLAYER_TAB_OWNER_PROBE_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_TAB_OWNER_PROBE_TIMEOUT_MS, 650);

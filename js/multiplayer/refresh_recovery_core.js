@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_recovery_core.js
 // M3.51-M3.52 — deterministic one-retry refresh failure escape policy.
 
-export const MULTIPLAYER_REFRESH_RECOVERY_PATCH = 'm3-tab-recovery-seal-r1';
+export const MULTIPLAYER_REFRESH_RECOVERY_PATCH = 'm3-final-certification-seal-r1';
 export const MULTIPLAYER_REFRESH_RECOVERY_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_RECOVERY_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_REFRESH_RECOVERY_VERSION = 1;

@@ -1,7 +1,7 @@
 // js/multiplayer/tab_resilience_core.js
 // M3.65-M3.66 — deterministic single-tab ownership final seal.
 
-export const MULTIPLAYER_TAB_RESILIENCE_PATCH = 'm3-tab-recovery-seal-r1';
+export const MULTIPLAYER_TAB_RESILIENCE_PATCH = 'm3-final-certification-seal-r1';
 export const MULTIPLAYER_TAB_RESILIENCE_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_RESILIENCE_BUILD = 'm3-team-final-world-reconnect-r3';
 

@@ -19,6 +19,11 @@ import {
   failMultiplayerRefreshResumeWatchdog,
   startMultiplayerRefreshResumeWatchdog
 } from './refresh_watchdog.js';
+import {
+  cancelMultiplayerRefreshRunProof,
+  failMultiplayerRefreshRunProof,
+  startMultiplayerRefreshRunProof
+} from './refresh_proof.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -187,6 +192,10 @@ export class MultiplayerLobbyController {
         reason: 'refresh-resume-transport-error',
         message: event.payload?.message || 'Multiplayer connection error.'
       });
+      failMultiplayerRefreshRunProof({
+        reason: 'refresh-proof-transport-error',
+        message: event.payload?.message || 'Multiplayer connection error.'
+      });
         this.error = event.payload?.message || 'Multiplayer connection error.';
         this.render();
       })
@@ -341,7 +350,14 @@ export class MultiplayerLobbyController {
         reason: 'refresh-resume-server-rejected',
         message: payload.message || 'Multiplayer server rejected the request.'
       });
-      if (refreshFailure?.status === 'FAILED') {
+      const refreshProofFailure = failMultiplayerRefreshRunProof({
+        reason: 'refresh-proof-server-rejected',
+        message: payload.message || 'Multiplayer server rejected the request.'
+      });
+      if (
+        refreshFailure?.status === 'FAILED'
+        || refreshProofFailure?.status === 'FAILED'
+      ) {
         void this.transport.disconnect('refresh-resume-rejected', {
           fallbackLocal: true
         });
@@ -390,6 +406,7 @@ export class MultiplayerLobbyController {
       roomCode: room.roomCode,
       roomStatus: room.status
     });
+      const refreshProofRequested = refreshContinuity?.status === 'RESTORED';
     if (refreshContinuity?.status === 'FAILED') {
       markMultiplayerRefreshResumeResult({
         status: 'FAILED',
@@ -405,11 +422,6 @@ export class MultiplayerLobbyController {
       this.render();
       return;
     }
-    markMultiplayerRefreshResumeResult({
-      status: 'CONNECTED',
-      roomCode: room.roomCode,
-      reason: 'automatic-rejoin-connected'
-    });
     this.transport.setReconnectToken(payload.reconnectToken);
       saveReconnectToken(room.roomCode, payload.reconnectToken);
             this.lastRoom = saveLastRoom({
@@ -479,7 +491,56 @@ export class MultiplayerLobbyController {
           room
         });
       }
-
+      if (refreshProofRequested) {
+        startMultiplayerRefreshRunProof({
+          roomCode: room.roomCode,
+          roomStatus: room.status,
+          runId: room.runId || null,
+          authorityEpoch: room.authorityEpoch,
+          readState: () => ({
+            connected: this.connected,
+            roomCode: this.room?.roomCode,
+            roomStatus: this.room?.status,
+            runActive: this.session.run?.active === true,
+            runId: this.session.run?.runId || null,
+            authorityEpoch: this.session.run?.authorityEpoch ?? this.lastAuthorityEpoch
+          }),
+          onComplete: (proof) => {
+            markMultiplayerRefreshResumeResult({
+              status: 'CONNECTED',
+              roomCode: room.roomCode,
+              reason: proof.status === 'DEGRADED'
+                ? 'automatic-rejoin-room-restored-run-ended'
+                : 'automatic-rejoin-runtime-proved'
+            });
+            if (proof.status === 'DEGRADED') {
+              this.error = 'ROOM RESTORED — PREVIOUS RUN ENDED DURING REFRESH';
+              this.ui?.open();
+            }
+            this.render();
+          },
+          onFailure: (proof) => {
+            markMultiplayerRefreshResumeResult({
+              status: 'FAILED',
+              roomCode: room.roomCode,
+              reason: proof.reason || 'automatic-rejoin-runtime-proof-failed'
+            });
+            void this.transport.disconnect('refresh-run-proof-failed', {
+              fallbackLocal: true
+            });
+            this.finishLeave();
+            this.error = 'AUTO-REJOIN COULD NOT RESTORE THE ACTIVE RUN — REJOIN MANUALLY';
+            this.ui?.open();
+            this.render();
+          }
+        });
+      } else {
+        markMultiplayerRefreshResumeResult({
+          status: 'CONNECTED',
+          roomCode: room.roomCode,
+          reason: 'automatic-rejoin-connected'
+        });
+      }
       this.render();
       return;
     }
@@ -722,6 +783,9 @@ openLobby() {
     cancelMultiplayerRefreshResumeWatchdog({
       reason: 'multiplayer-room-left'
     });
+    cancelMultiplayerRefreshRunProof({
+      reason: 'multiplayer-room-left'
+    });
     this.connected = false;
     this.room = null;
     this.error = null;
@@ -766,6 +830,7 @@ openLobby() {
   }
 
   destroy() {
+    cancelMultiplayerRefreshRunProof({ reason: 'multiplayer-lobby-destroyed' });
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
     this.unsubscribe.length = 0;
   }

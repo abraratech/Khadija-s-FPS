@@ -38,7 +38,7 @@ function checkReleaseIdentity(errors,source,prefix){
   const value=isObject(source)?source:{};
   for(const [field,expected,received] of [
     ['protocol',M3_PROGRAM_PROTOCOL,finiteInteger(value.protocol)],['build',M3_PROGRAM_BUILD,cleanText(value.build)],
-    ['patch',M3_PROGRAM_RELEASE_PATCH,cleanText(value.patch ?? value.releasePatch)],['certifiedFrontendSha',M3_PROGRAM_CERTIFIED_SHA,cleanText(value.certifiedFrontendSha)],
+    ['patch',M3_PROGRAM_RELEASE_PATCH,cleanText(value.patch ?? value.releasePatch)],['certifiedFrontendSha',M3_PROGRAM_CERTIFIED_SHA,cleanText(prefix==='FRONTEND' ? (value.certifiedBaselineSha ?? value.certifiedFrontendSha) : value.certifiedFrontendSha)],
     ['releaseStatus','CERTIFIED',cleanText(value.releaseStatus).toUpperCase()]
   ]) if(expected!==received) errors.push(finding(`${prefix}_IDENTITY_MISMATCH`,`${prefix.toLowerCase()} release identity field ${field} does not match.`,{field,expected,received}));
 }

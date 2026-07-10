@@ -6,6 +6,7 @@ import { MultiplayerPlayerRegistry } from './player_registry.js';
 import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
+import { MultiplayerRecoveryCertification } from './recovery_certification.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -24,7 +25,8 @@ let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
-let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
+let recoveryCertification = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -245,6 +247,13 @@ export function initializeMultiplayerFoundation(
     transport: multiplayerTransport
   });
   recoveryDiagnostics.initialize();
+    recoveryCertification = new MultiplayerRecoveryCertification({
+        runtime: multiplayerRuntime,
+        session: multiplayerSession,
+        transport: multiplayerTransport,
+        diagnostics: recoveryDiagnostics
+    });
+    recoveryCertification.initialize();
 
   tacticalAwareness = new MultiplayerTacticalAwareness({
     eventBus: multiplayerEvents,
@@ -322,7 +331,8 @@ export function initializeMultiplayerFoundation(
       economyManager?.endRun();
       multiplayerRuntime.endRun();
       remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
-      hostMigrationState.reset();
+      recoveryCertification?.handleRunEnded?.();
+            hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
         player,
@@ -352,7 +362,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.25-M3.26] Network fault simulation and recovery diagnostics ready.'
+    '[M3.27-M3.28] Recovery certification and multiplayer release gate ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -471,7 +481,8 @@ export function endMultiplayerRun({
   economyManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
-  hostMigrationState.reset();
+  recoveryCertification?.handleRunEnded?.();
+            hostMigrationState.reset();
 
   if (notifyServer) {
     lobbyController?.notifyRunEnded?.(reason);
@@ -599,6 +610,26 @@ export function toggleMultiplayerRecoveryDiagnostics(force = null) {
   return recoveryDiagnostics?.toggle?.(force) === true;
 }
 
+export function toggleMultiplayerRecoveryCertification(force = null) {
+    if (!initialized) return false;
+    return recoveryCertification?.toggle?.(force) === true;
+}
+
+export function startMultiplayerRecoveryCertification() {
+    if (!initialized) return false;
+    return recoveryCertification?.start?.() === true;
+}
+
+export function abortMultiplayerRecoveryCertification(reason = 'manual-abort') {
+    if (!initialized) return false;
+    return recoveryCertification?.abort?.(reason) === true;
+}
+
+export function getMultiplayerRecoveryCertificationSnapshot() {
+    if (!initialized) return null;
+    return recoveryCertification?.getSnapshot?.() || null;
+}
+
 export function configureMultiplayerFaultSimulation(config = {}) {
   if (!initialized) return null;
   return multiplayerRuntime.configureFaultSimulation(config);
@@ -647,7 +678,8 @@ export function syncMultiplayerFrame(
     now
   });
 
-  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
+    recoveryCertification?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -674,7 +706,8 @@ export function getMultiplayerFoundationSnapshot() {
     hostMigration: hostMigrationState.getSnapshot(),
     coopScaling: getCoopScalingSnapshot(),
     faultSimulation: multiplayerRuntime.getFaultSimulationSnapshot(),
-    recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null
+    recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
+        recoveryCertification: recoveryCertification?.getSnapshot?.() || null
   };
 }
 

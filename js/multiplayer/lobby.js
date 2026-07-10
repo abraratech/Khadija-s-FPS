@@ -8,6 +8,7 @@ import {
   MULTIPLAYER_BUILD_ID,
   MULTIPLAYER_PROTOCOL_VERSION
 } from './protocol.js';
+import { handleMultiplayerBuildDrift } from './build_drift.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -287,9 +288,13 @@ export class MultiplayerLobbyController {
         Number(payload.protocol) !== MULTIPLAYER_PROTOCOL_VERSION
         || payload.build !== MULTIPLAYER_BUILD_ID
       ) {
-        this.error = (
-          `WORKER BUILD MISMATCH · EXPECTED ${MULTIPLAYER_BUILD_ID}`
-        );
+        const buildDrift = handleMultiplayerBuildDrift({
+          expectedProtocol: MULTIPLAYER_PROTOCOL_VERSION,
+          receivedProtocol: Number(payload.protocol),
+          expectedBuild: MULTIPLAYER_BUILD_ID,
+          receivedBuild: payload.build
+        });
+        this.error = buildDrift.message.toUpperCase();
         void this.transport.disconnect('worker-build-mismatch', {
           fallbackLocal: true
         });

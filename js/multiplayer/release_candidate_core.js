@@ -1,7 +1,7 @@
 // js/multiplayer/release_candidate_core.js
 // M3.31-M3.32 — deterministic multiplayer release-candidate readiness evaluation.
 
-export const MULTIPLAYER_RELEASE_CANDIDATE_PATCH = 'm3-burn-in-soak-r1';
+export const MULTIPLAYER_RELEASE_CANDIDATE_PATCH = 'm3-release-seal-r1';
 export const MULTIPLAYER_RELEASE_CANDIDATE_PROTOCOL = 6;
 export const MULTIPLAYER_RELEASE_CANDIDATE_BUILD = 'm3-team-final-world-reconnect-r3';
 
@@ -14,7 +14,7 @@ export const RELEASE_CANDIDATE_CHECKLIST = Object.freeze([
   Object.freeze({ key: 'reconnectRecovery', label: 'Forced disconnect reconnects and restores authoritative streams' }),
   Object.freeze({ key: 'hostMigration', label: 'Host migration preserves the active run and authority epoch' }),
   Object.freeze({ key: 'runSummary', label: 'Co-op scoreboard and final run summary are correct on both clients' }),
-  Object.freeze({ key: 'publicDebugLockdown', label: 'Public build blocks F8/F9/F10 and legacy debug activation routes' }),
+  Object.freeze({ key: 'publicDebugLockdown', label: 'Public build blocks F8/F9/F10/F11/F12/Shift+F12 and legacy debug activation routes' }),
   Object.freeze({ key: 'deploymentSmoke', label: 'Deployed frontend connects to the deployed Worker and starts a run' })
 ]);
 

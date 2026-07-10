@@ -18,7 +18,10 @@ const IDENTITY_GRACE_MS = 1500;
 const DEBUG_PANEL_IDS = Object.freeze([
   'mp-recovery-diagnostics',
   'mp-recovery-certification',
-  'mp-release-candidate'
+  'mp-release-candidate',
+  'mp-launch-observer',
+  'mp-soak-certification',
+  'mp-release-seal'
 ]);
 
 function readStoredDebugFlag() {

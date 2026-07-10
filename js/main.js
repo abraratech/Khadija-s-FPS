@@ -161,11 +161,11 @@ configureMultiplayerEconomy({
   refundPlayer: refundMultiplayerPoints
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-burn-in-soak-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-release-seal-r1';
 console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-burn-in-soak-r1');
+console.info('[Multiplayer Patch] m3-release-seal-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
-  console.info('[Multiplayer Debug] Loopback-only · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12');
+  console.info('[Multiplayer Debug] Loopback-only · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }
 
 function setNumericSelectValue(select, value, fallback = 1) {

@@ -99,7 +99,7 @@ export class MultiplayerSoakCertification {
     this.lastSampleAt = -Infinity;
     this.lastRenderedAt = -Infinity;
     this.keyHandler = (event) => {
-      if (event.code !== 'F12' || !this.debugAllowed) return;
+      if (event.code !== 'F12' || event.shiftKey || !this.debugAllowed) return;
       event.preventDefault();
       this.toggle();
     };

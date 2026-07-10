@@ -8,7 +8,7 @@ import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
 import { MultiplayerRecoveryCertification } from './recovery_certification.js';
 import { MultiplayerReleaseGuard } from './release_guard.js';
-import { MultiplayerReleaseCandidate } from './release_candidate.js'; import { MultiplayerLaunchObserver } from './launch_observer.js'; import { MultiplayerSoakCertification } from './soak_certification.js';
+import { MultiplayerReleaseCandidate } from './release_candidate.js'; import { MultiplayerLaunchObserver } from './launch_observer.js'; import { MultiplayerSoakCertification } from './soak_certification.js'; import { MultiplayerReleaseSeal } from './release_seal.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -30,7 +30,7 @@ let economyManager = null;
 let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
 let recoveryCertification = null;
 let multiplayerReleaseGuard = null;
-let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let multiplayerReleaseSeal = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -379,12 +379,12 @@ export function initializeMultiplayerFoundation(
     recoveryCertification,
     hostMigration: hostMigrationState
   });
-  multiplayerReleaseCandidate.initialize(performance.now()); multiplayerLaunchObserver = new MultiplayerLaunchObserver({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, hostMigration: hostMigrationState }); multiplayerLaunchObserver.initialize(performance.now()); multiplayerSoakCertification = new MultiplayerSoakCertification({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, launchObserver: multiplayerLaunchObserver }); multiplayerSoakCertification.initialize(performance.now());
+  multiplayerReleaseCandidate.initialize(performance.now()); multiplayerLaunchObserver = new MultiplayerLaunchObserver({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, hostMigration: hostMigrationState }); multiplayerLaunchObserver.initialize(performance.now()); multiplayerSoakCertification = new MultiplayerSoakCertification({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, launchObserver: multiplayerLaunchObserver }); multiplayerSoakCertification.initialize(performance.now()); multiplayerReleaseSeal = new MultiplayerReleaseSeal({ releaseGuard: multiplayerReleaseGuard, recoveryCertification, releaseCandidate: multiplayerReleaseCandidate, launchObserver: multiplayerLaunchObserver, soakCertification: multiplayerSoakCertification }); multiplayerReleaseSeal.initialize(performance.now());
 
   initialized = true;
 
   console.info(
-    '[M3.35-M3.36] Multiplayer burn-in soak certification and incident replay ready.'
+    '[M3.37-M3.38] Multiplayer release seal and deployment acceptance ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -666,6 +666,8 @@ export function getMultiplayerLaunchObserverSnapshot() { if (!initialized) retur
 
 export function getMultiplayerSoakCertificationSnapshot() { if (!initialized) return null; return multiplayerSoakCertification?.getSnapshot?.() || null; }
 
+export function getMultiplayerReleaseSealSnapshot() { if (!initialized) return null; return multiplayerReleaseSeal?.getSnapshot?.() || null; }
+
 export function configureMultiplayerFaultSimulation(config = {}) {
   if (!initialized) return null;
   return multiplayerRuntime.configureFaultSimulation(config);
@@ -715,7 +717,7 @@ export function syncMultiplayerFrame(
   });
 
   remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
-    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); multiplayerLaunchObserver?.update(now); multiplayerSoakCertification?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); multiplayerLaunchObserver?.update(now); multiplayerSoakCertification?.update(now); multiplayerReleaseSeal?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -745,7 +747,7 @@ export function getMultiplayerFoundationSnapshot() {
     recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
         recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,
-    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null
+    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null, releaseSeal: multiplayerReleaseSeal?.getSnapshot?.() || null
   };
 }
 

@@ -10,10 +10,10 @@ import {
   MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS
 } from './refresh_proof_core.js';
 
-assert.equal(MULTIPLAYER_REFRESH_PROOF_PATCH, 'm3-refresh-run-proof-r1');
+assert.equal(MULTIPLAYER_REFRESH_PROOF_PATCH, 'm3-refresh-hydration-seal-r1');
 assert.equal(MULTIPLAYER_REFRESH_PROOF_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_REFRESH_PROOF_BUILD, 'm3-team-final-world-reconnect-r3');
-assert.equal(MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS, 8000);
+assert.equal(MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS, 12000);
 
 const startedAt = 100000;
 const runProof = createMultiplayerRefreshRunProof({
@@ -24,7 +24,8 @@ const runProof = createMultiplayerRefreshRunProof({
   startedAt
 });
 assert.equal(runProof.roomCode, 'ABC234');
-assert.equal(runProof.deadlineAt, startedAt + 8000);
+assert.equal(runProof.version, 2);
+assert.equal(runProof.deadlineAt, startedAt + 12000);
 
 const verifying = evaluateMultiplayerRefreshRunProof({
   proof: runProof,
@@ -37,7 +38,7 @@ const verifying = evaluateMultiplayerRefreshRunProof({
 assert.equal(verifying.status, 'VERIFYING');
 assert.equal(verifying.final, false);
 
-const restored = evaluateMultiplayerRefreshRunProof({
+const awaitingHydration = evaluateMultiplayerRefreshRunProof({
   proof: runProof,
   now: startedAt + 900,
   connected: true,
@@ -47,9 +48,31 @@ const restored = evaluateMultiplayerRefreshRunProof({
   runId: 'run-42',
   authorityEpoch: 7
 });
+assert.equal(awaitingHydration.status, 'VERIFYING');
+assert.equal(awaitingHydration.reason, 'awaiting-refresh-hydration-seal');
+
+const restored = evaluateMultiplayerRefreshRunProof({
+  proof: runProof,
+  now: startedAt + 950,
+  connected: true,
+  roomCode: 'ABC234',
+  roomStatus: 'in-run',
+  runActive: true,
+  runId: 'run-42',
+  authorityEpoch: 7,
+  hydration: {
+    status: 'SEALED',
+    health: 'PASS',
+    reason: 'refresh-checkpoint-hydration-sealed',
+    continuity: 'CHECKPOINT_APPLIED',
+    runId: 'run-42',
+    authorityEpoch: 7,
+    final: true
+  }
+});
 assert.equal(restored.status, 'RESTORED');
 assert.equal(restored.health, 'PASS');
-assert.equal(restored.continuity, 'RUN_PROVED');
+assert.equal(restored.continuity, 'RUN_HYDRATED');
 
 const epochWait = evaluateMultiplayerRefreshRunProof({
   proof: runProof,
@@ -75,6 +98,70 @@ const runMismatch = evaluateMultiplayerRefreshRunProof({
 });
 assert.equal(runMismatch.status, 'FAILED');
 assert.equal(runMismatch.reason, 'refresh-proof-run-mismatch');
+
+const hydrationRunMismatch = evaluateMultiplayerRefreshRunProof({
+  proof: runProof,
+  now: startedAt + 900,
+  connected: true,
+  roomCode: 'ABC234',
+  roomStatus: 'in-run',
+  runActive: true,
+  runId: 'run-42',
+  authorityEpoch: 7,
+  hydration: {
+    status: 'SEALED',
+    health: 'PASS',
+    runId: 'run-other',
+    authorityEpoch: 7,
+    final: true
+  }
+});
+assert.equal(hydrationRunMismatch.status, 'FAILED');
+assert.equal(hydrationRunMismatch.reason, 'refresh-proof-hydration-run-mismatch');
+
+const hydrationFailure = evaluateMultiplayerRefreshRunProof({
+  proof: runProof,
+  now: startedAt + 900,
+  connected: true,
+  roomCode: 'ABC234',
+  roomStatus: 'in-run',
+  runActive: true,
+  runId: 'run-42',
+  authorityEpoch: 7,
+  hydration: {
+    status: 'FAILED',
+    health: 'FAIL',
+    reason: 'refresh-hydration-checkpoint-missing',
+    runId: 'run-42',
+    authorityEpoch: 7,
+    final: true
+  }
+});
+assert.equal(hydrationFailure.status, 'FAILED');
+assert.equal(hydrationFailure.reason, 'refresh-hydration-checkpoint-missing');
+
+const hydrationEpochRegression = evaluateMultiplayerRefreshRunProof({
+  proof: runProof,
+  now: startedAt + 900,
+  connected: true,
+  roomCode: 'ABC234',
+  roomStatus: 'in-run',
+  runActive: true,
+  runId: 'run-42',
+  authorityEpoch: 7,
+  hydration: {
+    status: 'SEALED',
+    health: 'PASS',
+    runId: 'run-42',
+    authorityEpoch: 6,
+    final: true
+  }
+});
+assert.equal(hydrationEpochRegression.status, 'FAILED');
+assert.equal(
+  hydrationEpochRegression.reason,
+  'refresh-proof-hydration-authority-regression'
+);
 
 const roomMismatch = evaluateMultiplayerRefreshRunProof({
   proof: runProof,
@@ -103,10 +190,12 @@ const timedOut = evaluateMultiplayerRefreshRunProof({
   connected: true,
   roomCode: 'ABC234',
   roomStatus: 'in-run',
-  runActive: false
+  runActive: true,
+  runId: 'run-42',
+  authorityEpoch: 7
 });
 assert.equal(timedOut.status, 'TIMED_OUT');
-assert.equal(timedOut.reason, 'refresh-proof-local-run-timeout');
+assert.equal(timedOut.reason, 'refresh-proof-hydration-timeout');
 
 const lobbyProof = createMultiplayerRefreshRunProof({
   roomCode: 'ABC234',

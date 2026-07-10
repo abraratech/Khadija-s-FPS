@@ -9,6 +9,12 @@ import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
 import { MultiplayerRecoveryCertification } from './recovery_certification.js';
 import { MultiplayerReleaseGuard } from './release_guard.js';
 import { MultiplayerReleaseCandidate } from './release_candidate.js'; import { MultiplayerLaunchObserver } from './launch_observer.js'; import { MultiplayerSoakCertification } from './soak_certification.js'; import { MultiplayerReleaseSeal } from './release_seal.js';
+import {
+  cancelMultiplayerRefreshHydration,
+  completeMultiplayerRefreshHydration,
+  getMultiplayerRefreshHydrationSnapshot,
+  startMultiplayerRefreshHydration
+} from './refresh_hydration.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -335,6 +341,9 @@ export function initializeMultiplayerFoundation(
     onRunEnded: (details = {}) => {
       pendingOnlineRun = null;
       pendingResumeCheckpoint = null;
+      cancelMultiplayerRefreshHydration({
+        reason: 'multiplayer-run-ended'
+      });
       coopStatsManager?.finalizeRun?.(details.reason || 'ended');
       coopStatsManager?.endRun?.({ preserveFinal: true });
       coopScoreboard?.setHeld?.(false);
@@ -363,7 +372,10 @@ export function initializeMultiplayerFoundation(
     onHostMigrated: (details = {}) => {
       applyHostMigration(details);
     },
-    onLeftRoom: () => { setCoopScalingContext({ online: false, playerCount: 1 });
+    onLeftRoom: () => { cancelMultiplayerRefreshHydration({
+        reason: 'multiplayer-room-left'
+      });
+      setCoopScalingContext({ online: false, playerCount: 1 });
       coopStatsManager?.endRun?.({ preserveFinal: false });
       coopStatsManager?.clearFinalSummary?.();
       coopScoreboard?.hideAll?.();
@@ -453,6 +465,21 @@ export function beginMultiplayerRun({
     });
   }
 
+  if (pending?.resume === true) {
+    startMultiplayerRefreshHydration({
+      roomCode: pending.roomCode,
+      runId: multiplayerSession.run?.runId || pending.runId,
+      authorityEpoch:
+        multiplayerSession.run?.authorityEpoch
+        ?? pending.authorityEpoch
+        ?? 0,
+      checkpointExpected: Boolean(pending.checkpoint)
+    });
+  } else {
+    cancelMultiplayerRefreshHydration({
+      reason: 'non-resume-run-started'
+    });
+  }
   return multiplayerSession.getSnapshot();
 }
 
@@ -470,6 +497,14 @@ export function finalizeMultiplayerResume() {
     performance.now(),
     { force: true }
   );
+  completeMultiplayerRefreshHydration({
+    runId: multiplayerSession.run?.runId || null,
+    authorityEpoch:
+      multiplayerSession.run?.authorityEpoch
+      ?? details?.authorityEpoch
+      ?? 0,
+    checkpointApplied: Boolean(details?.checkpoint)
+  });
   return Boolean(details);
 }
 
@@ -481,6 +516,9 @@ export function endMultiplayerRun({
 } = {}) {
   if (!initialized) return null;
   pendingResumeCheckpoint = null;
+  cancelMultiplayerRefreshHydration({
+    reason: 'multiplayer-run-ended'
+  });
 
   const state = multiplayerPlayers.syncLocalPlayer(
     player,
@@ -747,7 +785,8 @@ export function getMultiplayerFoundationSnapshot() {
     recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
         recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,
-    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null, releaseSeal: multiplayerReleaseSeal?.getSnapshot?.() || null
+    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null, releaseSeal: multiplayerReleaseSeal?.getSnapshot?.() || null,
+    refreshHydration: getMultiplayerRefreshHydrationSnapshot()
   };
 }
 

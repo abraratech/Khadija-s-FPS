@@ -1,7 +1,7 @@
 // js/multiplayer/soak_certification_core.js
 // M3.35-M3.36 — deterministic multiplayer burn-in soak evaluation and incident replay.
 
-export const MULTIPLAYER_SOAK_CERTIFICATION_PATCH = 'm3-refresh-run-proof-r1';
+export const MULTIPLAYER_SOAK_CERTIFICATION_PATCH = 'm3-refresh-hydration-seal-r1';
 export const MULTIPLAYER_SOAK_CERTIFICATION_PROTOCOL = 6;
 export const MULTIPLAYER_SOAK_CERTIFICATION_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_SOAK_SAMPLE_INTERVAL_MS = 1000;

@@ -24,6 +24,9 @@ import {
   failMultiplayerRefreshRunProof,
   startMultiplayerRefreshRunProof
 } from './refresh_proof.js';
+import {
+  getMultiplayerRefreshHydrationSnapshot
+} from './refresh_hydration.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -503,7 +506,9 @@ export class MultiplayerLobbyController {
             roomStatus: this.room?.status,
             runActive: this.session.run?.active === true,
             runId: this.session.run?.runId || null,
-            authorityEpoch: this.session.run?.authorityEpoch ?? this.lastAuthorityEpoch
+            authorityEpoch:
+              this.session.run?.authorityEpoch ?? this.lastAuthorityEpoch,
+            hydration: getMultiplayerRefreshHydrationSnapshot()
           }),
           onComplete: (proof) => {
             markMultiplayerRefreshResumeResult({
@@ -511,7 +516,7 @@ export class MultiplayerLobbyController {
               roomCode: room.roomCode,
               reason: proof.status === 'DEGRADED'
                 ? 'automatic-rejoin-room-restored-run-ended'
-                : 'automatic-rejoin-runtime-proved'
+                : 'automatic-rejoin-hydration-proved'
             });
             if (proof.status === 'DEGRADED') {
               this.error = 'ROOM RESTORED — PREVIOUS RUN ENDED DURING REFRESH';

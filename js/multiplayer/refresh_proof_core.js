@@ -1,12 +1,12 @@
 // js/multiplayer/refresh_proof_core.js
-// M3.45-M3.46 — deterministic second-stage proof that a refreshed client rebuilt its room or active run.
+// M3.47-M3.48 — deterministic proof that room, run, authority, and checkpoint hydration returned.
 
-export const MULTIPLAYER_REFRESH_PROOF_PATCH = 'm3-refresh-run-proof-r1';
+export const MULTIPLAYER_REFRESH_PROOF_PATCH = 'm3-refresh-hydration-seal-r1';
 export const MULTIPLAYER_REFRESH_PROOF_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_PROOF_BUILD = 'm3-team-final-world-reconnect-r3';
-export const MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS = 8 * 1000;
+export const MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS = 12 * 1000;
 export const MULTIPLAYER_REFRESH_PROOF_MIN_TIMEOUT_MS = 1500;
-export const MULTIPLAYER_REFRESH_PROOF_MAX_TIMEOUT_MS = 15 * 1000;
+export const MULTIPLAYER_REFRESH_PROOF_MAX_TIMEOUT_MS = 20 * 1000;
 
 function finiteTime(value, fallback = 0) {
   const numeric = Number(value);
@@ -39,6 +39,23 @@ function normalizeTimeout(value) {
   );
 }
 
+function normalizeHydration(value) {
+  if (!value || typeof value !== 'object') return null;
+  const status = cleanText(value.status).toUpperCase().slice(0, 40) || null;
+  const health = cleanText(value.health).toUpperCase().slice(0, 20) || null;
+  const runId = cleanText(value.runId).slice(0, 160) || null;
+  return Object.freeze({
+    status,
+    health,
+    reason: cleanText(value.reason).slice(0, 200) || null,
+    continuity: cleanText(value.continuity).toUpperCase().slice(0, 60) || null,
+    runId,
+    authorityEpoch: finiteTime(value.authorityEpoch),
+    checkpointExpected: value.checkpointExpected === true,
+    final: value.final === true
+  });
+}
+
 export function createMultiplayerRefreshRunProof({
   roomCode = '',
   roomStatus = '',
@@ -56,7 +73,7 @@ export function createMultiplayerRefreshRunProof({
   const normalizedStartedAt = finiteTime(startedAt);
   const normalizedTimeoutMs = normalizeTimeout(timeoutMs);
   return Object.freeze({
-    version: 1,
+    version: 2,
     roomCode: normalizedRoomCode,
     roomStatus: normalizedRoomStatus,
     runId: normalizedRunId,
@@ -88,6 +105,7 @@ export function evaluateMultiplayerRefreshRunProof({
   runActive = false,
   runId = '',
   authorityEpoch = 0,
+  hydration = null,
   error = ''
 } = {}) {
   const normalized = normalizeProof(proof);
@@ -106,6 +124,7 @@ export function evaluateMultiplayerRefreshRunProof({
   const actualRoomStatus = normalizeRoomStatus(roomStatus);
   const actualRunId = cleanText(runId).slice(0, 160) || null;
   const actualAuthorityEpoch = finiteTime(authorityEpoch);
+  const actualHydration = normalizeHydration(hydration);
   const detail = cleanText(error).slice(0, 200);
   const elapsedMs = Math.max(0, checkedAt - normalized.startedAt);
   const remainingMs = Math.max(0, normalized.deadlineAt - checkedAt);
@@ -157,17 +176,60 @@ export function evaluateMultiplayerRefreshRunProof({
     && actualRunId === normalized.runId
     && actualAuthorityEpoch >= normalized.authorityEpoch
   ) {
-    status = 'RESTORED';
-    health = 'PASS';
-    reason = 'active-run-runtime-proof-complete';
-    continuity = 'RUN_PROVED';
-    final = true;
-  } else if (checkedAt >= normalized.deadlineAt) {
+    if (!actualHydration) {
+      reason = 'awaiting-refresh-hydration-seal';
+    } else if (actualHydration.runId && actualHydration.runId !== normalized.runId) {
+      status = 'FAILED';
+      health = 'FAIL';
+      reason = 'refresh-proof-hydration-run-mismatch';
+      final = true;
+    } else if (
+      actualHydration.final === true
+      && actualHydration.authorityEpoch < normalized.authorityEpoch
+    ) {
+      status = 'FAILED';
+      health = 'FAIL';
+      reason = 'refresh-proof-hydration-authority-regression';
+      final = true;
+    } else if (
+      actualHydration.health === 'FAIL'
+      || ['FAILED', 'TIMED_OUT', 'INVALID'].includes(actualHydration.status)
+    ) {
+      status = 'FAILED';
+      health = 'FAIL';
+      reason = actualHydration.reason || 'refresh-proof-hydration-failed';
+      final = true;
+    } else if (
+      actualHydration.status === 'SEALED'
+      && actualHydration.health === 'PASS'
+      && actualHydration.final === true
+      && actualHydration.runId === normalized.runId
+      && actualHydration.authorityEpoch >= normalized.authorityEpoch
+    ) {
+      status = 'RESTORED';
+      health = 'PASS';
+      reason = 'active-run-hydration-proof-complete';
+      continuity = 'RUN_HYDRATED';
+      final = true;
+    } else {
+      reason = 'awaiting-refresh-hydration-seal';
+    }
+  }
+
+  if (!final && checkedAt >= normalized.deadlineAt) {
     status = 'TIMED_OUT';
     health = 'FAIL';
-    reason = runActive === true && actualAuthorityEpoch < normalized.authorityEpoch
-      ? 'refresh-proof-authority-timeout'
-      : 'refresh-proof-local-run-timeout';
+    if (
+      runActive === true
+      && actualRunId === normalized.runId
+      && actualAuthorityEpoch >= normalized.authorityEpoch
+    ) {
+      reason = 'refresh-proof-hydration-timeout';
+    } else if (runActive === true && actualAuthorityEpoch < normalized.authorityEpoch) {
+      reason = 'refresh-proof-authority-timeout';
+    } else {
+      reason = 'refresh-proof-local-run-timeout';
+    }
     final = true;
   }
 
@@ -186,7 +248,8 @@ export function evaluateMultiplayerRefreshRunProof({
       roomStatus: actualRoomStatus,
       runActive: runActive === true,
       runId: actualRunId,
-      authorityEpoch: actualAuthorityEpoch
+      authorityEpoch: actualAuthorityEpoch,
+      hydration: actualHydration
     }),
     final
   });

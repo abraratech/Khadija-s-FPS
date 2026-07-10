@@ -1,7 +1,7 @@
 // js/multiplayer/build_drift_core.js
 // M3.39-M3.40 — deterministic stale-client and deployment-drift recovery policy.
 
-export const MULTIPLAYER_BUILD_DRIFT_PATCH = 'm3-refresh-run-proof-r1';
+export const MULTIPLAYER_BUILD_DRIFT_PATCH = 'm3-refresh-hydration-seal-r1';
 export const MULTIPLAYER_BUILD_DRIFT_PROTOCOL = 6;
 export const MULTIPLAYER_BUILD_DRIFT_BUILD = 'm3-team-final-world-reconnect-r3';
 

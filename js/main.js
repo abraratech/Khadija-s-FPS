@@ -161,11 +161,11 @@ configureMultiplayerEconomy({
   refundPlayer: refundMultiplayerPoints
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-recovery-certification-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-public-release-guard-r1';
 console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-recovery-certification-r1');
+console.info('[Multiplayer Patch] m3-public-release-guard-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
-  console.info('[Multiplayer Debug] Recovery Lab F8 · Certification F9');
+  console.info('[Multiplayer Debug] Loopback-only · Recovery Lab F8 · Certification F9');
 }
 
 function setNumericSelectValue(select, value, fallback = 1) {

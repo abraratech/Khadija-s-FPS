@@ -1,5 +1,7 @@
 // js/multiplayer/fault_simulator.js
 
+import { resolveMultiplayerDebugPolicy } from './release_guard_core.js';
+
 const DEFAULT_CONFIG = Object.freeze({
   enabled: false,
   outboundLatencyMs: 0,
@@ -64,14 +66,18 @@ function nowMs() {
 
 function debugAllowedFromEnvironment() {
   if (typeof window === 'undefined') return false;
+  let storedDebug = false;
   try {
-    const query = new URLSearchParams(window.location?.search || '');
-    if (query.get('mpDebug') === '1' || query.get('mpFaults') === '1') return true;
-    if (window.KHADIJA_MULTIPLAYER_DEBUG === true) return true;
-    return window.localStorage?.getItem('khadija:mp-debug') === '1';
+    storedDebug = window.localStorage?.getItem('khadija:mp-debug') === '1';
   } catch {
-    return false;
+    storedDebug = false;
   }
+  return resolveMultiplayerDebugPolicy({
+    hostname: window.location?.hostname || '',
+    search: window.location?.search || '',
+    globalDebug: window.KHADIJA_MULTIPLAYER_DEBUG === true,
+    storedDebug
+  }).allowed;
 }
 
 export class MultiplayerFaultSimulator {

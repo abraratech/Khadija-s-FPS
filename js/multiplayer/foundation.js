@@ -7,6 +7,7 @@ import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
 import { MultiplayerRecoveryCertification } from './recovery_certification.js';
+import { MultiplayerReleaseGuard } from './release_guard.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -26,7 +27,8 @@ let remotePlayerManager = null;
 let sharedWorldManager = null;
 let economyManager = null;
 let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
-let recoveryCertification = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let recoveryCertification = null;
+let multiplayerReleaseGuard = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -254,6 +256,14 @@ export function initializeMultiplayerFoundation(
         diagnostics: recoveryDiagnostics
     });
     recoveryCertification.initialize();
+  multiplayerReleaseGuard = new MultiplayerReleaseGuard({
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    transport: multiplayerTransport,
+    diagnostics: recoveryDiagnostics,
+    certification: recoveryCertification
+  });
+  multiplayerReleaseGuard.initialize(performance.now());
 
   tacticalAwareness = new MultiplayerTacticalAwareness({
     eventBus: multiplayerEvents,
@@ -362,7 +372,7 @@ export function initializeMultiplayerFoundation(
   initialized = true;
 
   console.info(
-    '[M3.27-M3.28] Recovery certification and multiplayer release gate ready.'
+    '[M3.29-M3.30] Production debug lockdown and public multiplayer release guard ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -630,6 +640,11 @@ export function getMultiplayerRecoveryCertificationSnapshot() {
     return recoveryCertification?.getSnapshot?.() || null;
 }
 
+export function getMultiplayerReleaseGuardSnapshot() {
+  if (!initialized) return null;
+  return multiplayerReleaseGuard?.getSnapshot?.() || null;
+}
+
 export function configureMultiplayerFaultSimulation(config = {}) {
   if (!initialized) return null;
   return multiplayerRuntime.configureFaultSimulation(config);
@@ -679,7 +694,7 @@ export function syncMultiplayerFrame(
   });
 
   remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
-    recoveryCertification?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -707,7 +722,8 @@ export function getMultiplayerFoundationSnapshot() {
     coopScaling: getCoopScalingSnapshot(),
     faultSimulation: multiplayerRuntime.getFaultSimulationSnapshot(),
     recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
-        recoveryCertification: recoveryCertification?.getSnapshot?.() || null
+        recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
+    releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null
   };
 }
 

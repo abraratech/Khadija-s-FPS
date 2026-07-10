@@ -90,7 +90,23 @@ export function runReleaseValidation({
   if (loadedDevScript) state.debugSurfaces.push('dev_console.js script');
   if (document.getElementById('dev-console')) state.debugSurfaces.push('#dev-console');
   if (document.getElementById('ai-director-debug')) state.debugSurfaces.push('#ai-director-debug');
+  if (document.getElementById('mp-recovery-diagnostics')) state.debugSurfaces.push('#mp-recovery-diagnostics');
+  if (document.getElementById('mp-recovery-certification')) state.debugSurfaces.push('#mp-recovery-certification');
   if (typeof window.devConsole !== 'undefined') state.debugSurfaces.push('window.devConsole');
+  try {
+    if (localStorage.getItem('khadija:mp-debug') === '1') {
+      state.debugSurfaces.push('khadija:mp-debug storage');
+    }
+  } catch {
+    // Storage availability is checked separately below.
+  }
+  try {
+    const query = new URLSearchParams(location.search);
+    if (query.get('mpDebug') === '1') state.debugSurfaces.push('mpDebug query');
+    if (query.get('mpFaults') === '1') state.debugSurfaces.push('mpFaults query');
+  } catch {
+    // Query inspection is best effort.
+  }
   if (typeof window.KASetAIDirectorDebug === 'function') state.debugSurfaces.push('window.KASetAIDirectorDebug');
 
   try {

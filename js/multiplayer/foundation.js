@@ -8,7 +8,7 @@ import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
 import { MultiplayerRecoveryCertification } from './recovery_certification.js';
 import { MultiplayerReleaseGuard } from './release_guard.js';
-import { MultiplayerReleaseCandidate } from './release_candidate.js';
+import { MultiplayerReleaseCandidate } from './release_candidate.js'; import { MultiplayerLaunchObserver } from './launch_observer.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -30,7 +30,7 @@ let economyManager = null;
 let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
 let recoveryCertification = null;
 let multiplayerReleaseGuard = null;
-let multiplayerReleaseCandidate = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -379,12 +379,12 @@ export function initializeMultiplayerFoundation(
     recoveryCertification,
     hostMigration: hostMigrationState
   });
-  multiplayerReleaseCandidate.initialize(performance.now());
+  multiplayerReleaseCandidate.initialize(performance.now()); multiplayerLaunchObserver = new MultiplayerLaunchObserver({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, hostMigration: hostMigrationState }); multiplayerLaunchObserver.initialize(performance.now());
 
   initialized = true;
 
   console.info(
-    '[M3.31-M3.32] Multiplayer release-candidate validation and deployment readiness ready.'
+    '[M3.33-M3.34] Launch-session observability and incident evidence ready.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -662,6 +662,8 @@ export function getMultiplayerReleaseCandidateSnapshot() {
   return multiplayerReleaseCandidate?.getSnapshot?.() || null;
 }
 
+export function getMultiplayerLaunchObserverSnapshot() { if (!initialized) return null; return multiplayerLaunchObserver?.getSnapshot?.() || null; }
+
 export function configureMultiplayerFaultSimulation(config = {}) {
   if (!initialized) return null;
   return multiplayerRuntime.configureFaultSimulation(config);
@@ -711,7 +713,7 @@ export function syncMultiplayerFrame(
   });
 
   remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
-    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); multiplayerLaunchObserver?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -741,7 +743,7 @@ export function getMultiplayerFoundationSnapshot() {
     recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
         recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,
-    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null
+    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null
   };
 }
 

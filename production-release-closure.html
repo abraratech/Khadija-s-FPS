@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Khadija's Arena — Production Release Closure</title>
+  <style>
+    :root { color-scheme:dark; font-family:Inter,system-ui,sans-serif; background:#071019; color:#e9f3f8; }
+    body { margin:0; padding:28px; background:radial-gradient(circle at top,#18384b,#071019 50%); }
+    main { width:min(1120px,100%); margin:auto; }
+    h1 { margin:0 0 8px; letter-spacing:.035em; } h2 { margin-top:0; }
+    .muted { color:#9fb4c0; } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }
+    .card { background:rgba(10,25,35,.95); border:1px solid #2c4e61; border-radius:14px; padding:18px; box-shadow:0 18px 45px #0008; }
+    textarea,input { box-sizing:border-box; width:100%; background:#061019; color:#e9f3f8; border:1px solid #385f73; border-radius:8px; padding:10px; }
+    textarea { min-height:145px; resize:vertical; } button { border:0; border-radius:8px; padding:11px 14px; font-weight:850; cursor:pointer; background:#39c2e8; color:#031018; }
+    button.secondary { background:#315266; color:#e9f3f8; } button:disabled { opacity:.45; cursor:not-allowed; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    .status { display:inline-block; padding:9px 13px; border-radius:999px; font-weight:900; background:#7a6122; }
+    .status[data-tone="success"] { background:#167649; } .status[data-tone="danger"] { background:#9e332e; }
+    label { display:block; margin:10px 0; } label.check { display:flex; gap:10px; align-items:flex-start; }
+    label.check input { width:auto; margin-top:3px; } ul { padding-left:18px; } li { margin:8px 0; }
+    li strong { display:block; font-size:.8rem; color:#7bdcff; }
+    pre { white-space:pre-wrap; word-break:break-word; max-height:410px; overflow:auto; background:#040a0f; padding:12px; border-radius:8px; }
+    code { word-break:break-all; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Production Release Closure</h1>
+  <p class="muted">M3.91–M3.92 closes only a sealed GREEN production watch and creates the operational handoff record. No deployment action is performed here.</p>
+  <div class="grid">
+    <section class="card">
+      <h2>1. Go-live certificate</h2>
+      <input id="ka-closure-go-live-file" type="file" accept="application/json,.json">
+      <textarea id="ka-closure-go-live" placeholder="Paste the sealed M3.87–M3.88 go-live certificate JSON."></textarea>
+    </section>
+    <section class="card">
+      <h2>2. GREEN watch evidence</h2>
+      <input id="ka-closure-watch-file" type="file" accept="application/json,.json">
+      <textarea id="ka-closure-watch" placeholder="Paste the sealed M3.89–M3.90 production-watch evidence JSON."></textarea>
+      <div class="actions"><button id="ka-closure-validate">VALIDATE RELEASE EVIDENCE</button></div>
+    </section>
+  </div>
+  <section class="card" style="margin-top:16px">
+    <h2>Closure readiness</h2>
+    <div id="ka-closure-status" class="status" data-tone="warning">BLOCKED</div>
+    <p id="ka-closure-summary" class="muted">Load both sealed evidence files.</p>
+    <ul id="ka-closure-findings"></ul>
+  </section>
+  <div class="grid" style="margin-top:16px">
+    <section class="card">
+      <h2>3. Close production release</h2>
+      <label>Release closer<input id="ka-closure-closer" autocomplete="name"></label>
+      <label>Closure notes<textarea id="ka-closure-notes" placeholder="Optional closure notes."></textarea></label>
+      <label class="check"><input id="ka-closure-confirm" type="checkbox"><span>I confirm the release is GREEN and ready to close.</span></label>
+      <div class="actions"><button id="ka-closure-export" disabled>EXPORT CLOSURE CERTIFICATE</button></div>
+    </section>
+    <section class="card">
+      <h2>4. Operations handoff</h2>
+      <label>Operations owner<input id="ka-closure-owner" autocomplete="name"></label>
+      <label>Escalation notes<textarea id="ka-closure-escalation" placeholder="Optional escalation or support notes."></textarea></label>
+      <label class="check"><input id="ka-closure-handoff-confirm" type="checkbox"><span>I accept the active deployment, monitoring links, and rollback reference.</span></label>
+      <div class="actions"><button id="ka-closure-handoff" class="secondary" disabled>EXPORT OPERATIONS HANDOFF</button></div>
+    </section>
+  </div>
+  <section class="card" style="margin-top:16px">
+    <h2>Sealed output</h2>
+    <p>SHA-256: <code id="ka-closure-digest">—</code></p>
+    <pre id="ka-closure-output"></pre>
+  </section>
+</main>
+<script type="module" src="/js/multiplayer/production_release_closure.js"></script>
+</body>
+</html>

@@ -8,7 +8,7 @@ import {
 
 assert.equal(
   MULTIPLAYER_TAB_RECOVERY_SEAL_PATCH,
-  'm3-final-certification-seal-r1'
+  'm3-production-release-manifest-r1'
 );
 assert.equal(MULTIPLAYER_TAB_RECOVERY_SEAL_PROTOCOL, 6);
 

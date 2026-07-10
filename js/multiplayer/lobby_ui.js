@@ -1,3 +1,5 @@
+import { deriveMultiplayerProductionReleaseUiState } from './production_release_ui_core.js';
+
 // js/multiplayer/lobby_ui.js
 
 const NAME_STORAGE_KEY = 'ka_multiplayer_display_name';
@@ -126,6 +128,8 @@ export class MultiplayerLobbyUI {
             <input id="ka-coop-server" placeholder="https://your-worker.workers.dev">
           </label>
 
+          <button id="ka-coop-release-retry" type="button">RECHECK CERTIFIED SERVER</button>
+
           <div class="ka-coop-connect-grid">
             <button id="ka-coop-create" class="ka-coop-primary" type="button">CREATE PRIVATE ROOM</button>
             <div class="ka-coop-join-row">
@@ -177,6 +181,7 @@ export class MultiplayerLobbyUI {
       roomView: modal.querySelector('#ka-coop-room-view'),
       name: modal.querySelector('#ka-coop-name'),
       server: modal.querySelector('#ka-coop-server'),
+      releaseRetry: modal.querySelector('#ka-coop-release-retry'),
       create: modal.querySelector('#ka-coop-create'),
       codeInput: modal.querySelector('#ka-coop-code-input'),
       join: modal.querySelector('#ka-coop-join'),
@@ -301,6 +306,11 @@ bindEvents() {
     this.elements.close.addEventListener('click', () => this.close());
     this.elements.modal.addEventListener('click', (event) => {
       if (event.target === this.elements.modal) this.close();
+    });
+
+    this.elements.releaseRetry.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.retryRelease?.({ serverUrl: this.elements.server.value });
     });
 
     this.elements.create.addEventListener('click', () => {
@@ -428,31 +438,20 @@ bindEvents() {
     this.elements.connectView.hidden = online;
     this.elements.roomView.hidden = !online;
 
-    let statusText = 'LOCAL MODE';
-    let tone = 'neutral';
-
-    if (nextState.connecting) {
-      statusText = nextState.transportState === 'reconnecting'
-        ? 'RECONNECTING TO ROOM…'
-        : 'CONNECTING…';
-      tone = 'warning';
-    } else if (
-      nextState.transportMode === 'online'
-      && nextState.transportState === 'connected'
-      && !online
-    ) {
+    const releaseUi = deriveMultiplayerProductionReleaseUiState({
+      productionRelease: nextState.productionRelease,
+      connecting: nextState.connecting,
+      online,
+      error: nextState.error
+    });
+    let statusText = releaseUi.statusText;
+    let tone = releaseUi.tone;
+    if (online && room.status === 'in-run') {
+      statusText = 'CO-OP RUN ACTIVE';
+    } else if (nextState.transportMode === 'online' && nextState.transportState === 'connected' && !online && releaseUi.status !== 'FAIL') {
       statusText = 'AWAITING ROOM CONFIRMATION…';
       tone = 'warning';
-    } else if (nextState.error) {
-      statusText = nextState.error;
-      tone = 'danger';
-    } else if (online) {
-      statusText = room.status === 'in-run'
-        ? 'CO-OP RUN ACTIVE'
-        : 'ONLINE ROOM READY';
-      tone = 'success';
     }
-
     this.elements.status.textContent = statusText;
     this.elements.status.dataset.tone = tone;
     this.elements.openButton.dataset.online = online ? 'true' : 'false';
@@ -460,9 +459,11 @@ bindEvents() {
       ? `CO-OP · ${room.roomCode || 'ONLINE'}`
       : 'CO-OP ALPHA';
 
-    const disabled = nextState.connecting;
+    const disabled = nextState.connecting || releaseUi.blockActions;
     this.elements.create.disabled = disabled;
     this.elements.join.disabled = disabled;
+    this.elements.releaseRetry.hidden = !releaseUi.retryVisible || online;
+    this.elements.releaseRetry.disabled = releaseUi.retryDisabled || nextState.connecting || online;
         const lastRoom = nextState.lastRoom;
         this.elements.rejoin.hidden = online || !lastRoom?.roomCode;
         this.elements.rejoin.disabled = disabled || online;

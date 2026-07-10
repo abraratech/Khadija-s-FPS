@@ -22,6 +22,7 @@ import {
   isMultiplayerRefreshReadinessBlocking,
   startMultiplayerRefreshReadiness
 } from './refresh_readiness.js';
+import './release_runtime_audit.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
@@ -382,10 +383,11 @@ export function initializeMultiplayerFoundation(
     onHostMigrated: (details = {}) => {
       applyHostMigration(details);
     },
-    onLeftRoom: () => { cancelMultiplayerRefreshHydration({
+    onLeftRoom: () => {
+      cancelMultiplayerRefreshHydration({
         reason: 'multiplayer-room-left'
       });
-    onLeftRoom: () => { cancelMultiplayerRefreshReadiness({
+      cancelMultiplayerRefreshReadiness({
         reason: 'multiplayer-room-left'
       });
       setCoopScalingContext({ online: false, playerCount: 1 });

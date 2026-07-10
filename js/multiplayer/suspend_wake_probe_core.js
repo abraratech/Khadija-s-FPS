@@ -1,7 +1,7 @@
 // js/multiplayer/suspend_wake_probe_core.js
 // M3.57-M3.58 — deterministic wake-time transport liveness policy.
 
-export const MULTIPLAYER_SUSPEND_WAKE_PROBE_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_SUSPEND_WAKE_PROBE_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_SUSPEND_WAKE_PROBE_PROTOCOL = 6;
 export const MULTIPLAYER_SUSPEND_WAKE_PROBE_TIMEOUT_MS = 2800;
 export const MULTIPLAYER_SUSPEND_WAKE_PROBE_POLL_MS = 140;

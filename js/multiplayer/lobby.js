@@ -27,6 +27,12 @@ import {
 import {
   getMultiplayerRefreshHydrationSnapshot
 } from './refresh_hydration.js';
+import {
+  checkMultiplayerProductionRelease,
+  getMultiplayerProductionReleaseSnapshot,
+  requireMultiplayerProductionReleaseReady,
+  subscribeMultiplayerProductionRelease
+} from './production_release.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -159,6 +165,7 @@ export class MultiplayerLobbyController {
     this.error = null;
     this.connected = false;
     this.room = null;
+    this.productionRelease = getMultiplayerProductionReleaseSnapshot();
         this.lastRoom = loadLastRoom();
         this.pendingLeaveResolver = null;
   }
@@ -169,6 +176,7 @@ export class MultiplayerLobbyController {
         createRoom: (options) => this.createRoom(options),
         joinRoom: (options) => this.joinRoom(options),
                 rejoinLastRoom: (options) => this.rejoinLastRoom(options),
+        retryRelease: (options) => this.retryRelease(options),
         setReady: (ready) => this.setReady(ready),
         updateSettings: (settings) => this.updateSettings(settings),
         startRun: () => this.startRun(),
@@ -185,6 +193,13 @@ export class MultiplayerLobbyController {
 
     this.unsubscribe.push(
       this.eventBus.on(MULTIPLAYER_EVENTS.TRANSPORT_STATE_CHANGED, () => {
+        this.render();
+      })
+    );
+
+    this.unsubscribe.push(
+      subscribeMultiplayerProductionRelease((snapshot) => {
+        this.productionRelease = snapshot;
         this.render();
       })
     );
@@ -303,6 +318,16 @@ export class MultiplayerLobbyController {
         });
     }
 
+    async retryRelease({ serverUrl } = {}) {
+      this.error = null;
+      this.productionRelease = await checkMultiplayerProductionRelease(serverUrl, { force: true });
+      if (this.productionRelease?.ready !== true) {
+        this.error = this.productionRelease?.errors?.[0]?.message || 'Certified multiplayer server check failed.';
+      }
+      this.render();
+      return this.productionRelease?.ready === true;
+    }
+
     async connect({
     roomCode,
     displayName,
@@ -327,6 +352,7 @@ export class MultiplayerLobbyController {
         }) || this.lastRoom;
 
         try {
+      await requireMultiplayerProductionReleaseReady(serverUrl);
       await this.transport.connect({
         serverUrl,
         roomCode,
@@ -818,6 +844,7 @@ openLobby() {
       transportState,
       transportMode,
       room: this.room,
+      productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
             lastRoom: this.lastRoom || loadLastRoom(),
             localPlayerId: this.localPlayerId,
       error: this.error
@@ -830,6 +857,7 @@ openLobby() {
       room: this.room,
             lastRoom: this.lastRoom || loadLastRoom(),
             error: this.error,
+      productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
       transport: this.transport.getConnectionSnapshot()
     };
   }

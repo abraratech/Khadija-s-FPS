@@ -9,7 +9,7 @@ import {
   MULTIPLAYER_TAB_LEASE_TTL_MS
 } from './tab_lease_core.js';
 
-assert.equal(MULTIPLAYER_TAB_LEASE_PATCH, 'm3-final-certification-seal-r1');
+assert.equal(MULTIPLAYER_TAB_LEASE_PATCH, 'm3-production-release-manifest-r1');
 assert.equal(MULTIPLAYER_TAB_LEASE_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_TAB_LEASE_TTL_MS, 6500);
 

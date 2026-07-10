@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_proof_core.js
 // M3.47-M3.48 — deterministic proof that room, run, authority, and checkpoint hydration returned.
 
-export const MULTIPLAYER_REFRESH_PROOF_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_REFRESH_PROOF_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_REFRESH_PROOF_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_PROOF_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS = 12 * 1000;

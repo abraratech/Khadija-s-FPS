@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_resume_core.js
 // M3.41-M3.42 — deterministic one-shot room resume after a public stale-client refresh.
 
-export const MULTIPLAYER_REFRESH_RESUME_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_REFRESH_RESUME_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_REFRESH_RESUME_VERSION = 1;
 export const MULTIPLAYER_REFRESH_RESUME_TTL_MS = 2 * 60 * 1000;
 

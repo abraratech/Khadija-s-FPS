@@ -61,6 +61,7 @@ import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
 import './multiplayer/certification_session.js';
 import './multiplayer/certification_pairing.js';
 import './multiplayer/final_certification.js';
+import './multiplayer/production_release.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -167,9 +168,9 @@ configureMultiplayerEconomy({
   refundPlayer: refundMultiplayerPoints
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-final-certification-seal-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm3-production-release-manifest-r1';
 console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-final-certification-seal-r1');
+console.info('[Multiplayer Patch] m3-production-release-manifest-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }

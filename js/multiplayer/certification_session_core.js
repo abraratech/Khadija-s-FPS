@@ -1,7 +1,7 @@
 // js/multiplayer/certification_session_core.js
 // M3.73-M3.74 — deterministic two-client certification session ledger.
 
-export const MULTIPLAYER_CERTIFICATION_SESSION_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_CERTIFICATION_SESSION_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_CERTIFICATION_SESSION_PROTOCOL = 6;
 export const MULTIPLAYER_CERTIFICATION_SESSION_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_CERTIFICATION_SAMPLE_INTERVAL_MS = 1000;

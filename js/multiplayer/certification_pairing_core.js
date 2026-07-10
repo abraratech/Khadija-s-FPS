@@ -1,7 +1,7 @@
 // js/multiplayer/certification_pairing_core.js
 // M3.75-M3.76 — deterministic host/client certification evidence pairing.
 
-export const MULTIPLAYER_CERTIFICATION_PAIRING_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_CERTIFICATION_PAIRING_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_CERTIFICATION_PAIRING_PROTOCOL = 6;
 export const MULTIPLAYER_CERTIFICATION_PAIRING_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_CERTIFICATION_PAIRING_MIN_SAMPLES = 60;

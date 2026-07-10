@@ -5,7 +5,7 @@ import {
   hashMultiplayerCertificationEvidence
 } from './certification_pairing_core.js';
 
-export const MULTIPLAYER_FINAL_CERTIFICATION_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_FINAL_CERTIFICATION_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_FINAL_CERTIFICATION_PROTOCOL = 6;
 export const MULTIPLAYER_FINAL_CERTIFICATION_BUILD = 'm3-team-final-world-reconnect-r3';
 

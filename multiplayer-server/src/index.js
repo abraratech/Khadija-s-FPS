@@ -10,12 +10,16 @@ const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
 const SERVER_BUILD = 'm3-team-final-world-reconnect-r3';
+const SERVER_PATCH = 'm3-production-release-manifest-r1';
+const CERTIFIED_FRONTEND_SHA = '3d57aab9b75e6b1e04ceeedd5afd5957f3ae361b';
+const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});
   headers.set('content-type', 'application/json; charset=utf-8');
   headers.set('cache-control', 'no-store');
+  headers.set('access-control-allow-origin', '*');
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
@@ -1136,14 +1140,30 @@ export default {
         ok: true,
         service: 'khadijas-arena-multiplayer',
         protocol: SERVER_PROTOCOL,
-        build: SERVER_BUILD
+        build: SERVER_BUILD,
+        patch: SERVER_PATCH,
+        certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
+        releaseStatus: RELEASE_STATUS
+      });
+    }
+
+    if (url.pathname === '/release') {
+      return json({
+        ok: true,
+        service: 'khadijas-arena-multiplayer',
+        protocol: SERVER_PROTOCOL,
+        build: SERVER_BUILD,
+        patch: SERVER_PATCH,
+        certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
+        releaseStatus: RELEASE_STATUS,
+        deployedAt: new Date().toISOString()
       });
     }
 
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/ws']
+        endpoints: ['/health', '/release', '/ws']
       });
     }
 

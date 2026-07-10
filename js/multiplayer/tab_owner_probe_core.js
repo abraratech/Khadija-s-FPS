@@ -1,7 +1,7 @@
 // js/multiplayer/tab_owner_probe_core.js
 // M3.67-M3.68 — deterministic owner liveness challenge and crash reclaim.
 
-export const MULTIPLAYER_TAB_OWNER_PROBE_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_TAB_OWNER_PROBE_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_TAB_OWNER_PROBE_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_OWNER_PROBE_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_TAB_OWNER_PROBE_TIMEOUT_MS = 650;

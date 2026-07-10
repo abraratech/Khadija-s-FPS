@@ -1,7 +1,7 @@
 // js/multiplayer/tab_epoch_fence_core.js
 // M3.69-M3.70 — deterministic lease-epoch fencing for stale owners.
 
-export const MULTIPLAYER_TAB_EPOCH_FENCE_PATCH = 'm3-final-certification-seal-r1';
+export const MULTIPLAYER_TAB_EPOCH_FENCE_PATCH = 'm3-production-release-manifest-r1';
 export const MULTIPLAYER_TAB_EPOCH_FENCE_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_EPOCH_FENCE_BUILD = 'm3-team-final-world-reconnect-r3';
 

@@ -9,7 +9,7 @@ import {
 
 assert.equal(
   MULTIPLAYER_REFRESH_READINESS_PATCH,
-  'm3-refresh-recovery-seal-r1'
+  'm3-suspend-resilience-seal-r1'
 );
 assert.equal(MULTIPLAYER_REFRESH_READINESS_PROTOCOL, 6);
 

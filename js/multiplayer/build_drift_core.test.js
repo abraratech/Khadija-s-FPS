@@ -10,7 +10,7 @@ import {
   isLoopbackMultiplayerHost
 } from './build_drift_core.js';
 
-assert.equal(MULTIPLAYER_BUILD_DRIFT_PATCH, 'm3-refresh-recovery-seal-r1');
+assert.equal(MULTIPLAYER_BUILD_DRIFT_PATCH, 'm3-suspend-resilience-seal-r1');
 assert.equal(MULTIPLAYER_BUILD_DRIFT_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_BUILD_DRIFT_BUILD, 'm3-team-final-world-reconnect-r3');
 

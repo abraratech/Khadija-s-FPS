@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Khadija's Arena — Production Go-Live Seal</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #070b12; color: #edf6ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #14263a 0, #090f18 42%, #05070b 100%); }
+    main { width: min(1040px, calc(100% - 32px)); margin: 0 auto; padding: 38px 0 64px; }
+    header, section { border: 1px solid #29435a; background: rgba(8, 15, 25, .93); box-shadow: 0 18px 55px rgba(0, 0, 0, .35); }
+    header { padding: 28px; border-radius: 18px; }
+    section { margin-top: 18px; padding: 22px; border-radius: 14px; }
+    h1 { margin: 0 0 8px; letter-spacing: .04em; }
+    h2 { margin: 0 0 14px; font-size: 1.05rem; color: #9ed9ff; }
+    p { color: #b8c9d8; line-height: 1.55; }
+    code { color: #a9e6ff; overflow-wrap: anywhere; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .chip { border: 1px solid #365775; border-radius: 999px; padding: 7px 10px; color: #bfe9ff; background: #0e1d2b; }
+    .status-row { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 16px; }
+    #ka-go-live-status { border: 1px solid #4f6271; border-radius: 10px; padding: 14px; text-align: center; font-weight: 900; letter-spacing: .08em; }
+    #ka-go-live-status[data-tone="success"] { color: #8fffc7; border-color: #36b77d; background: #0c2a20; }
+    #ka-go-live-status[data-tone="danger"] { color: #ffaaa7; border-color: #b34d4b; background: #321313; }
+    #ka-go-live-status[data-tone="neutral"] { color: #ffe3a0; border-color: #9a7834; background: #2b210d; }
+    label { display: block; margin: 14px 0 7px; color: #d8e9f5; font-weight: 700; }
+    input[type="text"], textarea { width: 100%; border: 1px solid #36536a; border-radius: 9px; padding: 11px 12px; background: #070d14; color: #edf6ff; font: inherit; }
+    textarea { min-height: 180px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; }
+    #ka-go-live-notes { min-height: 80px; font-family: inherit; font-size: .95rem; }
+    .approval { display: flex; gap: 10px; align-items: flex-start; font-weight: 600; }
+    .approval input { margin-top: 4px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button, .link-button { border: 1px solid #3888b7; border-radius: 9px; padding: 11px 14px; color: #ecf9ff; background: #12354d; font: inherit; font-weight: 800; cursor: pointer; text-decoration: none; }
+    button:hover, .link-button:hover { background: #184966; }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+    ul { margin: 14px 0 0; padding-left: 22px; }
+    li { margin: 8px 0; color: #c4d3df; }
+    li.error { color: #ffaaa7; }
+    li.warning { color: #ffe099; }
+    li.success { color: #93f5c4; }
+    .digest { padding: 12px; border: 1px dashed #46647b; border-radius: 9px; background: #071019; overflow-wrap: anywhere; }
+    pre { max-height: 460px; overflow: auto; padding: 14px; border: 1px solid #28475f; border-radius: 9px; background: #050a0f; color: #c9efff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) { .grid, .status-row { grid-template-columns: 1fr; } main { width: min(100% - 20px, 1040px); padding-top: 18px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>PRODUCTION GO-LIVE EVIDENCE SEAL</h1>
+      <p>M3.87–M3.88 validates fresh public deployment proof, records explicit release approval, and emits a tamper-evident certificate with the certified rollback reference.</p>
+      <div class="meta">
+        <span class="chip" id="ka-go-live-manifest">Loading manifest…</span>
+        <span class="chip">Protocol 6</span>
+        <span class="chip">Worker unchanged</span>
+      </div>
+    </header>
+
+    <section aria-live="polite">
+      <div class="status-row">
+        <div id="ka-go-live-status" data-tone="neutral">WAITING</div>
+        <p id="ka-go-live-summary">Loading the production go-live manifest.</p>
+      </div>
+      <ul id="ka-go-live-findings"></ul>
+    </section>
+
+    <section>
+      <h2>1. Import M3.85–M3.86 acceptance evidence</h2>
+      <p>Run the public acceptance console, complete its two-client proof, then import the exported compact JSON diagnostic here. Evidence older than 24 hours is rejected.</p>
+      <div class="actions">
+        <a class="link-button" href="/public-deployment-acceptance.html" target="_blank" rel="noopener">OPEN ACCEPTANCE CONSOLE</a>
+        <input id="ka-go-live-file" type="file" accept="application/json,.json">
+      </div>
+      <label for="ka-go-live-source">Acceptance diagnostic JSON</label>
+      <textarea id="ka-go-live-source" spellcheck="false" placeholder="Paste the exported M3.85–M3.86 diagnostic JSON"></textarea>
+      <div class="actions">
+        <button id="ka-go-live-validate" type="button">VALIDATE RELEASE EVIDENCE</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Authorize production go-live</h2>
+      <div class="grid">
+        <div>
+          <label for="ka-go-live-approved-by">Release approver</label>
+          <input id="ka-go-live-approved-by" type="text" maxlength="120" autocomplete="name" placeholder="Name or release role">
+        </div>
+        <div>
+          <label for="ka-go-live-notes">Optional release notes</label>
+          <textarea id="ka-go-live-notes" maxlength="1000" placeholder="Deployment or observation notes"></textarea>
+        </div>
+      </div>
+      <label class="approval">
+        <input id="ka-go-live-approval" type="checkbox">
+        <span>I approve this certified frontend and Worker pairing for production go-live and accept the recorded rollback authorization.</span>
+      </label>
+      <div class="actions">
+        <button id="ka-go-live-seal" type="button" disabled>SEAL GO-LIVE CERTIFICATE</button>
+        <button id="ka-go-live-export-json" type="button" disabled>EXPORT JSON</button>
+        <button id="ka-go-live-export-text" type="button" disabled>EXPORT TEXT</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Certificate digest and evidence</h2>
+      <p>Certificate SHA-256</p>
+      <div class="digest"><code id="ka-go-live-digest">Not sealed</code></div>
+      <pre id="ka-go-live-certificate"></pre>
+    </section>
+  </main>
+  <script type="module" src="/js/multiplayer/production_go_live.js"></script>
+</body>
+</html>

@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Khadija's Arena — Public Deployment Acceptance</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #080b10;
+      color: #e8edf5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, rgba(49, 83, 126, 0.24), transparent 42rem),
+        #080b10;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 64px;
+    }
+    header, section {
+      border: 1px solid #283242;
+      background: rgba(13, 18, 26, 0.94);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.3);
+    }
+    header {
+      padding: 28px;
+      border-radius: 18px 18px 0 0;
+    }
+    section {
+      padding: 24px 28px;
+      border-top: 0;
+    }
+    section:last-of-type { border-radius: 0 0 18px 18px; }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #8ea6c7;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1, h2 { margin: 0; }
+    h1 { font-size: clamp(1.7rem, 5vw, 2.7rem); }
+    h2 { font-size: 1.15rem; margin-bottom: 14px; }
+    p { color: #aeb9c8; line-height: 1.6; }
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 22px;
+    }
+    #ka-acceptance-status {
+      min-width: 92px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      text-align: center;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      background: #283242;
+    }
+    #ka-acceptance-status[data-tone="success"] { background: #173f2c; color: #91f1b9; }
+    #ka-acceptance-status[data-tone="warning"] { background: #4a3714; color: #ffd67a; }
+    #ka-acceptance-status[data-tone="danger"] { background: #4a1e25; color: #ff9aa8; }
+    #ka-acceptance-summary { margin: 0; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+    }
+    button, a.button {
+      appearance: none;
+      border: 1px solid #50617a;
+      border-radius: 10px;
+      background: #162033;
+      color: #eff5ff;
+      padding: 11px 15px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    button:hover, a.button:hover { background: #21304a; }
+    button:disabled { cursor: not-allowed; opacity: 0.5; }
+    button.primary { background: #24578d; border-color: #4d8dce; }
+    ul {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    li {
+      display: grid;
+      gap: 4px;
+      padding: 13px 14px;
+      border: 1px solid #303b4d;
+      border-radius: 10px;
+      background: #0c1119;
+    }
+    li strong { font-size: 0.8rem; letter-spacing: 0.06em; }
+    li span { color: #b9c4d3; }
+    li[data-kind="pass"] strong { color: #91f1b9; }
+    li[data-kind="warn"] strong,
+    li[data-kind="pending"] strong { color: #ffd67a; }
+    li[data-kind="fail"] strong { color: #ff9aa8; }
+    .proof-grid {
+      display: grid;
+      gap: 12px;
+    }
+    label.proof {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid #303b4d;
+      border-radius: 10px;
+      background: #0c1119;
+    }
+    label.proof input { margin-top: 3px; }
+    .room-code {
+      display: grid;
+      gap: 6px;
+      max-width: 240px;
+      margin-top: 14px;
+      color: #aeb9c8;
+      font-weight: 700;
+    }
+    .room-code input {
+      width: 100%;
+      border: 1px solid #50617a;
+      border-radius: 9px;
+      background: #080b10;
+      color: #eff5ff;
+      padding: 10px 12px;
+      font: inherit;
+      text-transform: uppercase;
+    }
+    code { color: #b8d8ff; }
+    #ka-acceptance-frame {
+      position: fixed;
+      left: -10000px;
+      top: -10000px;
+      width: 1280px;
+      height: 720px;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">M3.85–M3.86 · m3-public-deployment-acceptance-r1</p>
+      <h1>Public Pages Deployment Acceptance</h1>
+      <p>
+        Verifies the deployed acceptance marker, frontend and Worker release identity,
+        public runtime audit, production debug isolation, and certified-server UI.
+      </p>
+      <div class="status-line">
+        <strong id="ka-acceptance-status" data-tone="warning">CHECKING</strong>
+        <p id="ka-acceptance-summary">Starting live acceptance…</p>
+      </div>
+      <div class="actions">
+        <button id="ka-acceptance-run" class="primary" type="button">RUN LIVE ACCEPTANCE</button>
+        <button id="ka-acceptance-export" type="button" disabled>EXPORT DIAGNOSTIC</button>
+        <a class="button" href="/">OPEN PUBLIC GAME</a>
+      </div>
+    </header>
+
+    <section>
+      <h2>Automated findings</h2>
+      <ul id="ka-acceptance-findings" aria-live="polite"></ul>
+    </section>
+
+    <section>
+      <h2>Public two-client proof</h2>
+      <p>
+        Open two clients, use one room, complete a short run, then verify leave and rejoin.
+        Mark each step only after it passes.
+      </p>
+      <div class="actions">
+        <button id="ka-acceptance-open-a" type="button">OPEN CLIENT A</button>
+        <button id="ka-acceptance-open-b" type="button">OPEN CLIENT B</button>
+      </div>
+      <div class="proof-grid">
+        <label class="proof">
+          <input id="ka-proof-create-join" type="checkbox">
+          <span>Client A created a room and Client B joined successfully.</span>
+        </label>
+        <label class="proof">
+          <input id="ka-proof-short-run" type="checkbox">
+          <span>Both clients completed a short synchronized co-op run.</span>
+        </label>
+        <label class="proof">
+          <input id="ka-proof-leave-rejoin" type="checkbox">
+          <span>Leave and rejoin completed without release, room, or runtime drift.</span>
+        </label>
+      </div>
+      <label class="room-code">
+        Room code used
+        <input id="ka-proof-room-code" maxlength="6" autocomplete="off" placeholder="ABC234">
+      </label>
+      <p>
+        A complete acceptance reports <code>PASS</code>. Automated success with unchecked
+        two-client steps reports <code>PENDING</code>.
+      </p>
+    </section>
+  </main>
+
+  <iframe id="ka-acceptance-frame" title="Public game acceptance frame"></iframe>
+  <script type="module" src="/js/multiplayer/public_deployment_acceptance.js"></script>
+</body>
+</html>

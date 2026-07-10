@@ -9,7 +9,7 @@ import {
   MULTIPLAYER_TAB_LEASE_TTL_MS
 } from './tab_lease_core.js';
 
-assert.equal(MULTIPLAYER_TAB_LEASE_PATCH, 'm3-tab-ownership-seal-r1');
+assert.equal(MULTIPLAYER_TAB_LEASE_PATCH, 'm3-tab-recovery-seal-r1');
 assert.equal(MULTIPLAYER_TAB_LEASE_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_TAB_LEASE_TTL_MS, 6500);
 
@@ -98,6 +98,22 @@ assert.equal(takeover.status, 'OWNED');
 assert.equal(takeover.action, 'TAKEOVER');
 assert.equal(takeover.nextLease.epoch, 3);
 assert.equal(takeover.blocking, false);
+
+const staleOwnerReclaim = evaluateMultiplayerTabLease({
+  lease,
+  instanceId: 'instance-c',
+  pageId: 'page-c',
+  now: 2600,
+  activeRun: true,
+  forceTakeover: true,
+  takeoverReason: 'stale-owner-reclaim'
+});
+assert.equal(staleOwnerReclaim.status, 'OWNED');
+assert.equal(staleOwnerReclaim.action, 'RECLAIM');
+assert.equal(
+  staleOwnerReclaim.reason,
+  'tab-lease-stale-owner-reclaimed'
+);
 
 const expired = evaluateMultiplayerTabLease({
   lease,

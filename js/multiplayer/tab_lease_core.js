@@ -1,7 +1,7 @@
 // js/multiplayer/tab_lease_core.js
-// M3.61-M3.62 — deterministic browser-instance ownership lease policy.
+// M3.67-M3.68 — ownership lease policy with crash-owner reclaim.
 
-export const MULTIPLAYER_TAB_LEASE_PATCH = 'm3-tab-ownership-seal-r1';
+export const MULTIPLAYER_TAB_LEASE_PATCH = 'm3-tab-recovery-seal-r1';
 export const MULTIPLAYER_TAB_LEASE_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_LEASE_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_TAB_LEASE_TTL_MS = 6500;
@@ -82,6 +82,7 @@ export function evaluateMultiplayerTabLease({
   activeRun = false,
   allowSameInstanceHandoff = false,
   forceTakeover = false,
+  takeoverReason = 'explicit-takeover',
   ttlMs = MULTIPLAYER_TAB_LEASE_TTL_MS
 } = {}) {
   const checkedAt = finiteTime(now);
@@ -204,6 +205,8 @@ export function evaluateMultiplayerTabLease({
   }
 
   if (forceTakeover === true) {
+    const staleOwnerReclaim = cleanText(takeoverReason).toLowerCase()
+      === 'stale-owner-reclaim';
     const nextLease = createMultiplayerTabLease({
       instanceId: normalizedInstanceId,
       pageId: normalizedPageId,
@@ -211,14 +214,18 @@ export function evaluateMultiplayerTabLease({
       acquiredAt: checkedAt,
       heartbeatAt: checkedAt,
       ttlMs,
-      reason: 'explicit-takeover'
+      reason: staleOwnerReclaim
+        ? 'stale-owner-reclaim'
+        : 'explicit-takeover'
     });
     return Object.freeze({
       ...base,
       status: 'OWNED',
       health: 'WARN',
-      reason: 'tab-lease-explicit-takeover',
-      action: 'TAKEOVER',
+      reason: staleOwnerReclaim
+        ? 'tab-lease-stale-owner-reclaimed'
+        : 'tab-lease-explicit-takeover',
+      action: staleOwnerReclaim ? 'RECLAIM' : 'TAKEOVER',
       blocking: false,
       owner: true,
       nextLease,

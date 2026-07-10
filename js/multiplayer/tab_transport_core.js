@@ -1,7 +1,7 @@
 // js/multiplayer/tab_transport_core.js
 // M3.63-M3.64 — deterministic non-owner transport quiescence policy.
 
-export const MULTIPLAYER_TAB_TRANSPORT_PATCH = 'm3-tab-ownership-seal-r1';
+export const MULTIPLAYER_TAB_TRANSPORT_PATCH = 'm3-tab-recovery-seal-r1';
 export const MULTIPLAYER_TAB_TRANSPORT_PROTOCOL = 6;
 export const MULTIPLAYER_TAB_TRANSPORT_BUILD = 'm3-team-final-world-reconnect-r3';
 

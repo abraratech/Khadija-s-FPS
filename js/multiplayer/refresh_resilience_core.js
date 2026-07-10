@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_resilience_core.js
 // M3.53-M3.54 — deterministic refresh recovery resilience seal.
 
-export const MULTIPLAYER_REFRESH_RESILIENCE_PATCH = 'm3-tab-ownership-seal-r1';
+export const MULTIPLAYER_REFRESH_RESILIENCE_PATCH = 'm3-tab-recovery-seal-r1';
 export const MULTIPLAYER_REFRESH_RESILIENCE_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_RESILIENCE_BUILD = 'm3-team-final-world-reconnect-r3';
 

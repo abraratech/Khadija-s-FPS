@@ -11,7 +11,7 @@ import {
 
 assert.equal(
   MULTIPLAYER_SUSPEND_RESUME_PATCH,
-  'm3-tab-ownership-seal-r1'
+  'm3-tab-recovery-seal-r1'
 );
 assert.equal(MULTIPLAYER_SUSPEND_RESUME_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_SUSPEND_MIN_GAP_MS, 15000);

@@ -12,7 +12,7 @@ import {
 
 assert.equal(
   MULTIPLAYER_REFRESH_RECOVERY_PATCH,
-  'm3-tab-ownership-seal-r1'
+  'm3-tab-recovery-seal-r1'
 );
 assert.equal(MULTIPLAYER_REFRESH_RECOVERY_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_REFRESH_RECOVERY_MAX_RETRIES, 1);

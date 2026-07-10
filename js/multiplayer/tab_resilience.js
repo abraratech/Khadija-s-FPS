@@ -4,6 +4,9 @@
 import {
   evaluateMultiplayerTabResilience
 } from './tab_resilience_core.js';
+import {
+  syncMultiplayerTabRecoverySealResilience
+} from './tab_recovery_seal.js';
 
 const LEASE_STORAGE_KEY = 'khadija:mp-tab-lease-v1';
 
@@ -40,6 +43,7 @@ function publish(snapshot) {
       // Diagnostics must never interrupt ownership enforcement.
     }
   }
+  syncMultiplayerTabRecoverySealResilience(activeSnapshot);
   return activeSnapshot;
 }
 

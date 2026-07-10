@@ -1,7 +1,7 @@
 // js/multiplayer/suspend_resume_core.js
 // M3.57-M3.58 — deterministic browser suspension recovery policy.
 
-export const MULTIPLAYER_SUSPEND_RESUME_PATCH = 'm3-tab-ownership-seal-r1';
+export const MULTIPLAYER_SUSPEND_RESUME_PATCH = 'm3-tab-recovery-seal-r1';
 export const MULTIPLAYER_SUSPEND_RESUME_PROTOCOL = 6;
 export const MULTIPLAYER_SUSPEND_RESUME_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_SUSPEND_MIN_GAP_MS = 15 * 1000;

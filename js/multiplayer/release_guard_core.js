@@ -1,7 +1,7 @@
 // js/multiplayer/release_guard_core.js
 // M3.29-M3.30 — deterministic multiplayer public-release policy and gate evaluation.
 
-export const MULTIPLAYER_RELEASE_GUARD_PATCH = 'm3-tab-ownership-seal-r1';
+export const MULTIPLAYER_RELEASE_GUARD_PATCH = 'm3-tab-recovery-seal-r1';
 export const MULTIPLAYER_RELEASE_GUARD_PROTOCOL = 6;
 export const MULTIPLAYER_RELEASE_GUARD_BUILD = 'm3-team-final-world-reconnect-r3';
 

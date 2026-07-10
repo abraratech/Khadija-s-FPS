@@ -1,5 +1,5 @@
 // js/multiplayer/tab_lease.js
-// M3.65-M3.66 — single-tab ownership with final resilience sealing.
+// M3.71-M3.72 — ownership recovery final seal and active fence shutdown.
 
 import {
   evaluateMultiplayerTabLease,
@@ -13,6 +13,21 @@ import {
   syncMultiplayerTabResilienceLease,
   syncMultiplayerTabResilienceTransport
 } from './tab_resilience.js';
+import {
+  createMultiplayerTabOwnerProbe,
+  evaluateMultiplayerTabOwnerProbe,
+  MULTIPLAYER_TAB_OWNER_PROBE_TIMEOUT_MS
+} from './tab_owner_probe_core.js';
+import {
+  evaluateMultiplayerTabEpochFence,
+  evaluateMultiplayerTabLeaseWriteFence
+} from './tab_epoch_fence_core.js';
+import {
+  syncMultiplayerTabRecoverySealLease,
+  syncMultiplayerTabRecoverySealTransport,
+  syncMultiplayerTabRecoverySealProbe,
+  syncMultiplayerTabRecoverySealFence
+} from './tab_recovery_seal.js';
 
 const INSTANCE_STORAGE_KEY = 'khadija:mp-tab-instance-v1';
 const LEASE_STORAGE_KEY = 'khadija:mp-tab-lease-v1';
@@ -34,6 +49,11 @@ let channel = null;
 let transportQuiesced = false;
 let transportActionPromise = null;
 let transportSnapshot = null;
+let ownerProbePromise = null;
+let ownerProbeSnapshot = null;
+const ownerProbeAcks = new Map();
+let epochFenceSnapshot = null;
+let lastLeaseWriteFailureReason = '';
 
 function createToken() {
   if (globalThis.crypto?.getRandomValues) {
@@ -97,13 +117,94 @@ function readLease() {
   }
 }
 
+function publishEpochFence(snapshot) {
+  epochFenceSnapshot = snapshot ? Object.freeze({ ...snapshot }) : null;
+  if (typeof window !== 'undefined') {
+    try {
+      window.KHADIJA_MULTIPLAYER_TAB_EPOCH_FENCE = epochFenceSnapshot;
+    } catch {
+      // Diagnostics must never interrupt ownership enforcement.
+    }
+  }
+  syncMultiplayerTabRecoverySealFence(epochFenceSnapshot);
+
+  if (
+    epochFenceSnapshot?.action === 'QUIESCE'
+    && activeSnapshot?.blocking !== true
+  ) {
+    activeSnapshot = Object.freeze({
+      ...(activeSnapshot || {}),
+      status: 'CONFLICT',
+      health: 'WARN',
+      reason: epochFenceSnapshot.reason || 'tab-epoch-fence-owner-superseded',
+      action: 'BLOCK',
+      owner: false,
+      blocking: true,
+      final: false,
+      checkedAt: Date.now()
+    });
+    try {
+      window.KHADIJA_MULTIPLAYER_TAB_LEASE = activeSnapshot;
+    } catch {
+      // Diagnostics are best effort.
+    }
+    syncMultiplayerTabResilienceLease(activeSnapshot);
+    syncMultiplayerTabRecoverySealLease(activeSnapshot);
+    showOverlay(activeSnapshot);
+
+    queueMicrotask(async () => {
+      try {
+        const foundation = await import('./foundation.js');
+        await quiesceNonOwnerTransport(foundation, activeSnapshot);
+      } catch {
+        // The input block remains authoritative if transport shutdown fails.
+      }
+    });
+  }
+
+  return epochFenceSnapshot;
+}
+
 function writeLease(lease) {
   if (typeof window === 'undefined' || !lease) return false;
+  lastLeaseWriteFailureReason = '';
+
+  const current = readLease();
+  const fence = publishEpochFence(
+    evaluateMultiplayerTabLeaseWriteFence({
+      currentLease: current,
+      nextLease: lease
+    })
+  );
+  if (fence.allowed !== true) {
+    lastLeaseWriteFailureReason = fence.reason || 'tab-epoch-fence-write-blocked';
+    return false;
+  }
+
   try {
     window.localStorage?.setItem(LEASE_STORAGE_KEY, JSON.stringify(lease));
+    const confirmed = readLease();
+    if (
+      confirmed?.instanceId !== lease.instanceId
+      || confirmed?.pageId !== lease.pageId
+      || Number(confirmed?.epoch) !== Number(lease.epoch)
+    ) {
+      lastLeaseWriteFailureReason = 'tab-epoch-fence-write-lost-race';
+      publishEpochFence({
+        ...fence,
+        status: 'FENCED',
+        health: 'WARN',
+        reason: lastLeaseWriteFailureReason,
+        action: 'BLOCK',
+        allowed: false,
+        final: true
+      });
+      return false;
+    }
     signalTabs('LEASE_CHANGED');
     return true;
   } catch {
+    lastLeaseWriteFailureReason = 'tab-lease-storage-unavailable';
     return false;
   }
 }
@@ -162,11 +263,18 @@ function publish(snapshot) {
     }
   }
   syncMultiplayerTabResilienceLease(activeSnapshot);
+  syncMultiplayerTabRecoverySealLease(activeSnapshot);
   if (activeSnapshot?.blocking === true) {
     showOverlay(activeSnapshot);
   } else {
     hideOverlay();
   }
+  publishEpochFence(evaluateMultiplayerTabEpochFence({
+    lease: activeSnapshot,
+    storedLease: readLease(),
+    transport: transportSnapshot,
+    now: Date.now()
+  }));
   return activeSnapshot;
 }
 
@@ -180,7 +288,133 @@ function publishTransport(snapshot) {
     }
   }
   syncMultiplayerTabResilienceTransport(transportSnapshot);
+  syncMultiplayerTabRecoverySealTransport(transportSnapshot);
+  publishEpochFence(evaluateMultiplayerTabEpochFence({
+    lease: activeSnapshot,
+    storedLease: readLease(),
+    transport: transportSnapshot,
+    now: Date.now()
+  }));
   return transportSnapshot;
+}
+
+function publishOwnerProbe(snapshot) {
+  ownerProbeSnapshot = snapshot ? Object.freeze({ ...snapshot }) : null;
+  if (typeof window !== 'undefined') {
+    try {
+      window.KHADIJA_MULTIPLAYER_TAB_OWNER_PROBE = ownerProbeSnapshot;
+    } catch {
+      // Diagnostics must never interrupt ownership enforcement.
+    }
+  }
+  syncMultiplayerTabRecoverySealProbe(ownerProbeSnapshot);
+  return ownerProbeSnapshot;
+}
+
+function sleep(delayMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Math.max(0, delayMs));
+  });
+}
+
+function leaseMatchesProbe(lease, probe) {
+  return Boolean(
+    lease
+    && probe
+    && lease.instanceId === probe.ownerInstanceId
+    && lease.pageId === probe.ownerPageId
+    && Number(lease.epoch) === Number(probe.ownerEpoch)
+  );
+}
+
+async function resolveConflictingOwner(result) {
+  if (
+    result?.status !== 'CONFLICT'
+    || !result?.lease
+    || result?.lease?.instanceId === instanceId
+    && result?.lease?.pageId === pageId
+  ) {
+    return result;
+  }
+
+  if (ownerProbePromise) {
+    await ownerProbePromise;
+    return null;
+  }
+
+  const probe = createMultiplayerTabOwnerProbe({
+    probeId: createToken(),
+    lease: result.lease,
+    challengerInstanceId: instanceId,
+    challengerPageId: pageId,
+    startedAt: Date.now()
+  });
+  if (!probe) return result;
+
+  ownerProbePromise = (async () => {
+    signalTabs('OWNER_PROBE', {
+      probeId: probe.probeId,
+      ownerInstanceId: probe.ownerInstanceId,
+      ownerPageId: probe.ownerPageId,
+      ownerEpoch: probe.ownerEpoch,
+      challengerInstanceId: instanceId,
+      challengerPageId: pageId
+    });
+
+    let state = null;
+    while (true) {
+      const ack = ownerProbeAcks.get(probe.probeId) || null;
+      state = evaluateMultiplayerTabOwnerProbe({
+        probe,
+        currentLease: readLease(),
+        ack,
+        now: Date.now()
+      });
+      publishOwnerProbe(state);
+
+      if (state.final === true) break;
+      await sleep(80);
+    }
+
+    ownerProbeAcks.delete(probe.probeId);
+    return state;
+  })();
+
+  let probeResult = null;
+  try {
+    probeResult = await ownerProbePromise;
+  } finally {
+    ownerProbePromise = null;
+  }
+
+  if (probeResult?.action === 'BLOCK') {
+    return {
+      ...result,
+      reason: 'tab-lease-owner-confirmed-alive',
+      ownerProbe: probeResult
+    };
+  }
+
+  if (probeResult?.action === 'REEVALUATE') {
+    return null;
+  }
+
+  if (
+    probeResult?.action === 'RECLAIM'
+    && leaseMatchesProbe(readLease(), probe)
+  ) {
+    return evaluateMultiplayerTabLease({
+      lease: readLease(),
+      instanceId,
+      pageId,
+      now: Date.now(),
+      activeRun: true,
+      forceTakeover: true,
+      takeoverReason: 'stale-owner-reclaim'
+    });
+  }
+
+  return null;
 }
 
 function transportSnapshotFrom(foundation, leaseSnapshot) {
@@ -491,9 +725,50 @@ function handlePeerMessage(message) {
     return;
   }
 
+  if (message.type === 'OWNER_PROBE') {
+    const current = readLease();
+    const ownsRequestedLease = Boolean(
+      current
+      && current.instanceId === instanceId
+      && current.pageId === pageId
+      && current.instanceId === String(message.ownerInstanceId || '')
+      && current.pageId === String(message.ownerPageId || '')
+      && Number(current.epoch) === Number(message.ownerEpoch)
+      && activeSnapshot?.owner === true
+      && activeSnapshot?.blocking !== true
+    );
+    if (ownsRequestedLease) {
+      signalTabs('OWNER_ACK', {
+        probeId: String(message.probeId || '').slice(0, 160),
+        ownerInstanceId: instanceId,
+        ownerPageId: pageId,
+        ownerEpoch: current.epoch
+      });
+    }
+    return;
+  }
+
+  if (message.type === 'OWNER_ACK') {
+    const probeId = String(message.probeId || '').slice(0, 160);
+    if (probeId) {
+      ownerProbeAcks.set(probeId, {
+        probeId,
+        ownerInstanceId: String(message.ownerInstanceId || '').slice(0, 160),
+        ownerPageId: String(message.ownerPageId || '').slice(0, 160),
+        ownerEpoch: Math.max(1, Number(message.ownerEpoch) || 1)
+      });
+    }
+    return;
+  }
+
   if (
-    ['LEASE_CHANGED', 'LEASE_RELEASED', 'TAKEOVER', 'INSTANCE_REPLACED']
-      .includes(String(message.type || ''))
+    [
+      'LEASE_CHANGED',
+      'LEASE_RELEASED',
+      'TAKEOVER',
+      'RECLAIM',
+      'INSTANCE_REPLACED'
+    ].includes(String(message.type || ''))
   ) {
     scheduleEvaluation();
   }
@@ -545,7 +820,7 @@ async function evaluateOwnership() {
     const forceTakeover = forceTakeoverPending;
     forceTakeoverPending = false;
 
-    const result = evaluateMultiplayerTabLease({
+    let result = evaluateMultiplayerTabLease({
       lease: readLease(),
       instanceId,
       pageId,
@@ -554,6 +829,17 @@ async function evaluateOwnership() {
       allowSameInstanceHandoff,
       forceTakeover
     });
+
+    if (
+      result.status === 'CONFLICT'
+      && forceTakeover !== true
+    ) {
+      result = await resolveConflictingOwner(result);
+      if (!result) {
+        evaluationQueued = true;
+        return activeSnapshot;
+      }
+    }
 
     if (result.action === 'RELEASE') {
       releaseLease();
@@ -564,7 +850,7 @@ async function evaluateOwnership() {
     }
 
     if (
-      ['ACQUIRE', 'RENEW', 'HANDOFF', 'TAKEOVER']
+      ['ACQUIRE', 'RENEW', 'HANDOFF', 'TAKEOVER', 'RECLAIM']
         .includes(result.action)
       && result.nextLease
     ) {
@@ -573,7 +859,7 @@ async function evaluateOwnership() {
           ...result,
           status: 'STORAGE_BLOCKED',
           health: 'FAIL',
-          reason: 'tab-lease-storage-unavailable',
+          reason: lastLeaseWriteFailureReason || 'tab-lease-storage-unavailable',
           action: 'BLOCK',
           blocking: true,
           owner: false,
@@ -588,12 +874,17 @@ async function evaluateOwnership() {
         signalTabs('TAKEOVER', {
           leaseEpoch: result.nextLease.epoch
         });
+      } else if (result.action === 'RECLAIM') {
+        signalTabs('RECLAIM', {
+          leaseEpoch: result.nextLease.epoch
+        });
       }
 
       const confirmed = readLease();
       if (
         confirmed?.instanceId !== instanceId
         || confirmed?.pageId !== pageId
+        || Number(confirmed?.epoch) !== Number(result.nextLease.epoch)
       ) {
         const blocked = publish({
           ...result,

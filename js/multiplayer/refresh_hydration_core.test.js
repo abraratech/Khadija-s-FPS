@@ -10,7 +10,7 @@ import {
   MULTIPLAYER_REFRESH_HYDRATION_TIMEOUT_MS
 } from './refresh_hydration_core.js';
 
-assert.equal(MULTIPLAYER_REFRESH_HYDRATION_PATCH, 'm3-tab-ownership-seal-r1');
+assert.equal(MULTIPLAYER_REFRESH_HYDRATION_PATCH, 'm3-tab-recovery-seal-r1');
 assert.equal(MULTIPLAYER_REFRESH_HYDRATION_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_REFRESH_HYDRATION_BUILD, 'm3-team-final-world-reconnect-r3');
 assert.equal(MULTIPLAYER_REFRESH_HYDRATION_TIMEOUT_MS, 10000);

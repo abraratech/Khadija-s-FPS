@@ -4,6 +4,7 @@
 import {
   evaluateMultiplayerBuildDriftRecovery
 } from './build_drift_core.js';
+import { armMultiplayerRefreshResume } from './refresh_resume.js';
 
 const ATTEMPT_STORAGE_KEY = 'khadija:mp-build-drift-recovery-v1';
 const ATTEMPT_TTL_MS = 5 * 60 * 1000;
@@ -109,6 +110,11 @@ export function handleMultiplayerBuildDrift({
     && typeof window !== 'undefined'
     && typeof window.location?.replace === 'function'
   ) {
+    armMultiplayerRefreshResume({
+      signature: result.drift.signature,
+      refreshUrl: result.refreshUrl,
+      now
+    });
     writeAttempt(result.drift.signature, now);
     window.setTimeout(() => {
       void purgeStaleClientCaches().finally(() => {

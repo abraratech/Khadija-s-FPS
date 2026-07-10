@@ -9,6 +9,10 @@ import {
   MULTIPLAYER_PROTOCOL_VERSION
 } from './protocol.js';
 import { handleMultiplayerBuildDrift } from './build_drift.js';
+import {
+  consumeMultiplayerRefreshResume,
+  markMultiplayerRefreshResumeResult
+} from './refresh_resume.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -186,6 +190,32 @@ export class MultiplayerLobbyController {
     );
 
     this.render();
+    const refreshResume = consumeMultiplayerRefreshResume({
+      lastRoom: this.lastRoom || loadLastRoom(),
+      connected: this.connected,
+      connecting: false
+    });
+    if (refreshResume.autoRejoin) {
+      this.error = 'FRESH CLIENT READY — REJOINING LAST CO-OP ROOM';
+      this.render();
+      Promise.resolve().then(async () => {
+        markMultiplayerRefreshResumeResult({
+          status: 'CONNECTING',
+          roomCode: refreshResume.lastRoom?.roomCode || null,
+          reason: 'automatic-rejoin-started'
+        });
+        const started = await this.rejoinLastRoom({
+          displayName: refreshResume.lastRoom?.displayName
+        });
+        if (!started) {
+          markMultiplayerRefreshResumeResult({
+            status: 'FAILED',
+            roomCode: refreshResume.lastRoom?.roomCode || null,
+            reason: 'automatic-rejoin-failed'
+          });
+        }
+      });
+    }
     return this.getSnapshot();
   }
 
@@ -314,7 +344,12 @@ export class MultiplayerLobbyController {
       this.connected = true;
       this.error = null;
       this.room = room;
-      this.transport.setReconnectToken(payload.reconnectToken);
+      markMultiplayerRefreshResumeResult({
+      status: 'CONNECTED',
+      roomCode: room.roomCode,
+      reason: 'automatic-rejoin-connected'
+    });
+    this.transport.setReconnectToken(payload.reconnectToken);
       saveReconnectToken(room.roomCode, payload.reconnectToken);
             this.lastRoom = saveLastRoom({
                 roomCode: room.roomCode,

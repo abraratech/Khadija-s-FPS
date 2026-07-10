@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Khadija's Arena — Final M3 Program Completion</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#070a10;color:#edf4ff}body{margin:0;background:radial-gradient(circle at top,#1b2946,#070a10 58%) fixed}main{max-width:1120px;margin:auto;padding:28px 18px 64px}h1{margin:.2rem 0}.eyebrow{letter-spacing:.13em;text-transform:uppercase;color:#8fc2ff;font-weight:900}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}.card{background:#0f1828;border:1px solid #2b3c5d;border-radius:15px;padding:18px;box-shadow:0 14px 36px #0008}label{display:block;margin:12px 0;font-weight:750}input,textarea{box-sizing:border-box;width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid #465d83;background:#090f1b;color:inherit}input[type=file]{padding:8px}textarea{min-height:88px}.check{display:flex;gap:10px;align-items:flex-start;font-weight:500}.check input{width:auto;margin-top:3px}button{border:0;border-radius:9px;padding:11px 15px;font-weight:900;background:#83b8ff;color:#07101d;cursor:pointer;margin:4px}button.secondary{background:#2b4168;color:#eef5ff}button:disabled{opacity:.45;cursor:not-allowed}#ka-m3-status{display:inline-block;padding:7px 11px;border-radius:999px;background:#2b4168}#ka-m3-status[data-tone="success"]{background:#18503a;color:#bdf7db}#ka-m3-status[data-tone="danger"]{background:#61232d;color:#ffd4dc}code,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}pre{white-space:pre-wrap;word-break:break-word;max-height:520px;overflow:auto;background:#060b13;border-radius:9px;padding:13px}li{margin:5px 0}.note{color:#bdcbe1}.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.seal{font-size:.78rem;word-break:break-all;color:#a9c8f2}
+</style>
+</head>
+<body><main>
+<p class="eyebrow">M3.99–M3.100 · m3-final-program-completion-r1</p>
+<h1>Final M3 Program Completion & Production Handoff</h1>
+<p class="note">Open this page from <code>https://khadija-s-fps.pages.dev/m3-program-completion.html</code> after pushing the accepted commit. This console verifies the automatic Pages deployment, validates the sealed M3.97–M3.98 receipt chain, and closes M3 at milestone M3.100. It performs no deployment, rollback, or Worker action.</p>
+<div class="grid">
+<section class="card"><h2>1. Public deployment proof</h2>
+<label>Accepted M3.97–M3.98 commit<input id="ka-m3-commit" value="604693799eee61d7cdb8e745f62910538c95f3f6" spellcheck="false"></label>
+<label class="check"><input id="ka-m3-push" type="checkbox"><span>I confirm this commit was pushed to the connected GitHub branch.</span></label>
+<label class="check"><input id="ka-m3-deployed" type="checkbox"><span>I confirm Cloudflare Pages completed the automatic GitHub deployment.</span></label>
+<h3>Import sealed M3.97–M3.98 evidence</h3>
+<label>Pages deployment receipt<input id="ka-m3-receipt-file" type="file" accept="application/json,.json"></label>
+<label>Certified maintenance activation<input id="ka-m3-activation-file" type="file" accept="application/json,.json"></label>
+<div class="actions"><button id="ka-m3-validate">VERIFY FINAL M3 EVIDENCE</button></div>
+<p>Status: <strong id="ka-m3-status">NOT CHECKED</strong></p><p id="ka-m3-summary">No final evidence collected.</p>
+<h3>Public artifact checks</h3><ul id="ka-m3-artifacts"></ul><h3>Findings</h3><ul id="ka-m3-findings"></ul>
+</section>
+<section class="card"><h2>2. M3.100 completion seal</h2>
+<label>Final release approver<input id="ka-m3-approver" autocomplete="name"></label>
+<label>Completion notes<textarea id="ka-m3-notes" placeholder="Optional final release notes"></textarea></label>
+<label class="check"><input id="ka-m3-complete-confirm" type="checkbox"><span>I authorize the M3 program as complete through M3.100. No further M3 milestone is authorized by this certificate.</span></label>
+<div class="actions"><button id="ka-m3-certificate" disabled>EXPORT M3.100 CERTIFICATE</button></div>
+<h2>3. Permanent production handoff</h2>
+<label>Production owner<input id="ka-m3-owner" autocomplete="organization"></label>
+<label class="check"><input id="ka-m3-handoff-confirm" type="checkbox"><span>I accept production ownership under the certified maintenance/change-control process.</span></label>
+<div class="actions"><button id="ka-m3-handoff" disabled>EXPORT PRODUCTION HANDOFF</button></div>
+<p>Current document seal:</p><p id="ka-m3-digest" class="seal">—</p>
+</section>
+</div>
+<section class="card" style="margin-top:16px"><h2>Diagnostic output</h2><pre id="ka-m3-output">{}</pre></section>
+</main><script type="module" src="./js/multiplayer/m3_program_completion.js"></script></body></html>

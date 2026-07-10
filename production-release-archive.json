@@ -1,0 +1,23 @@
+{
+  "ok": true,
+  "service": "khadijas-arena-production-release-archive",
+  "patch": "m3-certified-release-archive-r1",
+  "releaseClosureCommitSha": "8522495c77764142f6aa60af1af688dc88c31938",
+  "closedFrontendCommitSha": "93fb47ad94b5e4b04a393b0c09ae59d62ef9d1b8",
+  "rollbackFrontendSha": "9f83a7254c06995aa9a4d46e8de4e9dfa18c3250",
+  "protocol": 6,
+  "build": "m3-team-final-world-reconnect-r3",
+  "releasePatch": "m3-production-release-manifest-r1",
+  "certifiedFrontendSha": "3d57aab9b75e6b1e04ceeedd5afd5957f3ae361b",
+  "releaseStatus": "CERTIFIED",
+  "frontendUrl": "https://khadija-s-fps.pages.dev",
+  "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
+  "workerVersionId": "40175919-3d62-4986-9215-edf06eeddb98",
+  "sourceClosurePath": "/production-release-closure.html",
+  "pagePath": "/production-release-archive.html",
+  "requiredClosureDecision": "PRODUCTION_RELEASE_CLOSED",
+  "requiredClosureStatus": "CLOSED_GREEN",
+  "requiredHandoffDecision": "OPERATIONS_HANDOFF_ACCEPTED",
+  "retentionClass": "RELEASE_LIFECYCLE_PERMANENT",
+  "recoveryMode": "DRILL_ONLY_DO_NOT_EXECUTE"
+}

@@ -13,6 +13,12 @@ import {
   consumeMultiplayerRefreshResume,
   markMultiplayerRefreshResumeResult
 } from './refresh_resume.js';
+import {
+  cancelMultiplayerRefreshResumeWatchdog,
+  completeMultiplayerRefreshResumeWatchdog,
+  failMultiplayerRefreshResumeWatchdog,
+  startMultiplayerRefreshResumeWatchdog
+} from './refresh_watchdog.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -177,6 +183,10 @@ export class MultiplayerLobbyController {
 
     this.unsubscribe.push(
       this.eventBus.on(MULTIPLAYER_EVENTS.TRANSPORT_ERROR, (event) => {
+      failMultiplayerRefreshResumeWatchdog({
+        reason: 'refresh-resume-transport-error',
+        message: event.payload?.message || 'Multiplayer connection error.'
+      });
         this.error = event.payload?.message || 'Multiplayer connection error.';
         this.render();
       })
@@ -204,10 +214,30 @@ export class MultiplayerLobbyController {
           roomCode: refreshResume.lastRoom?.roomCode || null,
           reason: 'automatic-rejoin-started'
         });
+        startMultiplayerRefreshResumeWatchdog({
+          roomCode: refreshResume.lastRoom?.roomCode || null,
+          onTimeout: () => {
+            markMultiplayerRefreshResumeResult({
+              status: 'FAILED',
+              roomCode: refreshResume.lastRoom?.roomCode || null,
+              reason: 'automatic-rejoin-timeout'
+            });
+            void this.transport.disconnect('refresh-resume-timeout', {
+              fallbackLocal: true
+            });
+            this.connected = false;
+            this.room = null;
+            this.error = 'AUTO-REJOIN TIMED OUT — ROOM MAY BE CLOSED. REJOIN MANUALLY OR ENTER A NEW CODE';
+            this.render();
+          }
+        });
         const started = await this.rejoinLastRoom({
           displayName: refreshResume.lastRoom?.displayName
         });
         if (!started) {
+          failMultiplayerRefreshResumeWatchdog({
+            reason: 'automatic-rejoin-failed'
+          });
           markMultiplayerRefreshResumeResult({
             status: 'FAILED',
             roomCode: refreshResume.lastRoom?.roomCode || null,
@@ -307,6 +337,17 @@ export class MultiplayerLobbyController {
     const payload = message?.payload || {};
 
     if (action === 'error') {
+      const refreshFailure = failMultiplayerRefreshResumeWatchdog({
+        reason: 'refresh-resume-server-rejected',
+        message: payload.message || 'Multiplayer server rejected the request.'
+      });
+      if (refreshFailure?.status === 'FAILED') {
+        void this.transport.disconnect('refresh-resume-rejected', {
+          fallbackLocal: true
+        });
+        this.connected = false;
+        this.room = null;
+      }
       this.error = String(payload.message || 'Multiplayer server rejected the request.')
         .toUpperCase();
       this.render();
@@ -344,7 +385,27 @@ export class MultiplayerLobbyController {
       this.connected = true;
       this.error = null;
       this.room = room;
+      const refreshContinuity = completeMultiplayerRefreshResumeWatchdog({
+      connected: true,
+      roomCode: room.roomCode,
+      roomStatus: room.status
+    });
+    if (refreshContinuity?.status === 'FAILED') {
       markMultiplayerRefreshResumeResult({
+        status: 'FAILED',
+        roomCode: room.roomCode,
+        reason: 'refresh-resume-room-mismatch'
+      });
+      void this.transport.disconnect('refresh-resume-room-mismatch', {
+        fallbackLocal: true
+      });
+      this.connected = false;
+      this.room = null;
+      this.error = 'AUTO-REJOIN RETURNED THE WRONG ROOM — REJOIN MANUALLY';
+      this.render();
+      return;
+    }
+    markMultiplayerRefreshResumeResult({
       status: 'CONNECTED',
       roomCode: room.roomCode,
       reason: 'automatic-rejoin-connected'
@@ -658,6 +719,9 @@ openLobby() {
     }
 
   finishLeave() {
+    cancelMultiplayerRefreshResumeWatchdog({
+      reason: 'multiplayer-room-left'
+    });
     this.connected = false;
     this.room = null;
     this.error = null;

@@ -28,8 +28,8 @@
     "automatic-pages-deployment.html": "4af7a894c246b2df3bb4f7d3c90588d0ad3b9b248970406302a711566ec99821",
     "automatic-pages-deployment.json": "93f5040fd2833bf763f19d9436799afc61f62c12d40b2b8b498e1fbd1c414d7e",
     "js/multiplayer/automatic_pages_deployment.js": "cd1f6938a3009fd23a232de833cae1e9c2de3fef1cb6a6f9faa497d95d582b21",
-    "js/multiplayer/automatic_pages_deployment_core.js": "38f386748ce2251b357296318b35c4149937140245dfa683d37ecb7a94d86fa3",
-    "js/multiplayer/automatic_pages_deployment_core.test.js": "a59a6f706325d7ac78d10e999637f08fafbaf749b33bff7b87aad03420859065"
+    "js/multiplayer/automatic_pages_deployment_core.js": "12d63ba455c2a4a0d127832928e58e23cac29383cbac285285b29d942ee1fb82",
+    "js/multiplayer/automatic_pages_deployment_core.test.js": "15e6b7ed139a59a9553652ef644e355443d85a68fdf1cd1b9067ded5d2af6858"
   },
   "requiredReceiptDecision": "PAGES_DEPLOYMENT_VERIFIED",
   "requiredReceiptStatus": "AUTO_DEPLOYMENT_ACCEPTED",

@@ -47,7 +47,7 @@ function checkReleaseIdentity(errors,source,prefix){
     ['protocol',AUTOMATIC_PAGES_PROTOCOL,finiteInteger(value.protocol)],
     ['build',AUTOMATIC_PAGES_BUILD,cleanText(value.build)],
     ['patch',AUTOMATIC_PAGES_RELEASE_PATCH,cleanText(value.patch ?? value.releasePatch)],
-    ['certifiedFrontendSha',AUTOMATIC_PAGES_CERTIFIED_SHA,cleanText(value.certifiedFrontendSha)],
+    ['certifiedFrontendSha',AUTOMATIC_PAGES_CERTIFIED_SHA,cleanText(prefix==='FRONTEND' ? (value.certifiedBaselineSha ?? value.certifiedFrontendSha) : value.certifiedFrontendSha)],
     ['releaseStatus','CERTIFIED',cleanText(value.releaseStatus).toUpperCase()]
   ]) if(expected!==received) errors.push(finding(`${prefix}_IDENTITY_MISMATCH`,`${prefix.toLowerCase()} release identity field ${field} does not match.`,{field,expected,received}));
 }

@@ -10,7 +10,7 @@ import {
   MULTIPLAYER_REFRESH_WATCHDOG_TIMEOUT_MS
 } from './refresh_watchdog_core.js';
 
-assert.equal(MULTIPLAYER_REFRESH_WATCHDOG_PATCH, 'm3-suspend-resilience-seal-r1');
+assert.equal(MULTIPLAYER_REFRESH_WATCHDOG_PATCH, 'm3-tab-ownership-seal-r1');
 assert.equal(MULTIPLAYER_REFRESH_WATCHDOG_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_REFRESH_WATCHDOG_BUILD, 'm3-team-final-world-reconnect-r3');
 assert.equal(MULTIPLAYER_REFRESH_WATCHDOG_TIMEOUT_MS, 15000);

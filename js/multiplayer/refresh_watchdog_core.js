@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_watchdog_core.js
 // M3.43-M3.44 — deterministic refresh-resume continuity and timeout policy.
 
-export const MULTIPLAYER_REFRESH_WATCHDOG_PATCH = 'm3-suspend-resilience-seal-r1';
+export const MULTIPLAYER_REFRESH_WATCHDOG_PATCH = 'm3-tab-ownership-seal-r1';
 export const MULTIPLAYER_REFRESH_WATCHDOG_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_WATCHDOG_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_REFRESH_WATCHDOG_TIMEOUT_MS = 15 * 1000;

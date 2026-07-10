@@ -1,7 +1,7 @@
 // js/multiplayer/suspend_resilience_core.js
 // M3.59-M3.60 — deterministic suspension recovery final seal.
 
-export const MULTIPLAYER_SUSPEND_RESILIENCE_PATCH = 'm3-suspend-resilience-seal-r1';
+export const MULTIPLAYER_SUSPEND_RESILIENCE_PATCH = 'm3-tab-ownership-seal-r1';
 export const MULTIPLAYER_SUSPEND_RESILIENCE_PROTOCOL = 6;
 export const MULTIPLAYER_SUSPEND_RESILIENCE_BUILD = 'm3-team-final-world-reconnect-r3';
 

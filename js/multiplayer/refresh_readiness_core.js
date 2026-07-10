@@ -1,7 +1,7 @@
 // js/multiplayer/refresh_readiness_core.js
 // M3.49-M3.50 — deterministic refresh-resume gameplay readiness gate.
 
-export const MULTIPLAYER_REFRESH_READINESS_PATCH = 'm3-suspend-resilience-seal-r1';
+export const MULTIPLAYER_REFRESH_READINESS_PATCH = 'm3-tab-ownership-seal-r1';
 export const MULTIPLAYER_REFRESH_READINESS_PROTOCOL = 6;
 export const MULTIPLAYER_REFRESH_READINESS_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_REFRESH_READINESS_TIMEOUT_MS = 12 * 1000;

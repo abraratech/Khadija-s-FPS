@@ -1,7 +1,7 @@
 // js/multiplayer/release_candidate_core.js
 // M3.31-M3.32 — deterministic multiplayer release-candidate readiness evaluation.
 
-export const MULTIPLAYER_RELEASE_CANDIDATE_PATCH = 'm3-suspend-resilience-seal-r1';
+export const MULTIPLAYER_RELEASE_CANDIDATE_PATCH = 'm3-tab-ownership-seal-r1';
 export const MULTIPLAYER_RELEASE_CANDIDATE_PROTOCOL = 6;
 export const MULTIPLAYER_RELEASE_CANDIDATE_BUILD = 'm3-team-final-world-reconnect-r3';
 

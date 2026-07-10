@@ -10,7 +10,7 @@ import {
   MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS
 } from './refresh_proof_core.js';
 
-assert.equal(MULTIPLAYER_REFRESH_PROOF_PATCH, 'm3-suspend-resilience-seal-r1');
+assert.equal(MULTIPLAYER_REFRESH_PROOF_PATCH, 'm3-tab-ownership-seal-r1');
 assert.equal(MULTIPLAYER_REFRESH_PROOF_PROTOCOL, 6);
 assert.equal(MULTIPLAYER_REFRESH_PROOF_BUILD, 'm3-team-final-world-reconnect-r3');
 assert.equal(MULTIPLAYER_REFRESH_PROOF_TIMEOUT_MS, 12000);

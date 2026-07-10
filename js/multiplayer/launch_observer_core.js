@@ -1,7 +1,7 @@
 // js/multiplayer/launch_observer_core.js
 // M3.33-M3.34 — deterministic launch-session health evaluation and transition evidence.
 
-export const MULTIPLAYER_LAUNCH_OBSERVER_PATCH = 'm3-suspend-resilience-seal-r1';
+export const MULTIPLAYER_LAUNCH_OBSERVER_PATCH = 'm3-tab-ownership-seal-r1';
 export const MULTIPLAYER_LAUNCH_OBSERVER_PROTOCOL = 6;
 export const MULTIPLAYER_LAUNCH_OBSERVER_BUILD = 'm3-team-final-world-reconnect-r3';
 export const MULTIPLAYER_LAUNCH_OBSERVER_MAX_EVENTS = 160;

@@ -92,6 +92,7 @@ export function runReleaseValidation({
   if (document.getElementById('ai-director-debug')) state.debugSurfaces.push('#ai-director-debug');
   if (document.getElementById('mp-recovery-diagnostics')) state.debugSurfaces.push('#mp-recovery-diagnostics');
   if (document.getElementById('mp-recovery-certification')) state.debugSurfaces.push('#mp-recovery-certification');
+  if (document.getElementById('mp-release-candidate')) state.debugSurfaces.push('#mp-release-candidate');
   if (typeof window.devConsole !== 'undefined') state.debugSurfaces.push('window.devConsole');
   try {
     if (localStorage.getItem('khadija:mp-debug') === '1') {

@@ -1,9 +1,9 @@
 // js/main.js
 import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
+import { initEnemies, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
-import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
+import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 import {
@@ -51,6 +51,12 @@ import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboard
 import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
 import { initCameraPresentation, resetCameraPresentation, updateCameraPresentation, enforceCameraPresentationVisibility, endCameraPresentation } from './camera_presentation.js';
 import {
+  initGameplayReliability,
+  beginGameplayReliability,
+  updateGameplayReliability,
+  endGameplayReliability
+} from './gameplay_reliability.js';
+import {
   initTutorialControls,
   resetTutorialRun,
   endTutorialRun,
@@ -60,7 +66,7 @@ import {
 } from './tutorial.js';
 import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
 import './multiplayer/suspend_resume.js';
 import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
@@ -561,6 +567,14 @@ initCameraPresentation({
   mapMeshes,
   player,
   getActiveWeapon,
+  showToast: showStatusToast
+});
+initGameplayReliability({
+  player,
+  getGameState: () => gs,
+  getEnemyReliabilitySnapshot,
+  getCombatReliabilitySnapshot,
+  getReviveSnapshot: getMultiplayerReviveSnapshot,
   showToast: showStatusToast
 });
 runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
@@ -1193,6 +1207,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     resetTutorialRun({ mapId: chosenMap, isMobile, player });
     resetVisualTutorial();
     resetCameraPresentation();
+    beginGameplayReliability();
 
     scene.add(camera);
     initAudio();
@@ -1235,6 +1250,7 @@ function handleOnlineRunEnded(details = {}) {
   endTutorialRun();
   endVisualTutorial();
   endCameraPresentation();
+  endGameplayReliability('run-ended');
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1317,6 +1333,7 @@ function returnToMenu(source = 'pause') {
   endTutorialRun();
   endVisualTutorial();
   endCameraPresentation();
+  endGameplayReliability('run-ended');
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1514,6 +1531,7 @@ const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
                     )
                 )
             });
+updateGameplayReliability(dt, performance.now());
 const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
@@ -1578,6 +1596,7 @@ const effectsMs = performance.now() - mark;
       endTutorialRun();
       endVisualTutorial();
       endCameraPresentation();
+  endGameplayReliability('run-ended');
       refreshAIMemoryControls();
       gs = 'dead';
       clearInputState();

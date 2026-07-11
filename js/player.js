@@ -193,12 +193,19 @@ export function updatePlayer(dt, keys, mdx, mdy) {
 }
 
 export function damagePlayer(dmg, sourcePos = null, sourceType = 'UNKNOWN') {
-  if (!player.alive || player.health <= 0) return;
+  if (!player.alive || Number(player.health) <= 0) return;
 
-  const appliedDamage = Math.min(
-    Math.max(0, Number(dmg) || 0),
-    Math.max(0, Number(player.health) || 0)
+  const requestedDamage = Math.max(0, Number(dmg) || 0);
+  if (requestedDamage <= 0) return;
+
+  const currentHealth = Math.max(
+    0,
+    Math.min(
+      Math.max(1, Number(player.maxHealth) || 100),
+      Number(player.health) || 0
+    )
   );
+  const appliedDamage = Math.min(requestedDamage, currentHealth);
 
   recordDirectorDamage({
     amount: appliedDamage,
@@ -206,18 +213,26 @@ export function damagePlayer(dmg, sourcePos = null, sourceType = 'UNKNOWN') {
   });
   recordRunDamageTaken(appliedDamage);
 
-  player.health = Math.max(0, player.health - dmg);
-  
+  player.health = Math.max(0, currentHealth - appliedDamage);
+
   updateHealthHUD(player.health, player.maxHealth); 
   triggerDamageFlash();
   addScreenShake(0.35);
   playPlayerSound('hurt', 0.55, true, { cooldownKey: 'player_hurt', cooldownMs: 320, pitchMin: 0.92, pitchMax: 1.04 });
-  
+
   if (sourcePos) {
     const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir);
     spawnDirectionalIndicator(sourcePos, player.pos, camDir);
   }
-  if (player.health <= 0) { player.alive = false; document.exitPointerLock(); }
+  if (player.health <= 0) {
+    player.health = 0;
+    player.alive = false;
+    player.isADS = false;
+    player.isSprinting = false;
+    player.currentADSFOV = null;
+    player.vel.set(0, 0, 0);
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
 }
 export function getMouseSensitivityPercent() {
   return Math.round(player.lookSensitivityPercent || DEFAULT_MOUSE_SENSITIVITY);

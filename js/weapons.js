@@ -50,6 +50,7 @@ import {
   recordRunPerk,
   recordRunWeaponUpgrade
 } from './run_summary.js';
+import { validateShotRay } from './gameplay_reliability_core.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -66,6 +67,15 @@ let multiplayerEconomy = null;
 let networkShotSequence = 0;
 const openedNetworkDoorIds = new Set();
 const networkRepairAwards = new Map();
+const combatReliability = {
+  shots: 0,
+  casts: 0,
+  enemyHits: 0,
+  invalidRays: 0,
+  invalidTargetsSkipped: 0,
+  lastRayValid: true,
+  lastShotAt: 0
+};
 
 export function configureMultiplayerEconomy(config = null) {
   multiplayerEconomy = config && typeof config === 'object'
@@ -938,6 +948,19 @@ function getHeadshotMultiplier(weapon) {
 
 
 export function getActiveWeapon() { return player.inventory[player.currentWeaponIdx]; }
+
+export function getCombatReliabilitySnapshot() {
+  return Object.freeze({
+    patch: 'm4-gameplay-reliability-r1',
+    shots: combatReliability.shots,
+    casts: combatReliability.casts,
+    enemyHits: combatReliability.enemyHits,
+    invalidRays: combatReliability.invalidRays,
+    invalidTargetsSkipped: combatReliability.invalidTargetsSkipped,
+    lastRayValid: combatReliability.lastRayValid,
+    lastShotAt: combatReliability.lastShotAt
+  });
+}
 
 function updateProceduralHandVisibility(weapon) {
   const group = weapon?.meshGroup;
@@ -2640,7 +2663,20 @@ function buildShotTargets() {
 
   for (let i = 0; i < activeEnemies.length; i++) {
     const enemy = activeEnemies[i];
-    if (enemy?.mesh) _shotTargets.push(enemy.mesh);
+    const position = enemy?.mesh?.position;
+    const validEnemy = Boolean(
+      enemy?.alive
+      && Number(enemy.dyingT) < 0
+      && enemy.mesh
+      && Number.isFinite(Number(position?.x))
+      && Number.isFinite(Number(position?.y))
+      && Number.isFinite(Number(position?.z))
+    );
+    if (validEnemy) {
+      _shotTargets.push(enemy.mesh);
+    } else if (enemy) {
+      combatReliability.invalidTargetsSkipped += 1;
+    }
   }
 
   for (let i = 0; i < mapMeshes.length; i++) {
@@ -2652,7 +2688,25 @@ function buildShotTargets() {
 
 function castFromCamera(offset, targets) {
   _rayHits.length = 0;
+  camera.updateMatrixWorld?.(true);
   ray.setFromCamera(offset, camera);
+  combatReliability.casts += 1;
+
+  const integrity = validateShotRay({
+    origin: ray.ray.origin,
+    direction: ray.ray.direction
+  });
+  combatReliability.lastRayValid = integrity.valid;
+  if (!integrity.valid) {
+    combatReliability.invalidRays += 1;
+    return null;
+  }
+
+  ray.ray.direction.set(
+    integrity.normalizedDirection.x,
+    integrity.normalizedDirection.y,
+    integrity.normalizedDirection.z
+  );
   ray.intersectObjects(targets, true, _rayHits);
 
   const hit = _rayHits.length > 0 ? _rayHits[0] : null;
@@ -2675,6 +2729,13 @@ export function resetGunState() {
   _recoilYaw = 0;
   _recoilRoll = 0;
   bobT = 0;
+  combatReliability.shots = 0;
+  combatReliability.casts = 0;
+  combatReliability.enemyHits = 0;
+  combatReliability.invalidRays = 0;
+  combatReliability.invalidTargetsSkipped = 0;
+  combatReliability.lastRayValid = true;
+  combatReliability.lastShotAt = 0;
 
   hideShopFeedback();
   setInteractionPrompt(false);
@@ -2712,6 +2773,8 @@ export function shoot() {
   updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
   fireCooldown = w.fireRate;
   recordRunShot();
+  combatReliability.shots += 1;
+  combatReliability.lastShotAt = performance.now();
 
   recordDirectorShot({
     weaponFamily: getWeaponFamily(w),
@@ -2773,6 +2836,7 @@ function processHit(hit, shotContext = {}) {
   const feel = shotContext.feel || getWeaponFeel(w);
 
   if (e && e.alive) {
+    combatReliability.enemyHits += 1;
     let hs = hit.object.userData.isHead;
 
     // GLTF HEIGHT-BASED HEADSHOT DETECTION

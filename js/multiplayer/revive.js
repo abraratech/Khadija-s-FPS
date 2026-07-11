@@ -92,6 +92,8 @@ export class MultiplayerReviveManager {
     this.teamEndRequested = false;
     this.localAppliedState = MULTIPLAYER_LIFE_STATES.ACTIVE;
     this.localRespawnNonce = 0;
+    this.lifeTransitionSerial = 0;
+    this.lastLifeTransitionAt = -Infinity;
         this.activeHealthInitialized = false;
     this.currentReviveTarget = null;
     this.hudRoot = null;
@@ -160,6 +162,8 @@ export class MultiplayerReviveManager {
     this.teamEndRequested = false;
     this.localAppliedState = MULTIPLAYER_LIFE_STATES.ACTIVE;
     this.localRespawnNonce = 0;
+    this.lifeTransitionSerial = 0;
+    this.lastLifeTransitionAt = -Infinity;
         this.activeHealthInitialized = false;
     this.currentReviveTarget = null;
     this.spectatorTargetId = null;
@@ -813,6 +817,10 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
             return;
         }
 
+        if (previous !== state.lifeState) {
+            this.lifeTransitionSerial += 1;
+            this.lastLifeTransitionAt = nowMs();
+        }
         this.localAppliedState = state.lifeState;
         this.localRespawnNonce = nextNonce;
 
@@ -877,11 +885,16 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
     this.player.isSpectating = (
             lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
         );
-        this.adapter.setLocalWeaponVisible?.(
-            lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
-        );
+    const activeState = lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE;
+    this.adapter.setLocalWeaponVisible?.(activeState);
+    if (!activeState) {
+      this.player.isADS = false;
+      this.player.isSprinting = false;
+      this.player.currentADSFOV = null;
+      this.player.vel?.set?.(0, 0, 0);
+    }
     if (!preserveAlive) {
-      this.player.alive = lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE;
+      this.player.alive = activeState;
     }
   }
 
@@ -1099,6 +1112,10 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
       authority: this.isAuthority(),
       authorityEpoch: this.authorityEpoch,
       localLifeState: this.localAppliedState,
+      lifeTransitionSerial: this.lifeTransitionSerial,
+      lastLifeTransitionAt: this.lastLifeTransitionAt,
+      activeHealthInitialized: this.activeHealthInitialized,
+      pendingDownAt: this.pendingDownAt,
       currentReviveTargetId: this.currentReviveTarget?.playerId || null,
       spectatorTargetId: this.spectatorTargetId,
       lastSnapshotSentAt: this.lastSnapshotSentAt,

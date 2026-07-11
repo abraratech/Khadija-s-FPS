@@ -92,6 +92,11 @@ import {
   recordRunObjective,
   recordRunChallenge
 } from './run_summary.js';
+import {
+  createWaveWatchdogState,
+  inspectEnemyReliability,
+  updateWaveWatchdog
+} from './gameplay_reliability_core.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -291,6 +296,25 @@ let zombiesSpawnedSoFar = 0;
 let goliathsToSpawn = 0;
 let spawnTimer = 0;
 let nextWaveTimeout = null;
+let enemyReliabilityState = createWaveWatchdogState(currentWave);
+let enemyReliabilitySnapshot = Object.freeze({
+  patch: 'm4-gameplay-reliability-r1',
+  wave: currentWave,
+  action: 'NONE',
+  repairs: 0,
+  relocated: 0,
+  restoredVisuals: 0,
+  recycledDying: 0,
+  spawnerKicks: 0,
+  forcedWaveCompletions: 0,
+  counts: inspectEnemyReliability([])
+});
+let enemyReliabilityRepairs = 0;
+let enemyReliabilityRelocated = 0;
+let enemyReliabilityRestoredVisuals = 0;
+let enemyReliabilityRecycledDying = 0;
+let enemyReliabilitySpawnerKicks = 0;
+let enemyReliabilityForcedWaveCompletions = 0;
 
 export let isSpecialRound = false;
 let campWarningTimer = 0; // ◄── THIS IS THE MISSING VARIABLE!
@@ -507,6 +531,7 @@ export function initEnemies() {
   campWarningTimer = 0;
   meleeDamageGraceT = 0;
   seenVariantTypesThisRun = new Set();
+  resetEnemyReliabilityState('init');
   for (let i = activeEnemies.length - 1; i >= 0; i--) {
     const e = activeEnemies[i];
     e.mesh.visible = false;
@@ -597,6 +622,7 @@ export function restoreNetworkEnemySnapshot(snapshot = {}) {
   );
   spawnTimer = Number(waveState.spawnTimer) || 0;
   announcedTypesThisWave = new Set();
+  resetEnemyReliabilityState('network-restore');
 
   const states = Array.isArray(snapshot.enemies)
     ? snapshot.enemies.filter((state) => state?.alive !== false)
@@ -755,6 +781,7 @@ function startWave(waveNumber) {
   zombiesSpawnedSoFar = 0;
   nextWaveTimeout = null;
   announcedTypesThisWave = new Set();
+  resetEnemyReliabilityState('wave-start');
   isSpecialRound = (waveNumber > 0 && waveNumber % 5 === 0);
   spawnTimer = isSpecialRound ? -SPECIAL_WAVE_LEAD_IN : -NORMAL_WAVE_LEAD_IN;
   meleeDamageGraceT = 0;
@@ -1419,6 +1446,173 @@ function canRangedAttackPlayer(
 
   return enemy.rangedHasLos === true;
 }
+
+
+function resetEnemyReliabilityState(reason = 'reset') {
+  enemyReliabilityState = createWaveWatchdogState(currentWave);
+  enemyReliabilitySnapshot = Object.freeze({
+    patch: 'm4-gameplay-reliability-r1',
+    wave: currentWave,
+    reason: String(reason || 'reset'),
+    action: 'NONE',
+    repairs: enemyReliabilityRepairs,
+    relocated: enemyReliabilityRelocated,
+    restoredVisuals: enemyReliabilityRestoredVisuals,
+    recycledDying: enemyReliabilityRecycledDying,
+    spawnerKicks: enemyReliabilitySpawnerKicks,
+    forcedWaveCompletions: enemyReliabilityForcedWaveCompletions,
+    counts: inspectEnemyReliability(activeEnemies)
+  });
+}
+
+function recycleStaleEnemy(enemy, index) {
+  if (!enemy) return false;
+  cancelEnemyAttack(enemy);
+  recordSquadEnemyDeath(enemy);
+  recordNavigationEnemyRemoved(enemy);
+  recordFormationEnemyRemoved(enemy);
+  actorManager.unregister(enemy);
+  enemy.alive = false;
+  enemy.dyingT = -1;
+  enemy.mesh.visible = false;
+  enemy.mesh.rotation.set(0, 0, 0);
+  if (!zombiePool.includes(enemy) && !enemy.isNetworkProxy) {
+    zombiePool.push(enemy);
+  }
+  activeEnemies.splice(index, 1);
+  enemyReliabilityRecycledDying += 1;
+  return true;
+}
+
+function repairEnemyReliabilityState() {
+  let repaired = 0;
+  const safeSpawn = pickSafeEnemySpawnPoint();
+
+  for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
+    const enemy = activeEnemies[index];
+    if (!enemy?.mesh) {
+      activeEnemies.splice(index, 1);
+      repaired += 1;
+      continue;
+    }
+
+    if (enemy.alive !== true && Number(enemy.dyingT) >= 1.25) {
+      if (recycleStaleEnemy(enemy, index)) repaired += 1;
+      continue;
+    }
+
+    if (enemy.alive !== true || Number(enemy.dyingT) >= 0) continue;
+
+    const position = enemy.mesh.position;
+    const invalidPosition = (
+      !Number.isFinite(Number(position?.x))
+      || !Number.isFinite(Number(position?.y))
+      || !Number.isFinite(Number(position?.z))
+      || Math.abs(Number(position.x)) > 150
+      || Math.abs(Number(position.z)) > 150
+      || Number(position.y) < -18
+      || Number(position.y) > 100
+    );
+
+    if (invalidPosition) {
+      const fallback = safeSpawn || player.pos;
+      position.set(
+        Number(fallback?.x) || 0,
+        Number(fallback?.y) || 0,
+        Number(fallback?.z) || 0
+      );
+      enemy.cachedGroundY = Number(position.y) || 0;
+      enemy.groundUpdateTimer = 0;
+      enemyReliabilityRelocated += 1;
+      repaired += 1;
+    }
+
+    if (enemy.mesh.visible === false) {
+      enemy.mesh.visible = true;
+      setEnemyVisual(enemy, enemy._useFullVisual === true);
+      enemyReliabilityRestoredVisuals += 1;
+      repaired += 1;
+    }
+
+    const scale = enemy.mesh.scale;
+    if (
+      !Number.isFinite(Number(scale?.x))
+      || !Number.isFinite(Number(scale?.y))
+      || !Number.isFinite(Number(scale?.z))
+      || Math.abs(Number(scale.x)) < 0.01
+      || Math.abs(Number(scale.y)) < 0.01
+      || Math.abs(Number(scale.z)) < 0.01
+    ) {
+      enemy.mesh.scale.copy(enemy.originalScale || new THREE.Vector3(1, 1, 1));
+      repaired += 1;
+    }
+  }
+
+  if (repaired > 0) enemyReliabilityRepairs += repaired;
+  return repaired;
+}
+
+function updateEnemyReliability(dt) {
+  const before = inspectEnemyReliability(activeEnemies);
+  const result = updateWaveWatchdog(enemyReliabilityState, {
+    wave: currentWave,
+    total: zombiesToSpawnThisRound,
+    spawned: zombiesSpawnedSoFar,
+    living: before.living,
+    dying: before.dying,
+    hiddenLiving: before.hiddenLiving,
+    invalidPosition: before.invalidPosition,
+    staleDying: before.staleDying,
+    nextWavePending: nextWaveTimeout !== null
+  }, dt);
+
+  enemyReliabilityState = result.state;
+
+  if (result.action === 'REPAIR_ENEMIES') {
+    repairEnemyReliabilityState();
+  } else if (result.action === 'KICK_SPAWNER') {
+    if (
+      zombiesSpawnedSoFar < zombiesToSpawnThisRound
+      && activeEnemies.length < getActiveZombieCap()
+      && zombiePool.length > 0
+      && getEnemyTargetCandidates().length > 0
+    ) {
+      spawnZombie();
+      spawnTimer = 0;
+      enemyReliabilitySpawnerKicks += 1;
+      enemyReliabilityState = createWaveWatchdogState(currentWave);
+    } else {
+      spawnTimer = Math.max(spawnTimer, getSpawnInterval());
+    }
+  } else if (result.action === 'COMPLETE_WAVE' && !nextWaveTimeout) {
+    enemyReliabilityForcedWaveCompletions += 1;
+    completeCurrentWave();
+    enemyReliabilityState = createWaveWatchdogState(currentWave);
+  }
+
+  const after = inspectEnemyReliability(activeEnemies);
+  enemyReliabilitySnapshot = Object.freeze({
+    patch: 'm4-gameplay-reliability-r1',
+    wave: currentWave,
+    action: result.action,
+    repairs: enemyReliabilityRepairs,
+    relocated: enemyReliabilityRelocated,
+    restoredVisuals: enemyReliabilityRestoredVisuals,
+    recycledDying: enemyReliabilityRecycledDying,
+    spawnerKicks: enemyReliabilitySpawnerKicks,
+    forcedWaveCompletions: enemyReliabilityForcedWaveCompletions,
+    spawned: zombiesSpawnedSoFar,
+    total: zombiesToSpawnThisRound,
+    nextWavePending: nextWaveTimeout !== null,
+    watchdog: enemyReliabilityState,
+    counts: after
+  });
+}
+
+export function getEnemyReliabilitySnapshot() {
+  return enemyReliabilitySnapshot;
+}
+
 
 export function updateEnemies(dt) {
   const teamTargets = getEnemyTargetCandidates();
@@ -2181,6 +2375,8 @@ if (e.usingLod && e.lodMesh) {
   } else {
     campWarningTimer = Math.max(0, campWarningTimer - dt * 1.5);
   }
+
+  updateEnemyReliability(dt);
 } // <-- End of updateEnemies function
 
 export function killEnemy(e, context = {}) {

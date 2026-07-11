@@ -49,6 +49,7 @@ import { initAdaptiveMusic } from './adaptive_music.js';
 import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisualTutorial } from './visual_tutorial.js';
 import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
 import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
+import { initCameraPresentation, resetCameraPresentation, updateCameraPresentation, enforceCameraPresentationVisibility, endCameraPresentation } from './camera_presentation.js';
 import {
   initTutorialControls,
   resetTutorialRun,
@@ -553,6 +554,15 @@ initTutorialControls();
 initVisualTutorial({ isMobile });
 initLocalLeaderboards();
 initOnlineLeaderboards();
+initCameraPresentation({
+  isMobile,
+  camera,
+  scene,
+  mapMeshes,
+  player,
+  getActiveWeapon,
+  showToast: showStatusToast
+});
 runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
 console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
 
@@ -1182,6 +1192,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     placePlayerAtRandomSpawn();
     resetTutorialRun({ mapId: chosenMap, isMobile, player });
     resetVisualTutorial();
+    resetCameraPresentation();
 
     scene.add(camera);
     initAudio();
@@ -1223,6 +1234,7 @@ function handleOnlineRunEnded(details = {}) {
   endMapGameplay();
   endTutorialRun();
   endVisualTutorial();
+  endCameraPresentation();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1304,6 +1316,7 @@ function returnToMenu(source = 'pause') {
   endMapGameplay();
   endTutorialRun();
   endVisualTutorial();
+  endCameraPresentation();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1505,6 +1518,16 @@ const enemiesMs = performance.now() - mark;
 mark = performance.now();
 
 const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;
+
+// Resolve the visible camera before the weapon fires. Hitscan uses
+// Raycaster.setFromCamera(), so TPP must not shoot from the FPP eye transform
+// restored by updatePlayer earlier in this frame.
+updateCameraPresentation(dt, {
+  gameState: gs,
+  coOpMenuOpen,
+  inputBlocked: isGameplayInputBlocked()
+});
+
 if (!isGameplayInputBlocked()) {
 updateGun(dt, frameKeys, isMoving);
 updateShops(dt);
@@ -1522,6 +1545,10 @@ mark = performance.now();
 updateParticles(dt);
 updateUIEffects(dt);
 processReloadTick(dt);
+
+// Weapon animation and reload code can re-enable the FPP viewmodel. Re-assert
+// presentation visibility without recalculating or advancing the camera solver.
+enforceCameraPresentationVisibility();
 const effectsMs = performance.now() - mark;
 
   if (player.alive && onlineDeathReportPending && isOnlineMultiplayerRun()) {
@@ -1549,7 +1576,8 @@ const effectsMs = performance.now() - mark;
       finalizeCurrentRun('DEATH');
       endMapGameplay();
       endTutorialRun();
-  endVisualTutorial();
+      endVisualTutorial();
+      endCameraPresentation();
       refreshAIMemoryControls();
       gs = 'dead';
       clearInputState();

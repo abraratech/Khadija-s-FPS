@@ -2,8 +2,9 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
+import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js';
 
-export { LeaderboardHub };
+export { LeaderboardHub, CloudProfileHub };
 
 const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/;
 const MAX_PLAYERS = 4;
@@ -12,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm4-online-leaderboards-r1';
-const SERVER_PATCH = 'm4-online-leaderboards-r1';
-const CERTIFIED_FRONTEND_SHA = '4efad4b395263fc342d685125f724df261257263';
+const SERVER_BUILD = 'm4-cloud-guest-sync-r1';
+const SERVER_PATCH = 'm4-cloud-guest-sync-r1';
+const CERTIFIED_FRONTEND_SHA = '26313435ba6a4fca62671d12b110d5367333a072';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -23,8 +24,8 @@ function json(data, init = {}) {
   headers.set('content-type', 'application/json; charset=utf-8');
   headers.set('cache-control', 'no-store');
   headers.set('access-control-allow-origin', '*');
-  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type');
+  headers.set('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id');
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
@@ -77,8 +78,8 @@ function originAllowed(request, env) {
 function corsify(response) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', '*');
-  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type');
+  headers.set('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 async function shortRequestHash(request) {
@@ -101,6 +102,23 @@ async function proxyLeaderboardRequest(request, env) {
   });
   const id = env.LEADERBOARDS.idFromName('global-v1');
   const response = await env.LEADERBOARDS.get(id).fetch(internal);
+  return corsify(response);
+}
+
+async function proxyCloudProfileRequest(request, env) {
+  if (!env.CLOUD_PROFILES) return json({ ok: false, error: 'CLOUD_PROFILE_BINDING_UNAVAILABLE' }, { status: 503 });
+  const sourceUrl = new URL(request.url);
+  const headers = new Headers(request.headers);
+  headers.set('x-ka-rate-key', await shortRequestHash(request));
+  headers.delete('cf-connecting-ip');
+  const internal = new Request(`https://profiles.internal${sourceUrl.pathname}${sourceUrl.search}`, {
+    method: request.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+    redirect: 'manual'
+  });
+  const id = env.CLOUD_PROFILES.idFromName('global-v1');
+  const response = await env.CLOUD_PROFILES.get(id).fetch(internal);
   return corsify(response);
 }
 
@@ -1167,8 +1185,8 @@ export default {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: {
         'access-control-allow-origin': '*',
-        'access-control-allow-methods': 'GET, POST, OPTIONS',
-        'access-control-allow-headers': 'content-type',
+        'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+        'access-control-allow-headers': 'content-type, authorization, x-ka-account-id, x-ka-device-id',
         'access-control-max-age': '86400'
       }});
     }
@@ -1182,6 +1200,10 @@ export default {
       return proxyLeaderboardRequest(request, env);
     }
 
+    if (url.pathname.startsWith('/profiles/')) {
+      return proxyCloudProfileRequest(request, env);
+    }
+
     if (url.pathname === '/health') {
       return json({
         ok: true,
@@ -1191,7 +1213,8 @@ export default {
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
-        leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] }
+        leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account'] }
       });
     }
 
@@ -1205,6 +1228,7 @@ export default {
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account'] },
         deployedAt: new Date().toISOString()
       });
     }
@@ -1212,7 +1236,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/ws']
+        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/ws']
       });
     }
 

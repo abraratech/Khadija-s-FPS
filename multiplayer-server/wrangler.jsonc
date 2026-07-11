@@ -12,6 +12,10 @@
       {
         "name": "LEADERBOARDS",
         "class_name": "LeaderboardHub"
+      },
+      {
+        "name": "CLOUD_PROFILES",
+        "class_name": "CloudProfileHub"
       }
     ]
   },
@@ -26,6 +30,12 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "LeaderboardHub"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "CloudProfileHub"
       ]
     }
   ],

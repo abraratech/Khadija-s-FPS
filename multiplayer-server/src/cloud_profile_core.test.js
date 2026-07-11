@@ -33,7 +33,7 @@ const incoming = createGuestCloudProfile({
   }
 });
 const merged = mergeCloudProfiles(base, incoming, { now: 4000 });
-assert.equal(CLOUD_PROFILE_PATCH, 'm4-cloud-guest-sync-r1');
+assert.equal(CLOUD_PROFILE_PATCH, 'm4-cloud-account-security-r1');
 assert.equal(validateCloudProfile(merged).valid, true);
 assert.equal(merged.profileId, base.profileId);
 assert.equal(merged.progression.xp, 250);
@@ -46,5 +46,6 @@ assert.equal(reverse.records.highWave, merged.records.highWave);
 assert.equal(reverse.progression.xp, merged.progression.xp);
 assert.equal(isGameOwnedStorageKey('ka_cloud_profile_token_v1'), false);
 assert.equal(isGameOwnedStorageKey('ka_cloud_profile_account_v1'), false);
+assert.equal(isGameOwnedStorageKey('ka_cloud_profile_device_name_v1'), false);
 assert.equal(isGameOwnedStorageKey('ka_accessibility_v1'), true);
 console.log('Cloud profile Worker core tests: PASS');

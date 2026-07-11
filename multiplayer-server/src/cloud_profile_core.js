@@ -1,6 +1,6 @@
 // M4.39-M4.42 — versioned guest profile schema and deterministic merge rules.
 
-export const CLOUD_PROFILE_PATCH = 'm4-cloud-guest-sync-r1';
+export const CLOUD_PROFILE_PATCH = 'm4-cloud-account-security-r1';
 export const CLOUD_PROFILE_SCHEMA = 'khadijas-arena-player-profile';
 export const CLOUD_PROFILE_VERSION = 1;
 
@@ -19,7 +19,9 @@ const PROFILE_STORAGE_KEYS = new Set([
   'ka_cloud_profile_token_v1',
   'ka_cloud_profile_remote_revision_v1',
   'ka_cloud_profile_device_v1',
-  'ka_cloud_profile_sync_pending_v1'
+  'ka_cloud_profile_sync_pending_v1',
+  'ka_cloud_profile_device_name_v1',
+  'ka_cloud_profile_recovery_hint_v1'
 ]);
 
 const PROGRESSION_KEY = 'ka_progression_v1';

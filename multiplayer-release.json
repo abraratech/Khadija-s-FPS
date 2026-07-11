@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m4-cloud-guest-sync-r1",
-  "patch": "m4-cloud-guest-sync-r1",
-  "certifiedBaselineSha": "26313435ba6a4fca62671d12b110d5367333a072",
+  "build": "m4-cloud-account-security-r1",
+  "patch": "m4-cloud-account-security-r1",
+  "certifiedBaselineSha": "6cf418587d5e762e7ca78d380c271a781a60ecba",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -19,7 +19,7 @@
   "cloudProfiles": {
     "schema": 1,
     "profileSchema": "khadijas-arena-player-profile",
-    "patch": "m4-cloud-guest-sync-r1",
+    "patch": "m4-cloud-account-security-r1",
     "endpoints": [
       "/profiles/register",
       "/profiles/profile",
@@ -27,7 +27,17 @@
       "/profiles/link/create",
       "/profiles/link/consume",
       "/profiles/export",
-      "/profiles/account"
+      "/profiles/account",
+      "/profiles/devices",
+      "/profiles/devices/name",
+      "/profiles/devices/revoke",
+      "/profiles/devices/revoke-others",
+      "/profiles/token/rotate",
+      "/profiles/recovery/generate",
+      "/profiles/recovery/consume",
+      "/profiles/history",
+      "/profiles/history/restore",
+      "/profiles/activity"
     ]
   }
 }

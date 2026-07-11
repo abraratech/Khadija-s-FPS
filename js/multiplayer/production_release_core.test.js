@@ -1,5 +1,5 @@
 // js/multiplayer/production_release_core.test.js
-// M4.43-M4.46 release-identity hotfix coverage.
+// M4.47-M4.50 cloud account security release coverage.
 import assert from 'node:assert/strict';
 import {
   MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
@@ -13,7 +13,7 @@ import {
   normalizeMultiplayerReleaseEndpoint
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-cloud-guest-sync-r1');
+assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-cloud-account-security-r1');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
 assert.equal(normalizeMultiplayerReleaseEndpoint('wss://example.workers.dev/ws?room=ABCDEF'), 'https://example.workers.dev/release');
 assert.equal(normalizeMultiplayerReleaseEndpoint('example.workers.dev'), 'https://example.workers.dev/release');

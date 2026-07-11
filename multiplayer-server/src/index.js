@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm4-cloud-guest-sync-r1';
-const SERVER_PATCH = 'm4-cloud-guest-sync-r1';
-const CERTIFIED_FRONTEND_SHA = '26313435ba6a4fca62671d12b110d5367333a072';
+const SERVER_BUILD = 'm4-cloud-account-security-r1';
+const SERVER_PATCH = 'm4-cloud-account-security-r1';
+const CERTIFIED_FRONTEND_SHA = '6cf418587d5e762e7ca78d380c271a781a60ecba';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -110,6 +110,7 @@ async function proxyCloudProfileRequest(request, env) {
   const sourceUrl = new URL(request.url);
   const headers = new Headers(request.headers);
   headers.set('x-ka-rate-key', await shortRequestHash(request));
+  headers.set('x-ka-region', String(request.cf?.country || 'ZZ'));
   headers.delete('cf-connecting-ip');
   const internal = new Request(`https://profiles.internal${sourceUrl.pathname}${sourceUrl.search}`, {
     method: request.method,
@@ -1214,7 +1215,7 @@ export default {
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
-        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account'] }
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] }
       });
     }
 
@@ -1228,7 +1229,7 @@ export default {
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
-        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account'] },
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] },
         deployedAt: new Date().toISOString()
       });
     }
@@ -1236,7 +1237,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/ws']
+        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/history', '/profiles/history/restore', '/profiles/activity', '/ws']
       });
     }
 

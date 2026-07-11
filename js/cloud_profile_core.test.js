@@ -37,6 +37,7 @@ const first = createGuestCloudProfile({
   metadata: { migrationSources: ['legacy-local-storage'] }
 });
 assert.equal(first.patch, CLOUD_PROFILE_PATCH);
+assert.equal(CLOUD_PROFILE_PATCH, 'm4-cloud-account-security-r1');
 assert.equal(first.progression.bestScore, 900);
 assert.equal(first.achievements.totalUnlocked, 1);
 assert.equal(first.records.highWave, 4);
@@ -44,6 +45,7 @@ assert.equal(validateCloudProfile(first).valid, true);
 assert.equal(sanitizeLegacyStorage({ evil: 'x', ka_ok: 'yes' }).evil, undefined);
 assert.equal(isGameOwnedStorageKey('ka_cloud_profile_token_v1'), false);
 assert.equal(isGameOwnedStorageKey('ka_cloud_profile_account_v1'), false);
+assert.equal(isGameOwnedStorageKey('ka_cloud_profile_device_name_v1'), false);
 assert.equal(deriveCloudProfileSections(storage()).identity.displayName, 'Survivor-A001');
 
 const second = createGuestCloudProfile({

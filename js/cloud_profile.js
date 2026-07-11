@@ -27,6 +27,7 @@ const REMOTE_TOKEN_KEY = 'ka_cloud_profile_token_v1';
 const REMOTE_REVISION_KEY = 'ka_cloud_profile_remote_revision_v1';
 const REMOTE_DEVICE_KEY = 'ka_cloud_profile_device_v1';
 const REMOTE_PENDING_KEY = 'ka_cloud_profile_sync_pending_v1';
+const REMOTE_DEVICE_NAME_KEY = 'ka_cloud_profile_device_name_v1';
 
 let currentProfile = null;
 let initialized = false;
@@ -48,7 +49,12 @@ let remoteState = {
   lastSyncAt: 0,
   lastError: '',
   linkCode: '',
-  linkExpiresAt: 0
+  linkExpiresAt: 0,
+  devices: [],
+  history: [],
+  activity: [],
+  recoveryCode: '',
+  recoveryEnabled: false
 };
 
 function nowMs() {
@@ -98,6 +104,28 @@ function getOrCreateDeviceId() {
   return value;
 }
 
+function getDeviceName() {
+  const fallback = typeof navigator !== 'undefined'
+    ? `${/mobile/i.test(navigator.userAgent || '') ? 'Mobile' : 'Browser'} Device`
+    : 'Browser Device';
+  const stored = String(readRaw(REMOTE_DEVICE_NAME_KEY, '') || '').trim()
+    .replace(/[<>\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 40);
+  if (stored) return stored;
+  writeRaw(REMOTE_DEVICE_NAME_KEY, fallback);
+  return fallback;
+}
+
+function saveDeviceName(name) {
+  const clean = String(name || '').trim()
+    .replace(/[<>\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 40) || 'Browser Device';
+  writeRaw(REMOTE_DEVICE_NAME_KEY, clean);
+  return clean;
+}
+
 function getRemoteCredentials() {
   const accountId = readRaw(REMOTE_ACCOUNT_KEY, '');
   const token = readRaw(REMOTE_TOKEN_KEY, '');
@@ -135,7 +163,12 @@ function clearRemoteCredentials() {
     lastSyncAt: 0,
     lastError: '',
     linkCode: '',
-    linkExpiresAt: 0
+    linkExpiresAt: 0,
+    devices: [],
+    history: [],
+    activity: [],
+    recoveryCode: '',
+    recoveryEnabled: false
   };
   remoteLastFingerprint = '';
 }
@@ -147,6 +180,7 @@ function initializeRemoteState() {
   remoteState.cloudRevision = Math.max(0, Number(readRaw(REMOTE_REVISION_KEY, '0')) || 0);
   remoteState.pending = readRaw(REMOTE_PENDING_KEY, '0') === '1';
   getOrCreateDeviceId();
+  getDeviceName();
   return credentials;
 }
 
@@ -204,6 +238,28 @@ function applyRemoteProfile(profile, { forceHydrate = false } = {}) {
   return true;
 }
 
+function replaceWithRemoteProfile(profile, { forceHydrate = true } = {}) {
+  const validation = validateCloudProfile(profile);
+  if (!validation.valid) throw new Error(`REMOTE_PROFILE_INVALID:${validation.errors.join(',')}`);
+  const incoming = validation.profile;
+  writeProfile(incoming);
+  applyProfileToLegacy(incoming, { forceHydrate });
+  currentProfile = incoming;
+  remoteLastFingerprint = incoming.legacyFingerprint;
+  return true;
+}
+
+function updateRemoteAccountState(value = {}) {
+  const account = value.account || {};
+  if (account.accountId) remoteState.accountId = String(account.accountId);
+  if (Number.isFinite(Number(account.cloudRevision))) remoteState.cloudRevision = Math.max(0, Number(account.cloudRevision));
+  if (typeof account.recoveryEnabled === 'boolean') remoteState.recoveryEnabled = account.recoveryEnabled;
+  if (Array.isArray(value.devices)) remoteState.devices = value.devices.map((entry) => ({ ...entry }));
+  if (Array.isArray(value.history)) remoteState.history = value.history.map((entry) => ({ ...entry }));
+  if (Array.isArray(value.activity)) remoteState.activity = value.activity.map((entry) => ({ ...entry }));
+  if (remoteState.cloudRevision >= 0) writeRaw(REMOTE_REVISION_KEY, String(remoteState.cloudRevision));
+}
+
 export async function registerCloudGuestAccount() {
   if (!currentProfile) currentProfile = recoverOrCreateProfile();
   if (getRemoteCredentials().valid) return syncCloudProfileRemote('already-connected', { force: true });
@@ -215,9 +271,10 @@ export async function registerCloudGuestAccount() {
     const value = await remoteRequest('/profiles/register', {
       method: 'POST',
       authenticated: false,
-      body: { profile: currentProfile, deviceId: getOrCreateDeviceId() }
+      body: { profile: currentProfile, deviceId: getOrCreateDeviceId(), deviceName: getDeviceName() }
     });
     saveRemoteCredentials(value.account, value.token);
+    updateRemoteAccountState(value);
     remoteLastFingerprint = currentProfile.legacyFingerprint;
     remoteState.lastSyncAt = nowMs();
     statusMessage = 'CLOUD GUEST CONNECTED';
@@ -256,6 +313,7 @@ export function syncCloudProfileRemote(reason = 'manual', { force = false } = {}
     remoteState.connected = true;
     remoteState.accountId = value.account?.accountId || credentials.accountId;
     remoteState.cloudRevision = Math.max(0, Number(value.account?.cloudRevision) || 0);
+    updateRemoteAccountState(value);
     remoteState.lastSyncAt = nowMs();
     remoteState.pending = false;
     remoteState.conflict = value.conflict === true;
@@ -309,9 +367,10 @@ export async function consumeCloudDeviceLink(code, { reload = true } = {}) {
     const value = await remoteRequest('/profiles/link/consume', {
       method: 'POST',
       authenticated: false,
-      body: { code: cleanCode, deviceId: getOrCreateDeviceId() }
+      body: { code: cleanCode, deviceId: getOrCreateDeviceId(), deviceName: getDeviceName() }
     });
     saveRemoteCredentials(value.account, value.token);
+    updateRemoteAccountState(value);
     applyRemoteProfile(value.profile, { forceHydrate: true });
     remoteLastFingerprint = currentProfile.legacyFingerprint;
     statusMessage = 'DEVICE LINKED · RELOADING';
@@ -352,6 +411,187 @@ export async function deleteCloudGuestAccount() {
     return Object.freeze({ accepted: true });
   } catch (error) {
     statusMessage = `DELETE FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function refreshCloudAccountSecurity({ silent = false } = {}) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  if (!silent) {
+    statusMessage = 'REFRESHING CLOUD SECURITY…';
+    refreshProfileUi();
+  }
+  try {
+    const [devices, history, activity] = await Promise.all([
+      remoteRequest('/profiles/devices'),
+      remoteRequest('/profiles/history'),
+      remoteRequest('/profiles/activity')
+    ]);
+    updateRemoteAccountState(devices);
+    updateRemoteAccountState(history);
+    updateRemoteAccountState(activity);
+    if (!silent) statusMessage = 'CLOUD SECURITY REFRESHED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, devices: remoteState.devices, history: remoteState.history, activity: remoteState.activity });
+  } catch (error) {
+    if (!silent) statusMessage = `SECURITY REFRESH FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    remoteState.lastError = String(error?.message || error).slice(0, 120);
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function renameCloudDevice(name, deviceId = getOrCreateDeviceId()) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  const cleanName = saveDeviceName(name);
+  try {
+    const value = await remoteRequest('/profiles/devices/name', {
+      method: 'POST',
+      body: { deviceId, name: cleanName }
+    });
+    updateRemoteAccountState(value);
+    statusMessage = 'DEVICE NAME UPDATED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, devices: remoteState.devices });
+  } catch (error) {
+    statusMessage = `DEVICE NAME FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function revokeCloudDevice(deviceId) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/devices/revoke', {
+      method: 'POST',
+      body: { deviceId: String(deviceId || '') }
+    });
+    updateRemoteAccountState(value);
+    if (value.currentRevoked === true || String(deviceId) === getOrCreateDeviceId()) {
+      clearRemoteCredentials();
+      statusMessage = 'THIS DEVICE WAS REVOKED · LOCAL PROFILE KEPT';
+    } else {
+      statusMessage = 'DEVICE REVOKED';
+    }
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, currentRevoked: value.currentRevoked === true });
+  } catch (error) {
+    statusMessage = `DEVICE REVOKE FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function revokeOtherCloudDevices() {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/devices/revoke-others', { method: 'POST', body: {} });
+    updateRemoteAccountState(value);
+    statusMessage = value.changed ? 'OTHER DEVICES REVOKED' : 'NO OTHER DEVICES LINKED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, changed: value.changed === true });
+  } catch (error) {
+    statusMessage = `REVOKE OTHERS FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function rotateCloudDeviceToken() {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/token/rotate', { method: 'POST', body: {} });
+    if (!value.token) throw new Error('PROFILE_ROTATED_TOKEN_MISSING');
+    saveRemoteCredentials(value.account, value.token);
+    updateRemoteAccountState(value);
+    statusMessage = 'DEVICE TOKEN ROTATED';
+    toast?.('CLOUD DEVICE TOKEN ROTATED', '#22ff88', 1600);
+    refreshProfileUi();
+    return Object.freeze({ accepted: true });
+  } catch (error) {
+    statusMessage = `TOKEN ROTATION FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function generateCloudRecoveryCode() {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/recovery/generate', { method: 'POST', body: {} });
+    remoteState.recoveryCode = String(value.recoveryCode || '');
+    updateRemoteAccountState(value);
+    remoteState.recoveryEnabled = true;
+    statusMessage = 'RECOVERY CODE GENERATED · SAVE IT NOW';
+    setText('cloud-profile-recovery-code', remoteState.recoveryCode || '—');
+    try { await navigator.clipboard.writeText(remoteState.recoveryCode); } catch { /* code remains visible */ }
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, recoveryCode: remoteState.recoveryCode });
+  } catch (error) {
+    statusMessage = `RECOVERY CODE FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function recoverCloudGuestAccount(accountId, recoveryCode, { reload = true } = {}) {
+  const cleanAccount = String(accountId || '').trim();
+  const cleanCode = String(recoveryCode || '').trim().toUpperCase();
+  if (!/^cloud-[a-f0-9]{32}$/i.test(cleanAccount)) return Object.freeze({ accepted: false, reason: 'PROFILE_ACCOUNT_ID_INVALID' });
+  if (cleanCode.replace(/[^A-Z2-9]/g, '').length !== 16) return Object.freeze({ accepted: false, reason: 'PROFILE_RECOVERY_CODE_INVALID' });
+  statusMessage = 'RECOVERING CLOUD ACCOUNT…';
+  refreshProfileUi();
+  try {
+    const value = await remoteRequest('/profiles/recovery/consume', {
+      method: 'POST',
+      authenticated: false,
+      body: {
+        accountId: cleanAccount,
+        recoveryCode: cleanCode,
+        deviceId: getOrCreateDeviceId(),
+        deviceName: getDeviceName()
+      }
+    });
+    saveRemoteCredentials(value.account, value.token);
+    updateRemoteAccountState(value);
+    replaceWithRemoteProfile(value.profile, { forceHydrate: true });
+    remoteState.recoveryCode = '';
+    remoteState.recoveryEnabled = false;
+    statusMessage = 'ACCOUNT RECOVERED · RELOADING';
+    toast?.('CLOUD ACCOUNT RECOVERED', '#22ff88', 1800);
+    refreshProfileUi();
+    if (reload && typeof location !== 'undefined') setTimeout(() => location.reload(), 650);
+    return Object.freeze({ accepted: true, account: value.account });
+  } catch (error) {
+    statusMessage = `RECOVERY REJECTED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function restoreCloudProfileRevision(revision, { reload = true } = {}) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  const selected = Math.max(1, Math.floor(Number(revision) || 0));
+  if (!selected) return Object.freeze({ accepted: false, reason: 'PROFILE_HISTORY_REVISION_INVALID' });
+  statusMessage = `RESTORING CLOUD REVISION ${selected}…`;
+  refreshProfileUi();
+  try {
+    const value = await remoteRequest('/profiles/history/restore', {
+      method: 'POST',
+      body: { revision: selected }
+    });
+    updateRemoteAccountState(value);
+    replaceWithRemoteProfile(value.profile, { forceHydrate: true });
+    remoteState.lastSyncAt = nowMs();
+    statusMessage = `CLOUD REVISION ${selected} RESTORED · RELOADING`;
+    toast?.(`CLOUD REVISION ${selected} RESTORED`, '#ffaa00', 1800);
+    refreshProfileUi();
+    if (reload && typeof location !== 'undefined') setTimeout(() => location.reload(), 650);
+    return Object.freeze({ accepted: true, restoredRevision: selected });
+  } catch (error) {
+    statusMessage = `RESTORE FAILED · ${String(error?.message || error).slice(0, 80)}`;
     refreshProfileUi();
     return Object.freeze({ accepted: false, reason: String(error?.message || error) });
   }
@@ -546,6 +786,74 @@ function setText(id, value) {
   if (element) element.textContent = String(value);
 }
 
+function renderCloudSecurityUi() {
+  if (typeof document === 'undefined') return;
+  const currentDeviceId = getOrCreateDeviceId();
+  const nameInput = document.getElementById('cloud-profile-device-name-input');
+  if (nameInput && document.activeElement !== nameInput) nameInput.value = getDeviceName();
+  setText('cloud-profile-recovery-code', remoteState.recoveryCode || (remoteState.recoveryEnabled ? 'ACTIVE · HIDDEN' : 'NOT GENERATED'));
+
+  const deviceList = document.getElementById('cloud-profile-device-list');
+  if (deviceList) {
+    deviceList.replaceChildren();
+    if (!remoteState.devices.length) {
+      const empty = document.createElement('small');
+      empty.textContent = getRemoteCredentials().valid ? 'Select Refresh Security to load linked devices.' : 'Connect cloud sync to manage devices.';
+      empty.style.color = '#8aa';
+      deviceList.append(empty);
+    } else {
+      remoteState.devices.forEach((device) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:7px;border:1px solid rgba(255,255,255,.10);border-radius:8px;';
+        const label = document.createElement('small');
+        const used = device.lastUsedAt ? formatTimestamp(device.lastUsedAt) : 'unknown';
+        label.textContent = `${device.current ? 'THIS DEVICE · ' : ''}${device.name || 'Browser Device'} · ${device.region || 'ZZ'} · ${used}`;
+        label.style.color = device.current ? '#22ff88' : '#b6c0c8';
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ka-link-btn';
+        button.textContent = device.current ? 'Revoke This Device' : 'Revoke';
+        button.style.cssText = 'padding:7px 9px;text-align:center;border-color:rgba(255,70,70,.42);color:#ffaaaa;';
+        button.disabled = remoteState.syncing || remoteState.devices.length <= 1;
+        button.addEventListener('click', () => {
+          const warning = device.current
+            ? 'Revoke this browser? Cloud sync will disconnect here, but the local save remains.'
+            : `Revoke ${device.name || 'this device'}?`;
+          if (window.confirm(warning)) void revokeCloudDevice(device.deviceId);
+        });
+        row.append(label, button);
+        deviceList.append(row);
+      });
+    }
+  }
+
+  const historySelect = document.getElementById('cloud-profile-history-select');
+  if (historySelect) {
+    const selected = historySelect.value;
+    historySelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = remoteState.history.length ? 'Select cloud revision' : 'No stored revisions yet';
+    historySelect.append(placeholder);
+    remoteState.history.forEach((entry) => {
+      const option = document.createElement('option');
+      option.value = String(entry.revision);
+      option.textContent = `Cloud rev ${entry.revision} · ${entry.reason || 'snapshot'} · ${formatTimestamp(entry.createdAt)}`;
+      historySelect.append(option);
+    });
+    if ([...historySelect.options].some((option) => option.value === selected)) historySelect.value = selected;
+  }
+
+  const activityList = document.getElementById('cloud-profile-activity-list');
+  if (activityList) {
+    activityList.textContent = remoteState.activity.length
+      ? remoteState.activity.slice(0, 12).map((entry) => `${formatTimestamp(entry.at)} · ${entry.kind} · ${entry.region || 'ZZ'}${entry.detail ? ` · ${entry.detail}` : ''}`).join('\n')
+      : 'No cloud security activity loaded.';
+  }
+
+  setText('cloud-profile-current-device-id', currentDeviceId);
+}
+
 function refreshProfileUi() {
   if (!currentProfile || typeof document === 'undefined') return;
   const credentials = getRemoteCredentials();
@@ -561,7 +869,7 @@ function refreshProfileUi() {
   setText('cloud-profile-link-code', remoteState.linkCode || '—');
   const enableButton = document.getElementById('cloud-profile-enable-btn');
   if (enableButton) enableButton.style.display = credentials.valid ? 'none' : '';
-  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn'].forEach((id) => {
+  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn'].forEach((id) => {
     const element = document.getElementById(id);
     if (element) element.disabled = !credentials.valid || remoteState.syncing;
   });
@@ -569,6 +877,7 @@ function refreshProfileUi() {
   const consumeButton = document.getElementById('cloud-profile-link-consume-btn');
   if (linkInput) linkInput.disabled = remoteState.syncing;
   if (consumeButton) consumeButton.disabled = remoteState.syncing;
+  renderCloudSecurityUi();
   document.documentElement.dataset.kaCloudProfile = credentials.valid ? 'cloud-connected' : 'local-ready';
   document.documentElement.dataset.kaCloudProfileRevision = String(currentProfile.revision);
   document.documentElement.dataset.kaCloudProfileRemote = credentials.valid ? (remoteState.pending ? 'pending' : 'connected') : 'off';
@@ -662,6 +971,37 @@ function bindProfileUi() {
     if (!window.confirm('Delete the cloud guest account? The local browser profile will be kept.')) return;
     void deleteCloudGuestAccount();
   });
+  document.getElementById('cloud-profile-security-refresh-btn')?.addEventListener('click', () => {
+    void refreshCloudAccountSecurity();
+  });
+  document.getElementById('cloud-profile-device-name-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('cloud-profile-device-name-input');
+    void renameCloudDevice(input?.value || getDeviceName());
+  });
+  document.getElementById('cloud-profile-revoke-others-btn')?.addEventListener('click', () => {
+    if (!window.confirm('Revoke every other linked device? Those devices will keep local saves but lose cloud access.')) return;
+    void revokeOtherCloudDevices();
+  });
+  document.getElementById('cloud-profile-rotate-token-btn')?.addEventListener('click', () => {
+    if (!window.confirm('Rotate this device token? The current token will stop working immediately.')) return;
+    void rotateCloudDeviceToken();
+  });
+  document.getElementById('cloud-profile-recovery-generate-btn')?.addEventListener('click', () => {
+    if (!window.confirm('Generate a new one-time recovery code? Any previous recovery code will stop working.')) return;
+    void generateCloudRecoveryCode();
+  });
+  document.getElementById('cloud-profile-recovery-consume-btn')?.addEventListener('click', () => {
+    const account = document.getElementById('cloud-profile-recovery-account-input');
+    const code = document.getElementById('cloud-profile-recovery-input');
+    void recoverCloudGuestAccount(account?.value || '', code?.value || '', { reload: true });
+  });
+  document.getElementById('cloud-profile-history-restore-btn')?.addEventListener('click', () => {
+    const select = document.getElementById('cloud-profile-history-select');
+    const revision = Number(select?.value || 0);
+    if (!revision) return;
+    if (!window.confirm(`Restore cloud revision ${revision}? Current cloud state will be retained in version history.`)) return;
+    void restoreCloudProfileRevision(revision, { reload: true });
+  });
   document.getElementById('cloud-profile-import-file')?.addEventListener('change', async (event) => {
     const input = event.currentTarget;
     const file = input?.files?.[0];
@@ -723,6 +1063,11 @@ export function getCloudProfileDiagnostics() {
       lastSyncAt: remoteState.lastSyncAt,
       lastError: remoteState.lastError,
       deviceId: getOrCreateDeviceId(),
+      deviceName: getDeviceName(),
+      devices: remoteState.devices.map((entry) => ({ ...entry })),
+      history: remoteState.history.map((entry) => ({ ...entry })),
+      activity: remoteState.activity.map((entry) => ({ ...entry })),
+      recoveryEnabled: remoteState.recoveryEnabled,
       linkCodeActive: Boolean(remoteState.linkCode && remoteState.linkExpiresAt > nowMs())
     }
   });
@@ -772,9 +1117,12 @@ export function initCloudProfile({ showToast = null } = {}) {
     if (remoteTimer) clearInterval(remoteTimer);
   }, { once: true });
 
-  queueMicrotask(() => {
+  queueMicrotask(async () => {
     syncCloudProfile('boot-complete');
-    if (getRemoteCredentials().valid) void syncCloudProfileRemote('boot', { force: true });
+    if (getRemoteCredentials().valid) {
+      await syncCloudProfileRemote('boot', { force: true });
+      await refreshCloudAccountSecurity({ silent: true });
+    }
   });
   return getCloudProfileDiagnostics();
 }
@@ -794,4 +1142,12 @@ if (typeof window !== 'undefined') {
   window.KAConsumeCloudDeviceLink = consumeCloudDeviceLink;
   window.KAExportCloudProfileFromServer = exportCloudProfileFromServer;
   window.KADeleteCloudGuestAccount = deleteCloudGuestAccount;
+  window.KARefreshCloudAccountSecurity = refreshCloudAccountSecurity;
+  window.KARenameCloudDevice = renameCloudDevice;
+  window.KARevokeCloudDevice = revokeCloudDevice;
+  window.KARevokeOtherCloudDevices = revokeOtherCloudDevices;
+  window.KARotateCloudDeviceToken = rotateCloudDeviceToken;
+  window.KAGenerateCloudRecoveryCode = generateCloudRecoveryCode;
+  window.KARecoverCloudGuestAccount = recoverCloudGuestAccount;
+  window.KARestoreCloudProfileRevision = restoreCloudProfileRevision;
 }

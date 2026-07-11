@@ -1,25 +1,45 @@
-KHADIJA'S ARENA MULTIPLAYER SERVER
+KHADIJA'S ARENA MULTIPLAYER + CLOUD PROFILE WORKER
 
-This is a separate Cloudflare Worker with one SQLite-backed Durable Object per
-room code. It must be deployed separately from the existing Cloudflare Pages
-site.
+The Worker source lives inside the main repository:
+C:\wamp64\www\multiplayer-server
 
-DEPLOY
-1. Open Command Prompt in multiplayer-server.
-2. Run: npm install
-3. Run: npx wrangler login
-4. Run: npm run deploy
-5. Copy the workers.dev URL shown after deployment.
-6. Open the game, select CO-OP ALPHA, and paste that URL into Worker server URL.
+It is not a nested Git repository or submodule. Commit only from:
+C:\wamp64\www
+
+DEPLOY WORKER
+1. Open Command Prompt.
+2. Run: cd /d C:\wamp64\www\multiplayer-server
+3. Run: npm ci
+4. Run: npm run check
+5. Run: npx wrangler login   (only when login is required)
+6. Run: npm run deploy
+
+The Cloudflare Pages frontend still deploys from the main GitHub repository.
+The Worker must be deployed separately whenever multiplayer-server changes.
+
+CURRENT RELEASE
+Protocol: 6
+Build: m4-cloud-account-security-r1
+Patch: m4-cloud-account-security-r1
+
+CLOUD PROFILE SECURITY
+CloudProfileHub stores guest profiles, linked-device records, one-time recovery
+codes, profile revision history, and security activity. Recovery codes and device
+tokens are stored only as SHA-256 hashes. Never copy device tokens into source
+files, screenshots, support messages, or Git commits.
 
 SECURITY
-ALLOWED_ORIGINS is "*" for the first private alpha. Before public beta, replace
-it in wrangler.jsonc with the exact Pages origin, for example:
-https://your-game.pages.dev
+ALLOWED_ORIGINS is currently "*". Before public launch, set it to the exact
+Cloudflare Pages origin in wrangler.jsonc.
 
 HEALTH CHECK
-Open:
-https://YOUR-WORKER.workers.dev/health
+curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/health
 
-Expected:
-{"ok":true,"service":"khadijas-arena-multiplayer","protocol":1}
+Expected fields:
+{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-cloud-account-security-r1","patch":"m4-cloud-account-security-r1"}
+
+RELEASE CHECK
+curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/release
+
+The Worker and frontend multiplayer-release.json must report matching protocol,
+build, patch, certified baseline, leaderboard capability, and cloud-profile patch.

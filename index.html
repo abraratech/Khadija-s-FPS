@@ -1032,6 +1032,47 @@
 <input accept="application/json,.json" id="cloud-profile-import-file" style="display:none;" type="file"/>
 </div>
 </div>
+<div class="ka-setting-row" id="cloud-profile-device-security-row">
+<div>
+<strong>Cloud Device Security</strong>
+<small>Name this browser, review linked devices and their last-used region, revoke access, or rotate the current secret token.</small>
+<small style="display:block;margin-top:6px;color:#8aa;">Current device: <span id="cloud-profile-current-device-id">—</span></small>
+<div id="cloud-profile-device-list" style="display:grid;gap:6px;margin-top:9px;"><small style="color:#8aa;">Connect cloud sync to manage devices.</small></div>
+</div>
+<div style="display:grid;gap:8px;">
+<div style="display:grid;grid-template-columns:1fr auto;gap:6px;">
+<input class="ka-setting-control" id="cloud-profile-device-name-input" maxlength="40" placeholder="Device name" type="text"/>
+<button class="ka-link-btn" id="cloud-profile-device-name-btn" style="text-align:center;" type="button">Save</button>
+</div>
+<button class="ka-link-btn" id="cloud-profile-security-refresh-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Refresh Security</button>
+<button class="ka-link-btn" id="cloud-profile-revoke-others-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Revoke All Other Devices</button>
+<button class="ka-link-btn" id="cloud-profile-rotate-token-btn" style="width:100%;text-align:center;border-color:rgba(255,102,255,.42);" type="button">Rotate This Device Token</button>
+</div>
+</div>
+<div class="ka-setting-row" id="cloud-profile-recovery-row">
+<div>
+<strong>One-Time Account Recovery</strong>
+<small>Generate and safely store a recovery code. Creating a new code invalidates the old one. A consumed code cannot be reused.</small>
+<small style="display:block;margin-top:7px;color:#ffaa00;word-break:break-all;">Recovery code: <b id="cloud-profile-recovery-code" style="letter-spacing:1.4px;">NOT GENERATED</b></small>
+</div>
+<div style="display:grid;gap:8px;">
+<button class="ka-link-btn" id="cloud-profile-recovery-generate-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Generate New Recovery Code</button>
+<input class="ka-setting-control" id="cloud-profile-recovery-account-input" maxlength="40" placeholder="Cloud account ID" type="text"/>
+<input class="ka-setting-control" id="cloud-profile-recovery-input" maxlength="19" placeholder="XXXX-XXXX-XXXX-XXXX" style="text-transform:uppercase;letter-spacing:1px;" type="text"/>
+<button class="ka-nav-btn" id="cloud-profile-recovery-consume-btn" style="width:100%;text-align:center;" type="button">Recover Account on This Device</button>
+</div>
+</div>
+<div class="ka-setting-row" id="cloud-profile-history-row">
+<div>
+<strong>Cloud Version History &amp; Activity</strong>
+<small>Recent cloud revisions are retained before meaningful changes. Restoring a revision preserves the current cloud state as another history entry.</small>
+<pre id="cloud-profile-activity-list" style="margin:9px 0 0;max-height:150px;overflow:auto;white-space:pre-wrap;color:#9fb4c5;background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:8px;font:11px/1.45 monospace;">No cloud security activity loaded.</pre>
+</div>
+<div style="display:grid;gap:8px;">
+<select class="ka-setting-control" id="cloud-profile-history-select"><option value="">No stored revisions yet</option></select>
+<button class="ka-link-btn" id="cloud-profile-history-restore-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Restore Selected Revision</button>
+</div>
+</div>
 <div class="ka-setting-row">
 <div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
 <div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>

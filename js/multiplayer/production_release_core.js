@@ -1,16 +1,16 @@
 // js/multiplayer/production_release_core.js
-// M4.43-M4.46 hotfix — deterministic frontend/Worker release, leaderboard, and cloud-profile capability gate.
+// M4.47-M4.50 — deterministic frontend/Worker release, leaderboard, and cloud-profile capability gate.
 
-export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm4-cloud-guest-sync-r1';
+export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm4-cloud-account-security-r1';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
-export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm4-cloud-guest-sync-r1';
-export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = '26313435ba6a4fca62671d12b110d5367333a072';
+export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm4-cloud-account-security-r1';
+export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = '6cf418587d5e762e7ca78d380c271a781a60ecba';
 export const MULTIPLAYER_PRODUCTION_RELEASE_STATUS = 'CERTIFIED';
 export const MULTIPLAYER_PRODUCTION_WORKER_URL = 'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev';
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA = 1;
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH = 'm4-online-leaderboards-r1';
 export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_SCHEMA = 1;
-export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH = 'm4-cloud-guest-sync-r1';
+export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH = 'm4-cloud-account-security-r1';
 
 function cleanText(value, fallback = '', limit = 300) {
   const text = String(value ?? fallback).trim();

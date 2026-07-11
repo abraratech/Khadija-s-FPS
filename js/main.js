@@ -30,6 +30,7 @@ import {
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
 import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot } from './run_summary.js';
+import { initCloudProfile, syncCloudProfile } from './cloud_profile.js';
 import {
   CONTROL_ACTIONS,
   initControlsUI,
@@ -561,6 +562,7 @@ initTutorialControls();
 initVisualTutorial({ isMobile });
 initLocalLeaderboards();
 initOnlineLeaderboards();
+initCloudProfile({ showToast: showStatusToast });
 initCameraPresentation({
   isMobile,
   camera,
@@ -1025,6 +1027,7 @@ function saveRunRecords() {
   }
 
   updateMenuBestStats();
+  syncCloudProfile('run-records-updated');
 }
 
 function clearInputState() {

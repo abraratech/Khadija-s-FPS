@@ -1006,6 +1006,22 @@
 <div><button class="ka-link-btn" id="reset-player-preferences-btn" style="width:100%;text-align:center;" type="button">Reset Player Preferences</button></div>
 </div>
 
+<div class="ka-setting-row" id="cloud-profile-settings-row">
+<div>
+<strong>Guest Profile &amp; Cloud Backup</strong>
+<small>Combines progression, achievements, records, leaderboard identity, controls, and settings into one validated profile. Authentication and remote cloud storage are not enabled yet.</small>
+<small id="cloud-profile-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;letter-spacing:.7px;">INITIALIZING LOCAL GUEST PROFILE…</small>
+<small style="display:block;margin-top:4px;color:#8aa;">ID: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">REV —</span></small>
+<small style="display:block;margin-top:3px;color:#708592;">Last saved: <span id="cloud-profile-updated">—</span></small>
+</div>
+<div style="display:grid;gap:8px;">
+<button class="ka-link-btn" id="cloud-profile-export-btn" style="width:100%;text-align:center;border-color:rgba(34,255,136,.42);" type="button">Export Profile Backup</button>
+<button class="ka-link-btn" id="cloud-profile-import-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Import &amp; Merge Backup</button>
+<button class="ka-link-btn" id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
+<input accept="application/json,.json" id="cloud-profile-import-file" style="display:none;" type="file"/>
+</div>
+</div>
+
 <div class="ka-setting-row">
 <div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
 <div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>
@@ -1364,6 +1380,7 @@
       SkeletonUtils
     };
   </script>
+<script src="js/cloud_profile_bootstrap.js"></script>
 <script src="js/engine/asset_manager.js"></script>
 <script src="js/engine/animation_manager.js"></script>
 <script src="js/engine/actor_manager.js"></script>

@@ -48,6 +48,7 @@ import { initPlayerPreferencesControls, getAdsMode, getInvertYEnabled } from './
 import { initAdaptiveMusic } from './adaptive_music.js';
 import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisualTutorial } from './visual_tutorial.js';
 import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
+import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
 import {
   initTutorialControls,
   resetTutorialRun,
@@ -171,10 +172,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm3-team-final-world-reconnect-r3';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm3-production-release-manifest-r1';
-console.info('[Multiplayer Build] m3-team-final-world-reconnect-r3 | protocol 6');
-console.info('[Multiplayer Patch] m3-production-release-manifest-r1');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm4-online-leaderboards-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm4-online-leaderboards-r1';
+console.info('[Multiplayer Build] m4-online-leaderboards-r1 | protocol 6');
+console.info('[Multiplayer Patch] m4-online-leaderboards-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }
@@ -551,6 +552,7 @@ initPlayerPreferencesControls({
 initTutorialControls();
 initVisualTutorial({ isMobile });
 initLocalLeaderboards();
+initOnlineLeaderboards();
 runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
 console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
 
@@ -959,6 +961,18 @@ function finalizeCurrentRun(reason = 'ENDED') {
     summary: getRunSummarySnapshot(),
     mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
   });
+  void submitOnlineLeaderboardRun({
+    mapId: document.getElementById('map-select')?.value
+      || currentMapMeta?.id
+      || currentMapMeta?.name
+      || 'grid_bunker',
+    difficulty: difficultyMultiplier,
+    score: payload.score,
+    wave: payload.wave,
+    kills: player.kills,
+    summary: getRunSummarySnapshot(),
+    mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+  });
   finalizeProgressionRun(payload);
   endObjectivesRun();
   endChallengesRun();
@@ -1157,6 +1171,11 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     resetMapGameplay({ mapId: chosenMap, scene });
     resetChallengesRun();
     beginLocalLeaderboardRun();
+    void beginOnlineLeaderboardRun({
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+    });
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
     runReleaseValidation({ phase: 'RUN_START', mapId: chosenMap, isMobile, devMode: DEV_MODE, mapValidation: getMapValidationSnapshot() });
 

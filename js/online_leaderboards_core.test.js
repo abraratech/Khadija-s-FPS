@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { normalizeOnlineMap, normalizeOnlineDifficulty, cleanOnlineDisplayName, createOnlineRunId, buildOnlineChallenge, buildOnlineSubmission, normalizeOnlineLeaderboardResponse, normalizePendingOnlineSubmissions } from './online_leaderboards_core.js';
+assert.equal(normalizeOnlineMap('Hospital Wing'),'hospital_wing');
+assert.equal(normalizeOnlineDifficulty(1.2),'hard');
+assert.equal(cleanOnlineDisplayName('<Abrar>'),'Abrar');
+assert.match(createOnlineRunId(1000,.5),/^run-/);
+assert.equal(buildOnlineChallenge({playerId:'player-12345678',runId:'run-12345678',mapId:'grid',difficulty:1}).mapId,'grid_bunker');
+const submission=buildOnlineSubmission({challengeToken:'x',playerId:'p',runId:'r',displayName:'A',mapId:'grid',difficulty:'normal',score:10,wave:2,kills:3,survivalSeconds:40,accuracy:50,headshots:1});
+assert.equal(submission.wave,2);
+const response=normalizeOnlineLeaderboardResponse({ok:true,scope:'region',region:'us',mapId:'grid_bunker',difficulty:'normal',entries:[{displayName:'A',score:10,wave:2,kills:3,createdAt:'2026-01-01T00:00:00Z'}]});
+assert.equal(response.region,'US');
+assert.equal(response.entries.length,1);
+assert.equal(normalizePendingOnlineSubmissions([{runId:'a'},{runId:'a'},{runId:'b'}]).length,2);
+console.log('Online leaderboard frontend core tests passed');

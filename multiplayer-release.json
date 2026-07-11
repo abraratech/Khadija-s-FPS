@@ -2,9 +2,18 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m3-team-final-world-reconnect-r3",
-  "patch": "m3-production-release-manifest-r1",
-  "certifiedBaselineSha": "3d57aab9b75e6b1e04ceeedd5afd5957f3ae361b",
+  "build": "m4-online-leaderboards-r1",
+  "patch": "m4-online-leaderboards-r1",
+  "certifiedBaselineSha": "4efad4b395263fc342d685125f724df261257263",
   "releaseStatus": "CERTIFIED",
-  "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev"
+  "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
+  "leaderboards": {
+    "schema": 1,
+    "patch": "m4-online-leaderboards-r1",
+    "endpoints": [
+      "/leaderboards",
+      "/leaderboards/challenge",
+      "/leaderboards/submit"
+    ]
+  }
 }

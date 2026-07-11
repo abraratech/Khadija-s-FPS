@@ -56,7 +56,7 @@ const REMOTE_LEASE_KEY = 'ka_cloud_profile_sync_lease_v1';
 const REMOTE_CLOCK_KEY = 'ka_cloud_profile_clock_v1';
 const REMOTE_TOMBSTONE_KEY = 'ka_cloud_profile_tombstone_v1';
 const REMOTE_LAST_SUCCESS_KEY = 'ka_cloud_profile_last_success_v1';
-const CLOUD_AUTH_PATCH = 'm4-passkey-account-upgrade-r1';
+const CLOUD_AUTH_PATCH = 'm4-final-player-polish-r1';
 
 let currentProfile = null;
 let initialized = false;
@@ -71,6 +71,7 @@ let remoteLastFingerprint = '';
 let remoteRetryTimer = null;
 let remoteLeaseHeartbeat = null;
 let remoteTabId = '';
+let cloudAdvancedOpen = false;
 let remoteState = {
   connected: false,
   syncing: false,
@@ -395,6 +396,31 @@ class CloudRemoteError extends Error {
   }
 }
 
+export function getCloudProfileErrorMessage(error, context = 'request') {
+  const code = String(error?.code || error?.name || error?.message || error || 'CLOUD_REQUEST_FAILED');
+  const messages = {
+    PROFILE_ACCOUNT_ID_INVALID: 'ENTER A VALID CLOUD ACCOUNT ID',
+    PROFILE_ACCOUNT_NOT_FOUND: 'CLOUD ACCOUNT NOT FOUND',
+    PROFILE_ACCOUNT_DELETED: 'THIS CLOUD ACCOUNT WAS DELETED',
+    PASSKEY_ACCOUNT_NOT_ENABLED: 'NO PASSKEY IS REGISTERED FOR THIS ACCOUNT',
+    PASSKEY_CREDENTIAL_NOT_FOUND: 'NO MATCHING PASSKEY WAS FOUND',
+    PASSKEY_CHALLENGE_NOT_FOUND: 'THE PASSKEY REQUEST EXPIRED · TRY AGAIN',
+    PASSKEY_CHALLENGE_EXPIRED: 'THE PASSKEY REQUEST EXPIRED · TRY AGAIN',
+    PASSKEY_CHALLENGE_USED: 'THIS PASSKEY REQUEST WAS ALREADY USED',
+    PASSKEY_ORIGIN_MISMATCH: 'PASSKEY ORIGIN CHECK FAILED',
+    PASSKEY_RP_ID_MISMATCH: 'PASSKEY WEBSITE CHECK FAILED',
+    PASSKEY_SIGNATURE_REJECTED: 'PASSKEY VERIFICATION FAILED',
+    PASSKEY_ALGORITHM_UNSUPPORTED: 'THIS PASSKEY TYPE IS NOT SUPPORTED',
+    PASSKEY_UNSUPPORTED: 'PASSKEYS ARE NOT SUPPORTED IN THIS BROWSER',
+    CLOUD_ACCOUNT_NOT_CONNECTED: 'ENABLE CLOUD SAVE OR SIGN IN FIRST',
+    CLOUD_REQUEST_TIMEOUT: 'CLOUD REQUEST TIMED OUT · TRY AGAIN',
+    NotAllowedError: context === 'register' ? 'PASSKEY SETUP CANCELLED' : 'PASSKEY SIGN-IN CANCELLED',
+    InvalidStateError: 'THIS PASSKEY IS ALREADY REGISTERED',
+    SecurityError: 'PASSKEYS REQUIRE THE SECURE HTTPS GAME SITE'
+  };
+  return messages[code] || code.replace(/_/g, ' ');
+}
+
 function updateClockFromResponse(value, clientSentAt, clientReceivedAt) {
   const serverTime = Number(value?.reliability?.serverTime || value?.serverTime || 0);
   if (!serverTime) return;
@@ -576,6 +602,11 @@ function decodePasskeyCreationOptions(value = {}) {
   const options = JSON.parse(JSON.stringify(value || {}));
   options.challenge = base64UrlToBytes(options.challenge);
   if (options.user?.id) options.user.id = base64UrlToBytes(options.user.id);
+  const parameters = Array.isArray(options.pubKeyCredParams) ? options.pubKeyCredParams : [];
+  const algorithms = new Set(parameters.map((entry) => Number(entry?.alg)));
+  if (!algorithms.has(-7)) parameters.push({ type: 'public-key', alg: -7 });
+  if (!algorithms.has(-257)) parameters.push({ type: 'public-key', alg: -257 });
+  options.pubKeyCredParams = parameters;
   options.excludeCredentials = Array.isArray(options.excludeCredentials)
     ? options.excludeCredentials.map((entry) => ({ ...entry, id: base64UrlToBytes(entry.id) }))
     : [];
@@ -654,11 +685,13 @@ export async function upgradeCloudAccountToPasskey(name = 'Khadija’s Arena Pla
     return Object.freeze({ accepted: true, upgraded: verified.upgraded === true, account: verified.account });
   } catch (error) {
     const reason = String(error?.code || error?.name || error?.message || error).slice(0, 120);
-    statusMessage = reason === 'NotAllowedError'
-      ? 'PASSKEY SETUP CANCELLED'
-      : `PASSKEY SETUP FAILED · ${reason}`;
+    const message = getCloudProfileErrorMessage(error, 'register');
+    statusMessage = message === 'PASSKEY SETUP CANCELLED'
+      ? message
+      : `PASSKEY SETUP FAILED · ${message}`;
+    toast?.(statusMessage, '#ffaa00', 2600);
     refreshProfileUi();
-    return Object.freeze({ accepted: false, reason });
+    return Object.freeze({ accepted: false, reason, message });
   }
 }
 
@@ -670,7 +703,20 @@ export async function signInCloudAccountWithPasskey(accountId, { reload = true }
   }
   const cleanAccount = String(accountId || '').trim();
   if (!/^cloud-[a-f0-9]{32}$/i.test(cleanAccount)) {
-    return Object.freeze({ accepted: false, reason: 'PROFILE_ACCOUNT_ID_INVALID' });
+    statusMessage = 'ENTER A VALID CLOUD ACCOUNT ID';
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: 'PROFILE_ACCOUNT_ID_INVALID', message: statusMessage });
+  }
+  const credentials = getRemoteCredentials();
+  if (
+    credentials.valid
+    && credentials.accountId.toLowerCase() === cleanAccount.toLowerCase()
+    && remoteState.accountType !== 'passkey'
+  ) {
+    statusMessage = 'UPGRADE THIS GUEST ACCOUNT BEFORE SIGNING IN';
+    toast?.(statusMessage, '#ffaa00', 2500);
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: 'PASSKEY_ACCOUNT_NOT_ENABLED', message: statusMessage });
   }
   statusMessage = 'WAITING FOR PASSKEY…';
   refreshProfileUi();
@@ -710,11 +756,13 @@ export async function signInCloudAccountWithPasskey(accountId, { reload = true }
     return Object.freeze({ accepted: true, account: verified.account });
   } catch (error) {
     const reason = String(error?.code || error?.name || error?.message || error).slice(0, 120);
-    statusMessage = reason === 'NotAllowedError'
-      ? 'PASSKEY SIGN-IN CANCELLED'
-      : `PASSKEY SIGN-IN FAILED · ${reason}`;
+    const message = getCloudProfileErrorMessage(error, 'login');
+    statusMessage = message === 'PASSKEY SIGN-IN CANCELLED'
+      ? message
+      : `PASSKEY SIGN-IN FAILED · ${message}`;
+    toast?.(statusMessage, '#ffaa00', 2800);
     refreshProfileUi();
-    return Object.freeze({ accepted: false, reason });
+    return Object.freeze({ accepted: false, reason, message });
   }
 }
 
@@ -1569,6 +1617,52 @@ function renderCloudSecurityUi() {
   }
 }
 
+
+function setCloudAdvancedOpen(open, { focusId = '' } = {}) {
+  cloudAdvancedOpen = open === true;
+  document.querySelectorAll('.ka-cloud-advanced-row').forEach((row) => {
+    row.hidden = !cloudAdvancedOpen;
+  });
+  document.querySelectorAll('.ka-cloud-advanced-control').forEach((element) => {
+    element.hidden = !cloudAdvancedOpen;
+  });
+  const button = document.getElementById('cloud-profile-manage-btn');
+  if (button) button.textContent = cloudAdvancedOpen ? 'Hide Account Management' : 'Manage Cloud Account';
+  document.documentElement.dataset.kaCloudAdvanced = cloudAdvancedOpen ? 'open' : 'closed';
+  if (cloudAdvancedOpen && focusId) {
+    requestAnimationFrame(() => {
+      const target = document.getElementById(focusId);
+      target?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      target?.focus?.({ preventScroll: true });
+    });
+  }
+  return cloudAdvancedOpen;
+}
+
+function simpleCloudState(credentials) {
+  if (remoteState.syncing) return { label: 'SYNCING…', tone: 'loading' };
+  if (!credentials.valid) return { label: 'LOCAL SAVE ONLY', tone: 'local' };
+  if (remoteState.pending || readRemoteQueue().length) return { label: 'NEEDS ATTENTION', tone: 'warn' };
+  if (remoteState.lastError) return { label: 'OFFLINE OR UNAVAILABLE', tone: 'warn' };
+  if (remoteState.checksumVerified) return { label: 'SAVED TO CLOUD', tone: 'pass' };
+  return { label: 'CLOUD CONNECTED', tone: 'pass' };
+}
+
+function handleCloudAccountAction() {
+  const credentials = getRemoteCredentials();
+  if (!credentials.valid) {
+    void registerCloudGuestAccount();
+    return;
+  }
+  if (remoteState.accountType !== 'passkey') {
+    statusMessage = 'UPGRADE THIS GUEST ACCOUNT TO USE PASSKEY SIGN-IN';
+    setCloudAdvancedOpen(true, { focusId: 'cloud-profile-passkey-upgrade-btn' });
+    refreshProfileUi();
+    return;
+  }
+  setCloudAdvancedOpen(true, { focusId: 'cloud-profile-auth-row' });
+}
+
 function refreshProfileUi() {
   if (!currentProfile || typeof document === 'undefined') return;
   const credentials = getRemoteCredentials();
@@ -1582,6 +1676,25 @@ function refreshProfileUi() {
   setText('cloud-profile-account-id', credentials.valid ? shortProfileId(credentials.accountId) : 'NOT CONNECTED');
   setText('cloud-profile-cloud-revision', credentials.valid ? `CLOUD REV ${remoteState.cloudRevision}` : 'CLOUD OFF');
   setText('cloud-profile-link-code', remoteState.linkCode || '—');
+  const simpleState = simpleCloudState(credentials);
+  setText('cloud-profile-simple-state', simpleState.label);
+  setText('cloud-profile-simple-last', remoteState.lastSuccessfulSyncAt ? formatTimestamp(remoteState.lastSuccessfulSyncAt) : 'Not synced yet');
+  setText('cloud-profile-simple-account', credentials.valid
+    ? (remoteState.accountType === 'passkey' ? 'Passkey account' : 'Guest cloud account')
+    : 'Local guest profile');
+  const simpleStateElement = document.getElementById('cloud-profile-simple-state');
+  if (simpleStateElement) simpleStateElement.dataset.tone = simpleState.tone;
+  const accountAction = document.getElementById('cloud-profile-account-action-btn');
+  if (accountAction) {
+    accountAction.textContent = !credentials.valid
+      ? 'Enable Cloud Save'
+      : remoteState.accountType === 'passkey'
+        ? 'Account & Sign-In'
+        : 'Upgrade Account';
+    accountAction.disabled = remoteState.syncing;
+  }
+  const manageButton = document.getElementById('cloud-profile-manage-btn');
+  if (manageButton) manageButton.disabled = remoteState.syncing;
   const enableButton = document.getElementById('cloud-profile-enable-btn');
   if (enableButton) enableButton.style.display = credentials.valid ? 'none' : '';
   ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn', 'cloud-profile-retry-queue-btn', 'cloud-profile-passkey-upgrade-btn', 'cloud-profile-auth-refresh-btn', 'cloud-profile-auth-signout-btn', 'cloud-profile-passkey-rename-btn', 'cloud-profile-passkey-revoke-btn'].forEach((id) => {
@@ -1599,6 +1712,7 @@ function refreshProfileUi() {
   if (linkInput) linkInput.disabled = remoteState.syncing;
   if (consumeButton) consumeButton.disabled = remoteState.syncing;
   renderCloudSecurityUi();
+  setCloudAdvancedOpen(cloudAdvancedOpen);
   document.documentElement.dataset.kaCloudProfile = credentials.valid ? 'cloud-connected' : 'local-ready';
   document.documentElement.dataset.kaCloudProfileRevision = String(currentProfile.revision);
   document.documentElement.dataset.kaCloudProfileRemote = credentials.valid ? (remoteState.pending ? 'pending' : 'connected') : 'off';
@@ -1663,6 +1777,12 @@ async function copyDiagnostics() {
 }
 
 function bindProfileUi() {
+  document.getElementById('cloud-profile-manage-btn')?.addEventListener('click', () => {
+    setCloudAdvancedOpen(!cloudAdvancedOpen);
+  });
+  document.getElementById('cloud-profile-account-action-btn')?.addEventListener('click', () => {
+    handleCloudAccountAction();
+  });
   document.getElementById('cloud-profile-export-btn')?.addEventListener('click', () => {
     exportCloudProfile();
   });
@@ -1701,7 +1821,13 @@ function bindProfileUi() {
   });
   document.getElementById('cloud-profile-passkey-signin-btn')?.addEventListener('click', () => {
     const input = document.getElementById('cloud-profile-passkey-account-input');
-    void signInCloudAccountWithPasskey(input?.value || '', { reload: true });
+    const accountId = String(input?.value || '').trim();
+    if (!accountId) {
+      statusMessage = 'ENTER THE CLOUD ACCOUNT ID TO SIGN IN';
+      refreshProfileUi();
+      return;
+    }
+    void signInCloudAccountWithPasskey(accountId, { reload: true });
   });
   document.getElementById('cloud-profile-auth-refresh-btn')?.addEventListener('click', () => {
     void refreshCloudAuthenticatedSession({ merge: true });

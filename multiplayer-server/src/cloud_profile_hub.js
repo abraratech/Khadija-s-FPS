@@ -1367,5 +1367,6 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   authPatch: CLOUD_AUTH_PATCH,
   passkeyLimit: CLOUD_PASSKEY_LIMIT,
   authChallengeTtlMs: CLOUD_AUTH_CHALLENGE_TTL_MS,
-  authentication: 'passkey'
+  authentication: 'passkey',
+  authAlgorithms: Object.freeze(['ES256', 'RS256'])
 });

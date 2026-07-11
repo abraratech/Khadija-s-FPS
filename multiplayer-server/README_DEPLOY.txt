@@ -19,8 +19,8 @@ The Worker must be deployed separately whenever multiplayer-server changes.
 
 CURRENT RELEASE
 Protocol: 6
-Build: m4-passkey-account-upgrade-r1
-Patch: m4-passkey-account-upgrade-r1
+Build: m4-final-player-polish-r1
+Patch: m4-final-player-polish-r1
 
 CLOUD PROFILE SECURITY
 CloudProfileHub stores guest profiles, linked-device records, one-time recovery
@@ -36,7 +36,7 @@ HEALTH CHECK
 curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/health
 
 Expected fields:
-{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-passkey-account-upgrade-r1","patch":"m4-passkey-account-upgrade-r1"}
+{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-final-player-polish-r1","patch":"m4-final-player-polish-r1"}
 
 RELEASE CHECK
 curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/release
@@ -58,4 +58,12 @@ recovery code, and leaderboard identity.
 
 Passkey registration and sign-in must be initiated from the HTTPS Pages origin.
 The Worker derives and verifies the WebAuthn RP ID from the trusted Origin header.
-Expected build: m4-passkey-account-upgrade-r1; protocol remains 6.
+Expected build: m4-final-player-polish-r1; protocol remains 6.
+
+
+M4.59-M4.62 FINAL PLAYER-FACING POLISH
+Release identity: m4-final-player-polish-r1
+Certified frontend baseline: d4024500eaf52ef1660e09a96a3bbec792a1ec48
+Passkey registration and verification support ES256 and RS256.
+Local/online leaderboard feedback, Career & Achievements, and simplified Cloud Save are included.
+Protocol remains 6.

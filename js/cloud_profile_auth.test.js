@@ -19,13 +19,17 @@ globalThis.localStorage = new MemoryStorage({
 Object.defineProperty(globalThis, 'PublicKeyCredential', { value: class PublicKeyCredential {}, configurable: true });
 
 const credentialId = new Uint8Array([1, 2, 3, 4]).buffer;
+let creationAlgorithms = [];
 const clientData = new TextEncoder().encode('{"type":"webauthn.create"}').buffer;
 Object.defineProperty(globalThis, 'navigator', {
   configurable: true,
   value: {
     userAgent: 'Node Test Browser',
     credentials: {
-    async create() {
+    async create(options = {}) {
+      creationAlgorithms = Array.isArray(options?.publicKey?.pubKeyCredParams)
+        ? options.publicKey.pubKeyCredParams.map((entry) => Number(entry.alg))
+        : [];
       return {
         id: 'AQIDBA',
         rawId: credentialId,
@@ -144,6 +148,11 @@ assert.equal((await runtime.registerCloudGuestAccount()).accepted, true);
 const upgraded = await runtime.upgradeCloudAccountToPasskey('Primary Player');
 assert.equal(upgraded.accepted, true);
 assert.equal(upgraded.upgraded, true);
+assert.deepEqual(creationAlgorithms, [-7, -257]);
+assert.equal(
+  runtime.getCloudProfileErrorMessage({ code: 'PASSKEY_ACCOUNT_NOT_ENABLED' }, 'login'),
+  'NO PASSKEY IS REGISTERED FOR THIS ACCOUNT'
+);
 assert.equal(runtime.getCloudProfileDiagnostics().remote.auth.accountType, 'passkey');
 assert.equal(runtime.getCloudProfileDiagnostics().remote.auth.passkeys.length, 1);
 

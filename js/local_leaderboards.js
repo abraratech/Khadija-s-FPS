@@ -12,11 +12,20 @@ import {
   saveLocalLeaderboardStore
 } from './local_leaderboards_core.js';
 
+const LAST_CATEGORY_KEY = 'ka_local_leaderboard_last_category_v1';
+
 let store = loadLocalLeaderboardStore();
 let runToken = '';
 let submittedToken = '';
 let uiBound = false;
+let lastSubmission = null;
 
+function readStorage(key, fallback = '') {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+function writeStorage(key, value) {
+  try { localStorage.setItem(key, String(value)); } catch { /* ignore */ }
+}
 function numberFrom(source, paths, fallback = 0) {
   for (const path of paths) {
     let value = source;
@@ -26,14 +35,10 @@ function numberFrom(source, paths, fallback = 0) {
   }
   return fallback;
 }
-
 function formatDuration(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const minutes = Math.floor(total / 60);
-  const remainder = String(total % 60).padStart(2, '0');
-  return `${minutes}:${remainder}`;
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
-
 function makeElement(tag, attributes = {}, text = '') {
   const element = document.createElement(tag);
   for (const [name, value] of Object.entries(attributes)) {
@@ -44,12 +49,51 @@ function makeElement(tag, attributes = {}, text = '') {
   if (text) element.textContent = text;
   return element;
 }
+function loadLastCategory() {
+  try {
+    const value = JSON.parse(readStorage(LAST_CATEGORY_KEY, '{}'));
+    return {
+      mapId: normalizeLocalLeaderboardMap(value?.mapId),
+      difficulty: normalizeLocalLeaderboardDifficulty(value?.difficulty)
+    };
+  } catch {
+    return { mapId: 'grid_bunker', difficulty: 'normal' };
+  }
+}
+function saveLastCategory(mapId, difficulty) {
+  const category = {
+    mapId: normalizeLocalLeaderboardMap(mapId),
+    difficulty: normalizeLocalLeaderboardDifficulty(difficulty)
+  };
+  writeStorage(LAST_CATEGORY_KEY, JSON.stringify(category));
+  return category;
+}
+function syncCategoryControls(category = loadLastCategory()) {
+  if (typeof document === 'undefined') return;
+  const map = document.getElementById('ka-lb-map');
+  const difficulty = document.getElementById('ka-lb-difficulty');
+  if (map) map.value = category.mapId;
+  if (difficulty) difficulty.value = category.difficulty;
+}
+function setHomeStatus(text, tone = '') {
+  if (typeof document === 'undefined') return;
+  const status = document.getElementById('ka-local-lb-home-status');
+  if (!status) return;
+  status.textContent = text;
+  status.dataset.tone = tone;
+}
+function reloadStore() {
+  store = loadLocalLeaderboardStore();
+  return store;
+}
 
 function installStyle() {
   if (document.getElementById('ka-local-leaderboards-style')) return;
   const style = makeElement('style', { id: 'ka-local-leaderboards-style' });
   style.textContent = `
     #ka-local-leaderboards-open{margin-top:12px;min-width:220px}
+    #ka-local-lb-home-status{margin-top:5px;max-width:520px;color:#9fb4c5;font-size:11px;font-weight:800;letter-spacing:.04em}
+    #ka-local-lb-home-status[data-tone=pass]{color:#7dffb2}#ka-local-lb-home-status[data-tone=warn]{color:#ffbb6a}
     #ka-local-leaderboards-dialog{border:1px solid rgba(0,212,255,.58);border-radius:14px;background:rgba(5,10,18,.98);color:#eefcff;width:min(760px,calc(100vw - 28px));max-height:min(680px,calc(100vh - 28px));padding:0;box-shadow:0 22px 70px rgba(0,0,0,.72)}
     #ka-local-leaderboards-dialog::backdrop{background:rgba(0,0,0,.75);backdrop-filter:blur(4px)}
     .ka-lb-shell{padding:20px}.ka-lb-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.ka-lb-head h2{margin:0;color:#8beeff;letter-spacing:.08em}.ka-lb-close{font-size:24px;min-width:44px}
@@ -61,25 +105,36 @@ function installStyle() {
 }
 
 function selectedMap() {
-  return document.getElementById('ka-lb-map')?.value || 'grid_bunker';
+  return document.getElementById('ka-lb-map')?.value || loadLastCategory().mapId;
 }
 function selectedDifficulty() {
-  return document.getElementById('ka-lb-difficulty')?.value || 'normal';
+  return document.getElementById('ka-lb-difficulty')?.value || loadLastCategory().difficulty;
+}
+
+export function selectLocalLeaderboardCategory(mapId, difficulty, { render = true } = {}) {
+  const category = saveLastCategory(mapId, difficulty);
+  syncCategoryControls(category);
+  if (render) renderLocalLeaderboards();
+  return category;
 }
 
 export function renderLocalLeaderboards() {
+  reloadStore();
+  if (typeof document === 'undefined') return;
   const body = document.getElementById('ka-lb-body');
   const title = document.getElementById('ka-lb-context');
   if (!body) return;
   const mapId = normalizeLocalLeaderboardMap(selectedMap());
   const difficulty = normalizeLocalLeaderboardDifficulty(selectedDifficulty());
+  saveLastCategory(mapId, difficulty);
   const entries = getLocalLeaderboardEntries(store, { mapId, difficulty });
   if (title) title.textContent = `${leaderboardMapLabel(mapId)} · ${leaderboardDifficultyLabel(difficulty)}`;
   body.replaceChildren();
   if (entries.length === 0) {
     const row = makeElement('tr');
-    const cell = makeElement('td', { colspan: '8', class: 'ka-lb-empty' }, 'No completed single-player runs in this category yet.');
-    row.append(cell); body.append(row); return;
+    row.append(makeElement('td', { colspan: '8', class: 'ka-lb-empty' }, 'No completed single-player runs in this category yet.'));
+    body.append(row);
+    return;
   }
   entries.forEach((entry, index) => {
     const row = makeElement('tr');
@@ -92,12 +147,12 @@ export function renderLocalLeaderboards() {
 function openDialog() {
   const dialog = document.getElementById('ka-local-leaderboards-dialog');
   if (!dialog) return;
+  syncCategoryControls(loadLastCategory());
   renderLocalLeaderboards();
   if (typeof dialog.showModal === 'function') dialog.showModal();
   else dialog.setAttribute('open', '');
   requestAnimationFrame(() => document.getElementById('ka-lb-close')?.focus());
 }
-
 function closeDialog() {
   const dialog = document.getElementById('ka-local-leaderboards-dialog');
   if (!dialog) return;
@@ -112,7 +167,8 @@ function buildUi() {
   installStyle();
   const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
   const open = makeElement('button', { type: 'button', id: 'ka-local-leaderboards-open' }, 'LOCAL LEADERBOARDS');
-  home.append(open);
+  const homeStatus = makeElement('div', { id: 'ka-local-lb-home-status' }, 'Complete a single-player run to save a score in this browser.');
+  home.append(open, homeStatus);
 
   const dialog = makeElement('dialog', { id: 'ka-local-leaderboards-dialog', 'aria-labelledby': 'ka-lb-title' });
   const shell = makeElement('div', { class: 'ka-lb-shell' });
@@ -137,41 +193,65 @@ function buildUi() {
   ['#', 'Score', 'Wave', 'Kills', 'Time', 'Accuracy', 'Headshots', 'Date'].forEach((label) => header.append(makeElement('th', {}, label)));
   thead.append(header);
   const tbody = makeElement('tbody', { id: 'ka-lb-body' });
-  table.append(thead, tbody); wrap.append(table);
-  const note = makeElement('p', { class: 'ka-lb-note' }, 'Stored only in this browser. Multiplayer runs are not submitted. Top 10 per map and difficulty.');
-  shell.append(head, filters, wrap, note); dialog.append(shell); document.body.append(dialog);
+  table.append(thead, tbody);
+  wrap.append(table);
+  const note = makeElement('p', { class: 'ka-lb-note' }, 'Stored in this browser and included in cloud profile backups. Multiplayer runs are excluded. The latest completed category opens automatically.');
+  shell.append(head, filters, wrap, note);
+  dialog.append(shell);
+  document.body.append(dialog);
 
   open.addEventListener('click', openDialog);
   close.addEventListener('click', closeDialog);
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeDialog(); });
   dialog.addEventListener('click', (event) => { if (event.target === dialog) closeDialog(); });
-  mapSelect.addEventListener('change', renderLocalLeaderboards);
-  difficultySelect.addEventListener('change', renderLocalLeaderboards);
+  mapSelect.addEventListener('change', () => selectLocalLeaderboardCategory(mapSelect.value, difficultySelect.value));
+  difficultySelect.addEventListener('change', () => selectLocalLeaderboardCategory(mapSelect.value, difficultySelect.value));
   clear.addEventListener('click', () => {
     if (!window.confirm('Clear every local leaderboard score stored in this browser?')) return;
     store = clearLocalLeaderboards();
+    lastSubmission = null;
+    setHomeStatus('Local leaderboard scores were cleared.', 'warn');
     renderLocalLeaderboards();
   });
+  syncCategoryControls(loadLastCategory());
   renderLocalLeaderboards();
 }
 
 export function initLocalLeaderboards() {
-  if (uiBound) { renderLocalLeaderboards(); return; }
+  reloadStore();
+  if (typeof document === 'undefined') return;
+  if (uiBound) {
+    syncCategoryControls(loadLastCategory());
+    renderLocalLeaderboards();
+    return;
+  }
   uiBound = true;
   buildUi();
+  window.addEventListener('storage', (event) => {
+    if (event.key === 'ka_local_leaderboards_v1') renderLocalLeaderboards();
+  });
   document.documentElement.dataset.kaLocalLeaderboards = 'ready';
 }
 
 export function beginLocalLeaderboardRun() {
   runToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   submittedToken = '';
+  lastSubmission = null;
   return runToken;
 }
 
 export function submitLocalLeaderboardRun({ mapId, difficulty, score = 0, wave = 1, kills = 0, summary = null, mode = 'single' } = {}) {
-  if (String(mode).toLowerCase() !== 'single') return Object.freeze({ accepted: false, reason: 'MULTIPLAYER_EXCLUDED' });
+  if (String(mode).toLowerCase() !== 'single') {
+    lastSubmission = Object.freeze({ accepted: false, reason: 'MULTIPLAYER_EXCLUDED' });
+    return lastSubmission;
+  }
   if (!runToken) beginLocalLeaderboardRun();
-  if (submittedToken === runToken) return Object.freeze({ accepted: false, reason: 'RUN_ALREADY_SUBMITTED' });
+  if (submittedToken === runToken) {
+    lastSubmission = Object.freeze({ accepted: false, reason: 'RUN_ALREADY_SUBMITTED' });
+    return lastSubmission;
+  }
+
+  reloadStore();
   const source = summary && typeof summary === 'object' ? summary : {};
   const entry = {
     id: runToken,
@@ -179,25 +259,49 @@ export function submitLocalLeaderboardRun({ mapId, difficulty, score = 0, wave =
     mapId,
     difficulty,
     score: numberFrom(source, ['score', 'finalScore', 'combat.score'], score),
-    wave: numberFrom(source, ['wave', 'finalWave', 'combat.wave'], wave),
+    wave: numberFrom(source, ['wave', 'highestWave', 'finalWave', 'combat.wave'], wave),
     kills: numberFrom(source, ['kills', 'eliminations', 'combat.kills'], kills),
-    survivalSeconds: numberFrom(source, ['survivalSeconds', 'survivalTimeSeconds', 'durationSeconds', 'timeSeconds', 'combat.survivalSeconds'], 0),
+    survivalSeconds: numberFrom(source, ['durationSeconds', 'survivalSeconds', 'survivalTimeSeconds', 'timeSeconds', 'combat.survivalSeconds'], 0),
     accuracy: numberFrom(source, ['accuracy', 'accuracyPercent', 'combat.accuracy'], 0),
-    headshots: numberFrom(source, ['headshots', 'headshotKills', 'combat.headshots'], 0)
+    headshots: numberFrom(source, ['headshotKills', 'headshots', 'combat.headshots'], 0)
   };
+
   const result = addLocalLeaderboardEntry(store, entry);
   store = saveLocalLeaderboardStore(result.store);
   submittedToken = runToken;
+  const category = selectLocalLeaderboardCategory(result.entry.mapId, result.entry.difficulty, { render: false });
   renderLocalLeaderboards();
-  document.documentElement.dataset.kaLocalLeaderboardLastRank = String(result.rank ?? 'outside-top-10');
-  return Object.freeze({ accepted: true, rank: result.rank, entry: result.entry });
+  if (typeof document !== 'undefined') document.documentElement.dataset.kaLocalLeaderboardLastRank = String(result.rank ?? 'outside-top-10');
+  lastSubmission = Object.freeze({
+    accepted: true,
+    rank: result.rank,
+    entry: result.entry,
+    category,
+    message: `LOCAL SCORE SAVED · ${leaderboardMapLabel(category.mapId)} · ${leaderboardDifficultyLabel(category.difficulty)}${result.rank ? ` · #${result.rank}` : ''}`
+  });
+  setHomeStatus(lastSubmission.message, 'pass');
+  return lastSubmission;
 }
 
 export function getLocalLeaderboardSnapshot() {
-  return { schema: store.schema, runToken, submitted: submittedToken === runToken, entries: store.entries.map((entry) => ({ ...entry })) };
+  reloadStore();
+  return {
+    schema: store.schema,
+    runToken,
+    submitted: submittedToken === runToken,
+    lastCategory: loadLastCategory(),
+    lastSubmission,
+    entries: store.entries.map((entry) => ({ ...entry }))
+  };
 }
 
 if (typeof window !== 'undefined') {
   window.KAGetLocalLeaderboards = getLocalLeaderboardSnapshot;
-  window.KAClearLocalLeaderboards = () => { store = clearLocalLeaderboards(); renderLocalLeaderboards(); return getLocalLeaderboardSnapshot(); };
+  window.KASelectLocalLeaderboardCategory = selectLocalLeaderboardCategory;
+  window.KAClearLocalLeaderboards = () => {
+    store = clearLocalLeaderboards();
+    lastSubmission = null;
+    renderLocalLeaderboards();
+    return getLocalLeaderboardSnapshot();
+  };
 }

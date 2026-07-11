@@ -59,6 +59,12 @@ assert.equal(auth.cleanPasskeyLabel('<My   Key>'), 'My Key');
 assert.equal(auth.normalizePasskeys([{ credentialId: 'a', publicKeySpki: 'b', name: 'One' }, { credentialId: 'a', publicKeySpki: 'c' }]).length, 1);
 const challenge = auth.createRandomChallenge();
 assert.equal(auth.base64UrlEncode(auth.base64UrlDecode(challenge)), challenge);
+const registrationOptions = auth.createPasskeyRegistrationOptions({
+  accountId: 'cloud-0123456789abcdef0123456789abcdef',
+  challenge,
+  rpId: 'example.com'
+});
+assert.deepEqual(registrationOptions.pubKeyCredParams.map((entry) => entry.alg), [-7, -257]);
 
 const keyPair = await crypto.subtle.generateKey(
   { name: 'ECDSA', namedCurve: 'P-256' },
@@ -169,5 +175,87 @@ await assert.rejects(
   }),
   /PASSKEY_COUNTER_REPLAY/
 );
+
+
+const rsaPair = await crypto.subtle.generateKey(
+  { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+  true,
+  ['sign', 'verify']
+);
+const rsaJwk = await crypto.subtle.exportKey('jwk', rsaPair.publicKey);
+const rsaCose = new Map([
+  [1, 3],
+  [3, -257],
+  [-1, auth.base64UrlDecode(rsaJwk.n)],
+  [-2, auth.base64UrlDecode(rsaJwk.e)]
+]);
+const rsaCredentialBytes = crypto.getRandomValues(new Uint8Array(32));
+const rsaCredentialId = auth.base64UrlEncode(rsaCredentialBytes);
+const rsaRegistrationAuthData = bytes(
+  rpHash,
+  Uint8Array.of(0x41),
+  uint32(0),
+  new Uint8Array(16),
+  Uint8Array.of(0, rsaCredentialBytes.length),
+  rsaCredentialBytes,
+  cbor(rsaCose)
+);
+const rsaAttestationObject = cbor(new Map([
+  ['fmt', 'none'],
+  ['authData', rsaRegistrationAuthData],
+  ['attStmt', new Map()]
+]));
+const rsaRegistration = await auth.verifyPasskeyRegistration({
+  response: {
+    rawId: rsaCredentialId,
+    response: {
+      clientDataJSON: auth.base64UrlEncode(createClient),
+      attestationObject: auth.base64UrlEncode(rsaAttestationObject),
+      transports: ['usb']
+    }
+  },
+  challenge,
+  origin,
+  rpId,
+  name: 'RS256 Passkey',
+  now: 3000
+});
+assert.equal(rsaRegistration.algorithm, -257);
+
+const rsaLoginChallenge = auth.createRandomChallenge();
+const rsaGetClient = encoder.encode(JSON.stringify({
+  type: 'webauthn.get',
+  challenge: rsaLoginChallenge,
+  origin,
+  crossOrigin: false
+}));
+const rsaAssertionAuthData = bytes(rpHash, Uint8Array.of(0x05), uint32(1));
+const rsaClientHash = new Uint8Array(await crypto.subtle.digest('SHA-256', rsaGetClient));
+const rsaSigned = bytes(rsaAssertionAuthData, rsaClientHash);
+const rsaSignature = new Uint8Array(await crypto.subtle.sign(
+  { name: 'RSASSA-PKCS1-v1_5' },
+  rsaPair.privateKey,
+  rsaSigned
+));
+const rsaVerified = await auth.verifyPasskeyAuthentication({
+  response: {
+    id: rsaCredentialId,
+    rawId: rsaCredentialId,
+    response: {
+      clientDataJSON: auth.base64UrlEncode(rsaGetClient),
+      authenticatorData: auth.base64UrlEncode(rsaAssertionAuthData),
+      signature: auth.base64UrlEncode(rsaSignature),
+      userHandle: auth.base64UrlEncode(encoder.encode(accountId))
+    }
+  },
+  credential: rsaRegistration,
+  challenge: rsaLoginChallenge,
+  origin,
+  rpId,
+  accountId,
+  now: 4000
+});
+assert.equal(rsaVerified.algorithm, -257);
+assert.equal(rsaVerified.lastUsedAt, 4000);
 
 console.log('Cloud profile passkey authentication core tests: PASS');

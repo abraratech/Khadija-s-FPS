@@ -10,12 +10,13 @@ import {
   MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH,
   MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH,
   MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM,
+  MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS,
   createMultiplayerFrontendReleaseManifest,
   evaluateMultiplayerProductionRelease,
   normalizeMultiplayerReleaseEndpoint
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-passkey-account-upgrade-r1');
+assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-final-player-polish-r1');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
 assert.equal(normalizeMultiplayerReleaseEndpoint('wss://example.workers.dev/ws?room=ABCDEF'), 'https://example.workers.dev/release');
 assert.equal(normalizeMultiplayerReleaseEndpoint('example.workers.dev'), 'https://example.workers.dev/release');
@@ -25,6 +26,7 @@ assert.equal(frontend.leaderboards.patch, MULTIPLAYER_PRODUCTION_LEADERBOARD_PAT
 assert.equal(frontend.cloudProfiles.patch, MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH);
 assert.equal(frontend.cloudProfiles.auth.patch, MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH);
 assert.equal(frontend.cloudProfiles.auth.mechanism, MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM);
+assert.deepEqual([...frontend.cloudProfiles.auth.algorithms], [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS]);
 const passing = evaluateMultiplayerProductionRelease({
   frontendManifest: frontend,
   workerManifest: {
@@ -36,7 +38,7 @@ const passing = evaluateMultiplayerProductionRelease({
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
     releaseStatus: 'CERTIFIED',
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
-    cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM },
+    cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
   }
 });

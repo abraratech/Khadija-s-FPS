@@ -1,6 +1,6 @@
 // M4.39-M4.42 — versioned guest profile schema and deterministic merge rules.
 
-export const CLOUD_PROFILE_PATCH = 'm4-passkey-account-upgrade-r1';
+export const CLOUD_PROFILE_PATCH = 'm4-final-player-polish-r1';
 export const CLOUD_PROFILE_SCHEMA = 'khadijas-arena-player-profile';
 export const CLOUD_PROFILE_VERSION = 1;
 

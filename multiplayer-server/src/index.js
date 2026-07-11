@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm4-passkey-account-upgrade-r1';
-const SERVER_PATCH = 'm4-passkey-account-upgrade-r1';
-const CERTIFIED_FRONTEND_SHA = '2b5edc90f9a319c7b8fc7ab01969379ed2930e12';
+const SERVER_BUILD = 'm4-final-player-polish-r1';
+const SERVER_PATCH = 'm4-final-player-polish-r1';
+const CERTIFIED_FRONTEND_SHA = 'd4024500eaf52ef1660e09a96a3bbec792a1ec48';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 

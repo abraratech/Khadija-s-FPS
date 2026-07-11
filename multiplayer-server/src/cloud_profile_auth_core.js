@@ -1,6 +1,6 @@
 // M4.55-M4.58 — passkey authentication helpers for cloud account upgrade and sign-in.
 
-export const CLOUD_AUTH_PATCH = 'm4-passkey-account-upgrade-r1';
+export const CLOUD_AUTH_PATCH = 'm4-final-player-polish-r1';
 export const CLOUD_AUTH_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export const CLOUD_PASSKEY_LIMIT = 8;
 
@@ -98,7 +98,10 @@ export function createPasskeyRegistrationOptions({
       name: String(accountId || ''),
       displayName: cleanPasskeyLabel(accountLabel, 'Khadija’s Arena Player')
     },
-    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+    pubKeyCredParams: [
+      { type: 'public-key', alg: -7 },
+      { type: 'public-key', alg: -257 }
+    ],
     timeout: 60000,
     attestation: 'none',
     authenticatorSelection: {
@@ -249,22 +252,57 @@ function parseAttestedCredentialData(authData) {
   return { credentialId, coseKey: cose.value };
 }
 
-async function coseEc2ToSpki(coseKey) {
+async function cosePublicKeyToSpki(coseKey) {
   const kty = Number(coseKey.get(1));
   const alg = Number(coseKey.get(3));
-  const curve = Number(coseKey.get(-1));
-  const x = asBytes(coseKey.get(-2));
-  const y = asBytes(coseKey.get(-3));
-  if (kty !== 2 || alg !== -7 || curve !== 1 || x.length !== 32 || y.length !== 32) {
-    throw new Error('PASSKEY_ALGORITHM_UNSUPPORTED');
+
+  if (kty === 2 && alg === -7) {
+    const curve = Number(coseKey.get(-1));
+    const x = asBytes(coseKey.get(-2));
+    const y = asBytes(coseKey.get(-3));
+    if (curve !== 1 || x.length !== 32 || y.length !== 32) {
+      throw new Error('PASSKEY_ALGORITHM_UNSUPPORTED');
+    }
+    const raw = new Uint8Array(65);
+    raw[0] = 4;
+    raw.set(x, 1);
+    raw.set(y, 33);
+    const key = await crypto.subtle.importKey(
+      'raw',
+      raw,
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['verify']
+    );
+    const spki = new Uint8Array(await crypto.subtle.exportKey('spki', key));
+    return { publicKeySpki: base64UrlEncode(spki), algorithm: -7 };
   }
-  const raw = new Uint8Array(65);
-  raw[0] = 4;
-  raw.set(x, 1);
-  raw.set(y, 33);
-  const key = await crypto.subtle.importKey('raw', raw, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
-  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', key));
-  return { publicKeySpki: base64UrlEncode(spki), algorithm: -7 };
+
+  if (kty === 3 && alg === -257) {
+    const modulus = asBytes(coseKey.get(-1));
+    const exponent = asBytes(coseKey.get(-2));
+    if (modulus.length < 128 || exponent.length < 1) {
+      throw new Error('PASSKEY_ALGORITHM_UNSUPPORTED');
+    }
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      {
+        kty: 'RSA',
+        n: base64UrlEncode(modulus),
+        e: base64UrlEncode(exponent),
+        alg: 'RS256',
+        ext: true,
+        key_ops: ['verify']
+      },
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      true,
+      ['verify']
+    );
+    const spki = new Uint8Array(await crypto.subtle.exportKey('spki', key));
+    return { publicKeySpki: base64UrlEncode(spki), algorithm: -257 };
+  }
+
+  throw new Error('PASSKEY_ALGORITHM_UNSUPPORTED');
 }
 
 function derIntegerToFixed(bytes, size = 32) {
@@ -337,7 +375,7 @@ export async function verifyPasskeyRegistration({
   const attested = parseAttestedCredentialData(authData);
   const credentialId = base64UrlEncode(attested.credentialId);
   if (response?.rawId && String(response.rawId) !== credentialId) throw new Error('PASSKEY_CREDENTIAL_ID_MISMATCH');
-  const key = await coseEc2ToSpki(attested.coseKey);
+  const key = await cosePublicKeyToSpki(attested.coseKey);
   return {
     credentialId,
     ...key,
@@ -384,15 +422,34 @@ export async function verifyPasskeyAuthentication({
   const signed = new Uint8Array(authData.bytes.length + clientHash.length);
   signed.set(authData.bytes, 0);
   signed.set(clientHash, authData.bytes.length);
-  const key = await crypto.subtle.importKey(
-    'spki',
-    base64UrlDecode(current.publicKeySpki),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['verify']
-  );
-  const signature = derEcdsaToRaw(base64UrlDecode(response?.response?.signature || ''));
-  const verified = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, signature, signed);
+  const encodedSignature = base64UrlDecode(response?.response?.signature || '');
+  let key;
+  let signature;
+  let verificationAlgorithm;
+  if (current.algorithm === -257) {
+    key = await crypto.subtle.importKey(
+      'spki',
+      base64UrlDecode(current.publicKeySpki),
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    signature = encodedSignature;
+    verificationAlgorithm = { name: 'RSASSA-PKCS1-v1_5' };
+  } else if (current.algorithm === -7) {
+    key = await crypto.subtle.importKey(
+      'spki',
+      base64UrlDecode(current.publicKeySpki),
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      false,
+      ['verify']
+    );
+    signature = derEcdsaToRaw(encodedSignature);
+    verificationAlgorithm = { name: 'ECDSA', hash: 'SHA-256' };
+  } else {
+    throw new Error('PASSKEY_ALGORITHM_UNSUPPORTED');
+  }
+  const verified = await crypto.subtle.verify(verificationAlgorithm, key, signature, signed);
   if (!verified) throw new Error('PASSKEY_SIGNATURE_REJECTED');
   return {
     ...current,

@@ -1008,31 +1008,38 @@
 
 <div class="ka-setting-row" id="cloud-profile-settings-row">
 <div>
-<strong>Guest Profile &amp; Cloud Sync</strong>
-<small>Your progression, achievements, records, leaderboard identity, controls, and settings can now synchronize through a secure guest account. No password or email is required for guest mode; you can later upgrade the same account with a device passkey.</small>
+<strong>Cloud Save</strong>
+<small>Keep progression, achievements, records, controls, and settings backed up across devices. Basic save controls stay here; account recovery and technical tools are under Manage Cloud Account.</small>
 <small id="cloud-profile-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;letter-spacing:.7px;">INITIALIZING GUEST PROFILE…</small>
-<small style="display:block;margin-top:4px;color:#8aa;">Profile: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">LOCAL REV —</span></small>
-<small style="display:block;margin-top:3px;color:#8aa;">Cloud: <span id="cloud-profile-account-id">NOT CONNECTED</span> · <span id="cloud-profile-cloud-revision">CLOUD OFF</span></small>
-<small style="display:block;margin-top:3px;color:#708592;">Last local save: <span id="cloud-profile-updated">—</span></small>
-<small style="display:block;margin-top:6px;color:#ffaa00;">Device link code: <b id="cloud-profile-link-code" style="letter-spacing:2px;">—</b></small>
+<div class="ka-cloud-simple-summary">
+<div><span>Status</span><b id="cloud-profile-simple-state" data-tone="local">LOCAL SAVE ONLY</b></div>
+<div><span>Account</span><b id="cloud-profile-simple-account">Local guest profile</b></div>
+<div><span>Last synced</span><b id="cloud-profile-simple-last">Not synced yet</b></div>
+</div>
+<small class="ka-cloud-advanced-control" hidden style="display:block;margin-top:4px;color:#8aa;">Profile: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">LOCAL REV —</span></small>
+<small class="ka-cloud-advanced-control" hidden style="display:block;margin-top:3px;color:#8aa;">Cloud: <span id="cloud-profile-account-id">NOT CONNECTED</span> · <span id="cloud-profile-cloud-revision">CLOUD OFF</span></small>
+<small class="ka-cloud-advanced-control" hidden style="display:block;margin-top:3px;color:#708592;">Last local save: <span id="cloud-profile-updated">—</span></small>
+<small class="ka-cloud-advanced-control" hidden style="display:block;margin-top:6px;color:#ffaa00;">Device link code: <b id="cloud-profile-link-code" style="letter-spacing:2px;">—</b></small>
 </div>
 <div style="display:grid;gap:8px;">
 <button class="ka-nav-btn" id="cloud-profile-enable-btn" style="width:100%;text-align:center;" type="button">Enable Cloud Sync</button>
 <button class="ka-link-btn" id="cloud-profile-sync-btn" style="width:100%;text-align:center;border-color:rgba(34,255,136,.42);" type="button">Sync Now</button>
-<button class="ka-link-btn" id="cloud-profile-link-create-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Create Device Link Code</button>
-<div style="display:grid;grid-template-columns:1fr auto;gap:6px;">
+<button class="ka-link-btn" id="cloud-profile-account-action-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Upgrade Account</button>
+<button class="ka-link-btn" id="cloud-profile-manage-btn" style="width:100%;text-align:center;" type="button">Manage Cloud Account</button>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-link-create-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Create Device Link Code</button>
+<div class="ka-cloud-advanced-control" hidden style="display:grid;grid-template-columns:1fr auto;gap:6px;">
 <input class="ka-setting-control" id="cloud-profile-link-input" maxlength="8" placeholder="8-character code" style="text-transform:uppercase;letter-spacing:1.5px;" type="text"/>
 <button class="ka-link-btn" id="cloud-profile-link-consume-btn" style="text-align:center;" type="button">Link</button>
 </div>
-<button class="ka-link-btn" id="cloud-profile-server-export-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Export Cloud Backup</button>
-<button class="ka-link-btn" id="cloud-profile-export-btn" style="width:100%;text-align:center;" type="button">Export Local Backup</button>
-<button class="ka-link-btn" id="cloud-profile-import-btn" style="width:100%;text-align:center;" type="button">Import &amp; Merge Backup</button>
-<button class="ka-link-btn" id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
-<button class="ka-link-btn" id="cloud-profile-delete-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Delete Cloud Account</button>
-<input accept="application/json,.json" id="cloud-profile-import-file" style="display:none;" type="file"/>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-server-export-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Export Cloud Backup</button>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-export-btn" style="width:100%;text-align:center;" type="button">Export Local Backup</button>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-import-btn" style="width:100%;text-align:center;" type="button">Import &amp; Merge Backup</button>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
+<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-delete-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Delete Cloud Account</button>
+<input accept="application/json,.json" class="ka-cloud-advanced-control" hidden id="cloud-profile-import-file" style="display:none;" type="file"/>
 </div>
 </div>
-<div class="ka-setting-row" id="cloud-profile-auth-row">
+<div class="ka-setting-row ka-cloud-advanced-row" hidden id="cloud-profile-auth-row">
 <div>
 <strong>Permanent Account &amp; Passkey Sign-In</strong>
 <small>Upgrade the current cloud guest account using your device passkey. No game password is stored. Existing progress, devices, history, recovery code, and leaderboard identity remain attached to the same account.</small>
@@ -1057,7 +1064,7 @@
 <button class="ka-link-btn" id="cloud-profile-auth-signout-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Sign Out on This Browser</button>
 </div>
 </div>
-<div class="ka-setting-row" id="cloud-profile-device-security-row">
+<div class="ka-setting-row ka-cloud-advanced-row" hidden id="cloud-profile-device-security-row">
 <div>
 <strong>Cloud Device Security</strong>
 <small>Name this browser, review linked devices and their last-used region, revoke access, or rotate the current secret token.</small>
@@ -1074,7 +1081,7 @@
 <button class="ka-link-btn" id="cloud-profile-rotate-token-btn" style="width:100%;text-align:center;border-color:rgba(255,102,255,.42);" type="button">Rotate This Device Token</button>
 </div>
 </div>
-<div class="ka-setting-row" id="cloud-profile-recovery-row">
+<div class="ka-setting-row ka-cloud-advanced-row" hidden id="cloud-profile-recovery-row">
 <div>
 <strong>One-Time Account Recovery</strong>
 <small>Generate and safely store a recovery code. Creating a new code invalidates the old one. A consumed code cannot be reused.</small>
@@ -1087,7 +1094,7 @@
 <button class="ka-nav-btn" id="cloud-profile-recovery-consume-btn" style="width:100%;text-align:center;" type="button">Recover Account on This Device</button>
 </div>
 </div>
-<div class="ka-setting-row" id="cloud-profile-history-row">
+<div class="ka-setting-row ka-cloud-advanced-row" hidden id="cloud-profile-history-row">
 <div>
 <strong>Cloud Version History &amp; Activity</strong>
 <small>Recent cloud revisions are retained before meaningful changes. Restoring a revision preserves the current cloud state as another history entry.</small>
@@ -1098,7 +1105,7 @@
 <button class="ka-link-btn" id="cloud-profile-history-restore-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Restore Selected Revision</button>
 </div>
 </div>
-<div class="ka-setting-row" id="cloud-profile-reliability-row">
+<div class="ka-setting-row ka-cloud-advanced-row" hidden id="cloud-profile-reliability-row">
 <div>
 <strong>Cloud Sync Reliability</strong>
 <small>Queued changes survive restarts. Only one tab writes at a time, retries use capped backoff, and every downloaded profile is checksum-verified.</small>

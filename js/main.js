@@ -51,6 +51,7 @@ import { initAdaptiveMusic } from './adaptive_music.js';
 import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisualTutorial } from './visual_tutorial.js';
 import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
 import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
+import { initCareerAchievements } from './career_achievements.js';
 import { initCameraPresentation, resetCameraPresentation, updateCameraPresentation, enforceCameraPresentationVisibility, endCameraPresentation } from './camera_presentation.js';
 import {
   initGameplayReliability,
@@ -181,10 +182,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm4-passkey-account-upgrade-r1';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm4-passkey-account-upgrade-r1';
-console.info('[Multiplayer Build] m4-passkey-account-upgrade-r1 | protocol 6');
-console.info('[Multiplayer Patch] m4-passkey-account-upgrade-r1');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm4-final-player-polish-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm4-final-player-polish-r1';
+console.info('[Multiplayer Build] m4-final-player-polish-r1 | protocol 6');
+console.info('[Multiplayer Patch] m4-final-player-polish-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }
@@ -562,6 +563,10 @@ initTutorialControls();
 initVisualTutorial({ isMobile });
 initLocalLeaderboards();
 initOnlineLeaderboards();
+initCareerAchievements({
+  getProgressionSnapshot,
+  getChallengesSnapshot
+});
 initCloudProfile({ showToast: showStatusToast });
 initCameraPresentation({
   isMobile,
@@ -982,34 +987,65 @@ function finalizeCurrentRun(reason = 'ENDED') {
     wave: Number(currentWave || 1),
     reason: String(reason || 'ENDED').toUpperCase()
   };
+  const mode = isOnlineMultiplayerRun() ? 'multiplayer' : 'single';
+  const mapId = document.getElementById('map-select')?.value
+    || currentMapMeta?.id
+    || currentMapMeta?.name
+    || 'grid_bunker';
+
   finalizeRunSummary(payload);
-  submitLocalLeaderboardRun({
-    mapId: document.getElementById('map-select')?.value
-      || currentMapMeta?.id
-      || currentMapMeta?.name
-      || 'grid_bunker',
-    difficulty: difficultyMultiplier,
-    score: payload.score,
-    wave: payload.wave,
-    kills: player.kills,
-    summary: getRunSummarySnapshot(),
-    mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
-  });
-  void submitOnlineLeaderboardRun({
-    mapId: document.getElementById('map-select')?.value
-      || currentMapMeta?.id
-      || currentMapMeta?.name
-      || 'grid_bunker',
-    difficulty: difficultyMultiplier,
-    score: payload.score,
-    wave: payload.wave,
-    kills: player.kills,
-    summary: getRunSummarySnapshot(),
-    mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
-  });
   finalizeProgressionRun(payload);
   endObjectivesRun();
   endChallengesRun();
+
+  const summary = getRunSummarySnapshot();
+  const localResult = submitLocalLeaderboardRun({
+    mapId,
+    difficulty: difficultyMultiplier,
+    score: payload.score,
+    wave: payload.wave,
+    kills: player.kills,
+    summary,
+    mode
+  });
+
+  const onlineResult = submitOnlineLeaderboardRun({
+    mapId,
+    difficulty: difficultyMultiplier,
+    score: payload.score,
+    wave: payload.wave,
+    kills: player.kills,
+    summary,
+    mode
+  });
+
+  if (mode === 'single') {
+    if (localResult?.accepted) {
+      showStatusToast(
+        localResult.message || `LOCAL SCORE SAVED${localResult.rank ? ` · #${localResult.rank}` : ''}`,
+        '#22ff88',
+        2200
+      );
+    } else if (localResult?.reason && localResult.reason !== 'RUN_ALREADY_SUBMITTED') {
+      showStatusToast(`LOCAL SCORE NOT SAVED · ${localResult.reason}`, '#ffaa00', 2400);
+    }
+
+    void Promise.resolve(onlineResult).then((result) => {
+      if (result?.accepted) {
+        showStatusToast(
+          `ONLINE SCORE ACCEPTED · GLOBAL #${result.globalRank ?? '—'} · REGION #${result.regionRank ?? '—'}`,
+          '#00d4ff',
+          2800
+        );
+      } else if (result?.queued) {
+        showStatusToast(`ONLINE SCORE QUEUED · ${result.reason || 'RETRY AVAILABLE'}`, '#ffaa00', 3000);
+      } else if (result?.reason && result.reason !== 'MULTIPLAYER_EXCLUDED') {
+        showStatusToast(`ONLINE SCORE NOT SENT · ${result.reason}`, '#ffaa00', 2800);
+      }
+    });
+  }
+
+  return Object.freeze({ payload, summary, localResult, onlineResult });
 }
 
 function saveRunRecords() {

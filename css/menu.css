@@ -606,3 +606,42 @@
     justify-content: flex-start;
   }
 }
+
+
+/* M4.59-M4.62 — simplified cloud-save surface. */
+.ka-cloud-simple-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.ka-cloud-simple-summary > div {
+  padding: 8px 9px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 9px;
+  background: rgba(0,0,0,.22);
+}
+.ka-cloud-simple-summary span {
+  display: block;
+  color: #708592;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ka-cloud-simple-summary b {
+  display: block;
+  margin-top: 3px;
+  color: #dff8ff;
+  font-size: 11px;
+}
+#cloud-profile-simple-state[data-tone="pass"] { color: #22ff88; }
+#cloud-profile-simple-state[data-tone="warn"] { color: #ffaa00; }
+#cloud-profile-simple-state[data-tone="loading"] { color: #00d4ff; }
+.ka-cloud-advanced-row[hidden],
+.ka-cloud-advanced-control[hidden] {
+  display: none !important;
+}
+@media (max-width: 680px) {
+  .ka-cloud-simple-summary { grid-template-columns: 1fr; }
+}

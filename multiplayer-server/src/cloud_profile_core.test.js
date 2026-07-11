@@ -33,7 +33,7 @@ const incoming = createGuestCloudProfile({
   }
 });
 const merged = mergeCloudProfiles(base, incoming, { now: 4000 });
-assert.equal(CLOUD_PROFILE_PATCH, 'm4-passkey-account-upgrade-r1');
+assert.equal(CLOUD_PROFILE_PATCH, 'm4-final-player-polish-r1');
 assert.equal(validateCloudProfile(merged).valid, true);
 assert.equal(merged.profileId, base.profileId);
 assert.equal(merged.progression.xp, 250);

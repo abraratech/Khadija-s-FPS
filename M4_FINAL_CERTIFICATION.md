@@ -50,3 +50,18 @@ Hotfix: `m4-leaderboard-refresh-style-r1`
 - Styles Local Leaderboards, Online Leaderboards, and Career & Achievements with the existing Khadija's Arena menu controls.
 - Adds deterministic refresh-restoration tests for accepted and queued submissions.
 - Frontend-only hotfix: no Worker code, protocol, or release identity change.
+
+## M4.65–M4.66 expired cloud-session recovery
+
+Baseline: `9db29410993c0a9a8001fbc3ff768d98da17ffdc`
+
+Hotfix: `m4-expired-cloud-session-recovery-r1`
+
+- Treats `PROFILE_TOKEN_REJECTED` and `PROFILE_AUTH_REQUIRED` as permanent session expiry rather than retryable network failures.
+- Clears only invalid cloud credentials, retry state, and queued remote work.
+- Preserves local progression, achievements, settings, scores, leaderboard feedback, and the cloud account ID hint.
+- Displays `CLOUD SESSION EXPIRED · LOCAL PROFILE KEPT` and returns Cloud Save to its disconnected state.
+- Stops the retry loop and changes security refreshes from four parallel requests to fail-fast sequential requests.
+- Adds deterministic core and runtime tests that force a 401 rejection and prove the local profile survives.
+- Frontend-only hotfix: multiplayer protocol and Worker release remain unchanged.
+

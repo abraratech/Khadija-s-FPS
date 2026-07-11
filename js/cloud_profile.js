@@ -14,6 +14,12 @@ import {
 } from './cloud_profile_core.js';
 import { ONLINE_LEADERBOARD_WORKER_URL } from './online_leaderboards_core.js';
 import {
+  CLOUD_SESSION_EXPIRED_MESSAGE,
+  CLOUD_SESSION_RECOVERY_PATCH,
+  createCloudSessionExpiryResult,
+  isPermanentCloudSessionError
+} from './cloud_profile_session_core.js';
+import {
   CLOUD_RELIABILITY_PATCH,
   CLOUD_SYNC_LEASE_MS,
   CLOUD_SYNC_LEASE_RENEW_MS,
@@ -72,6 +78,7 @@ let remoteRetryTimer = null;
 let remoteLeaseHeartbeat = null;
 let remoteTabId = '';
 let cloudAdvancedOpen = false;
+let cloudSessionExpiredToastAt = 0;
 let remoteState = {
   connected: false,
   syncing: false,
@@ -356,6 +363,29 @@ function clearRemoteCredentials({ preserveQueue = false } = {}) {
   remoteLastFingerprint = '';
 }
 
+
+function expireCloudAuthenticatedSession(error = null) {
+  if (!isPermanentCloudSessionError(error)) return null;
+  const credentials = getRemoteCredentials();
+  const accountHint = credentials.accountId || String(readRaw(REMOTE_ACCOUNT_HINT_KEY, '') || '');
+  if (accountHint) writeRaw(REMOTE_ACCOUNT_HINT_KEY, accountHint);
+  clearRemoteRetryTimer();
+  clearRemoteCredentials();
+  remoteState.lastError = String(error?.code || error?.payload?.error || error?.message || 'CLOUD_SESSION_EXPIRED').slice(0, 120);
+  remoteState.pending = false;
+  remoteState.queuedChanges = 0;
+  remoteState.retryAt = 0;
+  remoteState.checksumVerified = false;
+  statusMessage = CLOUD_SESSION_EXPIRED_MESSAGE;
+  const timestamp = nowMs();
+  if (timestamp - cloudSessionExpiredToastAt > 1200) {
+    cloudSessionExpiredToastAt = timestamp;
+    toast?.(CLOUD_SESSION_EXPIRED_MESSAGE, '#ffaa00', 2600);
+  }
+  refreshProfileUi();
+  return createCloudSessionExpiryResult(error, { accountHint });
+}
+
 function initializeRemoteState() {
   const credentials = getRemoteCredentials();
   const tombstone = readLocalTombstone();
@@ -413,6 +443,9 @@ export function getCloudProfileErrorMessage(error, context = 'request') {
     PASSKEY_ALGORITHM_UNSUPPORTED: 'THIS PASSKEY TYPE IS NOT SUPPORTED',
     PASSKEY_UNSUPPORTED: 'PASSKEYS ARE NOT SUPPORTED IN THIS BROWSER',
     CLOUD_ACCOUNT_NOT_CONNECTED: 'ENABLE CLOUD SAVE OR SIGN IN FIRST',
+    PROFILE_TOKEN_REJECTED: CLOUD_SESSION_EXPIRED_MESSAGE,
+    PROFILE_AUTH_REQUIRED: CLOUD_SESSION_EXPIRED_MESSAGE,
+    CLOUD_SESSION_EXPIRED: CLOUD_SESSION_EXPIRED_MESSAGE,
     CLOUD_REQUEST_TIMEOUT: 'CLOUD REQUEST TIMED OUT · TRY AGAIN',
     NotAllowedError: context === 'register' ? 'PASSKEY SETUP CANCELLED' : 'PASSKEY SIGN-IN CANCELLED',
     InvalidStateError: 'THIS PASSKEY IS ALREADY REGISTERED',
@@ -459,7 +492,9 @@ async function remoteRequest(path, { method = 'GET', body = null, authenticated 
     const value = await response.json().catch(() => ({}));
     updateClockFromResponse(value, clientSentAt, nowMs());
     if (!response.ok || value.ok !== true) {
-      throw new CloudRemoteError(String(value.error || `HTTP_${response.status}`), response.status, value);
+      const remoteError = new CloudRemoteError(String(value.error || `HTTP_${response.status}`), response.status, value);
+      if (authenticated) expireCloudAuthenticatedSession(remoteError);
+      throw remoteError;
     }
     return value;
   } catch (error) {
@@ -500,6 +535,8 @@ function queueCurrentRemoteProfile(reason = 'sync') {
 }
 
 function markRemotePending(error = null, entry = null) {
+  const expired = expireCloudAuthenticatedSession(error);
+  if (expired) return expired;
   remoteState.pending = true;
   remoteState.lastError = String(error?.code || error?.message || error || 'OFFLINE').slice(0, 120);
   writeRaw(REMOTE_PENDING_KEY, '1');
@@ -780,6 +817,8 @@ export async function refreshCloudAuthenticatedSession({ merge = true } = {}) {
     refreshProfileUi();
     return Object.freeze({ accepted: true, account: value.account });
   } catch (error) {
+    const expired = expireCloudAuthenticatedSession(error);
+    if (expired) return expired;
     statusMessage = `SESSION REFRESH FAILED · ${String(error?.message || error).slice(0, 80)}`;
     refreshProfileUi();
     return Object.freeze({ accepted: false, reason: String(error?.message || error) });
@@ -975,6 +1014,8 @@ async function drainRemoteSyncQueue(reason = 'queue') {
       queuedChanges: queue.length
     });
   }).catch((error) => {
+    const expired = expireCloudAuthenticatedSession(error);
+    if (expired) return expired;
     if (['PROFILE_ACCOUNT_DELETED', 'PROFILE_ACCOUNT_NOT_FOUND'].includes(String(error?.code || error?.message || ''))) {
       const accountId = credentials.accountId;
       const tombstone = error?.payload?.tombstone || {
@@ -1119,6 +1160,8 @@ export async function deleteCloudGuestAccount() {
     refreshProfileUi();
     return Object.freeze({ accepted: true });
   } catch (error) {
+    const expired = expireCloudAuthenticatedSession(error);
+    if (expired) return expired;
     statusMessage = `DELETE FAILED · ${String(error?.message || error).slice(0, 80)}`;
     refreshProfileUi();
     return Object.freeze({ accepted: false, reason: String(error?.message || error) });
@@ -1132,20 +1175,22 @@ export async function refreshCloudAccountSecurity({ silent = false } = {}) {
     refreshProfileUi();
   }
   try {
-    const [devices, history, activity, passkeys] = await Promise.all([
-      remoteRequest('/profiles/devices'),
-      remoteRequest('/profiles/history'),
-      remoteRequest('/profiles/activity'),
-      remoteRequest('/profiles/auth/passkeys')
-    ]);
+    // Sequential requests intentionally stop after the first permanent auth rejection.
+    // This prevents a stale token from producing a burst of four parallel 401 responses.
+    const devices = await remoteRequest('/profiles/devices');
     updateRemoteAccountState(devices);
+    const history = await remoteRequest('/profiles/history');
     updateRemoteAccountState(history);
+    const activity = await remoteRequest('/profiles/activity');
     updateRemoteAccountState(activity);
+    const passkeys = await remoteRequest('/profiles/auth/passkeys');
     updateRemoteAccountState(passkeys);
     if (!silent) statusMessage = 'CLOUD SECURITY REFRESHED';
     refreshProfileUi();
     return Object.freeze({ accepted: true, devices: remoteState.devices, history: remoteState.history, activity: remoteState.activity });
   } catch (error) {
+    const expired = expireCloudAuthenticatedSession(error);
+    if (expired) return expired;
     if (!silent) statusMessage = `SECURITY REFRESH FAILED · ${String(error?.message || error).slice(0, 80)}`;
     remoteState.lastError = String(error?.message || error).slice(0, 120);
     refreshProfileUi();

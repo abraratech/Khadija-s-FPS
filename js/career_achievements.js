@@ -131,7 +131,7 @@ function buildUi() {
   if (document.getElementById('ka-career-dialog')) return;
   installStyle();
   const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
-  const button = make('button', { type: 'button', id: 'ka-career-open' }, 'CAREER & ACHIEVEMENTS');
+  const button = make('button', { type: 'button', id: 'ka-career-open', class: 'ka-link-btn ka-player-data-open', style: 'width:100%;text-align:center;' }, 'CAREER & ACHIEVEMENTS');
   home.append(button);
 
   const dialog = make('dialog', { id: 'ka-career-dialog', 'aria-labelledby': 'ka-career-title' });

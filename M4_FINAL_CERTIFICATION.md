@@ -37,3 +37,16 @@ Multiplayer protocol: `6`
 - Later M5: evaluate push-to-talk voice chat with mute, device selection, permissions, and safety controls.
 - CrazyGames and other web portal publishing remains after game stability and certification.
 - Android APK/native mobile packaging is a post-web-release phase. It should replace the mobile-browser presentation only after single-player, multiplayer, portal publishing, and web release stabilization are complete.
+
+
+## M4.63–M4.64 browser hotfix
+
+Baseline: `44c73c05aa0dabb4c89f9201c504a6526b481f03`  
+Hotfix: `m4-leaderboard-refresh-style-r1`
+
+- Persists the latest local leaderboard save feedback across a normal page refresh.
+- Persists the latest online accepted or queued feedback across a normal page refresh.
+- Restores the latest map/difficulty category and rank message during leaderboard initialization.
+- Styles Local Leaderboards, Online Leaderboards, and Career & Achievements with the existing Khadija's Arena menu controls.
+- Adds deterministic refresh-restoration tests for accepted and queued submissions.
+- Frontend-only hotfix: no Worker code, protocol, or release identity change.

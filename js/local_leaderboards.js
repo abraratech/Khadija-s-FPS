@@ -13,18 +13,22 @@ import {
 } from './local_leaderboards_core.js';
 
 const LAST_CATEGORY_KEY = 'ka_local_leaderboard_last_category_v1';
+const LAST_SUBMISSION_KEY = 'ka_local_leaderboard_last_submission_v1';
 
 let store = loadLocalLeaderboardStore();
 let runToken = '';
 let submittedToken = '';
 let uiBound = false;
-let lastSubmission = null;
+let lastSubmission = loadLastSubmission();
 
 function readStorage(key, fallback = '') {
   try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
 function writeStorage(key, value) {
   try { localStorage.setItem(key, String(value)); } catch { /* ignore */ }
+}
+function removeStorage(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 function numberFrom(source, paths, fallback = 0) {
   for (const path of paths) {
@@ -67,6 +71,47 @@ function saveLastCategory(mapId, difficulty) {
   };
   writeStorage(LAST_CATEGORY_KEY, JSON.stringify(category));
   return category;
+}
+function loadLastSubmission() {
+  try {
+    const value = JSON.parse(readStorage(LAST_SUBMISSION_KEY, 'null'));
+    if (!value || value.accepted !== true) return null;
+    const category = {
+      mapId: normalizeLocalLeaderboardMap(value?.category?.mapId ?? value?.entry?.mapId),
+      difficulty: normalizeLocalLeaderboardDifficulty(value?.category?.difficulty ?? value?.entry?.difficulty)
+    };
+    const numericRank = Number(value.rank);
+    const rank = Number.isFinite(numericRank) && numericRank > 0 ? Math.floor(numericRank) : null;
+    return Object.freeze({
+      accepted: true,
+      rank,
+      entry: value.entry && typeof value.entry === 'object' ? Object.freeze({ ...value.entry }) : null,
+      category: Object.freeze(category),
+      restored: true,
+      message: `LOCAL SCORE SAVED · ${leaderboardMapLabel(category.mapId)} · ${leaderboardDifficultyLabel(category.difficulty)}${rank ? ` · #${rank}` : ''}`
+    });
+  } catch {
+    return null;
+  }
+}
+function persistLastSubmission(value) {
+  if (!value || value.accepted !== true) {
+    removeStorage(LAST_SUBMISSION_KEY);
+    return null;
+  }
+  writeStorage(LAST_SUBMISSION_KEY, JSON.stringify({
+    accepted: true,
+    rank: value.rank ?? null,
+    entry: value.entry ?? null,
+    category: value.category ?? null,
+    savedAt: Date.now()
+  }));
+  return value;
+}
+function restoreHomeStatus() {
+  if (!lastSubmission) lastSubmission = loadLastSubmission();
+  if (lastSubmission?.message) setHomeStatus(lastSubmission.message, 'pass');
+  return lastSubmission;
 }
 function syncCategoryControls(category = loadLastCategory()) {
   if (typeof document === 'undefined') return;
@@ -166,9 +211,10 @@ function buildUi() {
   if (document.getElementById('ka-local-leaderboards-dialog')) return;
   installStyle();
   const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
-  const open = makeElement('button', { type: 'button', id: 'ka-local-leaderboards-open' }, 'LOCAL LEADERBOARDS');
+  const open = makeElement('button', { type: 'button', id: 'ka-local-leaderboards-open', class: 'ka-link-btn ka-player-data-open', style: 'width:100%;text-align:center;' }, 'LOCAL LEADERBOARDS');
   const homeStatus = makeElement('div', { id: 'ka-local-lb-home-status' }, 'Complete a single-player run to save a score in this browser.');
   home.append(open, homeStatus);
+  restoreHomeStatus();
 
   const dialog = makeElement('dialog', { id: 'ka-local-leaderboards-dialog', 'aria-labelledby': 'ka-lb-title' });
   const shell = makeElement('div', { class: 'ka-lb-shell' });
@@ -210,6 +256,7 @@ function buildUi() {
     if (!window.confirm('Clear every local leaderboard score stored in this browser?')) return;
     store = clearLocalLeaderboards();
     lastSubmission = null;
+    persistLastSubmission(null);
     setHomeStatus('Local leaderboard scores were cleared.', 'warn');
     renderLocalLeaderboards();
   });
@@ -223,12 +270,17 @@ export function initLocalLeaderboards() {
   if (uiBound) {
     syncCategoryControls(loadLastCategory());
     renderLocalLeaderboards();
+    restoreHomeStatus();
     return;
   }
   uiBound = true;
   buildUi();
   window.addEventListener('storage', (event) => {
     if (event.key === 'ka_local_leaderboards_v1') renderLocalLeaderboards();
+    if (event.key === LAST_SUBMISSION_KEY) {
+      lastSubmission = loadLastSubmission();
+      restoreHomeStatus();
+    }
   });
   document.documentElement.dataset.kaLocalLeaderboards = 'ready';
 }
@@ -236,7 +288,6 @@ export function initLocalLeaderboards() {
 export function beginLocalLeaderboardRun() {
   runToken = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   submittedToken = '';
-  lastSubmission = null;
   return runToken;
 }
 
@@ -279,6 +330,7 @@ export function submitLocalLeaderboardRun({ mapId, difficulty, score = 0, wave =
     category,
     message: `LOCAL SCORE SAVED · ${leaderboardMapLabel(category.mapId)} · ${leaderboardDifficultyLabel(category.difficulty)}${result.rank ? ` · #${result.rank}` : ''}`
   });
+  persistLastSubmission(lastSubmission);
   setHomeStatus(lastSubmission.message, 'pass');
   return lastSubmission;
 }
@@ -301,6 +353,7 @@ if (typeof window !== 'undefined') {
   window.KAClearLocalLeaderboards = () => {
     store = clearLocalLeaderboards();
     lastSubmission = null;
+    persistLastSubmission(null);
     renderLocalLeaderboards();
     return getLocalLeaderboardSnapshot();
   };

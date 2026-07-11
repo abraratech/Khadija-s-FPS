@@ -17,18 +17,22 @@ const PLAYER_ID_KEY = 'ka_online_leaderboard_player_v1';
 const DISPLAY_NAME_KEY = 'ka_online_leaderboard_name_v1';
 const PENDING_KEY = 'ka_online_leaderboard_pending_v1';
 const LAST_CATEGORY_KEY = 'ka_online_leaderboard_last_category_v1';
+const LAST_SUBMISSION_KEY = 'ka_online_leaderboard_last_submission_v1';
 const REQUEST_TIMEOUT_MS = 7000;
 
 let activeRun = null;
 let uiBound = false;
 let latest = null;
-let lastSubmission = null;
+let lastSubmission = loadLastSubmission();
 
 function readStorage(key, fallback = '') {
   try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
 function writeStorage(key, value) {
   try { localStorage.setItem(key, String(value)); } catch { /* ignore */ }
+}
+function removeStorage(key) {
+  try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 function playerId() {
   let value = readStorage(PLAYER_ID_KEY);
@@ -111,6 +115,53 @@ function saveLastCategory(mapId, difficulty, scope = 'global') {
   writeStorage(LAST_CATEGORY_KEY, JSON.stringify(category));
   return category;
 }
+function loadLastSubmission() {
+  try {
+    const value = JSON.parse(readStorage(LAST_SUBMISSION_KEY, 'null'));
+    if (!value || typeof value !== 'object' || !value.message) return null;
+    const category = {
+      mapId: normalizeOnlineMap(value?.category?.mapId),
+      difficulty: normalizeOnlineDifficulty(value?.category?.difficulty),
+      scope: value?.category?.scope === 'region' ? 'region' : 'global'
+    };
+    return Object.freeze({
+      accepted: value.accepted === true,
+      queued: value.queued === true,
+      runId: String(value.runId || ''),
+      category: Object.freeze(category),
+      globalRank: value.globalRank ?? null,
+      regionRank: value.regionRank ?? null,
+      reason: String(value.reason || ''),
+      restored: true,
+      message: String(value.message)
+    });
+  } catch {
+    return null;
+  }
+}
+function persistLastSubmission(value) {
+  if (!value?.message) {
+    removeStorage(LAST_SUBMISSION_KEY);
+    return null;
+  }
+  writeStorage(LAST_SUBMISSION_KEY, JSON.stringify({
+    accepted: value.accepted === true,
+    queued: value.queued === true,
+    runId: value.runId || '',
+    category: value.category || null,
+    globalRank: value.globalRank ?? null,
+    regionRank: value.regionRank ?? null,
+    reason: value.reason || '',
+    message: value.message,
+    savedAt: Date.now()
+  }));
+  return value;
+}
+function restoreHomeStatus() {
+  if (!lastSubmission) lastSubmission = loadLastSubmission();
+  if (lastSubmission?.message) setStatus(lastSubmission.message, lastSubmission.accepted ? 'pass' : 'offline');
+  return lastSubmission;
+}
 function syncCategoryControls(category = loadLastCategory()) {
   if (typeof document === 'undefined') return;
   const map = document.getElementById('ka-online-lb-map');
@@ -169,6 +220,7 @@ function queueSubmission(item) {
   savePending(items);
 }
 function updatePendingCount() {
+  if (typeof document === 'undefined') return;
   const element = document.getElementById('ka-online-lb-pending');
   if (element) element.textContent = String(pending().length);
 }
@@ -222,6 +274,7 @@ async function submitPayload(payload, { queueOnFailure = true } = {}) {
       message: `ONLINE SCORE ACCEPTED · GLOBAL #${value.globalRank ?? '—'} · REGION #${value.regionRank ?? '—'}`
     });
     if (typeof document !== 'undefined') document.documentElement.dataset.kaOnlineLeaderboardLastRank = String(value.globalRank ?? 'outside-top-100');
+    persistLastSubmission(lastSubmission);
     setStatus(lastSubmission.message, 'pass');
     return Object.freeze({ accepted: true, ...value });
   } catch (error) {
@@ -235,6 +288,7 @@ async function submitPayload(payload, { queueOnFailure = true } = {}) {
       reason,
       message: queueOnFailure ? `ONLINE SCORE QUEUED · ${reason}` : `ONLINE SCORE NOT SENT · ${reason}`
     });
+    persistLastSubmission(lastSubmission);
     setStatus(lastSubmission.message, 'offline');
     return Object.freeze({ accepted: false, queued: queueOnFailure, reason });
   }
@@ -381,11 +435,12 @@ function buildUi() {
   document.head.append(style);
 
   const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
-  const button = make('button', { type: 'button', id: 'ka-online-leaderboards-open' }, 'ONLINE LEADERBOARDS');
+  const button = make('button', { type: 'button', id: 'ka-online-leaderboards-open', class: 'ka-link-btn ka-player-data-open', style: 'width:100%;text-align:center;' }, 'ONLINE LEADERBOARDS');
   const homeStatus = make('div', { id: 'ka-online-lb-home-status' }, pending().length
     ? `${pending().length} online score submission${pending().length === 1 ? '' : 's'} queued.`
     : 'Complete a single-player run to submit an online score.');
   home.append(button, homeStatus);
+  restoreHomeStatus();
 
   const dialog = make('dialog', { id: 'ka-online-leaderboards-dialog', 'aria-labelledby': 'ka-online-lb-title' });
   const shell = make('div', { class: 'ka-online-lb-shell' });
@@ -460,6 +515,13 @@ export function initOnlineLeaderboards() {
   if (uiBound) return;
   uiBound = true;
   buildUi();
+  restoreHomeStatus();
+  window.addEventListener('storage', (event) => {
+    if (event.key === LAST_SUBMISSION_KEY) {
+      lastSubmission = loadLastSubmission();
+      restoreHomeStatus();
+    }
+  });
   document.documentElement.dataset.kaOnlineLeaderboards = 'ready';
   if (pending().length) void retryPending();
 }

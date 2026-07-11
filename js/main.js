@@ -5,6 +5,7 @@ import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReli
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
+import { configureEconomyBalance, getEconomyBalanceSnapshot } from './economy_balance.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 import {
   resetMapGameplay,
@@ -1186,6 +1187,12 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     buildMap(chosenMap);
 
     difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
+    configureEconomyBalance(difficultyMultiplier, {
+      mapId: chosenMap,
+      mode: (multiplayerSession.mode === 'host' || multiplayerSession.mode === 'client')
+        ? 'multiplayer'
+        : 'single'
+    });
 
     beginMultiplayerRun({
       mapId: chosenMap,
@@ -1229,7 +1236,8 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     syncHudFromPlayer();
 
     gs = 'playing';
-    showStatusToast(`SURVIVE · ${getBindingLabel(CONTROL_ACTIONS.INTERACT)} INTERACT · ${getBindingLabel(CONTROL_ACTIONS.RELOAD)} RELOAD · ${getBindingLabel(CONTROL_ACTIONS.SWITCH_WEAPON)} SWITCH`, '#00d4ff', 3200);
+    const economyTier = getEconomyBalanceSnapshot().tier;
+    showStatusToast(`SURVIVE · ${getBindingLabel(CONTROL_ACTIONS.INTERACT)} INTERACT · ${getBindingLabel(CONTROL_ACTIONS.RELOAD)} RELOAD · ${getBindingLabel(CONTROL_ACTIONS.SWITCH_WEAPON)} SWITCH · ${economyTier} ECONOMY`, '#00d4ff', 3400);
     await enterGameplayPresentation({ requestPointerLock: !deferPointerLock });
     ensureGameLoopStarted();
 

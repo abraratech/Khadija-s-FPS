@@ -16,6 +16,7 @@ import { giveMaxAmmo } from './weapons.js';
 import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './audio.js';
 import { pushOut } from './utils.js';
 import { difficultyMultiplier, ASSETS } from './main.js';
+import { scaleEconomyReward } from './economy_balance.js';
 import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion} from './actors/procedural_zombie.js';
 import {
   beginAIDirectorWave,
@@ -410,8 +411,11 @@ export function getEnemyPointReward(enemy, isHeadshot = false) {
 
   return {
     label: config.label || config.name,
-    basePoints: isHeadshot ? (config.headshotScore || 100) : (config.killScore || 50),
-    bonusPoints: config.bossBounty || 0,
+    basePoints: scaleEconomyReward(
+      isHeadshot ? (config.headshotScore || 100) : (config.killScore || 50),
+      isHeadshot ? 'HEADSHOT_KILL' : 'KILL'
+    ),
+    bonusPoints: scaleEconomyReward(config.bossBounty || 0, 'BOSS_BOUNTY'),
     toast: config.name === 'GOLIATH' ? 'GOLIATH ELIMINATED' : `${config.label || config.name} eliminated`,
     color: config.radarColor || '#ffaa00'
   };
@@ -2119,8 +2123,9 @@ export function updateEnemies(dt) {
       if (p.type.name === 'INSTA-KILL') player.instaKillTimer = 15.0;
       if (p.type.name === 'DOUBLE POINTS') player.doublePointsTimer = 30.0;
       if (p.type.name === 'NUKE') {
-        player.score += 400; updateScoreHUD(player.score); spawnFloatingScore(400, false);
-        recordRunPointsEarned(400);
+        const nukePoints = scaleEconomyReward(400, 'NUKE');
+        player.score += nukePoints; updateScoreHUD(player.score); spawnFloatingScore(nukePoints, false);
+        recordRunPointsEarned(nukePoints);
         zombiesSpawnedSoFar = zombiesToSpawnThisRound; 
         [...activeEnemies].forEach(z => { if (z.alive) killEnemy(z); });
       }

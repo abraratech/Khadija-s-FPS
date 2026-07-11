@@ -51,6 +51,7 @@ import {
   recordRunWeaponUpgrade
 } from './run_summary.js';
 import { validateShotRay } from './gameplay_reliability_core.js';
+import { scaleEconomyPrice, scaleEconomyReward } from './economy_balance.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -335,34 +336,35 @@ function addBarricadeRepairReward(points) {
 
 // ── ECONOMY / INTERACTION TUNING ──
 // Centralized so future balancing does not require hunting magic numbers.
-const ECONOMY = Object.freeze({
+const BASE_ECONOMY = Object.freeze({
   DOOR_COST: 900,
-
   MYSTERY_BOX_COST: 950,
-
-  WALL_WEAPON_COSTS: {
-    SMG: 1150,
-    SHOTGUN: 1650
-  },
-
-  WALL_AMMO_COSTS: {
-    SMG: 425,
-    SHOTGUN: 575
-  },
-
+  WALL_WEAPON_COSTS: Object.freeze({ SMG: 1150, SHOTGUN: 1650 }),
+  WALL_AMMO_COSTS: Object.freeze({ SMG: 425, SHOTGUN: 575 }),
   AMMO_COST: 525,
   HEALTH_COST: 400,
-  UPGRADE_COST: 4200,
-  PERK_HEALTH_COST: 2500,
-  PERK_RELOAD_COST: 3000,
-  PERK_STAMINA_COST: 2800,
-  PERK_DEADSHOT_COST: 3200,
-
   BARRICADE_REPAIR_SCORE: 8,
-  BARRICADE_REPAIR_COOLDOWN: 0.75,
   BARRICADE_REPAIR_ROUND_SCORE_CAP: 120,
+  TRAP_COST: 1000
+});
 
-  TRAP_COST: 1000,
+const ECONOMY = Object.freeze({
+  get DOOR_COST() { return scaleEconomyPrice(BASE_ECONOMY.DOOR_COST, 'DOOR'); },
+  get MYSTERY_BOX_COST() { return scaleEconomyPrice(BASE_ECONOMY.MYSTERY_BOX_COST, 'MYSTERY_BOX'); },
+  WALL_WEAPON_COSTS: Object.freeze({
+    get SMG() { return scaleEconomyPrice(BASE_ECONOMY.WALL_WEAPON_COSTS.SMG, 'WALL_WEAPON'); },
+    get SHOTGUN() { return scaleEconomyPrice(BASE_ECONOMY.WALL_WEAPON_COSTS.SHOTGUN, 'WALL_WEAPON'); }
+  }),
+  WALL_AMMO_COSTS: Object.freeze({
+    get SMG() { return scaleEconomyPrice(BASE_ECONOMY.WALL_AMMO_COSTS.SMG, 'WALL_AMMO'); },
+    get SHOTGUN() { return scaleEconomyPrice(BASE_ECONOMY.WALL_AMMO_COSTS.SHOTGUN, 'WALL_AMMO'); }
+  }),
+  get AMMO_COST() { return scaleEconomyPrice(BASE_ECONOMY.AMMO_COST, 'AMMO'); },
+  get HEALTH_COST() { return scaleEconomyPrice(BASE_ECONOMY.HEALTH_COST, 'HEALTH'); },
+  get BARRICADE_REPAIR_SCORE() { return scaleEconomyReward(BASE_ECONOMY.BARRICADE_REPAIR_SCORE, 'BARRICADE_REPAIR'); },
+  get BARRICADE_REPAIR_ROUND_SCORE_CAP() { return scaleEconomyReward(BASE_ECONOMY.BARRICADE_REPAIR_ROUND_SCORE_CAP, 'BARRICADE_REPAIR_CAP'); },
+  BARRICADE_REPAIR_COOLDOWN: 0.75,
+  get TRAP_COST() { return scaleEconomyPrice(BASE_ECONOMY.TRAP_COST, 'TRAP'); },
   TRAP_DURATION: 14.0
 });
 
@@ -2917,7 +2919,7 @@ const wasHealth = e.health;
       if (!killed && !alreadyScoredThisShot) {
         multiplayerEconomy?.awardCombat?.({
           playerId: localMultiplayerPlayerId(),
-          points: doublePoints ? 20 : 10,
+          points: scaleEconomyReward(10, 'HIT') * (doublePoints ? 2 : 1),
           kills: 0,
           label: 'HIT',
           headshot: hs
@@ -2926,7 +2928,7 @@ const wasHealth = e.health;
     } else {
       let pointsAwarded = killReward
         ? killReward.basePoints
-        : (alreadyScoredThisShot ? 0 : 10);
+        : (alreadyScoredThisShot ? 0 : scaleEconomyReward(10, 'HIT'));
 
       if (doublePoints) pointsAwarded *= 2;
 

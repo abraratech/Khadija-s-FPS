@@ -1,3 +1,5 @@
+import { scaleEconomyPrice } from './economy_balance.js';
+
 // js/progression.js
 // C11 — Persistent progression and run perks.
 
@@ -227,7 +229,13 @@ export function getPerkIdForShop(shopType) {
 }
 
 export function getPerkDefinition(perkId) {
-  return PERK_DEFS[String(perkId || '')] || null;
+  const perk = PERK_DEFS[String(perkId || '')] || null;
+  if (!perk) return null;
+  return Object.freeze({
+    ...perk,
+    baseCost: perk.cost,
+    cost: scaleEconomyPrice(perk.cost, 'PERK')
+  });
 }
 
 export function hasProgressionPerk(perkId) {
@@ -264,7 +272,8 @@ export function getProgressionHeadshotScale() {
 
 export function getWeaponUpgradeCost(nextTier) {
   const tier = Math.max(1, Math.min(3, Math.round(safeNumber(nextTier, 1))));
-  return tier === 1 ? 4200 : (tier === 2 ? 6500 : 9000);
+  const baseCost = tier === 1 ? 4200 : (tier === 2 ? 6500 : 9000);
+  return scaleEconomyPrice(baseCost, 'WEAPON_UPGRADE');
 }
 
 export function getWeaponUpgradeTier(weapon) {

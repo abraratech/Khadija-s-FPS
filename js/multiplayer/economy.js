@@ -1,6 +1,7 @@
 // js/multiplayer/economy.js
 
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js'; import { getLateJoinCatchUpScore } from './coop_scaling_core.js';
+import { getEconomyBalanceSnapshot, scaleEconomyReward } from '../economy_balance.js';
 
 const SNAPSHOT_INTERVAL_MS = 220;
 const REQUEST_WINDOW_MS = 1000;
@@ -185,10 +186,11 @@ export class MultiplayerEconomyManager {
         room.status === 'in-run'
         && roomPlayer.lateJoin === true
       )
-        ? normalizeScore(
+        ? normalizeScore(scaleEconomyReward(
             roomPlayer.catchUpScore
-            || getLateJoinCatchUpScore(roomPlayer.joinedWave || 1)
-          )
+            || getLateJoinCatchUpScore(roomPlayer.joinedWave || 1),
+            'LATE_JOIN_CATCH_UP'
+          ))
         : 0;
 
       const account = makeAccount({ score: catchUpScore });
@@ -511,7 +513,8 @@ export class MultiplayerEconomyManager {
       authorityEpoch: this.authorityEpoch,
       processedRequestIds: Array.from(this.processedRequests).slice(-256),
       players,
-      world: this.adapter.buildMultiplayerWorldState?.() || null
+      world: this.adapter.buildMultiplayerWorldState?.() || null,
+      economyBalance: getEconomyBalanceSnapshot()
     };
     this.latestSnapshot = JSON.parse(JSON.stringify(snapshot));
 
@@ -687,7 +690,8 @@ export class MultiplayerEconomyManager {
         kills: account.kills,
         profile: cloneProfile(account.profile)
       })),
-      metrics: { ...this.metrics }
+      metrics: { ...this.metrics },
+      economyBalance: getEconomyBalanceSnapshot()
     };
   }
 

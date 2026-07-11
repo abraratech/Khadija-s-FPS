@@ -5,9 +5,14 @@
 
 import * as THREE from 'three';
 import { getObjectiveSnapshot } from './objectives.js';
+import { scaleEconomyPrice } from './economy_balance.js';
 
 const REACTOR_MAP_ID = 'reactor_courtyard';
-const DEFENSE_COST = 1250;
+const BASE_DEFENSE_COST = 1250;
+
+function getDefenseCost() {
+  return scaleEconomyPrice(BASE_DEFENSE_COST, 'MAP_DEFENSE');
+}
 const DEFENSE_DURATION = 8.0;
 const DEFENSE_COOLDOWN = 36.0;
 const DEFENSE_RADIUS = 9.2;
@@ -414,14 +419,14 @@ export function getClosestMapGameplayInteractable(playerPos, maxDistance = 2.8) 
     distance,
     state: state.defenseState,
     timer: state.defenseTimer,
-    cost: DEFENSE_COST
+    cost: getDefenseCost()
   };
 }
 
 export function getMapGameplayInteractionPrompt(interactable) {
   if (!interactable || interactable.kind !== 'REACTOR_DEFENSE') return '';
   if (state.defenseState === 'READY') {
-    return `Press [E] to activate Coolant Override [${DEFENSE_COST} PTS]`;
+    return `Press [E] to activate Coolant Override [${getDefenseCost()} PTS]`;
   }
   if (state.defenseState === 'ACTIVE') {
     return `COOLANT OVERRIDE ACTIVE (${Math.ceil(state.defenseTimer)}s)`;
@@ -449,7 +454,7 @@ export function activateMapGameplayInteractable(interactable) {
 
   return {
     success: true,
-    cost: DEFENSE_COST,
+    cost: getDefenseCost(),
     duration: DEFENSE_DURATION,
     title: 'COOLANT OVERRIDE ACTIVE',
     body: `Central containment field armed for ${DEFENSE_DURATION.toFixed(0)}s`
@@ -513,7 +518,7 @@ export function getMapGameplaySnapshot() {
     ventEnemyHits: state.ventEnemyHits,
     defenseState: state.defenseState,
     defenseTimer: state.defenseTimer,
-    defenseCost: DEFENSE_COST,
+    defenseCost: getDefenseCost(),
     defenseDuration: DEFENSE_DURATION,
     defenseCooldown: DEFENSE_COOLDOWN,
     defenseActivations: state.defenseActivations,

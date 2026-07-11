@@ -1,3 +1,5 @@
+import { getEconomyBalanceSnapshot } from './economy_balance.js';
+
 // js/run_summary.js
 // C11 — Per-run combat/economy telemetry and final summary.
 
@@ -20,6 +22,7 @@ const state = {
   damageTaken: 0,
   pointsEarned: 0,
   pointsSpent: 0,
+  economyBalance: null,
   perksPurchased: 0,
   weaponUpgrades: 0,
   objectivesCompleted: 0,
@@ -58,6 +61,7 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     damageTaken: 0,
     pointsEarned: 0,
     pointsSpent: 0,
+    economyBalance: getEconomyBalanceSnapshot(),
     perksPurchased: 0,
     weaponUpgrades: 0,
     objectivesCompleted: 0,

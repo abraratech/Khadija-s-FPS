@@ -2,6 +2,7 @@
 // C11 — One map-specific contract per run.
 
 import { awardProgressionXP, recordProgressionObjective } from './progression.js';
+import { scaleEconomyReward } from './economy_balance.js';
 
 const OBJECTIVES = Object.freeze({
   grid_bunker: Object.freeze({
@@ -45,7 +46,11 @@ const state = {
 function getDefinition(mapId) {
   const normalized = String(mapId || '');
   const base = OBJECTIVES[normalized] || OBJECTIVES.grid_bunker;
-  const definition = { ...base };
+  const definition = {
+    ...base,
+    basePoints: base.points,
+    points: scaleEconomyReward(base.points, 'OBJECTIVE')
+  };
 
   if (normalized === 'reactor_courtyard') {
     const anchor = REACTOR_OBJECTIVE_ZONES[

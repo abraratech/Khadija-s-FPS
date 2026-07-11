@@ -11,6 +11,12 @@ import {
   resolveCameraCollisionDistance,
   updateCameraCollisionLatch
 } from './camera_presentation_core.js';
+import {
+  computeThirdPersonAvatarPose,
+  getThirdPersonWeaponProfile,
+  normalizeThirdPersonWeaponFamily,
+  shouldUseFirstPersonAds
+} from './third_person_avatar_core.js';
 
 const STORAGE_KEY = 'ka_camera_presentation_v1';
 
@@ -19,6 +25,9 @@ let settings = readSettings();
 let refs = null;
 let avatarRoot = null;
 let avatarParts = null;
+let thirdPersonWeaponVisual = null;
+let thirdPersonWeaponIdentity = '';
+let thirdPersonWeaponFamily = 'PISTOL';
 let cameraInitialized = false;
 let gaitPhase = 0;
 let lastContext = { gameState: 'menu', coOpMenuOpen: false, inputBlocked: false };
@@ -39,6 +48,15 @@ const centerDesiredPosition = new THREE.Vector3();
 const boomPosition = new THREE.Vector3();
 const shoulderTargetPosition = new THREE.Vector3();
 const rightDirection = new THREE.Vector3();
+const avatarPointA = new THREE.Vector3();
+const avatarPointB = new THREE.Vector3();
+const avatarPointC = new THREE.Vector3();
+const avatarPointD = new THREE.Vector3();
+const avatarBox = new THREE.Box3();
+const avatarBoxPart = new THREE.Box3();
+const avatarBoxSize = new THREE.Vector3();
+const avatarBoxCenter = new THREE.Vector3();
+const avatarUp = new THREE.Vector3(0, 1, 0);
 
 function resetCameraSolver() {
   cameraInitialized = false;
@@ -94,43 +112,289 @@ function installStyles() {
 
 function createAvatar() {
   if (!refs?.scene || avatarRoot) return;
+
   const root = new THREE.Group();
   root.name = 'ka-third-person-avatar';
+  root.userData.cameraIgnore = true;
+  root.userData.isThirdPersonAvatar = true;
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x1a6f86, roughness: 0.78, metalness: 0.08 });
-  const limbMaterial = new THREE.MeshStandardMaterial({ color: 0x152836, roughness: 0.85 });
-  const skinMaterial = new THREE.MeshStandardMaterial({ color: 0xb88767, roughness: 0.9 });
-  const weaponMaterial = new THREE.MeshStandardMaterial({ color: 0x15191e, roughness: 0.52, metalness: 0.45 });
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.82, 0.34), bodyMaterial);
-  torso.position.y = 1.08;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 10), skinMaterial);
-  head.position.y = 1.68;
-
-  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.72, 0.18), limbMaterial);
-  const rightArm = leftArm.clone();
-  leftArm.position.set(-0.46, 1.08, -0.02);
-  rightArm.position.set(0.46, 1.08, -0.02);
-
-  const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.82, 0.28), limbMaterial);
-  const rightLeg = leftLeg.clone();
-  leftLeg.position.set(-0.2, 0.43, 0);
-  rightLeg.position.set(0.2, 0.43, 0);
-
-  const weapon = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.92), weaponMaterial);
-  weapon.position.set(0.1, 1.12, -0.43);
-  weapon.rotation.x = -0.08;
-
-  [torso, head, leftArm, rightArm, leftLeg, rightLeg, weapon].forEach((mesh) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = false;
-    root.add(mesh);
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x176f88,
+    roughness: 0.76,
+    metalness: 0.06
+  });
+  const armorMaterial = new THREE.MeshStandardMaterial({
+    color: 0x123448,
+    roughness: 0.70,
+    metalness: 0.14
+  });
+  const limbMaterial = new THREE.MeshStandardMaterial({
+    color: 0x152836,
+    roughness: 0.86
+  });
+  const skinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb88767,
+    roughness: 0.92
+  });
+  const bootMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0b141c,
+    roughness: 0.88
   });
 
-  avatarParts = { torso, head, leftArm, rightArm, leftLeg, rightLeg, weapon };
+  const hips = new THREE.Mesh(
+    new THREE.BoxGeometry(0.54, 0.26, 0.32),
+    armorMaterial
+  );
+  hips.position.y = 0.76;
+
+  const torso = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.30, 0.36, 0.74, 8),
+    bodyMaterial
+  );
+  torso.position.y = 1.17;
+  torso.scale.z = 0.72;
+
+  const vest = new THREE.Mesh(
+    new THREE.BoxGeometry(0.61, 0.48, 0.28),
+    armorMaterial
+  );
+  vest.position.set(0, 1.18, -0.025);
+
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.095, 0.11, 0.14, 8),
+    skinMaterial
+  );
+  neck.position.y = 1.56;
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 16, 12),
+    skinMaterial
+  );
+  head.position.y = 1.76;
+
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.225, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.48),
+    bootMaterial
+  );
+  hair.position.set(0, 1.80, 0);
+
+  const makeSegment = (material, radius = 0.09) => {
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius * 0.92, radius, 1, 8),
+      material
+    );
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    return mesh;
+  };
+
+  const leftUpperArm = makeSegment(limbMaterial, 0.095);
+  const leftForearm = makeSegment(limbMaterial, 0.082);
+  const rightUpperArm = makeSegment(limbMaterial, 0.095);
+  const rightForearm = makeSegment(limbMaterial, 0.082);
+  const leftUpperLeg = makeSegment(limbMaterial, 0.12);
+  const leftLowerLeg = makeSegment(limbMaterial, 0.105);
+  const rightUpperLeg = makeSegment(limbMaterial, 0.12);
+  const rightLowerLeg = makeSegment(limbMaterial, 0.105);
+
+  const leftHand = new THREE.Mesh(
+    new THREE.SphereGeometry(0.092, 10, 8),
+    skinMaterial
+  );
+  const rightHand = leftHand.clone();
+  const leftBoot = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.16, 0.38),
+    bootMaterial
+  );
+  const rightBoot = leftBoot.clone();
+
+  const weaponMount = new THREE.Group();
+  weaponMount.name = 'ka-third-person-weapon-mount';
+  weaponMount.userData.cameraIgnore = true;
+
+  [
+    hips,
+    torso,
+    vest,
+    neck,
+    head,
+    hair,
+    leftUpperArm,
+    leftForearm,
+    rightUpperArm,
+    rightForearm,
+    leftUpperLeg,
+    leftLowerLeg,
+    rightUpperLeg,
+    rightLowerLeg,
+    leftHand,
+    rightHand,
+    leftBoot,
+    rightBoot,
+    weaponMount
+  ].forEach((object) => {
+    object.userData.cameraIgnore = true;
+    object.userData.isThirdPersonAvatar = true;
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = false;
+    }
+    root.add(object);
+  });
+
+  avatarParts = {
+    hips,
+    torso,
+    vest,
+    neck,
+    head,
+    hair,
+    leftUpperArm,
+    leftForearm,
+    rightUpperArm,
+    rightForearm,
+    leftUpperLeg,
+    leftLowerLeg,
+    rightUpperLeg,
+    rightLowerLeg,
+    leftHand,
+    rightHand,
+    leftBoot,
+    rightBoot,
+    weaponMount
+  };
+
   root.visible = false;
   refs.scene.add(root);
   avatarRoot = root;
+}
+
+function setSegmentBetween(mesh, start, end) {
+  if (!mesh) return;
+  avatarPointA.copy(start);
+  avatarPointB.copy(end);
+  avatarPointC.copy(avatarPointB).sub(avatarPointA);
+  const length = avatarPointC.length();
+  if (length <= 0.0001) {
+    mesh.visible = false;
+    return;
+  }
+  mesh.visible = true;
+  mesh.position.copy(avatarPointA).add(avatarPointB).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(avatarUp, avatarPointC.normalize());
+  mesh.scale.set(1, length, 1);
+}
+
+function clearThirdPersonWeaponVisual() {
+  if (thirdPersonWeaponVisual?.parent) {
+    thirdPersonWeaponVisual.parent.remove(thirdPersonWeaponVisual);
+  }
+  thirdPersonWeaponVisual = null;
+  thirdPersonWeaponIdentity = '';
+  thirdPersonWeaponFamily = 'PISTOL';
+}
+
+function weaponFamilyForPresentation(weapon) {
+  return normalizeThirdPersonWeaponFamily(
+    weapon?.meshGroup?.userData?.weaponFamily
+    || weapon?.key
+    || weapon?.type
+    || weapon?.name
+  );
+}
+
+function expandVisibleWeaponBounds(root) {
+  avatarBox.makeEmpty();
+  root.updateMatrixWorld(true);
+
+  root.traverse((child) => {
+    if (!child?.isMesh || child.visible === false || !child.geometry) return;
+    if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+    if (!child.geometry.boundingBox) return;
+    avatarBoxPart.copy(child.geometry.boundingBox).applyMatrix4(child.matrixWorld);
+    avatarBox.union(avatarBoxPart);
+  });
+
+  return avatarBox;
+}
+
+function syncThirdPersonWeaponVisual() {
+  if (!avatarParts?.weaponMount) return null;
+  const weapon = refs?.getActiveWeapon?.();
+  const source = weapon?.meshGroup;
+  if (!source) {
+    clearThirdPersonWeaponVisual();
+    return null;
+  }
+
+  const family = weaponFamilyForPresentation(weapon);
+  const identity = `${weapon?.key || family}:${source.uuid}`;
+  if (
+    thirdPersonWeaponVisual
+    && thirdPersonWeaponIdentity === identity
+  ) {
+    thirdPersonWeaponVisual.visible = true;
+    return thirdPersonWeaponVisual;
+  }
+
+  clearThirdPersonWeaponVisual();
+
+  const clonedSource = source.clone(true);
+  clonedSource.position.set(0, 0, 0);
+  clonedSource.rotation.set(0, 0, 0);
+  clonedSource.scale.set(1, 1, 1);
+
+  clonedSource.traverse((child) => {
+    child.userData = {
+      ...(child.userData || {}),
+      cameraIgnore: true,
+      isThirdPersonAvatar: true,
+      isThirdPersonWeapon: true
+    };
+
+    const name = String(child.name || '').toLowerCase();
+    if (
+      child.userData?.isProceduralHand
+      || name.includes('hand')
+      || name === 'muzzleflashmesh'
+      || name.includes('ejected_shell')
+      || name.includes('reload_shell')
+      || name.includes('muzzle_flash')
+    ) {
+      child.visible = false;
+      return;
+    }
+
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = false;
+      child.frustumCulled = false;
+    }
+  });
+
+  const normalized = new THREE.Group();
+  normalized.name = `ka-third-person-${family.toLowerCase()}-visual`;
+  normalized.userData.cameraIgnore = true;
+  normalized.userData.isThirdPersonWeapon = true;
+  normalized.add(clonedSource);
+
+  const bounds = expandVisibleWeaponBounds(normalized);
+  const profile = getThirdPersonWeaponProfile(family);
+  if (!bounds.isEmpty()) {
+    bounds.getSize(avatarBoxSize);
+    bounds.getCenter(avatarBoxCenter);
+    clonedSource.position.sub(avatarBoxCenter);
+    const sourceLength = Math.max(0.001, avatarBoxSize.z);
+    normalized.scale.setScalar(
+      THREE.MathUtils.clamp(profile.targetLength / sourceLength, 0.42, 2.8)
+    );
+  }
+
+  avatarParts.weaponMount.add(normalized);
+  thirdPersonWeaponVisual = normalized;
+  thirdPersonWeaponIdentity = identity;
+  thirdPersonWeaponFamily = family;
+  return normalized;
 }
 
 function setWeaponVisible(visible) {
@@ -145,8 +409,13 @@ function activeWeaponIsScopedSniper() {
 }
 
 function effectiveMode() {
-  if (!refs?.player?.alive || refs.player.isDowned || refs.player.isSpectating) return CAMERA_MODE_FIRST;
-  if (settings.mode === CAMERA_MODE_THIRD && refs.player.isADS && activeWeaponIsScopedSniper()) {
+  if (!refs?.player?.alive || refs.player.isDowned || refs.player.isSpectating) {
+    return CAMERA_MODE_FIRST;
+  }
+  if (shouldUseFirstPersonAds({
+    preferredMode: settings.mode,
+    isADS: refs.player.isADS === true
+  })) {
     return CAMERA_MODE_FIRST;
   }
   return settings.mode;
@@ -159,11 +428,21 @@ function publishDiagnostics(mode = effectiveMode()) {
   root.dataset.kaCameraPreferredMode = settings.mode;
   root.dataset.kaCameraShoulder = settings.shoulder;
   root.dataset.kaCameraCollision = collisionState;
+  const firstPersonAds = shouldUseFirstPersonAds({
+    preferredMode: settings.mode,
+    isADS: refs?.player?.isADS === true
+  });
+  root.dataset.kaCameraAdsPresentation = firstPersonAds
+    ? 'first-person'
+    : 'inactive';
+  root.dataset.kaThirdPersonWeapon = thirdPersonWeaponFamily;
   const indicator = document.getElementById('ka-camera-mode-indicator');
   if (indicator) {
-    indicator.textContent = mode === CAMERA_MODE_THIRD
-      ? `THIRD PERSON · ${settings.shoulder.toUpperCase()} SHOULDER`
-      : 'FIRST PERSON';
+    indicator.textContent = firstPersonAds
+      ? 'FIRST PERSON ADS · TPP RETURNS ON RELEASE'
+      : (mode === CAMERA_MODE_THIRD
+        ? `THIRD PERSON · ${settings.shoulder.toUpperCase()} SHOULDER`
+        : 'FIRST PERSON');
   }
 }
 
@@ -307,22 +586,179 @@ function onKeyDown(event) {
 
 function animateAvatar(dt) {
   if (!avatarRoot || !avatarParts || !refs?.player) return;
-  const player = refs.player;
-  const horizontalSpeed = Math.hypot(Number(player.vel?.x) || 0, Number(player.vel?.z) || 0);
-  const moving = horizontalSpeed > 0.25 && player.onGround;
-  gaitPhase += moving ? dt * Math.min(15, 5 + horizontalSpeed * 0.7) : dt * 2;
-  const swing = moving ? Math.sin(gaitPhase) * Math.min(0.72, horizontalSpeed * 0.045) : 0;
-  const armSwing = swing * 0.62;
 
-  avatarRoot.position.set(player.pos.x, player.pos.y - 1.75, player.pos.z);
+  const player = refs.player;
+  const weapon = refs?.getActiveWeapon?.();
+  const horizontalSpeed = Math.hypot(
+    Number(player.vel?.x) || 0,
+    Number(player.vel?.z) || 0
+  );
+  const moving = horizontalSpeed > 0.25 && player.onGround;
+  gaitPhase += moving
+    ? dt * Math.min(15, 5 + horizontalSpeed * 0.7)
+    : dt * 2;
+
+  syncThirdPersonWeaponVisual();
+
+  const reloadDuration = Math.max(
+    0.001,
+    Number(weapon?.reloadDuration || weapon?.RELOAD_DUR || 1)
+  );
+  const reloadProgress = weapon?.reloading
+    ? THREE.MathUtils.clamp(
+      Number(weapon?.reloadT || 0) / reloadDuration,
+      0,
+      1
+    )
+    : 0;
+
+  const pose = computeThirdPersonAvatarPose({
+    weaponFamily: weaponFamilyForPresentation(weapon),
+    pitch: player.pitch,
+    horizontalSpeed,
+    onGround: player.onGround,
+    sprinting: player.isSprinting === true && !player.isADS,
+    gaitPhase,
+    reloading: weapon?.reloading === true,
+    reloadProgress
+  });
+
+  avatarRoot.position.set(
+    player.pos.x,
+    player.pos.y - 1.75,
+    player.pos.z
+  );
   avatarRoot.rotation.y = player.yaw;
-  avatarParts.leftLeg.rotation.x = swing;
-  avatarParts.rightLeg.rotation.x = -swing;
-  avatarParts.leftArm.rotation.x = -armSwing - 0.35;
-  avatarParts.rightArm.rotation.x = armSwing - 0.35;
-  avatarParts.torso.rotation.z = moving ? Math.sin(gaitPhase * 0.5) * 0.025 : 0;
-  avatarParts.head.rotation.x = THREE.MathUtils.clamp(player.pitch * 0.35, -0.35, 0.35);
-  avatarParts.weapon.rotation.y = player.isADS ? -0.08 : 0.05;
+
+  avatarParts.hips.rotation.x = pose.torso.x * 0.45;
+  avatarParts.torso.position.y = 1.17 + pose.torso.y;
+  avatarParts.torso.rotation.x = pose.torso.x;
+  avatarParts.torso.rotation.z = pose.torso.z;
+  avatarParts.vest.position.y = 1.18 + pose.torso.y;
+  avatarParts.vest.rotation.x = pose.torso.x;
+  avatarParts.vest.rotation.z = pose.torso.z;
+  avatarParts.head.rotation.x = pose.headPitch;
+  avatarParts.hair.rotation.x = pose.headPitch;
+
+  avatarParts.weaponMount.position.set(
+    pose.weapon.position.x,
+    pose.weapon.position.y,
+    pose.weapon.position.z
+  );
+  avatarParts.weaponMount.rotation.set(
+    pose.weapon.rotation.x,
+    pose.weapon.rotation.y,
+    pose.weapon.rotation.z
+  );
+  if (thirdPersonWeaponVisual) {
+    thirdPersonWeaponVisual.visible = true;
+  }
+
+  const rightShoulder = avatarPointA.set(
+    pose.rightArm.shoulder.x,
+    pose.rightArm.shoulder.y,
+    pose.rightArm.shoulder.z
+  ).clone();
+  const rightElbow = avatarPointB.set(
+    pose.rightArm.elbow.x,
+    pose.rightArm.elbow.y,
+    pose.rightArm.elbow.z
+  ).clone();
+  const rightHand = avatarPointC.set(
+    pose.rightArm.hand.x,
+    pose.rightArm.hand.y,
+    pose.rightArm.hand.z
+  ).clone();
+
+  const leftShoulder = avatarPointA.set(
+    pose.leftArm.shoulder.x,
+    pose.leftArm.shoulder.y,
+    pose.leftArm.shoulder.z
+  ).clone();
+  const leftElbow = avatarPointB.set(
+    pose.leftArm.elbow.x,
+    pose.leftArm.elbow.y,
+    pose.leftArm.elbow.z
+  ).clone();
+  const leftHand = avatarPointD.set(
+    pose.leftArm.hand.x,
+    pose.leftArm.hand.y,
+    pose.leftArm.hand.z
+  ).clone();
+
+  setSegmentBetween(
+    avatarParts.rightUpperArm,
+    rightShoulder,
+    rightElbow
+  );
+  setSegmentBetween(
+    avatarParts.rightForearm,
+    rightElbow,
+    rightHand
+  );
+  setSegmentBetween(
+    avatarParts.leftUpperArm,
+    leftShoulder,
+    leftElbow
+  );
+  setSegmentBetween(
+    avatarParts.leftForearm,
+    leftElbow,
+    leftHand
+  );
+  avatarParts.rightHand.position.copy(rightHand);
+  avatarParts.leftHand.position.copy(leftHand);
+
+  const leftHip = new THREE.Vector3(-0.18, 0.78, 0);
+  const rightHip = new THREE.Vector3(0.18, 0.78, 0);
+  const leftKnee = new THREE.Vector3(
+    -0.18,
+    0.42,
+    -Math.sin(pose.legs.left) * 0.15
+  );
+  const rightKnee = new THREE.Vector3(
+    0.18,
+    0.42,
+    -Math.sin(pose.legs.right) * 0.15
+  );
+  const leftFoot = new THREE.Vector3(
+    -0.18,
+    0.08,
+    -Math.sin(pose.legs.left) * 0.27
+  );
+  const rightFoot = new THREE.Vector3(
+    0.18,
+    0.08,
+    -Math.sin(pose.legs.right) * 0.27
+  );
+
+  setSegmentBetween(
+    avatarParts.leftUpperLeg,
+    leftHip,
+    leftKnee
+  );
+  setSegmentBetween(
+    avatarParts.leftLowerLeg,
+    leftKnee,
+    leftFoot
+  );
+  setSegmentBetween(
+    avatarParts.rightUpperLeg,
+    rightHip,
+    rightKnee
+  );
+  setSegmentBetween(
+    avatarParts.rightLowerLeg,
+    rightKnee,
+    rightFoot
+  );
+
+  avatarParts.leftBoot.position.copy(leftFoot);
+  avatarParts.leftBoot.position.y = 0.04;
+  avatarParts.leftBoot.position.z -= 0.08;
+  avatarParts.rightBoot.position.copy(rightFoot);
+  avatarParts.rightBoot.position.y = 0.04;
+  avatarParts.rightBoot.position.z -= 0.08;
 }
 
 function objectIsDescendant(root, object) {
@@ -495,6 +931,7 @@ export function resetCameraPresentation() {
   resetCameraSolver();
   gaitPhase = 0;
   createAvatar();
+  clearThirdPersonWeaponVisual();
   if (avatarRoot) avatarRoot.visible = false;
   publishDiagnostics();
 }
@@ -520,6 +957,7 @@ export function updateCameraPresentation(dt, context = {}) {
 
   if (mode === CAMERA_MODE_FIRST) {
     if (avatarRoot) avatarRoot.visible = false;
+    if (thirdPersonWeaponVisual) thirdPersonWeaponVisual.visible = false;
     setWeaponVisible(true);
     refs.camera.rotation.z = THREE.MathUtils.lerp(refs.camera.rotation.z || 0, 0, cameraSmoothingAlpha(dt, 16));
     // Shooting happens later in the same frame. Refresh the matrix now so
@@ -591,16 +1029,20 @@ export function enforceCameraPresentationVisibility() {
   }
 
   if (mode === CAMERA_MODE_THIRD) {
+    syncThirdPersonWeaponVisual();
     if (avatarRoot) avatarRoot.visible = true;
+    if (thirdPersonWeaponVisual) thirdPersonWeaponVisual.visible = true;
     setWeaponVisible(false);
   } else {
     if (avatarRoot) avatarRoot.visible = false;
+    if (thirdPersonWeaponVisual) thirdPersonWeaponVisual.visible = false;
     setWeaponVisible(true);
   }
 }
 
 export function endCameraPresentation() {
   if (avatarRoot) avatarRoot.visible = false;
+  clearThirdPersonWeaponVisual();
   if (refs?.camera) refs.camera.rotation.z = 0;
   setWeaponVisible(false);
   resetCameraSolver();
@@ -622,6 +1064,12 @@ export function getCameraPresentationSnapshot() {
     shoulderDistance: Number.isFinite(smoothedShoulderDistance)
       ? Math.round(smoothedShoulderDistance * 100) / 100
       : null,
+    adsPresentation: shouldUseFirstPersonAds({
+      preferredMode: settings.mode,
+      isADS: refs?.player?.isADS === true
+    }) ? 'first-person' : 'inactive',
+    thirdPersonWeaponFamily,
+    thirdPersonWeaponVisible: thirdPersonWeaponVisual?.visible === true,
     avatarVisible: avatarRoot?.visible === true
   });
 }

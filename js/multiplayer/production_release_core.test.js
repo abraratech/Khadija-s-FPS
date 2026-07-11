@@ -13,7 +13,7 @@ import {
   normalizeMultiplayerReleaseEndpoint
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-cloud-account-security-r1');
+assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm4-cloud-sync-reliability-r1');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
 assert.equal(normalizeMultiplayerReleaseEndpoint('wss://example.workers.dev/ws?room=ABCDEF'), 'https://example.workers.dev/release');
 assert.equal(normalizeMultiplayerReleaseEndpoint('example.workers.dev'), 'https://example.workers.dev/release');

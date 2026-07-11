@@ -1,12 +1,12 @@
 {
   "name": "khadijas-arena-multiplayer",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --check src/index.js && node --check src/leaderboard_hub.js && node --check src/cloud_profile_hub.js && node --check src/cloud_profile_security_core.js && node src/leaderboard_core.test.js && node src/cloud_profile_core.test.js && node src/cloud_profile_security_core.test.js"
+    "check": "node --check src/index.js && node --check src/leaderboard_hub.js && node --check src/cloud_profile_hub.js && node --check src/cloud_profile_security_core.js && node --check src/cloud_profile_reliability_core.js && node src/leaderboard_core.test.js && node src/cloud_profile_core.test.js && node src/cloud_profile_security_core.test.js && node src/cloud_profile_reliability_core.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

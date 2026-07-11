@@ -13,6 +13,28 @@ import {
   validateCloudProfile
 } from './cloud_profile_core.js';
 import { ONLINE_LEADERBOARD_WORKER_URL } from './online_leaderboards_core.js';
+import {
+  CLOUD_RELIABILITY_PATCH,
+  CLOUD_SYNC_LEASE_MS,
+  CLOUD_SYNC_LEASE_RENEW_MS,
+  acquireSyncLease,
+  buildReliabilitySnapshot,
+  calculateClockSkew,
+  completeSyncQueue,
+  createSyncQueueEntry,
+  enqueueSync,
+  markSyncAttempt,
+  nextSyncRetryAt,
+  normalizeAccountTombstone,
+  normalizeSyncLease,
+  normalizeSyncQueue,
+  peekReadySync,
+  releaseSyncLease,
+  renewSyncLease,
+  replaceSyncQueueEntry,
+  tombstoneBlocksAccount,
+  verifyProfileIntegrity
+} from './cloud_profile_reliability_core.js';
 
 const PRIMARY_KEY = 'ka_cloud_profile_v1';
 const BACKUP_KEY = 'ka_cloud_profile_backup_v1';
@@ -28,6 +50,11 @@ const REMOTE_REVISION_KEY = 'ka_cloud_profile_remote_revision_v1';
 const REMOTE_DEVICE_KEY = 'ka_cloud_profile_device_v1';
 const REMOTE_PENDING_KEY = 'ka_cloud_profile_sync_pending_v1';
 const REMOTE_DEVICE_NAME_KEY = 'ka_cloud_profile_device_name_v1';
+const REMOTE_QUEUE_KEY = 'ka_cloud_profile_sync_queue_v1';
+const REMOTE_LEASE_KEY = 'ka_cloud_profile_sync_lease_v1';
+const REMOTE_CLOCK_KEY = 'ka_cloud_profile_clock_v1';
+const REMOTE_TOMBSTONE_KEY = 'ka_cloud_profile_tombstone_v1';
+const REMOTE_LAST_SUCCESS_KEY = 'ka_cloud_profile_last_success_v1';
 
 let currentProfile = null;
 let initialized = false;
@@ -39,6 +66,9 @@ let toast = null;
 let remoteTimer = null;
 let remoteSyncPromise = null;
 let remoteLastFingerprint = '';
+let remoteRetryTimer = null;
+let remoteLeaseHeartbeat = null;
+let remoteTabId = '';
 let remoteState = {
   connected: false,
   syncing: false,
@@ -54,7 +84,19 @@ let remoteState = {
   history: [],
   activity: [],
   recoveryCode: '',
-  recoveryEnabled: false
+  recoveryEnabled: false,
+  queuedChanges: 0,
+  retryAt: 0,
+  leaseOwner: '',
+  leaseExpiresAt: 0,
+  activeSyncTab: false,
+  checksumVerified: false,
+  lastSuccessfulSyncAt: 0,
+  serverTimeOffsetMs: 0,
+  serverRoundTripMs: 0,
+  clockSkewWarning: false,
+  lastOperationId: '',
+  tombstonedAccountId: ''
 };
 
 function nowMs() {
@@ -151,12 +193,125 @@ function saveRemoteCredentials(account, token) {
   getOrCreateDeviceId();
 }
 
-function clearRemoteCredentials() {
+function getRemoteTabId() {
+  if (remoteTabId) return remoteTabId;
+  try {
+    remoteTabId = sessionStorage.getItem('ka_cloud_profile_tab_id_v1') || '';
+    if (!remoteTabId) {
+      remoteTabId = `tab-${randomId().replace(/^guest-/, '').slice(0, 80)}`;
+      sessionStorage.setItem('ka_cloud_profile_tab_id_v1', remoteTabId);
+    }
+  } catch {
+    remoteTabId = `tab-${randomId().replace(/^guest-/, '').slice(0, 80)}`;
+  }
+  return remoteTabId;
+}
+
+function parseStoredJson(key, fallback) {
+  try {
+    const raw = readRaw(key, '');
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readRemoteQueue() {
+  return normalizeSyncQueue(parseStoredJson(REMOTE_QUEUE_KEY, []), { now: nowMs() });
+}
+
+function writeRemoteQueue(queue) {
+  const normalized = normalizeSyncQueue(queue, { now: nowMs() });
+  if (normalized.length) writeRaw(REMOTE_QUEUE_KEY, JSON.stringify(normalized));
+  else removeRaw(REMOTE_QUEUE_KEY);
+  remoteState.queuedChanges = normalized.length;
+  remoteState.retryAt = nextSyncRetryAt(normalized, nowMs());
+  remoteState.pending = normalized.length > 0;
+  writeRaw(REMOTE_PENDING_KEY, normalized.length ? '1' : '0');
+  return normalized;
+}
+
+function readRemoteLease() {
+  return normalizeSyncLease(parseStoredJson(REMOTE_LEASE_KEY, null));
+}
+
+function writeRemoteLease(lease) {
+  const normalized = normalizeSyncLease(lease);
+  if (normalized.ownerId) writeRaw(REMOTE_LEASE_KEY, JSON.stringify(normalized));
+  else removeRaw(REMOTE_LEASE_KEY);
+  remoteState.leaseOwner = normalized.ownerId;
+  remoteState.leaseExpiresAt = normalized.expiresAt;
+  remoteState.activeSyncTab = normalized.ownerId === getRemoteTabId() && normalized.expiresAt > nowMs();
+  return normalized;
+}
+
+function clearRemoteRetryTimer() {
+  if (remoteRetryTimer) clearTimeout(remoteRetryTimer);
+  remoteRetryTimer = null;
+}
+
+function scheduleRemoteQueueRetry(delayOverride = null) {
+  clearRemoteRetryTimer();
+  const queue = readRemoteQueue();
+  if (!queue.length || !getRemoteCredentials().valid) return;
+  const target = nextSyncRetryAt(queue, nowMs()) || nowMs();
+  const delay = delayOverride === null
+    ? Math.max(50, Math.min(5 * 60_000, target - nowMs()))
+    : Math.max(50, Number(delayOverride) || 50);
+  remoteRetryTimer = setTimeout(() => {
+    remoteRetryTimer = null;
+    void drainRemoteSyncQueue('scheduled-retry');
+  }, delay);
+}
+
+function acquireRemoteLease() {
+  const result = acquireSyncLease(readRemoteLease(), {
+    ownerId: getRemoteTabId(),
+    now: nowMs(),
+    ttlMs: CLOUD_SYNC_LEASE_MS
+  });
+  writeRemoteLease(result.lease);
+  return result;
+}
+
+function startRemoteLeaseHeartbeat() {
+  if (remoteLeaseHeartbeat) clearInterval(remoteLeaseHeartbeat);
+  remoteLeaseHeartbeat = setInterval(() => {
+    const result = renewSyncLease(readRemoteLease(), {
+      ownerId: getRemoteTabId(),
+      now: nowMs(),
+      ttlMs: CLOUD_SYNC_LEASE_MS
+    });
+    if (result.renewed) writeRemoteLease(result.lease);
+  }, CLOUD_SYNC_LEASE_RENEW_MS);
+}
+
+function releaseRemoteLease() {
+  if (remoteLeaseHeartbeat) clearInterval(remoteLeaseHeartbeat);
+  remoteLeaseHeartbeat = null;
+  writeRemoteLease(releaseSyncLease(readRemoteLease(), getRemoteTabId()));
+}
+
+function readLocalTombstone() {
+  return normalizeAccountTombstone(parseStoredJson(REMOTE_TOMBSTONE_KEY, null));
+}
+
+function saveLocalTombstone(value) {
+  const tombstone = normalizeAccountTombstone(value);
+  if (!tombstone) return null;
+  writeRaw(REMOTE_TOMBSTONE_KEY, JSON.stringify(tombstone));
+  remoteState.tombstonedAccountId = tombstone.accountId;
+  return tombstone;
+}
+
+function clearRemoteCredentials({ preserveQueue = false } = {}) {
   [REMOTE_ACCOUNT_KEY, REMOTE_TOKEN_KEY, REMOTE_REVISION_KEY, REMOTE_PENDING_KEY].forEach(removeRaw);
+  if (!preserveQueue) removeRaw(REMOTE_QUEUE_KEY);
+  releaseRemoteLease();
   remoteState = {
     connected: false,
     syncing: false,
-    pending: false,
+    pending: preserveQueue && readRemoteQueue().length > 0,
     conflict: false,
     accountId: '',
     cloudRevision: 0,
@@ -168,32 +323,87 @@ function clearRemoteCredentials() {
     history: [],
     activity: [],
     recoveryCode: '',
-    recoveryEnabled: false
+    recoveryEnabled: false,
+    queuedChanges: preserveQueue ? readRemoteQueue().length : 0,
+    retryAt: preserveQueue ? nextSyncRetryAt(readRemoteQueue(), nowMs()) : 0,
+    leaseOwner: '',
+    leaseExpiresAt: 0,
+    activeSyncTab: false,
+    checksumVerified: false,
+    lastSuccessfulSyncAt: Number(readRaw(REMOTE_LAST_SUCCESS_KEY, '0')) || 0,
+    serverTimeOffsetMs: 0,
+    serverRoundTripMs: 0,
+    clockSkewWarning: false,
+    lastOperationId: '',
+    tombstonedAccountId: readLocalTombstone()?.accountId || ''
   };
   remoteLastFingerprint = '';
 }
 
 function initializeRemoteState() {
   const credentials = getRemoteCredentials();
+  const tombstone = readLocalTombstone();
+  if (credentials.valid && tombstoneBlocksAccount(tombstone, credentials.accountId, nowMs())) {
+    clearRemoteCredentials();
+    statusMessage = 'CLOUD ACCOUNT WAS DELETED · LOCAL PROFILE KEPT';
+    return getRemoteCredentials();
+  }
+  const queue = readRemoteQueue();
+  const lease = readRemoteLease();
+  const clock = parseStoredJson(REMOTE_CLOCK_KEY, {});
   remoteState.connected = credentials.valid;
   remoteState.accountId = credentials.accountId;
   remoteState.cloudRevision = Math.max(0, Number(readRaw(REMOTE_REVISION_KEY, '0')) || 0);
-  remoteState.pending = readRaw(REMOTE_PENDING_KEY, '0') === '1';
+  remoteState.pending = queue.length > 0 || readRaw(REMOTE_PENDING_KEY, '0') === '1';
+  remoteState.queuedChanges = queue.length;
+  remoteState.retryAt = nextSyncRetryAt(queue, nowMs());
+  remoteState.leaseOwner = lease.ownerId;
+  remoteState.leaseExpiresAt = lease.expiresAt;
+  remoteState.activeSyncTab = lease.ownerId === getRemoteTabId() && lease.expiresAt > nowMs();
+  remoteState.lastSuccessfulSyncAt = Math.max(0, Number(readRaw(REMOTE_LAST_SUCCESS_KEY, '0')) || 0);
+  remoteState.serverTimeOffsetMs = Number(clock.offsetMs) || 0;
+  remoteState.serverRoundTripMs = Math.max(0, Number(clock.roundTripMs) || 0);
+  remoteState.clockSkewWarning = clock.warning === true;
+  remoteState.tombstonedAccountId = tombstone?.accountId || '';
   getOrCreateDeviceId();
   getDeviceName();
   return credentials;
 }
 
-async function remoteRequest(path, { method = 'GET', body = null, authenticated = true } = {}) {
+class CloudRemoteError extends Error {
+  constructor(code, status = 0, payload = {}) {
+    super(String(code || 'CLOUD_REQUEST_FAILED'));
+    this.name = 'CloudRemoteError';
+    this.code = String(code || 'CLOUD_REQUEST_FAILED');
+    this.status = Number(status) || 0;
+    this.payload = payload;
+  }
+}
+
+function updateClockFromResponse(value, clientSentAt, clientReceivedAt) {
+  const serverTime = Number(value?.reliability?.serverTime || value?.serverTime || 0);
+  if (!serverTime) return;
+  const clock = calculateClockSkew({ serverTime, clientSentAt, clientReceivedAt });
+  if (!clock.valid) return;
+  remoteState.serverTimeOffsetMs = clock.offsetMs;
+  remoteState.serverRoundTripMs = clock.roundTripMs;
+  remoteState.clockSkewWarning = clock.warning;
+  writeRaw(REMOTE_CLOCK_KEY, JSON.stringify(clock));
+}
+
+async function remoteRequest(path, { method = 'GET', body = null, authenticated = true, operationId = '' } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REMOTE_REQUEST_TIMEOUT_MS);
+  const clientSentAt = nowMs();
   try {
     const headers = {};
     if (body !== null) headers['content-type'] = 'application/json';
     headers['x-ka-device-id'] = getOrCreateDeviceId();
+    headers['x-ka-client-time'] = String(clientSentAt);
+    if (operationId) headers['x-ka-operation-id'] = String(operationId).slice(0, 180);
     if (authenticated) {
       const credentials = getRemoteCredentials();
-      if (!credentials.valid) throw new Error('CLOUD_ACCOUNT_NOT_CONNECTED');
+      if (!credentials.valid) throw new CloudRemoteError('CLOUD_ACCOUNT_NOT_CONNECTED');
       headers.authorization = `Bearer ${credentials.token}`;
       headers['x-ka-account-id'] = credentials.accountId;
     }
@@ -206,8 +416,14 @@ async function remoteRequest(path, { method = 'GET', body = null, authenticated 
       signal: controller.signal
     });
     const value = await response.json().catch(() => ({}));
-    if (!response.ok || value.ok !== true) throw new Error(String(value.error || `HTTP_${response.status}`));
+    updateClockFromResponse(value, clientSentAt, nowMs());
+    if (!response.ok || value.ok !== true) {
+      throw new CloudRemoteError(String(value.error || `HTTP_${response.status}`), response.status, value);
+    }
     return value;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new CloudRemoteError('CLOUD_REQUEST_TIMEOUT', 0, {});
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -218,11 +434,44 @@ function remoteOperationId(reason = 'sync') {
   return `profile-${String(reason || 'sync').replace(/[^a-z0-9_-]/gi, '-').slice(0, 40)}-${Date.now().toString(36)}-${random}`;
 }
 
-function markRemotePending(error = null) {
+function queueCurrentRemoteProfile(reason = 'sync') {
+  if (!currentProfile || !getRemoteCredentials().valid) return readRemoteQueue();
+  const existingQueue = readRemoteQueue();
+  const existing = existingQueue.find((item) => item.fingerprint === currentProfile.legacyFingerprint);
+  if (existing) {
+    writeRemoteQueue(existingQueue);
+    scheduleRemoteQueueRetry(80);
+    return existingQueue;
+  }
+  const entry = createSyncQueueEntry({
+    operationId: remoteOperationId(reason),
+    profile: currentProfile,
+    expectedCloudRevision: Math.max(0, Number(readRaw(REMOTE_REVISION_KEY, '0')) || 0),
+    fingerprint: currentProfile.legacyFingerprint,
+    checksum: profileChecksum(currentProfile),
+    reason,
+    now: nowMs()
+  });
+  const queue = writeRemoteQueue(enqueueSync(existingQueue, entry, { now: nowMs() }));
+  statusMessage = `CLOUD CHANGE QUEUED · ${queue.length}`;
+  scheduleRemoteQueueRetry(80);
+  return queue;
+}
+
+function markRemotePending(error = null, entry = null) {
   remoteState.pending = true;
-  remoteState.lastError = String(error?.message || error || 'OFFLINE').slice(0, 120);
+  remoteState.lastError = String(error?.code || error?.message || error || 'OFFLINE').slice(0, 120);
   writeRaw(REMOTE_PENDING_KEY, '1');
+  if (entry) {
+    const attempted = markSyncAttempt(entry, {
+      now: nowMs(),
+      error: remoteState.lastError,
+      random: Math.random()
+    });
+    writeRemoteQueue(replaceSyncQueueEntry(readRemoteQueue(), attempted, { now: nowMs() }));
+  }
   statusMessage = `CLOUD PENDING · ${remoteState.lastError}`;
+  scheduleRemoteQueueRetry();
   refreshProfileUi();
 }
 
@@ -260,6 +509,18 @@ function updateRemoteAccountState(value = {}) {
   if (remoteState.cloudRevision >= 0) writeRaw(REMOTE_REVISION_KEY, String(remoteState.cloudRevision));
 }
 
+
+function verifyRemoteProfileResponse(value) {
+  const expectedChecksum = String(value?.profileChecksum || value?.account?.profileChecksum || '');
+  const integrity = verifyProfileIntegrity(value?.profile, expectedChecksum, profileChecksum);
+  if (value?.checksumVerified !== true || !integrity.valid) {
+    remoteState.checksumVerified = false;
+    throw new CloudRemoteError('CLOUD_CHECKSUM_VERIFICATION_FAILED', 409, { integrity, value });
+  }
+  remoteState.checksumVerified = true;
+  return integrity;
+}
+
 export async function registerCloudGuestAccount() {
   if (!currentProfile) currentProfile = recoverOrCreateProfile();
   if (getRemoteCredentials().valid) return syncCloudProfileRemote('already-connected', { force: true });
@@ -273,11 +534,16 @@ export async function registerCloudGuestAccount() {
       authenticated: false,
       body: { profile: currentProfile, deviceId: getOrCreateDeviceId(), deviceName: getDeviceName() }
     });
+    verifyRemoteProfileResponse(value);
     saveRemoteCredentials(value.account, value.token);
     updateRemoteAccountState(value);
     remoteLastFingerprint = currentProfile.legacyFingerprint;
     remoteState.lastSyncAt = nowMs();
-    statusMessage = 'CLOUD GUEST CONNECTED';
+    remoteState.lastSuccessfulSyncAt = nowMs();
+    writeRaw(REMOTE_LAST_SUCCESS_KEY, String(remoteState.lastSuccessfulSyncAt));
+    removeRaw(REMOTE_TOMBSTONE_KEY);
+    writeRemoteQueue([]);
+    statusMessage = 'CLOUD GUEST CONNECTED · CHECKSUM VERIFIED';
     toast?.('CLOUD PROFILE ENABLED', '#22ff88', 1800);
     refreshProfileUi();
     return Object.freeze({ accepted: true, account: value.account });
@@ -290,51 +556,133 @@ export async function registerCloudGuestAccount() {
   }
 }
 
-export function syncCloudProfileRemote(reason = 'manual', { force = false } = {}) {
+async function drainRemoteSyncQueue(reason = 'queue') {
   const credentials = getRemoteCredentials();
-  if (!credentials.valid) return Promise.resolve(Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' }));
+  if (!credentials.valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
   if (remoteSyncPromise) return remoteSyncPromise;
-  syncCloudProfile(`remote-${reason}`);
-  if (!force && !remoteState.pending && remoteLastFingerprint === currentProfile.legacyFingerprint) {
-    return Promise.resolve(Object.freeze({ accepted: true, unchanged: true, cloudRevision: remoteState.cloudRevision }));
+  let queue = readRemoteQueue();
+  if (!queue.length) {
+    remoteState.pending = false;
+    remoteState.queuedChanges = 0;
+    remoteState.retryAt = 0;
+    writeRaw(REMOTE_PENDING_KEY, '0');
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, unchanged: true, cloudRevision: remoteState.cloudRevision });
   }
+  const lease = acquireRemoteLease();
+  if (!lease.acquired) {
+    remoteState.pending = true;
+    statusMessage = 'CLOUD QUEUED · ANOTHER TAB IS SYNCING';
+    const wait = Math.max(100, Math.min(CLOUD_SYNC_LEASE_MS, lease.lease.expiresAt - nowMs() + 50));
+    scheduleRemoteQueueRetry(wait);
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, queued: true, reason: 'SYNC_LEASE_HELD', leaseOwner: lease.lease.ownerId });
+  }
+  const entry = peekReadySync(queue, nowMs());
+  if (!entry) {
+    statusMessage = 'CLOUD QUEUED · WAITING TO RETRY';
+    scheduleRemoteQueueRetry();
+    releaseRemoteLease();
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, queued: true, reason: 'SYNC_BACKOFF_ACTIVE', retryAt: nextSyncRetryAt(queue, nowMs()) });
+  }
+
   remoteState.syncing = true;
-  statusMessage = 'SYNCING CLOUD PROFILE…';
+  remoteState.lastOperationId = entry.operationId;
+  statusMessage = `SYNCING CLOUD PROFILE · ATTEMPT ${entry.attempts + 1}`;
+  startRemoteLeaseHeartbeat();
   refreshProfileUi();
+
   remoteSyncPromise = remoteRequest('/profiles/sync', {
     method: 'POST',
+    operationId: entry.operationId,
     body: {
-      operationId: remoteOperationId(reason),
-      expectedCloudRevision: Math.max(0, Number(readRaw(REMOTE_REVISION_KEY, '0')) || 0),
-      profile: currentProfile
+      operationId: entry.operationId,
+      expectedCloudRevision: entry.expectedCloudRevision,
+      profileChecksum: entry.checksum,
+      profile: entry.profile
     }
   }).then((value) => {
+    const expectedChecksum = String(value.profileChecksum || value.account?.profileChecksum || '');
+    const integrity = verifyProfileIntegrity(value.profile, expectedChecksum, profileChecksum);
+    if (value.checksumVerified !== true || !integrity.valid) {
+      throw new CloudRemoteError('CLOUD_CHECKSUM_VERIFICATION_FAILED', 409, { integrity, value });
+    }
     const remoteChangedLocal = applyRemoteProfile(value.profile, { forceHydrate: false });
     remoteState.connected = true;
     remoteState.accountId = value.account?.accountId || credentials.accountId;
     remoteState.cloudRevision = Math.max(0, Number(value.account?.cloudRevision) || 0);
     updateRemoteAccountState(value);
     remoteState.lastSyncAt = nowMs();
-    remoteState.pending = false;
+    remoteState.lastSuccessfulSyncAt = nowMs();
     remoteState.conflict = value.conflict === true;
     remoteState.lastError = '';
+    remoteState.checksumVerified = true;
+    writeRaw(REMOTE_LAST_SUCCESS_KEY, String(remoteState.lastSuccessfulSyncAt));
     writeRaw(REMOTE_REVISION_KEY, String(remoteState.cloudRevision));
-    writeRaw(REMOTE_PENDING_KEY, '0');
+    queue = writeRemoteQueue(completeSyncQueue(readRemoteQueue(), entry.operationId, { now: nowMs() }));
     remoteLastFingerprint = currentProfile.legacyFingerprint;
     statusMessage = value.conflict
-      ? (remoteChangedLocal ? 'CLOUD CONFLICT MERGED' : 'CLOUD CONFLICT RESOLVED')
-      : 'CLOUD PROFILE SYNCED';
+      ? (remoteChangedLocal ? 'CLOUD CONFLICT MERGED · CHECKSUM VERIFIED' : 'CLOUD CONFLICT RESOLVED · CHECKSUM VERIFIED')
+      : (value.idempotent || value.idempotentRecovered
+        ? 'CLOUD RETRY RECOVERED · CHECKSUM VERIFIED'
+        : 'CLOUD PROFILE SYNCED · CHECKSUM VERIFIED');
     refreshProfileUi();
-    return Object.freeze({ accepted: true, conflict: value.conflict === true, changed: value.changed === true, cloudRevision: remoteState.cloudRevision });
+    if (queue.length) scheduleRemoteQueueRetry(80);
+    return Object.freeze({
+      accepted: true,
+      conflict: value.conflict === true,
+      changed: value.changed === true,
+      idempotent: value.idempotent === true || value.idempotentRecovered === true,
+      checksumVerified: true,
+      cloudRevision: remoteState.cloudRevision,
+      queuedChanges: queue.length
+    });
   }).catch((error) => {
-    markRemotePending(error);
-    return Object.freeze({ accepted: false, queued: true, reason: String(error?.message || error) });
+    if (['PROFILE_ACCOUNT_DELETED', 'PROFILE_ACCOUNT_NOT_FOUND'].includes(String(error?.code || error?.message || ''))) {
+      const accountId = credentials.accountId;
+      const tombstone = error?.payload?.tombstone || {
+        accountId,
+        deletedAt: Number(error?.payload?.deletedAt) || nowMs(),
+        deletionId: String(error?.payload?.deletionId || `remote-delete-${Date.now()}`),
+        deviceId: getOrCreateDeviceId()
+      };
+      saveLocalTombstone(tombstone);
+      clearRemoteCredentials();
+      statusMessage = 'CLOUD ACCOUNT DELETED · STALE DEVICE BLOCKED';
+      refreshProfileUi();
+      return Object.freeze({ accepted: false, deleted: true, reason: String(error?.code || error?.message || error) });
+    }
+    remoteState.checksumVerified = false;
+    markRemotePending(error, entry);
+    return Object.freeze({ accepted: false, queued: true, reason: String(error?.code || error?.message || error), retryAt: remoteState.retryAt });
   }).finally(() => {
     remoteState.syncing = false;
     remoteSyncPromise = null;
+    releaseRemoteLease();
     refreshProfileUi();
   });
   return remoteSyncPromise;
+}
+
+export function syncCloudProfileRemote(reason = 'manual', { force = false } = {}) {
+  const credentials = getRemoteCredentials();
+  if (!credentials.valid) return Promise.resolve(Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' }));
+  syncCloudProfile(`remote-${reason}`);
+  const queue = readRemoteQueue();
+  if (force || remoteState.pending || remoteLastFingerprint !== currentProfile.legacyFingerprint) {
+    queueCurrentRemoteProfile(reason);
+  }
+  return drainRemoteSyncQueue(reason);
+}
+
+export async function retryCloudSyncQueue() {
+  const queue = readRemoteQueue();
+  if (!queue.length && getRemoteCredentials().valid && currentProfile) queueCurrentRemoteProfile('manual-retry');
+  const reset = readRemoteQueue().map((entry) => ({ ...entry, nextAttemptAt: nowMs() }));
+  writeRemoteQueue(reset);
+  clearRemoteRetryTimer();
+  return drainRemoteSyncQueue('manual-retry');
 }
 
 export async function createCloudDeviceLink() {
@@ -348,6 +696,20 @@ export async function createCloudDeviceLink() {
     remoteState.linkExpiresAt = Date.parse(value.expiresAt) || 0;
     statusMessage = `DEVICE LINK CODE ${remoteState.linkCode}`;
     setText('cloud-profile-link-code', remoteState.linkCode || '—');
+  const queue = readRemoteQueue();
+  const lease = readRemoteLease();
+  remoteState.queuedChanges = queue.length;
+  remoteState.retryAt = nextSyncRetryAt(queue, nowMs());
+  remoteState.leaseOwner = lease.ownerId;
+  remoteState.leaseExpiresAt = lease.expiresAt;
+  remoteState.activeSyncTab = lease.ownerId === getRemoteTabId() && lease.expiresAt > nowMs();
+  setText('cloud-profile-queue-count', queue.length);
+  setText('cloud-profile-retry-at', remoteState.retryAt ? formatTimestamp(remoteState.retryAt) : 'NOT SCHEDULED');
+  setText('cloud-profile-last-success', formatTimestamp(remoteState.lastSuccessfulSyncAt));
+  setText('cloud-profile-sync-tab', remoteState.activeSyncTab ? 'THIS TAB' : (lease.ownerId && lease.expiresAt > nowMs() ? `OTHER TAB · ${shortProfileId(lease.ownerId)}` : 'IDLE'));
+  setText('cloud-profile-checksum-status', remoteState.checksumVerified ? 'VERIFIED' : 'NOT VERIFIED');
+  const offset = Math.round(remoteState.serverTimeOffsetMs || 0);
+  setText('cloud-profile-clock-status', remoteState.serverRoundTripMs ? `${offset >= 0 ? '+' : ''}${offset} ms offset · ${remoteState.serverRoundTripMs} ms RTT${remoteState.clockSkewWarning ? ' · WARNING' : ''}` : 'NOT MEASURED');
     try { await navigator.clipboard.writeText(remoteState.linkCode); } catch { /* code remains visible */ }
     refreshProfileUi();
     return Object.freeze({ accepted: true, code: remoteState.linkCode, expiresAt: remoteState.linkExpiresAt });
@@ -369,9 +731,12 @@ export async function consumeCloudDeviceLink(code, { reload = true } = {}) {
       authenticated: false,
       body: { code: cleanCode, deviceId: getOrCreateDeviceId(), deviceName: getDeviceName() }
     });
+    verifyRemoteProfileResponse(value);
     saveRemoteCredentials(value.account, value.token);
     updateRemoteAccountState(value);
     applyRemoteProfile(value.profile, { forceHydrate: true });
+    removeRaw(REMOTE_TOMBSTONE_KEY);
+    writeRemoteQueue([]);
     remoteLastFingerprint = currentProfile.legacyFingerprint;
     statusMessage = 'DEVICE LINKED · RELOADING';
     toast?.('CLOUD PROFILE LINKED', '#22ff88', 1700);
@@ -403,9 +768,16 @@ export async function exportCloudProfileFromServer() {
 export async function deleteCloudGuestAccount() {
   if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
   try {
-    await remoteRequest('/profiles/account', { method: 'DELETE' });
+    const credentials = getRemoteCredentials();
+    const value = await remoteRequest('/profiles/account', { method: 'DELETE' });
+    saveLocalTombstone(value.tombstone || {
+      accountId: credentials.accountId,
+      deletedAt: Number(value.deletedAt) || nowMs(),
+      deletionId: String(value.deletionId || `delete-${Date.now()}`),
+      deviceId: getOrCreateDeviceId()
+    });
     clearRemoteCredentials();
-    statusMessage = 'CLOUD ACCOUNT DELETED · LOCAL PROFILE KEPT';
+    statusMessage = 'CLOUD ACCOUNT DELETED · TOMBSTONE ACTIVE · LOCAL PROFILE KEPT';
     toast?.('CLOUD ACCOUNT DELETED · LOCAL SAVE KEPT', '#ffaa00', 2000);
     refreshProfileUi();
     return Object.freeze({ accepted: true });
@@ -554,9 +926,12 @@ export async function recoverCloudGuestAccount(accountId, recoveryCode, { reload
         deviceName: getDeviceName()
       }
     });
+    verifyRemoteProfileResponse(value);
     saveRemoteCredentials(value.account, value.token);
     updateRemoteAccountState(value);
     replaceWithRemoteProfile(value.profile, { forceHydrate: true });
+    removeRaw(REMOTE_TOMBSTONE_KEY);
+    writeRemoteQueue([]);
     remoteState.recoveryCode = '';
     remoteState.recoveryEnabled = false;
     statusMessage = 'ACCOUNT RECOVERED · RELOADING';
@@ -582,9 +957,13 @@ export async function restoreCloudProfileRevision(revision, { reload = true } = 
       method: 'POST',
       body: { revision: selected }
     });
+    verifyRemoteProfileResponse(value);
     updateRemoteAccountState(value);
     replaceWithRemoteProfile(value.profile, { forceHydrate: true });
+    writeRemoteQueue([]);
     remoteState.lastSyncAt = nowMs();
+    remoteState.lastSuccessfulSyncAt = nowMs();
+    writeRaw(REMOTE_LAST_SUCCESS_KEY, String(remoteState.lastSuccessfulSyncAt));
     statusMessage = `CLOUD REVISION ${selected} RESTORED · RELOADING`;
     toast?.(`CLOUD REVISION ${selected} RESTORED`, '#ffaa00', 1800);
     refreshProfileUi();
@@ -752,6 +1131,7 @@ export function syncCloudProfile(reason = 'manual') {
   });
   writeProfile(next);
   statusMessage = 'PROFILE SAVED';
+  if (getRemoteCredentials().valid) queueCurrentRemoteProfile(`local-${reason}`);
   refreshProfileUi();
   return getCloudProfileDiagnostics();
 }
@@ -838,7 +1218,7 @@ function renderCloudSecurityUi() {
     remoteState.history.forEach((entry) => {
       const option = document.createElement('option');
       option.value = String(entry.revision);
-      option.textContent = `Cloud rev ${entry.revision} · ${entry.reason || 'snapshot'} · ${formatTimestamp(entry.createdAt)}`;
+      option.textContent = `Cloud rev ${entry.revision} · ${entry.reason || 'snapshot'} · ${entry.integrity || 'unverified'} · ${formatTimestamp(entry.createdAt)}`;
       historySelect.append(option);
     });
     if ([...historySelect.options].some((option) => option.value === selected)) historySelect.value = selected;
@@ -869,7 +1249,7 @@ function refreshProfileUi() {
   setText('cloud-profile-link-code', remoteState.linkCode || '—');
   const enableButton = document.getElementById('cloud-profile-enable-btn');
   if (enableButton) enableButton.style.display = credentials.valid ? 'none' : '';
-  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn'].forEach((id) => {
+  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn', 'cloud-profile-retry-queue-btn'].forEach((id) => {
     const element = document.getElementById(id);
     if (element) element.disabled = !credentials.valid || remoteState.syncing;
   });
@@ -1002,6 +1382,19 @@ function bindProfileUi() {
     if (!window.confirm(`Restore cloud revision ${revision}? Current cloud state will be retained in version history.`)) return;
     void restoreCloudProfileRevision(revision, { reload: true });
   });
+  document.getElementById('cloud-profile-retry-queue-btn')?.addEventListener('click', () => {
+    void retryCloudSyncQueue();
+  });
+  document.getElementById('cloud-profile-reliability-copy-btn')?.addEventListener('click', async () => {
+    const diagnostics = getCloudProfileDiagnostics().remote.reliability;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      statusMessage = 'RELIABILITY DIAGNOSTICS COPIED';
+    } catch {
+      statusMessage = 'COPY BLOCKED · USE KAGETCLOUDPROFILEDIAGNOSTICS()';
+    }
+    refreshProfileUi();
+  });
   document.getElementById('cloud-profile-import-file')?.addEventListener('change', async (event) => {
     const input = event.currentTarget;
     const file = input?.files?.[0];
@@ -1068,6 +1461,28 @@ export function getCloudProfileDiagnostics() {
       history: remoteState.history.map((entry) => ({ ...entry })),
       activity: remoteState.activity.map((entry) => ({ ...entry })),
       recoveryEnabled: remoteState.recoveryEnabled,
+      reliability: buildReliabilitySnapshot({
+        queue: readRemoteQueue(),
+        lease: readRemoteLease(),
+        now: nowMs(),
+        checksumVerified: remoteState.checksumVerified,
+        lastSuccessfulSyncAt: remoteState.lastSuccessfulSyncAt,
+        clockOffsetMs: remoteState.serverTimeOffsetMs
+      }),
+      retryAt: remoteState.retryAt,
+      serverRoundTripMs: remoteState.serverRoundTripMs,
+      clockSkewWarning: remoteState.clockSkewWarning,
+      lastOperationId: remoteState.lastOperationId,
+      tombstonedAccountId: remoteState.tombstonedAccountId,
+      queue: readRemoteQueue().map((entry) => ({
+        operationId: entry.operationId,
+        reason: entry.reason,
+        queuedAt: entry.queuedAt,
+        attempts: entry.attempts,
+        nextAttemptAt: entry.nextAttemptAt,
+        lastError: entry.lastError,
+        checksum: entry.checksum
+      })),
       linkCodeActive: Boolean(remoteState.linkCode && remoteState.linkExpiresAt > nowMs())
     }
   });
@@ -1097,6 +1512,18 @@ export function initCloudProfile({ showToast = null } = {}) {
   window.addEventListener('ka:player-preferences-change', () => scheduleProfileSync('player-preferences'));
   window.addEventListener('storage', (event) => {
     if (isGameOwnedStorageKey(event.key)) scheduleProfileSync('cross-tab-storage', 20);
+    if (event.key === REMOTE_QUEUE_KEY || event.key === REMOTE_LEASE_KEY) {
+      initializeRemoteState();
+      refreshProfileUi();
+      if (event.key === REMOTE_QUEUE_KEY && getRemoteCredentials().valid) scheduleRemoteQueueRetry(120);
+    }
+    if (event.key === REMOTE_TOMBSTONE_KEY) {
+      initializeRemoteState();
+      refreshProfileUi();
+    }
+  });
+  window.addEventListener('online', () => {
+    if (getRemoteCredentials().valid) void retryCloudSyncQueue();
   });
   window.addEventListener('pagehide', () => syncCloudProfile('pagehide'));
   window.addEventListener('beforeunload', () => syncCloudProfile('beforeunload'));
@@ -1115,12 +1542,15 @@ export function initCloudProfile({ showToast = null } = {}) {
   window.addEventListener('unload', () => {
     if (syncTimer) clearInterval(syncTimer);
     if (remoteTimer) clearInterval(remoteTimer);
+    clearRemoteRetryTimer();
+    releaseRemoteLease();
   }, { once: true });
 
   queueMicrotask(async () => {
     syncCloudProfile('boot-complete');
     if (getRemoteCredentials().valid) {
-      await syncCloudProfileRemote('boot', { force: true });
+      if (readRemoteQueue().length) await retryCloudSyncQueue();
+      else await syncCloudProfileRemote('boot', { force: true });
       await refreshCloudAccountSecurity({ silent: true });
     }
   });
@@ -1150,4 +1580,8 @@ if (typeof window !== 'undefined') {
   window.KAGenerateCloudRecoveryCode = generateCloudRecoveryCode;
   window.KARecoverCloudGuestAccount = recoverCloudGuestAccount;
   window.KARestoreCloudProfileRevision = restoreCloudProfileRevision;
+  window.KARetryCloudSyncQueue = retryCloudSyncQueue;
+  window.KAGetCloudSyncQueue = () => readRemoteQueue().map((entry) => ({ ...entry, profile: undefined }));
+  window.KAGetCloudSyncLease = () => ({ ...readRemoteLease() });
+  window.KAVerifyCloudProfileChecksum = () => verifyProfileIntegrity(currentProfile, profileChecksum(currentProfile), profileChecksum);
 }

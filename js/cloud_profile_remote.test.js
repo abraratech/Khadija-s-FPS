@@ -9,6 +9,7 @@ class MemoryStorage {
   removeItem(key) { this.map.delete(String(key)); }
 }
 
+globalThis.sessionStorage = new MemoryStorage();
 globalThis.localStorage = new MemoryStorage({
   ka_progression_v1: JSON.stringify({ version: 1, xp: 75, bestScore: 300 }),
   ka_challenges_v1: JSON.stringify({ version: 1, unlocked: {}, totalUnlocked: 0 }),
@@ -16,11 +17,16 @@ globalThis.localStorage = new MemoryStorage({
   fps_hi_wave: '3'
 });
 
+const core = await import('./cloud_profile_core.js');
+
 const accountId = 'cloud-0123456789abcdef0123456789abcdef';
 let token = 'kat_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 let cloudRevision = 1;
 let storedProfile = null;
 let deleted = false;
+let timeoutAfterCommit = false;
+const operationResponses = new Map();
+const syncOperationIds = [];
 let devices = [{
   deviceId: 'device-test-primary-12345678',
   name: 'Browser Device',
@@ -36,7 +42,16 @@ function json(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });
 }
 function account() {
-  return { accountId, cloudRevision, devices: devices.length, recoveryEnabled: true, historyEntries: history.length };
+  return { accountId, cloudRevision, devices: devices.length, recoveryEnabled: true, historyEntries: history.length, profileChecksum: storedProfile ? core.profileChecksum(storedProfile) : '' };
+}
+function profileResponse(extra = {}) {
+  return {
+    ...extra,
+    profile: storedProfile,
+    profileChecksum: storedProfile ? core.profileChecksum(storedProfile) : '',
+    checksumVerified: true,
+    reliability: { serverTime: Date.now(), uploadComplete: true, checksumVerified: true }
+  };
 }
 
 globalThis.fetch = async (url, options = {}) => {
@@ -46,13 +61,23 @@ globalThis.fetch = async (url, options = {}) => {
     storedProfile = body.profile;
     devices[0].deviceId = body.deviceId;
     devices[0].name = body.deviceName;
-    return json({ ok: true, account: account(), token, devices, profile: storedProfile }, 201);
+    return json(profileResponse({ ok: true, account: account(), token, devices }), 201);
   }
   if (path === '/profiles/sync') {
+    syncOperationIds.push(body.operationId);
+    if (operationResponses.has(body.operationId)) {
+      return json({ ...operationResponses.get(body.operationId), idempotent: true });
+    }
     storedProfile = body.profile;
     cloudRevision += 1;
-    history = [{ revision: cloudRevision - 1, chunks: 1, bytes: 1000, checksum: 'def', createdAt: Date.now(), reason: 'before-sync' }];
-    return json({ ok: true, conflict: false, changed: true, account: account(), profile: storedProfile });
+    history = [{ revision: cloudRevision - 1, chunks: 1, bytes: 1000, checksum: core.profileChecksum(storedProfile), createdAt: Date.now(), reason: 'before-sync', integrity: 'verified' }];
+    const response = profileResponse({ ok: true, conflict: false, changed: true, account: account() });
+    operationResponses.set(body.operationId, response);
+    if (timeoutAfterCommit) {
+      timeoutAfterCommit = false;
+      throw new TypeError('simulated response loss after commit');
+    }
+    return json(response);
   }
   if (path === '/profiles/link/create') return json({ ok: true, code: 'ABCD2345', expiresAt: new Date(Date.now() + 600000).toISOString() });
   if (path === '/profiles/devices' && options.method !== 'POST') return json({ ok: true, account: account(), devices });
@@ -66,13 +91,13 @@ globalThis.fetch = async (url, options = {}) => {
     return json({ ok: true, token, account: account(), devices });
   }
   if (path === '/profiles/recovery/generate') return json({ ok: true, account: account(), recoveryCode: 'ABCD-EFGH-JKLM-NPQR', generatedAt: new Date().toISOString() });
-  if (path === '/profiles/recovery/consume') return json({ ok: true, token, account: account(), devices, profile: storedProfile });
+  if (path === '/profiles/recovery/consume') return json(profileResponse({ ok: true, token, account: account(), devices }));
   if (path === '/profiles/history' && options.method !== 'POST') return json({ ok: true, account: account(), history });
-  if (path === '/profiles/history/restore') return json({ ok: true, restoredRevision: body.revision, account: account(), profile: storedProfile, history });
+  if (path === '/profiles/history/restore') return json(profileResponse({ ok: true, restoredRevision: body.revision, account: account(), history }));
   if (path === '/profiles/activity') return json({ ok: true, account: account(), activity });
   if (path === '/profiles/account' && options.method === 'DELETE') {
     deleted = true;
-    return json({ ok: true, deleted: true });
+    return json({ ok: true, deleted: true, tombstone: { accountId, deletedAt: Date.now(), deletionId: 'delete-test-0001', deviceId: devices[0].deviceId } });
   }
   return json({ ok: false, error: 'UNEXPECTED_TEST_ROUTE' }, 404);
 };
@@ -87,7 +112,29 @@ localStorage.setItem('fps_hi_score', '900');
 const synced = await runtime.syncCloudProfileRemote('remote-test', { force: true });
 assert.equal(synced.accepted, true);
 assert.equal(runtime.getCloudProfileDiagnostics().remote.cloudRevision, 2);
+assert.equal(synced.checksumVerified, true);
+assert.equal(runtime.getCloudProfileDiagnostics().remote.reliability.queuedChanges, 0);
 assert.equal(storedProfile.records.highScore, 900);
+
+// Simulate a Worker commit followed by a lost response. The retry must preserve
+// the operation ID, avoid a second revision increment, and clear the persisted queue.
+localStorage.setItem('fps_hi_score', '1200');
+timeoutAfterCommit = true;
+const revisionBeforeLostResponse = cloudRevision;
+const lostResponse = await runtime.syncCloudProfileRemote('lost-response', { force: true });
+assert.equal(lostResponse.accepted, false);
+assert.equal(lostResponse.queued, true);
+const queuedAfterLoss = runtime.getCloudProfileDiagnostics().remote.queue;
+assert.equal(queuedAfterLoss.length, 1);
+const lostOperationId = queuedAfterLoss[0].operationId;
+assert.equal(cloudRevision, revisionBeforeLostResponse + 1);
+const recoveredRetry = await runtime.retryCloudSyncQueue();
+assert.equal(recoveredRetry.accepted, true);
+assert.equal(recoveredRetry.idempotent, true);
+assert.equal(syncOperationIds.at(-1), lostOperationId);
+assert.equal(cloudRevision, revisionBeforeLostResponse + 1);
+assert.equal(runtime.getCloudProfileDiagnostics().remote.queue.length, 0);
+assert.equal(storedProfile.records.highScore, 1200);
 
 const security = await runtime.refreshCloudAccountSecurity();
 assert.equal(security.accepted, true);
@@ -113,4 +160,5 @@ const removed = await runtime.deleteCloudGuestAccount();
 assert.equal(removed.accepted, true);
 assert.equal(deleted, true);
 assert.equal(localStorage.getItem('ka_cloud_profile_token_v1'), null);
+assert.equal(JSON.parse(localStorage.getItem('ka_cloud_profile_tombstone_v1')).accountId, accountId);
 console.log('Cloud profile remote security runtime tests: PASS');

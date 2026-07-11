@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm4-cloud-account-security-r1';
-const SERVER_PATCH = 'm4-cloud-account-security-r1';
-const CERTIFIED_FRONTEND_SHA = '6cf418587d5e762e7ca78d380c271a781a60ecba';
+const SERVER_BUILD = 'm4-cloud-sync-reliability-r1';
+const SERVER_PATCH = 'm4-cloud-sync-reliability-r1';
+const CERTIFIED_FRONTEND_SHA = '1f2b50f0cc779c1695971af7e0528becfae34e10';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -25,7 +25,7 @@ function json(data, init = {}) {
   headers.set('cache-control', 'no-store');
   headers.set('access-control-allow-origin', '*');
   headers.set('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id');
+  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id, x-ka-client-time, x-ka-operation-id');
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
@@ -79,7 +79,7 @@ function corsify(response) {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', '*');
   headers.set('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
-  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id');
+  headers.set('access-control-allow-headers', 'content-type, authorization, x-ka-account-id, x-ka-device-id, x-ka-client-time, x-ka-operation-id');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 async function shortRequestHash(request) {
@@ -1187,7 +1187,7 @@ export default {
       return new Response(null, { status: 204, headers: {
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
-        'access-control-allow-headers': 'content-type, authorization, x-ka-account-id, x-ka-device-id',
+        'access-control-allow-headers': 'content-type, authorization, x-ka-account-id, x-ka-device-id, x-ka-client-time, x-ka-operation-id',
         'access-control-max-age': '86400'
       }});
     }

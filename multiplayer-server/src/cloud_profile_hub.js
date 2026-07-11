@@ -30,6 +30,15 @@ import {
   touchDevice,
   upsertDevice
 } from './cloud_profile_security_core.js';
+import {
+  CLOUD_ACTIVITY_RETENTION_MS,
+  CLOUD_RELIABILITY_PATCH,
+  CLOUD_TOMBSTONE_RETENTION_MS,
+  createAccountTombstone,
+  pruneCloudActivity,
+  verifyHistoryIntegrity,
+  verifyProfileIntegrity
+} from './cloud_profile_reliability_core.js';
 
 const MAX_BODY_BYTES = 2_800_000;
 const MAX_PROFILE_BYTES = 2_600_000;
@@ -37,6 +46,8 @@ const PROFILE_CHUNK_BYTES = 72_000;
 const LINK_TTL_MS = 10 * 60 * 1000;
 const OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
 const RECOVERY_CODE_LENGTH = 16;
+const INCOMPLETE_UPLOAD_TTL_MS = 60 * 60 * 1000;
+const MAX_CLOCK_SKEW_CAPTURE_MS = 7 * 24 * 60 * 60 * 1000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -119,6 +130,18 @@ function profileChunkKey(accountId, index) {
   return `profile:${accountId}:${String(index).padStart(3, '0')}`;
 }
 
+function profileGenerationChunkKey(accountId, generation, index) {
+  return `profilev2:${accountId}:${generation}:${String(index).padStart(3, '0')}`;
+}
+
+function uploadManifestKey(accountId, generation) {
+  return `upload:${accountId}:${generation}`;
+}
+
+function tombstoneKey(accountId) {
+  return `tombstone:${accountId}`;
+}
+
 function historyChunkKey(accountId, revision, index) {
   return `history:${accountId}:${String(revision).padStart(10, '0')}:${String(index).padStart(3, '0')}`;
 }
@@ -134,10 +157,24 @@ function ensureMeta(meta) {
     ? output.tokenHashes.map((entry) => String(entry || '').toLowerCase()).filter((entry) => /^[a-f0-9]{64}$/.test(entry)).slice(-CLOUD_DEVICE_LIMIT)
     : [];
   output.history = normalizeHistory(output.history);
-  output.activity = normalizeActivity(output.activity);
+  output.activity = pruneCloudActivity(normalizeActivity(output.activity), {
+    now: Date.now(),
+    retentionMs: CLOUD_ACTIVITY_RETENTION_MS,
+    limit: CLOUD_ACTIVITY_LIMIT
+  });
   output.recoveryHash = String(output.recoveryHash || '').toLowerCase();
   output.recoveryCreatedAt = Math.max(0, Number(output.recoveryCreatedAt) || 0);
   output.recoveryGeneration = Math.max(0, Math.floor(Number(output.recoveryGeneration) || 0));
+  output.profileGeneration = String(output.profileGeneration || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 120);
+  output.profileChecksum = String(output.profileChecksum || '').toLowerCase();
+  output.checksumVerifiedAt = Math.max(0, Number(output.checksumVerifiedAt) || 0);
+  output.lastOperationId = String(output.lastOperationId || '').slice(0, 180);
+  output.lastOperationDigest = String(output.lastOperationDigest || '').toLowerCase().slice(0, 128);
+  output.lastOperationResult = output.lastOperationResult && typeof output.lastOperationResult === 'object'
+    ? { ...output.lastOperationResult }
+    : null;
+  output.deletedAt = Math.max(0, Number(output.deletedAt) || 0);
+  output.deletionId = String(output.deletionId || '').slice(0, 120);
   return output;
 }
 
@@ -155,8 +192,11 @@ function publicAccount(meta) {
     updatedAt: Number(safe.updatedAt || 0),
     devices: safe.devices.length || safe.tokenHashes.length,
     profileChecksum: String(safe.profileChecksum || ''),
+    checksumVerified: Boolean(safe.profileChecksum && safe.checksumVerifiedAt),
+    checksumVerifiedAt: Number(safe.checksumVerifiedAt || 0),
     recoveryEnabled: /^[a-f0-9]{64}$/.test(safe.recoveryHash),
-    historyEntries: safe.history.length
+    historyEntries: safe.history.length,
+    tombstoned: safe.deletedAt > 0
   };
 }
 
@@ -164,6 +204,23 @@ function activityContext(request, deviceId = '') {
   return {
     deviceId: cleanDeviceId(deviceId || request.headers.get('x-ka-device-id')),
     region: normalizeRegion(request.headers.get('x-ka-region'))
+  };
+}
+
+function reliabilityForRequest(request, extra = {}) {
+  const serverTime = Date.now();
+  const clientTime = Number(request.headers.get('x-ka-client-time') || 0);
+  const rawSkew = clientTime > 0 ? serverTime - clientTime : 0;
+  const clockSkewMs = Math.max(-MAX_CLOCK_SKEW_CAPTURE_MS, Math.min(MAX_CLOCK_SKEW_CAPTURE_MS, rawSkew));
+  return {
+    patch: CLOUD_RELIABILITY_PATCH,
+    serverTime,
+    clientTime: clientTime > 0 ? clientTime : null,
+    clockSkewMs,
+    clockSkewWarning: clientTime > 0 && Math.abs(rawSkew) > 5 * 60 * 1000,
+    uploadComplete: extra.uploadComplete !== false,
+    checksumVerified: extra.checksumVerified === true,
+    idempotentRecovered: extra.idempotentRecovered === true
   };
 }
 
@@ -204,7 +261,37 @@ export class CloudProfileHub extends DurableObject {
         if (Number(value?.expiresAt || 0) > 0 && Number(value.expiresAt) <= now) removals.push(key);
       }
     }
-    if (removals.length) await this.ctx.storage.delete(removals);
+    const uploads = await this.ctx.storage.list({ prefix: 'upload:' });
+    for (const [key, value] of uploads) {
+      if (Number(value?.expiresAt || 0) <= 0 || Number(value.expiresAt) > now) continue;
+      const accountId = cleanAccountId(value?.accountId);
+      const generation = String(value?.generation || '');
+      const meta = accountId ? ensureMeta(await this.ctx.storage.get(accountKey(accountId))) : null;
+      if (accountId && generation && (!meta || meta.profileGeneration !== generation)) {
+        for (let index = 0; index < Number(value?.chunks || 0); index += 1) {
+          removals.push(profileGenerationChunkKey(accountId, generation, index));
+        }
+      }
+      removals.push(key);
+    }
+    if (removals.length) await this.ctx.storage.delete(Array.from(new Set(removals)));
+
+    const accounts = await this.ctx.storage.list({ prefix: 'account:' });
+    const updates = {};
+    for (const [key, raw] of accounts) {
+      const meta = ensureMeta(raw);
+      if (!meta.accountId || meta.deletedAt) continue;
+      const pruned = pruneCloudActivity(meta.activity, {
+        now,
+        retentionMs: CLOUD_ACTIVITY_RETENTION_MS,
+        limit: CLOUD_ACTIVITY_LIMIT
+      });
+      if (JSON.stringify(pruned) !== JSON.stringify(meta.activity)) {
+        meta.activity = pruned;
+        updates[key] = meta;
+      }
+    }
+    if (Object.keys(updates).length) await this.ctx.storage.put(updates);
     await this.scheduleCleanup();
   }
 
@@ -247,7 +334,26 @@ export class CloudProfileHub extends DurableObject {
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
     if (!accountId || token.length < 32) return { ok: false, response: responseJson({ ok: false, error: 'PROFILE_AUTH_REQUIRED' }, { status: 401 }) };
     let meta = ensureMeta(await this.ctx.storage.get(accountKey(accountId)));
-    if (!meta.accountId || meta.deletedAt) return { ok: false, response: responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND' }, { status: 404 }) };
+    if (!meta.accountId) return { ok: false, response: responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND', reliability: reliabilityForRequest(request) }, { status: 404 }) };
+    if (meta.deletedAt) {
+      const tombstone = await this.ctx.storage.get(tombstoneKey(accountId)) || {
+        accountId,
+        deletedAt: meta.deletedAt,
+        deletionId: meta.deletionId,
+        deviceId: ''
+      };
+      return {
+        ok: false,
+        response: responseJson({
+          ok: false,
+          error: 'PROFILE_ACCOUNT_DELETED',
+          deletedAt: meta.deletedAt,
+          deletionId: meta.deletionId,
+          tombstone,
+          reliability: reliabilityForRequest(request)
+        }, { status: 410 })
+      };
+    }
     const tokenHash = await sha256(token);
     const requestDeviceId = cleanDeviceId(request.headers.get('x-ka-device-id')) || `device-legacy-${tokenHash.slice(0, 16)}`;
     const region = normalizeRegion(request.headers.get('x-ka-region'));
@@ -304,49 +410,94 @@ export class CloudProfileHub extends DurableObject {
 
   async saveProfile(meta, profile) {
     const encoded = await this.encodeProfile(profile);
-    const previousCount = Math.max(0, Number(meta.profileChunks || 0));
+    const checksum = profileChecksum(encoded.normalized);
+    const generation = `g-${crypto.randomUUID().replace(/-/g, '')}`;
+    const manifestKey = uploadManifestKey(meta.accountId, generation);
+    const keys = encoded.chunks.map((_, index) => profileGenerationChunkKey(meta.accountId, generation, index));
+    const manifest = {
+      accountId: meta.accountId,
+      generation,
+      chunks: encoded.chunks.length,
+      bytes: encoded.bytes.byteLength,
+      checksum,
+      status: 'writing',
+      createdAt: Date.now(),
+      expiresAt: Date.now() + INCOMPLETE_UPLOAD_TTL_MS
+    };
+    await this.ctx.storage.put(manifestKey, manifest);
     const writes = {};
-    encoded.chunks.forEach((chunk, index) => { writes[profileChunkKey(meta.accountId, index)] = chunk; });
+    encoded.chunks.forEach((chunk, index) => { writes[keys[index]] = chunk; });
     if (Object.keys(writes).length) await this.ctx.storage.put(writes);
-    if (previousCount > encoded.chunks.length) {
-      const stale = [];
-      for (let index = encoded.chunks.length; index < previousCount; index += 1) stale.push(profileChunkKey(meta.accountId, index));
-      if (stale.length) await this.ctx.storage.delete(stale);
-    }
+
+    const verified = await this.decodeChunks(keys, {
+      expectedChecksum: checksum,
+      expectedBytes: encoded.bytes.byteLength
+    });
+    manifest.status = 'verified';
+    manifest.verifiedAt = Date.now();
+    await this.ctx.storage.put(manifestKey, manifest);
+
+    const previousGeneration = String(meta.profileGeneration || '');
+    const previousCount = Math.max(0, Number(meta.profileChunks || 0));
+    meta.profileGeneration = generation;
     meta.profileChunks = encoded.chunks.length;
     meta.profileBytes = encoded.bytes.byteLength;
-    meta.profileChecksum = profileChecksum(encoded.normalized);
+    meta.profileChecksum = checksum;
+    meta.checksumVerifiedAt = Date.now();
     meta.updatedAt = Date.now();
     syncLegacyTokenHashes(meta);
     await this.ctx.storage.put(accountKey(meta.accountId), meta);
-    return encoded.normalized;
+
+    manifest.status = 'committed';
+    manifest.committedAt = Date.now();
+    await this.ctx.storage.put(manifestKey, manifest);
+    const stale = [];
+    if (previousGeneration && previousGeneration !== generation) {
+      for (let index = 0; index < previousCount; index += 1) stale.push(profileGenerationChunkKey(meta.accountId, previousGeneration, index));
+    } else if (!previousGeneration) {
+      for (let index = 0; index < previousCount; index += 1) stale.push(profileChunkKey(meta.accountId, index));
+    }
+    if (stale.length) await this.ctx.storage.delete(stale);
+    await this.ctx.storage.delete(manifestKey);
+    return verified;
   }
 
-  async decodeChunks(keys) {
+  async decodeChunks(keys, { expectedChecksum = '', expectedBytes = 0 } = {}) {
     const stored = await this.ctx.storage.get(keys);
     const pieces = [];
     let total = 0;
     for (const key of keys) {
       const value = stored.get(key);
-      if (typeof value !== 'string') throw new Error('PROFILE_CHUNK_MISSING');
+      if (typeof value !== 'string') throw new Error('PROFILE_UPLOAD_INCOMPLETE');
       const bytes = base64ToBytes(value);
       pieces.push(bytes);
       total += bytes.byteLength;
     }
     if (total > MAX_PROFILE_BYTES) throw new Error('PROFILE_TOO_LARGE');
+    if (expectedBytes > 0 && total !== Number(expectedBytes)) throw new Error('PROFILE_BYTE_LENGTH_MISMATCH');
     const all = new Uint8Array(total);
     let offset = 0;
     for (const piece of pieces) { all.set(piece, offset); offset += piece.byteLength; }
     const validated = validateCloudProfile(JSON.parse(decoder.decode(all)));
     if (!validated.valid) throw new Error(`PROFILE_STORED_INVALID:${validated.errors.join(',')}`);
+    if (expectedChecksum) {
+      const integrity = verifyProfileIntegrity(validated.profile, expectedChecksum, profileChecksum);
+      if (!integrity.valid) throw new Error('PROFILE_CHECKSUM_MISMATCH');
+    }
     return validated.profile;
   }
 
   async loadProfile(meta) {
     const count = Math.max(0, Number(meta?.profileChunks || 0));
     if (!count) throw new Error('PROFILE_DATA_MISSING');
-    const keys = Array.from({ length: count }, (_, index) => profileChunkKey(meta.accountId, index));
-    return this.decodeChunks(keys);
+    const generation = String(meta?.profileGeneration || '');
+    const keys = Array.from({ length: count }, (_, index) => generation
+      ? profileGenerationChunkKey(meta.accountId, generation, index)
+      : profileChunkKey(meta.accountId, index));
+    return this.decodeChunks(keys, {
+      expectedChecksum: String(meta?.profileChecksum || ''),
+      expectedBytes: Math.max(0, Number(meta?.profileBytes || 0))
+    });
   }
 
   async saveHistory(meta, profile, revision, reason = 'snapshot') {
@@ -357,6 +508,11 @@ export class CloudProfileHub extends DurableObject {
     const writes = {};
     encoded.chunks.forEach((chunk, index) => { writes[historyChunkKey(meta.accountId, safeRevision, index)] = chunk; });
     if (Object.keys(writes).length) await this.ctx.storage.put(writes);
+    const historyKeys = Array.from({ length: encoded.chunks.length }, (_, index) => historyChunkKey(meta.accountId, safeRevision, index));
+    await this.decodeChunks(historyKeys, {
+      expectedChecksum: profileChecksum(encoded.normalized),
+      expectedBytes: encoded.bytes.byteLength
+    });
     const combined = [{
       revision: safeRevision,
       chunks: encoded.chunks.length,
@@ -385,7 +541,13 @@ export class CloudProfileHub extends DurableObject {
     const entry = normalizeHistory(meta.history).find((candidate) => candidate.revision === safeRevision);
     if (!entry) throw new Error('PROFILE_HISTORY_NOT_FOUND');
     const keys = Array.from({ length: entry.chunks }, (_, index) => historyChunkKey(meta.accountId, safeRevision, index));
-    return this.decodeChunks(keys);
+    const profile = await this.decodeChunks(keys, {
+      expectedChecksum: entry.checksum,
+      expectedBytes: entry.bytes
+    });
+    const integrity = verifyHistoryIntegrity(profile, entry, profileChecksum);
+    if (!integrity.valid) throw new Error('PROFILE_HISTORY_INTEGRITY_FAILED');
+    return profile;
   }
 
   async register(request, rateKey) {
@@ -406,9 +568,11 @@ export class CloudProfileHub extends DurableObject {
       tokenHashes: [],
       devices: upsertDevice([], { deviceId, tokenHash, name: payload.deviceName, region, now }),
       cloudRevision: 1,
+      profileGeneration: '',
       profileChunks: 0,
       profileBytes: 0,
       profileChecksum: '',
+      checksumVerifiedAt: 0,
       createdAt: now,
       updatedAt: now,
       lastSyncAt: now,
@@ -424,11 +588,15 @@ export class CloudProfileHub extends DurableObject {
     return responseJson({
       ok: true,
       schema: 1,
-      patch: CLOUD_SECURITY_PATCH,
+      patch: CLOUD_RELIABILITY_PATCH,
+  securityPatch: CLOUD_SECURITY_PATCH,
       account: publicAccount(meta),
       token,
       devices: publicDevices(meta.devices, deviceId),
-      profile
+      profile,
+      profileChecksum: meta.profileChecksum,
+      checksumVerified: true,
+      reliability: reliabilityForRequest(request, { uploadComplete: true, checksumVerified: true })
     }, { status: 201 });
   }
 
@@ -437,29 +605,63 @@ export class CloudProfileHub extends DurableObject {
     const auth = await this.authenticate(request);
     if (!auth.ok) return auth.response;
     const profile = await this.loadProfile(auth.meta);
-    return responseJson({ ok: true, schema: 1, account: publicAccount(auth.meta), profile });
+    return responseJson({ ok: true, schema: 1, account: publicAccount(auth.meta), profile, profileChecksum: auth.meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
   async sync(request, rateKey) {
-    if (!await this.consumeRateLimit('sync', rateKey, 24)) return responseJson({ ok: false, error: 'PROFILE_SYNC_RATE_LIMITED' }, { status: 429 });
+    if (!await this.consumeRateLimit('sync', rateKey, 24)) return responseJson({ ok: false, error: 'PROFILE_SYNC_RATE_LIMITED', reliability: reliabilityForRequest(request) }, { status: 429 });
     const auth = await this.authenticate(request);
     if (!auth.ok) return auth.response;
     const payload = await requestJson(request);
-    const operationId = cleanOperationId(payload.operationId);
-    if (!operationId) return responseJson({ ok: false, error: 'PROFILE_OPERATION_ID_INVALID' }, { status: 400 });
+    const operationId = cleanOperationId(payload.operationId || request.headers.get('x-ka-operation-id'));
+    if (!operationId) return responseJson({ ok: false, error: 'PROFILE_OPERATION_ID_INVALID', reliability: reliabilityForRequest(request) }, { status: 400 });
     const operationKey = `op:${await sha256(`${auth.accountId}|${operationId}`)}`;
     const previous = await this.ctx.storage.get(operationKey);
     if (previous?.response && Number(previous.expiresAt || 0) > Date.now()) {
-      return responseJson({ ...previous.response, idempotent: true });
+      return responseJson({
+        ...previous.response,
+        idempotent: true,
+        reliability: reliabilityForRequest(request, { checksumVerified: true, idempotentRecovered: true })
+      });
     }
     const validated = validateCloudProfile(payload.profile);
-    if (!validated.valid) return responseJson({ ok: false, error: 'PROFILE_INVALID', details: validated.errors }, { status: 400 });
+    if (!validated.valid) return responseJson({ ok: false, error: 'PROFILE_INVALID', details: validated.errors, reliability: reliabilityForRequest(request) }, { status: 400 });
+    const incomingDigest = profileChecksum(validated.profile);
+    if (payload.profileChecksum) {
+      const incomingIntegrity = verifyProfileIntegrity(validated.profile, payload.profileChecksum, profileChecksum);
+      if (!incomingIntegrity.valid) {
+        return responseJson({ ok: false, error: 'PROFILE_CLIENT_CHECKSUM_MISMATCH', integrity: incomingIntegrity, reliability: reliabilityForRequest(request) }, { status: 409 });
+      }
+    }
+
+    if (
+      auth.meta.lastOperationId === operationId
+      && auth.meta.lastOperationDigest === incomingDigest
+      && auth.meta.lastOperationResult
+    ) {
+      const profile = await this.loadProfile(auth.meta);
+      const response = {
+        ok: true,
+        schema: 1,
+        ...auth.meta.lastOperationResult,
+        account: publicAccount(auth.meta),
+        profile,
+        profileChecksum: auth.meta.profileChecksum,
+        checksumVerified: true,
+        idempotentRecovered: true,
+        reliability: reliabilityForRequest(request, { checksumVerified: true, idempotentRecovered: true })
+      };
+      await this.ctx.storage.put(operationKey, { response, expiresAt: Date.now() + OPERATION_TTL_MS });
+      await this.scheduleCleanup();
+      return responseJson(response);
+    }
+
     const remote = await this.loadProfile(auth.meta);
     const expected = Math.max(0, Math.floor(Number(payload.expectedCloudRevision) || 0));
     const conflict = expected !== Number(auth.meta.cloudRevision || 0);
     let profile = remote;
     const changed = remote.legacyFingerprint !== validated.profile.legacyFingerprint
-      || profileChecksum(remote) !== profileChecksum(validated.profile);
+      || profileChecksum(remote) !== incomingDigest;
     if (changed) {
       await this.saveHistory(auth.meta, remote, auth.meta.cloudRevision, conflict ? 'before-conflict-merge' : 'before-sync');
       profile = mergeCloudProfiles(remote, validated.profile, { now: Date.now() });
@@ -469,15 +671,29 @@ export class CloudProfileHub extends DurableObject {
       profile = await this.saveProfile(auth.meta, profile);
     } else if (conflict) {
       this.addActivity(auth.meta, auth, 'SYNC_CONFLICT_RESOLVED', 'Revision mismatch resolved without profile changes');
-      await this.ctx.storage.put(accountKey(auth.meta.accountId), auth.meta);
     }
+
+    const operationResult = {
+      conflict,
+      changed,
+      cloudRevision: Number(auth.meta.cloudRevision || 0)
+    };
+    auth.meta.lastOperationId = operationId;
+    auth.meta.lastOperationDigest = incomingDigest;
+    auth.meta.lastOperationResult = operationResult;
+    auth.meta.updatedAt = Date.now();
+    await this.ctx.storage.put(accountKey(auth.meta.accountId), auth.meta);
+
     const response = {
       ok: true,
       schema: 1,
       conflict,
       changed,
       account: publicAccount(auth.meta),
-      profile
+      profile,
+      profileChecksum: auth.meta.profileChecksum,
+      checksumVerified: true,
+      reliability: reliabilityForRequest(request, { uploadComplete: true, checksumVerified: true })
     };
     await this.ctx.storage.put(operationKey, { response, expiresAt: Date.now() + OPERATION_TTL_MS });
     await this.scheduleCleanup();
@@ -514,7 +730,15 @@ export class CloudProfileHub extends DurableObject {
       return responseJson({ ok: false, error: 'PROFILE_LINK_CODE_EXPIRED' }, { status: 404 });
     }
     const meta = ensureMeta(await this.ctx.storage.get(accountKey(link.accountId)));
-    if (!meta.accountId || meta.deletedAt) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND' }, { status: 404 });
+    if (!meta.accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND', reliability: reliabilityForRequest(request) }, { status: 404 });
+    if (meta.deletedAt) {
+      return responseJson({
+        ok: false,
+        error: 'PROFILE_ACCOUNT_DELETED',
+        tombstone: await this.ctx.storage.get(tombstoneKey(link.accountId)),
+        reliability: reliabilityForRequest(request)
+      }, { status: 410 });
+    }
     const token = randomToken();
     const tokenHash = await sha256(token);
     const now = Date.now();
@@ -527,7 +751,7 @@ export class CloudProfileHub extends DurableObject {
     await this.ctx.storage.put(accountKey(meta.accountId), meta);
     await this.ctx.storage.delete(key);
     const profile = await this.loadProfile(meta);
-    return responseJson({ ok: true, account: publicAccount(meta), token, devices: publicDevices(meta.devices, deviceId), profile });
+    return responseJson({ ok: true, account: publicAccount(meta), token, devices: publicDevices(meta.devices, deviceId), profile, profileChecksum: meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
   async exportProfile(request, rateKey) {
@@ -537,7 +761,7 @@ export class CloudProfileHub extends DurableObject {
     const profile = await this.loadProfile(auth.meta);
     this.addActivity(auth.meta, auth, 'EXPORT', 'Cloud profile backup exported');
     await this.ctx.storage.put(accountKey(auth.meta.accountId), auth.meta);
-    return responseJson({ ok: true, account: publicAccount(auth.meta), export: createCloudProfileExport(profile) });
+    return responseJson({ ok: true, account: publicAccount(auth.meta), export: createCloudProfileExport(profile), profileChecksum: auth.meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
   async listDevices(request, rateKey) {
@@ -638,7 +862,15 @@ export class CloudProfileHub extends DurableObject {
     const code = cleanRecoveryCode(payload.recoveryCode);
     if (code.length !== RECOVERY_CODE_LENGTH) return responseJson({ ok: false, error: 'PROFILE_RECOVERY_CODE_INVALID' }, { status: 400 });
     const meta = ensureMeta(await this.ctx.storage.get(accountKey(accountId)));
-    if (!meta.accountId || meta.deletedAt) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND' }, { status: 404 });
+    if (!meta.accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND', reliability: reliabilityForRequest(request) }, { status: 404 });
+    if (meta.deletedAt) {
+      return responseJson({
+        ok: false,
+        error: 'PROFILE_ACCOUNT_DELETED',
+        tombstone: await this.ctx.storage.get(tombstoneKey(accountId)),
+        reliability: reliabilityForRequest(request)
+      }, { status: 410 });
+    }
     if (!/^[a-f0-9]{64}$/.test(meta.recoveryHash) || await sha256(code) !== meta.recoveryHash) {
       return responseJson({ ok: false, error: 'PROFILE_RECOVERY_CODE_REJECTED' }, { status: 401 });
     }
@@ -655,14 +887,24 @@ export class CloudProfileHub extends DurableObject {
     this.addActivity(meta, { device, region }, 'ACCOUNT_RECOVERED', 'One-time recovery code consumed');
     await this.ctx.storage.put(accountKey(meta.accountId), meta);
     const profile = await this.loadProfile(meta);
-    return responseJson({ ok: true, token, account: publicAccount(meta), devices: publicDevices(meta.devices, deviceId), profile });
+    return responseJson({ ok: true, token, account: publicAccount(meta), devices: publicDevices(meta.devices, deviceId), profile, profileChecksum: meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
   async listHistory(request, rateKey) {
-    if (!await this.consumeRateLimit('history-list', rateKey, 60)) return responseJson({ ok: false, error: 'PROFILE_HISTORY_RATE_LIMITED' }, { status: 429 });
+    if (!await this.consumeRateLimit('history-list', rateKey, 60)) return responseJson({ ok: false, error: 'PROFILE_HISTORY_RATE_LIMITED', reliability: reliabilityForRequest(request) }, { status: 429 });
     const auth = await this.authenticate(request);
     if (!auth.ok) return auth.response;
-    return responseJson({ ok: true, account: publicAccount(auth.meta), history: publicHistory(auth.meta.history) });
+    const history = [];
+    for (const entry of publicHistory(auth.meta.history)) {
+      try {
+        const profile = await this.loadHistoryProfile(auth.meta, entry.revision);
+        const integrity = verifyHistoryIntegrity(profile, entry, profileChecksum);
+        history.push({ ...entry, integrity: integrity.valid ? 'verified' : 'failed' });
+      } catch (error) {
+        history.push({ ...entry, integrity: 'failed', integrityError: String(error?.message || error).slice(0, 100) });
+      }
+    }
+    return responseJson({ ok: true, account: publicAccount(auth.meta), history, reliability: reliabilityForRequest(request, { checksumVerified: history.every((entry) => entry.integrity === 'verified') }) });
   }
 
   async restoreHistory(request, rateKey) {
@@ -678,29 +920,75 @@ export class CloudProfileHub extends DurableObject {
     auth.meta.lastSyncAt = Date.now();
     this.addActivity(auth.meta, auth, 'HISTORY_RESTORED', `Restored cloud revision ${revision}`);
     const profile = await this.saveProfile(auth.meta, selected);
-    return responseJson({ ok: true, restoredRevision: revision, account: publicAccount(auth.meta), profile, history: publicHistory(auth.meta.history) });
+    return responseJson({ ok: true, restoredRevision: revision, account: publicAccount(auth.meta), profile, history: publicHistory(auth.meta.history), profileChecksum: auth.meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
   async listActivity(request, rateKey) {
     if (!await this.consumeRateLimit('activity-list', rateKey, 60)) return responseJson({ ok: false, error: 'PROFILE_ACTIVITY_RATE_LIMITED' }, { status: 429 });
     const auth = await this.authenticate(request);
     if (!auth.ok) return auth.response;
-    return responseJson({ ok: true, account: publicAccount(auth.meta), activity: normalizeActivity(auth.meta.activity) });
+    return responseJson({ ok: true, account: publicAccount(auth.meta), activity: pruneCloudActivity(auth.meta.activity, { now: Date.now(), retentionMs: CLOUD_ACTIVITY_RETENTION_MS, limit: CLOUD_ACTIVITY_LIMIT }), reliability: reliabilityForRequest(request) });
   }
 
   async deleteAccount(request, rateKey) {
-    if (!await this.consumeRateLimit('delete', rateKey, 3, 60 * 60 * 1000)) return responseJson({ ok: false, error: 'PROFILE_DELETE_RATE_LIMITED' }, { status: 429 });
+    if (!await this.consumeRateLimit('delete', rateKey, 3, 60 * 60 * 1000)) return responseJson({ ok: false, error: 'PROFILE_DELETE_RATE_LIMITED', reliability: reliabilityForRequest(request) }, { status: 429 });
     const auth = await this.authenticate(request);
     if (!auth.ok) return auth.response;
-    const keys = [accountKey(auth.accountId)];
-    for (let index = 0; index < Number(auth.meta.profileChunks || 0); index += 1) keys.push(profileChunkKey(auth.accountId, index));
+    const deletionId = `delete-${crypto.randomUUID().replace(/-/g, '')}`;
+    const tombstone = createAccountTombstone({
+      accountId: auth.accountId,
+      deletedAt: Date.now(),
+      deletionId,
+      deviceId: auth.device?.deviceId || ''
+    });
+    const keys = [];
+    const generation = String(auth.meta.profileGeneration || '');
+    for (let index = 0; index < Number(auth.meta.profileChunks || 0); index += 1) {
+      keys.push(generation
+        ? profileGenerationChunkKey(auth.accountId, generation, index)
+        : profileChunkKey(auth.accountId, index));
+    }
     for (const entry of normalizeHistory(auth.meta.history)) {
       for (let index = 0; index < entry.chunks; index += 1) keys.push(historyChunkKey(auth.accountId, entry.revision, index));
     }
     const links = await this.ctx.storage.list({ prefix: 'link:' });
     for (const [key, value] of links) if (value?.accountId === auth.accountId) keys.push(key);
-    await this.ctx.storage.delete(keys);
-    return responseJson({ ok: true, deleted: true, accountId: auth.accountId });
+    const uploads = await this.ctx.storage.list({ prefix: `upload:${auth.accountId}:` });
+    for (const [key, value] of uploads) {
+      keys.push(key);
+      for (let index = 0; index < Number(value?.chunks || 0); index += 1) {
+        keys.push(profileGenerationChunkKey(auth.accountId, String(value?.generation || ''), index));
+      }
+    }
+    if (keys.length) await this.ctx.storage.delete(keys);
+    const deletedMeta = ensureMeta({
+      accountId: auth.accountId,
+      createdAt: auth.meta.createdAt,
+      updatedAt: tombstone.deletedAt,
+      deletedAt: tombstone.deletedAt,
+      deletionId,
+      devices: [],
+      tokenHashes: [],
+      history: [],
+      activity: [],
+      profileChunks: 0,
+      profileBytes: 0,
+      profileChecksum: '',
+      profileGeneration: ''
+    });
+    await this.ctx.storage.put({
+      [accountKey(auth.accountId)]: deletedMeta,
+      [tombstoneKey(auth.accountId)]: tombstone
+    });
+    return responseJson({
+      ok: true,
+      deleted: true,
+      accountId: auth.accountId,
+      deletedAt: tombstone.deletedAt,
+      deletionId,
+      tombstone,
+      reliability: reliabilityForRequest(request)
+    });
   }
 }
 
@@ -708,11 +996,15 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   schema: CLOUD_PROFILE_VERSION,
   profileSchema: CLOUD_PROFILE_SCHEMA,
   profilePatch: CLOUD_PROFILE_PATCH,
-  patch: CLOUD_SECURITY_PATCH,
+  patch: CLOUD_RELIABILITY_PATCH,
+  securityPatch: CLOUD_SECURITY_PATCH,
   linkTtlMs: LINK_TTL_MS,
   maxProfileBytes: MAX_PROFILE_BYTES,
   deviceLimit: CLOUD_DEVICE_LIMIT,
   historyLimit: CLOUD_HISTORY_LIMIT,
   activityLimit: CLOUD_ACTIVITY_LIMIT,
-  recoveryCodeLength: RECOVERY_CODE_LENGTH
+  recoveryCodeLength: RECOVERY_CODE_LENGTH,
+  incompleteUploadTtlMs: INCOMPLETE_UPLOAD_TTL_MS,
+  activityRetentionMs: CLOUD_ACTIVITY_RETENTION_MS,
+  tombstoneRetentionMs: CLOUD_TOMBSTONE_RETENTION_MS
 });

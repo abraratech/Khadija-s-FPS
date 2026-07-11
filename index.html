@@ -1073,6 +1073,20 @@
 <button class="ka-link-btn" id="cloud-profile-history-restore-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Restore Selected Revision</button>
 </div>
 </div>
+<div class="ka-setting-row" id="cloud-profile-reliability-row">
+<div>
+<strong>Cloud Sync Reliability</strong>
+<small>Queued changes survive restarts. Only one tab writes at a time, retries use capped backoff, and every downloaded profile is checksum-verified.</small>
+<small style="display:block;margin-top:7px;color:#8aa;">Queue: <b id="cloud-profile-queue-count" style="color:#ffaa00;">0</b> · Retry: <span id="cloud-profile-retry-at">NOT SCHEDULED</span></small>
+<small style="display:block;margin-top:3px;color:#8aa;">Last cloud success: <span id="cloud-profile-last-success">NOT YET</span></small>
+<small style="display:block;margin-top:3px;color:#8aa;">Sync tab: <span id="cloud-profile-sync-tab">IDLE</span> · Integrity: <span id="cloud-profile-checksum-status">NOT VERIFIED</span></small>
+<small style="display:block;margin-top:3px;color:#708592;">Server clock: <span id="cloud-profile-clock-status">NOT MEASURED</span></small>
+</div>
+<div style="display:grid;gap:8px;">
+<button class="ka-nav-btn" id="cloud-profile-retry-queue-btn" style="width:100%;text-align:center;" type="button">Retry Pending Sync Now</button>
+<button class="ka-link-btn" id="cloud-profile-reliability-copy-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Copy Reliability Diagnostics</button>
+</div>
+</div>
 <div class="ka-setting-row">
 <div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
 <div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>

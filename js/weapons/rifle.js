@@ -11,6 +11,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'RIFLE';
+  group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.850 });
+  group.userData.thirdPersonMuzzleSize = 0.170;
 
   const receiverColor = upgraded ? 0x4a2630 : 0x27323a;
   const woodColor = upgraded ? 0x3b1d23 : 0x5a351f;

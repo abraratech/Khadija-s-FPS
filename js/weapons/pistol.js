@@ -11,6 +11,8 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'PISTOL';
+  group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -0.336 });
+  group.userData.thirdPersonMuzzleSize = 0.125;
 
   const slideColor = upgraded ? 0xd8b15a : 0x5f686d;
   const frameColor = upgraded ? 0x2c1a31 : 0x161b1f;

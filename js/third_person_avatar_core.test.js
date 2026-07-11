@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import {
   THIRD_PERSON_ADS_POLICY,
   computeThirdPersonAvatarPose,
+  computeThirdPersonOcclusionOpacity,
+  computeWeaponFirePulse,
+  computeWeaponSwitchBlend,
   getThirdPersonWeaponProfile,
   normalizeThirdPersonWeaponFamily,
   shouldUseFirstPersonAds
@@ -65,6 +68,43 @@ assert.equal(
     reloadProgress: 0.5
   });
   assert.ok(reload.weapon.rotation.z > ready.weapon.rotation.z);
+}
+
+
+{
+  assert.equal(computeWeaponFirePulse(0.20, 0.12), 0);
+  assert.ok(computeWeaponFirePulse(0.02, 0.12) > 0.5);
+  assert.equal(computeWeaponSwitchBlend(0), 0);
+  assert.equal(computeWeaponSwitchBlend(1), 1);
+  assert.ok(computeWeaponSwitchBlend(0.5) > 0.45);
+}
+
+{
+  assert.ok(computeThirdPersonOcclusionOpacity({ cameraDistance: 0.75 }) < 0.15);
+  assert.ok(computeThirdPersonOcclusionOpacity({ cameraDistance: 1.45 }) > 0.20);
+  assert.equal(computeThirdPersonOcclusionOpacity({ cameraDistance: 4 }), 1);
+}
+
+{
+  const ready = computeThirdPersonAvatarPose({
+    weaponFamily: 'RIFLE',
+    firePulse: 0,
+    switchProgress: 1
+  });
+  const firing = computeThirdPersonAvatarPose({
+    weaponFamily: 'RIFLE',
+    firePulse: 1,
+    switchProgress: 1
+  });
+  const switching = computeThirdPersonAvatarPose({
+    weaponFamily: 'RIFLE',
+    firePulse: 0,
+    switchProgress: 0
+  });
+  assert.ok(firing.weapon.position.z > ready.weapon.position.z);
+  assert.ok(firing.weapon.rotation.x > ready.weapon.rotation.x);
+  assert.ok(switching.weapon.position.y < ready.weapon.position.y);
+  assert.ok(switching.switchBlend < ready.switchBlend);
 }
 
 console.log('third_person_avatar_core.test.js: PASS');

@@ -11,6 +11,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SHOTGUN';
+  group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.028, z: -0.795 });
+  group.userData.thirdPersonMuzzleSize = 0.225;
   group.userData.ejectedShellT = 0;
   group.userData.lastFirePulse = 0;
 

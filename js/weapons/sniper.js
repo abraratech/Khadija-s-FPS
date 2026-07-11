@@ -11,6 +11,8 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SNIPER';
+  group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -1.040 });
+  group.userData.thirdPersonMuzzleSize = 0.260;
 
   const receiverColor = upgraded ? 0x27304c : 0x222a32;
   const stockColor = upgraded ? 0x20112f : 0x2b221c;

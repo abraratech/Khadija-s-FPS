@@ -13,6 +13,8 @@ import {
 } from './camera_presentation_core.js';
 import {
   computeThirdPersonAvatarPose,
+  computeThirdPersonOcclusionOpacity,
+  computeWeaponFirePulse,
   getThirdPersonWeaponProfile,
   normalizeThirdPersonWeaponFamily,
   shouldUseFirstPersonAds
@@ -38,6 +40,15 @@ let latchedBoomTarget = null;
 let latchedShoulderTarget = null;
 let boomClearSeconds = 0;
 let shoulderClearSeconds = 0;
+let thirdPersonMuzzleFlash = null;
+let thirdPersonTracer = null;
+let thirdPersonShotSerial = 0;
+let thirdPersonShotAge = Infinity;
+let thirdPersonTracerAge = Infinity;
+let pendingThirdPersonTracer = false;
+let weaponSwitchProgress = 1;
+let avatarOpacity = 1;
+let firstPersonAdsTransitionActive = false;
 
 const collisionRay = new THREE.Raycaster();
 const desiredPosition = new THREE.Vector3();
@@ -57,6 +68,9 @@ const avatarBoxPart = new THREE.Box3();
 const avatarBoxSize = new THREE.Vector3();
 const avatarBoxCenter = new THREE.Vector3();
 const avatarUp = new THREE.Vector3(0, 1, 0);
+const thirdPersonMuzzleWorld = new THREE.Vector3();
+const thirdPersonTracerEnd = new THREE.Vector3();
+const thirdPersonShotDirection = new THREE.Vector3(0, 0, -1);
 
 function resetCameraSolver() {
   cameraInitialized = false;
@@ -105,6 +119,7 @@ function installStyles() {
     .ka-camera-distance{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;margin-top:10px;font-size:12px;color:#bcd2df}
     #ka-camera-mobile-toggle{position:absolute;right:14px;top:78px;z-index:30;min-width:58px;min-height:40px;border-radius:10px;background:rgba(5,12,20,.8);border:1px solid rgba(0,212,255,.55);color:#dffaff;font-weight:700}
     #ka-camera-mode-indicator{position:fixed;right:18px;bottom:18px;z-index:40;padding:7px 10px;border-radius:8px;background:rgba(3,8,14,.72);border:1px solid rgba(0,212,255,.35);color:#bfefff;font:600 11px/1.2 system-ui,sans-serif;letter-spacing:.08em;pointer-events:none;opacity:.75}
+    #ka-camera-ads-transition{position:fixed;inset:0;z-index:35;background:rgba(2,7,12,.34);opacity:0;pointer-events:none}
     @media(max-width:700px){.ka-camera-row{grid-template-columns:1fr}.ka-camera-settings{padding:10px}#ka-camera-mode-indicator{display:none}}
   `;
   document.head.append(style);
@@ -290,8 +305,81 @@ function clearThirdPersonWeaponVisual() {
     thirdPersonWeaponVisual.parent.remove(thirdPersonWeaponVisual);
   }
   thirdPersonWeaponVisual = null;
+  thirdPersonMuzzleFlash = null;
   thirdPersonWeaponIdentity = '';
   thirdPersonWeaponFamily = 'PISTOL';
+  weaponSwitchProgress = 1;
+}
+
+function ensureThirdPersonTracer() {
+  if (thirdPersonTracer || !refs?.scene) return thirdPersonTracer;
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(),
+    new THREE.Vector3()
+  ]);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffd36a,
+    transparent: true,
+    opacity: 0.86,
+    depthWrite: false,
+    toneMapped: false
+  });
+  material.userData.kaIgnoreAvatarFade = true;
+  const line = new THREE.Line(geometry, material);
+  line.name = 'ka-third-person-tracer';
+  line.userData.cameraIgnore = true;
+  line.frustumCulled = false;
+  line.visible = false;
+  refs.scene.add(line);
+  thirdPersonTracer = line;
+  return line;
+}
+
+function setAvatarOpacity(nextOpacity) {
+  const opacity = THREE.MathUtils.clamp(Number(nextOpacity) || 0, 0, 1);
+  avatarOpacity = opacity;
+  if (!avatarRoot) return;
+
+  avatarRoot.traverse((child) => {
+    if (!child?.isMesh) return;
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+    materials.forEach((material) => {
+      if (!material || material.userData?.kaIgnoreAvatarFade === true) return;
+      material.userData = material.userData || {};
+      if (material.userData.kaBaseOpacity === undefined) {
+        material.userData.kaBaseOpacity = Number.isFinite(Number(material.opacity))
+          ? Number(material.opacity)
+          : 1;
+        material.userData.kaBaseTransparent = material.transparent === true;
+        material.userData.kaBaseDepthWrite = material.depthWrite !== false;
+      }
+      material.opacity = material.userData.kaBaseOpacity * opacity;
+      material.transparent = material.userData.kaBaseTransparent || opacity < 0.995;
+      material.depthWrite = material.userData.kaBaseDepthWrite && opacity > 0.24;
+      material.needsUpdate = true;
+    });
+  });
+}
+
+function playAdsPresentationTransition() {
+  const overlay = document.getElementById('ka-camera-ads-transition');
+  if (!overlay) return;
+  overlay.getAnimations?.().forEach((animation) => animation.cancel());
+  if (typeof overlay.animate === 'function') {
+    overlay.animate(
+      [
+        { opacity: 0 },
+        { opacity: 0.20, offset: 0.42 },
+        { opacity: 0 }
+      ],
+      {
+        duration: 145,
+        easing: 'ease-out'
+      }
+    );
+  }
 }
 
 function weaponFamilyForPresentation(weapon) {
@@ -328,6 +416,16 @@ function syncThirdPersonWeaponVisual() {
   }
 
   const family = weaponFamilyForPresentation(weapon);
+  const muzzleMeta = source.userData?.thirdPersonMuzzle || {
+    x: 0,
+    y: 0.03,
+    z: -getThirdPersonWeaponProfile(family).targetLength * 0.5
+  };
+  const muzzleSize = THREE.MathUtils.clamp(
+    Number(source.userData?.thirdPersonMuzzleSize) || 0.16,
+    0.08,
+    0.34
+  );
   const identity = `${weapon?.key || family}:${source.uuid}`;
   if (
     thirdPersonWeaponVisual
@@ -366,6 +464,9 @@ function syncThirdPersonWeaponVisual() {
     }
 
     if (child.isMesh) {
+      child.material = Array.isArray(child.material)
+        ? child.material.map((material) => material?.clone?.() || material)
+        : (child.material?.clone?.() || child.material);
       child.castShadow = true;
       child.receiveShadow = false;
       child.frustumCulled = false;
@@ -380,6 +481,7 @@ function syncThirdPersonWeaponVisual() {
 
   const bounds = expandVisibleWeaponBounds(normalized);
   const profile = getThirdPersonWeaponProfile(family);
+  avatarBoxCenter.set(0, 0, 0);
   if (!bounds.isEmpty()) {
     bounds.getSize(avatarBoxSize);
     bounds.getCenter(avatarBoxCenter);
@@ -390,10 +492,42 @@ function syncThirdPersonWeaponVisual() {
     );
   }
 
+  const flashMaterial = new THREE.MeshBasicMaterial({
+    color: weapon?.isUpgraded ? 0xff66ff : 0xffc24d,
+    transparent: true,
+    opacity: 0.92,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    toneMapped: false
+  });
+  flashMaterial.userData.kaIgnoreAvatarFade = true;
+  const flash = new THREE.Mesh(
+    new THREE.PlaneGeometry(muzzleSize, muzzleSize),
+    flashMaterial
+  );
+  flash.name = 'ka-third-person-muzzle-flash';
+  flash.userData.cameraIgnore = true;
+  flash.userData.isThirdPersonWeapon = true;
+  flash.position.set(
+    Number(muzzleMeta.x) - avatarBoxCenter.x,
+    Number(muzzleMeta.y) - avatarBoxCenter.y,
+    Number(muzzleMeta.z) - avatarBoxCenter.z
+  );
+  flash.rotation.y = Math.PI;
+  flash.visible = false;
+  normalized.add(flash);
+
   avatarParts.weaponMount.add(normalized);
   thirdPersonWeaponVisual = normalized;
+  thirdPersonMuzzleFlash = flash;
   thirdPersonWeaponIdentity = identity;
   thirdPersonWeaponFamily = family;
+  thirdPersonShotSerial = Number(weapon?.presentationShotSerial) || 0;
+  thirdPersonShotAge = Infinity;
+  thirdPersonTracerAge = Infinity;
+  pendingThirdPersonTracer = false;
+  weaponSwitchProgress = 0;
+  ensureThirdPersonTracer();
   return normalized;
 }
 
@@ -436,6 +570,10 @@ function publishDiagnostics(mode = effectiveMode()) {
     ? 'first-person'
     : 'inactive';
   root.dataset.kaThirdPersonWeapon = thirdPersonWeaponFamily;
+  root.dataset.kaThirdPersonTracer = thirdPersonTracer?.visible === true
+    ? 'active'
+    : 'idle';
+  root.dataset.kaThirdPersonAvatarOpacity = avatarOpacity.toFixed(2);
   const indicator = document.getElementById('ka-camera-mode-indicator');
   if (indicator) {
     indicator.textContent = firstPersonAds
@@ -553,6 +691,12 @@ function buildUi() {
     indicator.id = 'ka-camera-mode-indicator';
     document.body.append(indicator);
   }
+  if (!document.getElementById('ka-camera-ads-transition')) {
+    const transition = document.createElement('div');
+    transition.id = 'ka-camera-ads-transition';
+    transition.setAttribute('aria-hidden', 'true');
+    document.body.append(transition);
+  }
   syncUi();
 }
 
@@ -600,6 +744,32 @@ function animateAvatar(dt) {
 
   syncThirdPersonWeaponVisual();
 
+  const shotSerial = Number(weapon?.presentationShotSerial) || 0;
+  if (shotSerial !== thirdPersonShotSerial) {
+    thirdPersonShotSerial = shotSerial;
+    thirdPersonShotAge = 0;
+    thirdPersonTracerAge = 0;
+    pendingThirdPersonTracer = true;
+    thirdPersonShotDirection.set(
+      Number(weapon?.presentationShotDirection?.x) || 0,
+      Number(weapon?.presentationShotDirection?.y) || 0,
+      Number(weapon?.presentationShotDirection?.z) || -1
+    );
+    if (thirdPersonShotDirection.lengthSq() < 0.000001) {
+      thirdPersonShotDirection.set(0, 0, -1);
+    } else {
+      thirdPersonShotDirection.normalize();
+    }
+  } else {
+    thirdPersonShotAge += Math.max(0, Number(dt) || 0);
+    thirdPersonTracerAge += Math.max(0, Number(dt) || 0);
+  }
+  weaponSwitchProgress = Math.min(
+    1,
+    weaponSwitchProgress + Math.max(0, Number(dt) || 0) / 0.16
+  );
+  const firePulse = computeWeaponFirePulse(thirdPersonShotAge, 0.12);
+
   const reloadDuration = Math.max(
     0.001,
     Number(weapon?.reloadDuration || weapon?.RELOAD_DUR || 1)
@@ -620,7 +790,9 @@ function animateAvatar(dt) {
     sprinting: player.isSprinting === true && !player.isADS,
     gaitPhase,
     reloading: weapon?.reloading === true,
-    reloadProgress
+    reloadProgress,
+    firePulse,
+    switchProgress: weaponSwitchProgress
   });
 
   avatarRoot.position.set(
@@ -652,6 +824,15 @@ function animateAvatar(dt) {
   );
   if (thirdPersonWeaponVisual) {
     thirdPersonWeaponVisual.visible = true;
+  }
+  if (thirdPersonMuzzleFlash) {
+    thirdPersonMuzzleFlash.visible = firePulse > 0.025;
+    const flashScale = 0.82 + firePulse * 0.88;
+    thirdPersonMuzzleFlash.scale.setScalar(flashScale);
+    thirdPersonMuzzleFlash.rotation.z += dt * 18;
+    if (thirdPersonMuzzleFlash.material) {
+      thirdPersonMuzzleFlash.material.opacity = 0.30 + firePulse * 0.66;
+    }
   }
 
   const rightShoulder = avatarPointA.set(
@@ -759,6 +940,26 @@ function animateAvatar(dt) {
   avatarParts.rightBoot.position.copy(rightFoot);
   avatarParts.rightBoot.position.y = 0.04;
   avatarParts.rightBoot.position.z -= 0.08;
+
+  if (thirdPersonMuzzleFlash && thirdPersonTracer) {
+    avatarRoot.updateMatrixWorld(true);
+    if (pendingThirdPersonTracer) {
+      thirdPersonMuzzleFlash.getWorldPosition(thirdPersonMuzzleWorld);
+      thirdPersonTracerEnd.copy(thirdPersonMuzzleWorld)
+        .addScaledVector(thirdPersonShotDirection, 7.5);
+      thirdPersonTracer.geometry.setFromPoints([
+        thirdPersonMuzzleWorld,
+        thirdPersonTracerEnd
+      ]);
+      thirdPersonTracer.visible = true;
+      pendingThirdPersonTracer = false;
+    }
+    if (thirdPersonTracer.visible) {
+      const tracerLife = Math.max(0, 1 - thirdPersonTracerAge / 0.075);
+      thirdPersonTracer.material.opacity = tracerLife * 0.82;
+      if (tracerLife <= 0) thirdPersonTracer.visible = false;
+    }
+  }
 }
 
 function objectIsDescendant(root, object) {
@@ -945,11 +1146,21 @@ export function updateCameraPresentation(dt, context = {}) {
   };
 
   const player = refs.player;
+  const firstPersonAds = shouldUseFirstPersonAds({
+    preferredMode: settings.mode,
+    isADS: player.isADS === true
+  });
+  if (firstPersonAds !== firstPersonAdsTransitionActive) {
+    firstPersonAdsTransitionActive = firstPersonAds;
+    playAdsPresentationTransition();
+  }
   const mode = effectiveMode();
   const activeGameplay = lastContext.gameState === 'playing' && player.alive === true;
 
   if (!activeGameplay || player.isDowned || player.isSpectating) {
     if (avatarRoot) avatarRoot.visible = false;
+    if (thirdPersonTracer) thirdPersonTracer.visible = false;
+    setAvatarOpacity(1);
     setWeaponVisible(false);
     publishDiagnostics(mode);
     return;
@@ -958,6 +1169,8 @@ export function updateCameraPresentation(dt, context = {}) {
   if (mode === CAMERA_MODE_FIRST) {
     if (avatarRoot) avatarRoot.visible = false;
     if (thirdPersonWeaponVisual) thirdPersonWeaponVisual.visible = false;
+    if (thirdPersonTracer) thirdPersonTracer.visible = false;
+    setAvatarOpacity(1);
     setWeaponVisible(true);
     refs.camera.rotation.z = THREE.MathUtils.lerp(refs.camera.rotation.z || 0, 0, cameraSmoothingAlpha(dt, 16));
     // Shooting happens later in the same frame. Refresh the matrix now so
@@ -998,6 +1211,9 @@ export function updateCameraPresentation(dt, context = {}) {
     );
   }
   refs.camera.position.copy(smoothedCameraPosition);
+  setAvatarOpacity(computeThirdPersonOcclusionOpacity({
+    cameraDistance: refs.camera.position.distanceTo(player.pos)
+  }));
   const shoulderLean = settings.shoulder === CAMERA_SHOULDER_LEFT ? -0.012 : 0.012;
   refs.camera.rotation.z = THREE.MathUtils.lerp(
     refs.camera.rotation.z || 0,
@@ -1042,6 +1258,8 @@ export function enforceCameraPresentationVisibility() {
 
 export function endCameraPresentation() {
   if (avatarRoot) avatarRoot.visible = false;
+  if (thirdPersonTracer) thirdPersonTracer.visible = false;
+  setAvatarOpacity(1);
   clearThirdPersonWeaponVisual();
   if (refs?.camera) refs.camera.rotation.z = 0;
   setWeaponVisible(false);
@@ -1070,6 +1288,10 @@ export function getCameraPresentationSnapshot() {
     }) ? 'first-person' : 'inactive',
     thirdPersonWeaponFamily,
     thirdPersonWeaponVisible: thirdPersonWeaponVisual?.visible === true,
-    avatarVisible: avatarRoot?.visible === true
+    avatarVisible: avatarRoot?.visible === true,
+    avatarOpacity: Math.round(avatarOpacity * 100) / 100,
+    tracerVisible: thirdPersonTracer?.visible === true,
+    weaponSwitchProgress: Math.round(weaponSwitchProgress * 100) / 100,
+    firePulse: Math.round(computeWeaponFirePulse(thirdPersonShotAge, 0.12) * 100) / 100
   });
 }

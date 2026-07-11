@@ -837,6 +837,10 @@ function createWeaponInstance(def) {
     reloading: false,
     reloadT: 0,
     upgradeTier: def.isUpgraded ? 1 : 0,
+    presentationShotSerial: 0,
+    presentationShotAt: 0,
+    presentationShotDirection: null,
+    presentationShotADS: false,
     meshGroup: def.buildMesh()
   };
 
@@ -2718,6 +2722,14 @@ export function shoot() {
 
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
+  w.presentationShotSerial = (Number(w.presentationShotSerial) || 0) + 1;
+  w.presentationShotAt = performance.now();
+  w.presentationShotDirection = {
+    x: Number(dir.x) || 0,
+    y: Number(dir.y) || 0,
+    z: Number(dir.z) || -1
+  };
+  w.presentationShotADS = player.isADS === true;
   spawnShell(player.pos, dir);
 
   triggerMuzzleFeedback(w, feel, dir);

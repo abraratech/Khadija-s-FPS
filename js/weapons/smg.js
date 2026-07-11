@@ -11,6 +11,8 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SMG';
+  group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.440 });
+  group.userData.thirdPersonMuzzleSize = 0.145;
 
   const receiverColor = upgraded ? 0x2f4252 : 0x1e252b;
   const frameColor = upgraded ? 0x142c26 : 0x11161a;

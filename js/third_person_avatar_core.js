@@ -103,6 +103,34 @@ function transformGrip(grip, baseMount, weaponPosition, weaponRotation) {
   });
 }
 
+export function computeWeaponFirePulse(ageSeconds = Infinity, durationSeconds = 0.12) {
+  const age = Math.max(0, finite(ageSeconds, Infinity));
+  const duration = clamp(durationSeconds, 0.04, 0.30, 0.12);
+  if (!Number.isFinite(age) || age >= duration) return 0;
+  const normalized = 1 - age / duration;
+  return Math.sin(normalized * Math.PI * 0.5) * normalized;
+}
+
+export function computeWeaponSwitchBlend(progress = 1) {
+  const t = clamp(progress, 0, 1, 1);
+  return t * t * (3 - 2 * t);
+}
+
+export function computeThirdPersonOcclusionOpacity({
+  cameraDistance = 4,
+  nearDistance = 0.90,
+  farDistance = 2.05,
+  minimumOpacity = 0.08
+} = {}) {
+  const near = clamp(nearDistance, 0.25, 4, 0.90);
+  const far = Math.max(near + 0.05, clamp(farDistance, near + 0.05, 8, 2.05));
+  const minimum = clamp(minimumOpacity, 0, 1, 0.08);
+  const distance = Math.max(0, finite(cameraDistance, far));
+  const t = clamp((distance - near) / (far - near), 0, 1, 1);
+  const eased = t * t * (3 - 2 * t);
+  return minimum + (1 - minimum) * eased;
+}
+
 export function normalizeThirdPersonWeaponFamily(value) {
   const token = String(value || 'PISTOL')
     .trim()
@@ -132,7 +160,9 @@ export function computeThirdPersonAvatarPose({
   sprinting = false,
   gaitPhase = 0,
   reloading = false,
-  reloadProgress = 0
+  reloadProgress = 0,
+  firePulse = 0,
+  switchProgress = 1
 } = {}) {
   const profile = getThirdPersonWeaponProfile(weaponFamily);
   const speed = Math.max(0, finite(horizontalSpeed, 0));
@@ -145,16 +175,19 @@ export function computeThirdPersonAvatarPose({
     ? Math.sin(clamp(reloadProgress, 0, 1, 0) * Math.PI)
     : 0;
   const visualPitch = clamp(pitch, -0.85, 0.75, 0);
+  const fire = clamp(firePulse, 0, 1, 0);
+  const switchBlend = computeWeaponSwitchBlend(switchProgress);
+  const switchDip = (1 - switchBlend) * 0.20;
 
   const weaponPosition = Object.freeze({
     x: profile.mount.x + sprint * 0.13 + reloadT * 0.07,
-    y: profile.mount.y - sprint * 0.18 - reloadT * 0.05,
-    z: profile.mount.z + sprint * 0.13 + reloadT * 0.04
+    y: profile.mount.y - sprint * 0.18 - reloadT * 0.05 - switchDip,
+    z: profile.mount.z + sprint * 0.13 + reloadT * 0.04 + fire * 0.10 + switchDip * 0.25
   });
   const weaponRotation = Object.freeze({
-    x: profile.rotation.x + visualPitch * 0.74 - sprint * 0.42 + reloadT * 0.20,
+    x: profile.rotation.x + visualPitch * 0.74 - sprint * 0.42 + reloadT * 0.20 + fire * 0.12,
     y: profile.rotation.y + sprint * 0.18 - reloadT * 0.08,
-    z: profile.rotation.z - sprint * 0.20 + reloadT * 0.46
+    z: profile.rotation.z - sprint * 0.20 + reloadT * 0.46 + fire * 0.035
   });
 
   const rightHand = transformGrip(
@@ -198,6 +231,8 @@ export function computeThirdPersonAvatarPose({
     targetLength: profile.targetLength,
     moving,
     gait,
+    firePulse: fire,
+    switchBlend,
     torso: Object.freeze({
       x: sprint * 0.10,
       z: moving ? Math.sin(finite(gaitPhase, 0) * 0.5) * 0.025 : 0,

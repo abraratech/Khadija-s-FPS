@@ -873,12 +873,15 @@
 <small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="master-volume-current" style="color:#ffaa00;font-weight:900;">80%</span></small>
 </div>
 </div>
-<div class="ka-setting-row disabled">
+<div class="ka-setting-row">
 <div>
 <strong>Music Volume</strong>
-<small>Reserved for future menu/combat music.</small>
+<small>Controls menu, ambient, and combat music. Saved automatically.</small>
 </div>
-<div><input disabled="" max="100" min="0" type="range" value="60"/><span class="ka-disabled-pill">Disabled</span></div>
+<div>
+<input id="music-volume-slider" max="100" min="0" type="range" value="60"/>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="music-volume-current" style="color:#ffaa00;font-weight:900;">60%</span></small>
+</div>
 </div>
 <div class="ka-setting-row">
 <div>
@@ -899,6 +902,21 @@
 <input id="fov-slider" max="100" min="70" type="range" value="82"/>
 <small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="fov-current" style="color:#ffaa00;font-weight:900;">82°</span></small>
 </div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>ADS Behavior</strong><small>Choose hold or click-to-toggle for desktop mouse aiming.</small></div>
+<div><select class="ka-setting-control" id="ads-mode-select"><option value="hold">Hold</option><option value="toggle">Toggle</option></select></div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>Mouse Invert Y</strong><small>Invert vertical desktop mouse aiming without changing controller settings.</small></div>
+<div><select class="ka-setting-control" id="mouse-invert-y-select"><option value="off">Off</option><option value="on">On</option></select></div>
+</div>
+
+<div class="ka-setting-row">
+<div><strong>Crosshair Visibility</strong><small>Show or hide the aiming reticle while preserving hit feedback settings.</small></div>
+<div><select class="ka-setting-control" id="crosshair-enabled-select"><option value="on">On</option><option value="off">Off</option></select></div>
 </div>
 
 <div class="ka-setting-row">
@@ -983,6 +1001,11 @@
 <div><strong>Tutorial Prompts</strong><small id="tutorial-status">Training available on the next run</small><small>Includes first-run controls and one-time enemy introductions.</small></div>
 <div><select class="ka-setting-control" id="tutorial-prompts-select"><option value="on">On</option><option value="off">Off</option></select><button class="ka-link-btn" id="reset-tutorial-btn" style="width:100%;margin-top:8px;text-align:center;" type="button">Reset Training</button></div>
 </div>
+<div class="ka-setting-row">
+<div><strong>Player Preference Defaults</strong><small>Restore audio, mouse, FOV, ADS, crosshair visibility, and display-stat defaults.</small></div>
+<div><button class="ka-link-btn" id="reset-player-preferences-btn" style="width:100%;text-align:center;" type="button">Reset Player Preferences</button></div>
+</div>
+
 <div class="ka-setting-row">
 <div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
 <div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>

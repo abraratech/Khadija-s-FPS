@@ -49,6 +49,7 @@ let bindings = readBindings();
 let controllerSettings = readControllerSettings();
 let captureAction = null;
 let uiBound = false;
+let keybindReturnFocus = null;
 let lastConnectedId = '';
 let previousButtons = [];
 let lastGamepadIndex = -1;
@@ -246,9 +247,32 @@ function renderKeybindList() {
 function setModalVisible(visible) {
   const modal = document.getElementById('keybind-modal');
   if (!modal) return;
-  modal.style.display = visible ? 'flex' : 'none';
-  modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
-  if (!visible) captureAction = null;
+
+  if (visible) {
+    keybindReturnFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : document.getElementById('open-keybinds-btn');
+    modal.inert = false;
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => {
+      document.getElementById('close-keybinds-btn')?.focus();
+    });
+  } else {
+    captureAction = null;
+    if (modal.contains(document.activeElement)) {
+      document.activeElement?.blur?.();
+    }
+    modal.inert = true;
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+
+    const returnTarget = keybindReturnFocus?.isConnected
+      ? keybindReturnFocus
+      : document.getElementById('open-keybinds-btn');
+    queueMicrotask(() => returnTarget?.focus?.());
+  }
+
   renderKeybindList();
 }
 
@@ -358,6 +382,9 @@ export function initControlsUI() {
   }
 
   uiBound = true;
+
+  const keybindModal = document.getElementById('keybind-modal');
+  if (keybindModal) keybindModal.inert = true;
 
   document.getElementById('open-keybinds-btn')?.addEventListener('click', () => {
     setModalVisible(true);

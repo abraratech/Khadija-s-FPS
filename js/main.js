@@ -44,6 +44,9 @@ import {
   triggerMobileHaptic
 } from './controls.js';
 import { initAccessibilityControls } from './accessibility.js';
+import { initPlayerPreferencesControls, getAdsMode, getInvertYEnabled } from './player_preferences.js';
+import { initAdaptiveMusic } from './adaptive_music.js';
+import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
 import {
   initTutorialControls,
   resetTutorialRun,
@@ -534,7 +537,18 @@ bindCoreSettingsControls();
 bindAIMemoryControls();
 initControlsUI();
 initAccessibilityControls();
+initPlayerPreferencesControls({
+  onReset: () => {
+    setMasterVolume(80);
+    setMouseSensitivityPercent(100);
+    setBaseFOV(82);
+    setDamageIndicatorsEnabled(true);
+    setPerformanceStatsEnabled(false);
+    syncCoreSettingsControls();
+  }
+});
 initTutorialControls();
+initLocalLeaderboards();
 runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
 console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
 
@@ -737,7 +751,7 @@ function pauseGameplay(source = 'input') {
 });
 
 window.addEventListener('mousemove', e => { 
-  if (locked) { mdx += e.movementX; mdy += e.movementY; } 
+  if (locked) { mdx += e.movementX; mdy += e.movementY * (getInvertYEnabled() ? -1 : 1); } 
 });
 
 window.addEventListener('mousedown', e => {
@@ -752,7 +766,7 @@ window.addEventListener('mousedown', e => {
 
   setActionKeyState(action, true);
   triggerGameplayAction(action);
-  if (action === CONTROL_ACTIONS.AIM) mouseADS = true;
+  if (action === CONTROL_ACTIONS.AIM) mouseADS = getAdsMode() === 'toggle' ? !mouseADS : true;
 });
 
 window.addEventListener('mouseup', e => {
@@ -762,7 +776,7 @@ window.addEventListener('mouseup', e => {
   if (!action) return;
 
   setActionKeyState(action, false);
-  if (action === CONTROL_ACTIONS.AIM) mouseADS = false;
+  if (action === CONTROL_ACTIONS.AIM && getAdsMode() === 'hold') mouseADS = false;
 });
 
 window.addEventListener('wheel', e => {
@@ -862,6 +876,14 @@ queueMicrotask(() => {
   }
 });
 let gs = 'menu', prev = 0;
+initAdaptiveMusic({
+  getGameState: () => gs,
+  getMapId: () => currentMapMeta?.id || currentMapMeta?.key || currentMapMeta?.name || 'grid_bunker',
+  getWave: () => currentWave,
+  getEnemyCount: () => getActiveEnemies().length,
+  getPlayerAlive: () => player.alive,
+  getSpecialRound: () => isSpecialRound
+});
 let smoothFps = 60;
 let worstFrameMs = 0;
 
@@ -923,6 +945,18 @@ function finalizeCurrentRun(reason = 'ENDED') {
     reason: String(reason || 'ENDED').toUpperCase()
   };
   finalizeRunSummary(payload);
+  submitLocalLeaderboardRun({
+    mapId: document.getElementById('map-select')?.value
+      || currentMapMeta?.id
+      || currentMapMeta?.name
+      || 'grid_bunker',
+    difficulty: difficultyMultiplier,
+    score: payload.score,
+    wave: payload.wave,
+    kills: player.kills,
+    summary: getRunSummarySnapshot(),
+    mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+  });
   finalizeProgressionRun(payload);
   endObjectivesRun();
   endChallengesRun();
@@ -1120,6 +1154,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     resetObjectivesRun({ mapId: chosenMap });
     resetMapGameplay({ mapId: chosenMap, scene });
     resetChallengesRun();
+    beginLocalLeaderboardRun();
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
     runReleaseValidation({ phase: 'RUN_START', mapId: chosenMap, isMobile, devMode: DEV_MODE, mapValidation: getMapValidationSnapshot() });
 

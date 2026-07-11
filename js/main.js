@@ -1,7 +1,7 @@
 // js/main.js
 import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
+import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
@@ -572,6 +572,13 @@ initCameraPresentation({
 initGameplayReliability({
   player,
   getGameState: () => gs,
+  getRunContext: () => ({
+    mapId: currentMapMeta?.id
+      || document.getElementById('map-select')?.value
+      || 'grid_bunker',
+    difficulty: Number(document.getElementById('diff-select')?.value) || 1,
+    mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+  }),
   getEnemyReliabilitySnapshot,
   getCombatReliabilitySnapshot,
   getReviveSnapshot: getMultiplayerReviveSnapshot,
@@ -1246,6 +1253,7 @@ function handleOnlineRunEnded(details = {}) {
     saveRunRecords();
   }
   endAIDirectorRun();
+  endEnemyRun(details.reason || 'online-ended');
   endMapGameplay();
   endTutorialRun();
   endVisualTutorial();
@@ -1329,6 +1337,7 @@ function returnToMenu(source = 'pause') {
   finalizeCurrentRun(source);
   saveRunRecords();
   endAIDirectorRun();
+  endEnemyRun(source);
   endMapGameplay();
   endTutorialRun();
   endVisualTutorial();
@@ -1592,6 +1601,7 @@ const effectsMs = performance.now() - mark;
       endMultiplayerRun({ reason: 'death', player });
       endAIDirectorRun();
       finalizeCurrentRun('DEATH');
+      endEnemyRun('death');
       endMapGameplay();
       endTutorialRun();
       endVisualTutorial();

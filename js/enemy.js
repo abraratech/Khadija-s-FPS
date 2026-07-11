@@ -97,6 +97,15 @@ import {
   inspectEnemyReliability,
   updateWaveWatchdog
 } from './gameplay_reliability_core.js';
+import {
+  WAVE_SPAWN_INTEGRITY_PATCH,
+  buildCanonicalEnemyPool,
+  createSpawnAttemptResult,
+  createWaveScheduleToken,
+  inspectEnemyPoolIntegrity,
+  isWaveScheduleTokenCurrent,
+  normalizeWaveIncident
+} from './wave_spawn_integrity_core.js';
 
 export const activeEnemies = [];
 const activePowerups = [];
@@ -130,6 +139,8 @@ const MAX_PROJECTILES = 15;
 const MAX_EXPLOSIONS = 15;
 
 const zombiePool = [];
+const zombieRegistry = [];
+const zombieRegistrySet = new Set();
 const projectilePool = { items: [], index: 0 };
 const explosionPool = { items: [], index: 0 };
 const materialCache = {};
@@ -296,9 +307,21 @@ let zombiesSpawnedSoFar = 0;
 let goliathsToSpawn = 0;
 let spawnTimer = 0;
 let nextWaveTimeout = null;
+let nextWaveScheduleToken = null;
+let nextWaveScheduleSerial = 0;
+let enemyRunGeneration = 0;
+let enemyWaveGeneration = 0;
+let enemyIncidentSerial = 0;
+let enemyIncidents = [];
+let poolRebuilds = 0;
+let spawnFailures = 0;
+let spawnFailureStreak = 0;
+let lastSpawnFailureIncidentAt = -Infinity;
+let lastWaveTargetWaitIncidentAt = -Infinity;
+let staleWaveSchedulesIgnored = 0;
 let enemyReliabilityState = createWaveWatchdogState(currentWave);
 let enemyReliabilitySnapshot = Object.freeze({
-  patch: 'm4-gameplay-reliability-r1',
+  patch: WAVE_SPAWN_INTEGRITY_PATCH,
   wave: currentWave,
   action: 'NONE',
   repairs: 0,
@@ -420,6 +443,7 @@ function initPools() {
 for (let i = 0; i < MAX_ZOMBIES; i++) {
     const g = new THREE.Group();
 const enemyInstance = { 
+  poolId: `zombie-${i + 1}`,
   mesh: g,
   fullModel: null,
   lodMesh: null,
@@ -512,6 +536,8 @@ enemyInstance.lodMesh = lodMesh;
 
 g.visible = false;
 scene.add(g);
+zombieRegistry.push(enemyInstance);
+zombieRegistrySet.add(enemyInstance);
 zombiePool.push(enemyInstance);
   }
   
@@ -519,49 +545,287 @@ zombiePool.push(enemyInstance);
   console.log("🟢 Zombie Pools Initialized!");
 }
 
+function getPoolIntegritySnapshot() {
+  return inspectEnemyPoolIntegrity({
+    registry: zombieRegistry,
+    active: activeEnemies.filter((enemy) => zombieRegistrySet.has(enemy)),
+    pooled: zombiePool
+  });
+}
+
+function getEnemyIncidentMode() {
+  return multiplayerEnemyAuthority ? 'multiplayer-authority' : 'single';
+}
+
+function recordEnemyIncident(type, details = {}) {
+  enemyIncidentSerial += 1;
+  const timestamp = Date.now();
+  const incident = normalizeWaveIncident({
+    id: `${timestamp}-${enemyRunGeneration}-${enemyIncidentSerial}`,
+    serial: enemyIncidentSerial,
+    type,
+    timestamp,
+    runGeneration: enemyRunGeneration,
+    waveGeneration: enemyWaveGeneration,
+    wave: currentWave,
+    mapId: currentMapId,
+    difficulty: getDifficultyScalar(),
+    mode: getEnemyIncidentMode(),
+    details: {
+      ...details,
+      spawned: zombiesSpawnedSoFar,
+      total: zombiesToSpawnThisRound,
+      activeCount: activeEnemies.length,
+      poolSize: zombiePool.length,
+      integrity: getPoolIntegritySnapshot()
+    }
+  });
+  enemyIncidents.push(incident);
+  if (enemyIncidents.length > 24) {
+    enemyIncidents = enemyIncidents.slice(-24);
+  }
+  return incident;
+}
+
+function resetRegistryEnemyForPool(enemy) {
+  if (!enemy || !zombieRegistrySet.has(enemy)) return false;
+  cancelEnemyAttack(enemy);
+  actorManager.unregister(enemy);
+  enemy.alive = false;
+  enemy.dyingT = -1;
+  enemy.networkId = null;
+  enemy.isNetworkProxy = false;
+  enemy.handleNetworkHit = null;
+  enemy.targetPlayerId = null;
+  enemy.health = 0;
+  enemy.atkCD = 0;
+  enemy.attackState = 'IDLE';
+  enemy.attackKind = 'NONE';
+  enemy.attackWindupT = 0;
+  enemy.attackRecoveryT = 0;
+  enemy.attackTelegraphProgress = 0;
+  if (enemy.mesh) {
+    enemy.mesh.visible = false;
+    enemy.mesh.rotation.set(0, 0, 0);
+    enemy.mesh.scale.copy(enemy.originalScale || new THREE.Vector3(1, 1, 1));
+  }
+  return true;
+}
+
+function rebuildZombiePool(reason = 'manual', { record = true } = {}) {
+  initPools();
+  const before = getPoolIntegritySnapshot();
+  const cleanedActive = [];
+  const seenRegistryActive = new Set();
+  let removedDuplicateActive = 0;
+
+  for (const enemy of activeEnemies) {
+    if (!zombieRegistrySet.has(enemy)) {
+      cleanedActive.push(enemy);
+      continue;
+    }
+    if (seenRegistryActive.has(enemy)) {
+      removedDuplicateActive += 1;
+      continue;
+    }
+    seenRegistryActive.add(enemy);
+    cleanedActive.push(enemy);
+  }
+
+  if (cleanedActive.length !== activeEnemies.length) {
+    activeEnemies.length = 0;
+    activeEnemies.push(...cleanedActive);
+  }
+
+  const canonical = buildCanonicalEnemyPool({
+    registry: zombieRegistry,
+    active: cleanedActive
+  });
+  zombiePool.length = 0;
+  for (const enemy of canonical.pool) {
+    resetRegistryEnemyForPool(enemy);
+    zombiePool.push(enemy);
+  }
+  poolRebuilds += 1;
+  const after = getPoolIntegritySnapshot();
+
+  if (record && (!before.invariantOk || removedDuplicateActive > 0)) {
+    recordEnemyIncident('POOL_INVARIANT_REPAIRED', {
+      reason: String(reason || 'manual'),
+      removedDuplicateActive,
+      before,
+      after
+    });
+  }
+
+  return Object.freeze({
+    reason: String(reason || 'manual'),
+    repaired: !before.invariantOk || removedDuplicateActive > 0,
+    removedDuplicateActive,
+    before,
+    after
+  });
+}
+
+function takeEnemyFromPool({ allowRepair = true, reason = 'spawn' } = {}) {
+  const takeCandidate = () => {
+    while (zombiePool.length > 0) {
+      const candidate = zombiePool.pop();
+      if (!zombieRegistrySet.has(candidate)) continue;
+      if (activeEnemies.includes(candidate)) continue;
+      return candidate;
+    }
+    return null;
+  };
+
+  let enemy = takeCandidate();
+  let repaired = false;
+  if (!enemy && allowRepair) {
+    rebuildZombiePool(`${reason}-pool-empty`, { record: true });
+    repaired = true;
+    enemy = takeCandidate();
+  }
+  return { enemy, repaired };
+}
+
+function returnEnemyToPool(enemy, reason = 'return') {
+  if (!enemy || !zombieRegistrySet.has(enemy)) return false;
+  for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
+    if (activeEnemies[index] === enemy) activeEnemies.splice(index, 1);
+  }
+  resetRegistryEnemyForPool(enemy);
+  if (!zombiePool.includes(enemy)) zombiePool.push(enemy);
+  const integrity = getPoolIntegritySnapshot();
+  if (!integrity.invariantOk) {
+    rebuildZombiePool(`${reason}-post-return`, { record: true });
+  }
+  return true;
+}
+
+function clearNextWaveSchedule(reason = 'cleared') {
+  if (nextWaveTimeout) clearTimeout(nextWaveTimeout);
+  nextWaveTimeout = null;
+  nextWaveScheduleToken = null;
+  nextWaveScheduleSerial += 1;
+  return reason;
+}
+
+function scheduleWaveStart(delayMs, reason = 'round-clear', wave = currentWave) {
+  if (nextWaveTimeout) clearTimeout(nextWaveTimeout);
+  const serial = ++nextWaveScheduleSerial;
+  const token = createWaveScheduleToken({
+    runGeneration: enemyRunGeneration,
+    waveGeneration: enemyWaveGeneration,
+    wave,
+    serial,
+    reason
+  });
+  nextWaveScheduleToken = token;
+  nextWaveTimeout = setTimeout(() => {
+    const scheduledToken = nextWaveScheduleToken;
+    nextWaveTimeout = null;
+    nextWaveScheduleToken = null;
+    const current = {
+      runGeneration: enemyRunGeneration,
+      waveGeneration: enemyWaveGeneration,
+      wave: currentWave,
+      serial: nextWaveScheduleSerial
+    };
+    if (scheduledToken !== token || !isWaveScheduleTokenCurrent(token, current)) {
+      staleWaveSchedulesIgnored += 1;
+      recordEnemyIncident('STALE_WAVE_SCHEDULE_IGNORED', {
+        reason: token.reason,
+        token,
+        current
+      });
+      return;
+    }
+
+    if (getEnemyTargetCandidates().length > 0) {
+      startWave(token.wave);
+      return;
+    }
+
+    const now = performance.now();
+    if (now - lastWaveTargetWaitIncidentAt >= 5000) {
+      lastWaveTargetWaitIncidentAt = now;
+      recordEnemyIncident('WAVE_START_WAITING_FOR_TARGET', {
+        reason: token.reason,
+        retryDelayMs: 500
+      });
+    }
+    scheduleWaveStart(500, 'waiting-for-live-target', token.wave);
+  }, Math.max(0, Number(delayMs) || 0));
+  return token;
+}
+
+export function endEnemyRun(reason = 'ended') {
+  enemyRunGeneration += 1;
+  enemyWaveGeneration = 0;
+  clearNextWaveSchedule(`run-ended:${reason}`);
+  actorManager.clear();
+
+  for (const enemy of [...activeEnemies]) {
+    if (zombieRegistrySet.has(enemy)) {
+      returnEnemyToPool(enemy, 'run-end');
+    } else if (enemy?.mesh) {
+      enemy.mesh.visible = false;
+    }
+  }
+  activeEnemies.length = 0;
+  activePowerups.forEach((powerup) => scene.remove(powerup.mesh));
+  activePowerups.length = 0;
+  projectilePool.items.forEach((projectile) => { projectile.mesh.visible = false; });
+  explosionPool.items.forEach((explosion) => { explosion.mesh.visible = false; });
+  rebuildZombiePool('run-end', { record: true });
+  resetEnemyReliabilityState(`run-ended:${reason}`);
+  return getEnemyReliabilitySnapshot();
+}
+
 export function initEnemies() {
   initPools();
-
-  if (nextWaveTimeout) {
-    clearTimeout(nextWaveTimeout);
-    nextWaveTimeout = null;
-  }
+  enemyRunGeneration += 1;
+  enemyWaveGeneration = 0;
+  clearNextWaveSchedule('run-init');
 
   actorManager.clear();
   campWarningTimer = 0;
   meleeDamageGraceT = 0;
   seenVariantTypesThisRun = new Set();
-  resetEnemyReliabilityState('init');
-  for (let i = activeEnemies.length - 1; i >= 0; i--) {
-    const e = activeEnemies[i];
-    e.mesh.visible = false;
-    zombiePool.push(e);
+  spawnFailureStreak = 0;
+
+  for (const enemy of [...activeEnemies]) {
+    if (zombieRegistrySet.has(enemy)) {
+      returnEnemyToPool(enemy, 'run-init');
+    } else if (enemy?.mesh) {
+      enemy.mesh.visible = false;
+    }
   }
-  
-  activeEnemies.length = 0; 
-  activePowerups.forEach(p => scene.remove(p.mesh)); 
+  activeEnemies.length = 0;
+  rebuildZombiePool('run-init', { record: true });
+  resetEnemyReliabilityState('init');
+
+  activePowerups.forEach(p => scene.remove(p.mesh));
   activePowerups.length = 0;
   projectilePool.items.forEach(p => p.mesh.visible = false);
   explosionPool.items.forEach(ex => ex.mesh.visible = false);
-  
-  currentWave = 1; 
+
+  currentWave = 1;
   startWave(currentWave);
 }
 
 export function clearEnemiesForNetworkProxyMode() {
   initPools();
-  if (nextWaveTimeout) {
-    clearTimeout(nextWaveTimeout);
-    nextWaveTimeout = null;
-  }
+  enemyRunGeneration += 1;
+  enemyWaveGeneration = 0;
+  clearNextWaveSchedule('network-proxy-mode');
   actorManager.clear();
   for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
     const enemy = activeEnemies[index];
     if (enemy?.isNetworkProxy) continue;
-    if (enemy?.mesh) enemy.mesh.visible = false;
-    zombiePool.push(enemy);
-    activeEnemies.splice(index, 1);
+    returnEnemyToPool(enemy, 'network-proxy-mode');
   }
+  rebuildZombiePool('network-proxy-mode', { record: true });
   projectilePool.items.forEach((projectile) => {
     projectile.mesh.visible = false;
   });
@@ -578,28 +842,32 @@ export function getNetworkEnemyWaveState() {
     zombiesSpawned: Math.max(0, Number(zombiesSpawnedSoFar) || 0),
     goliathsRemaining: Math.max(0, Number(goliathsToSpawn) || 0),
     spawnTimer: Number(spawnTimer) || 0,
-    nextWavePending: nextWaveTimeout !== null
+    nextWavePending: nextWaveTimeout !== null,
+    runGeneration: enemyRunGeneration,
+    waveGeneration: enemyWaveGeneration,
+    poolIntegrity: getPoolIntegritySnapshot()
   };
 }
 
 export function restoreNetworkEnemySnapshot(snapshot = {}) {
   initPools();
-
-  if (nextWaveTimeout) {
-    clearTimeout(nextWaveTimeout);
-    nextWaveTimeout = null;
-  }
+  enemyRunGeneration += 1;
+  enemyWaveGeneration = 0;
+  clearNextWaveSchedule('network-restore');
 
   actorManager.clear();
   campWarningTimer = 0;
   meleeDamageGraceT = 0;
 
-  for (let index = activeEnemies.length - 1; index >= 0; index -= 1) {
-    const enemy = activeEnemies[index];
-    enemy.mesh?.parent && (enemy.mesh.visible = false);
-    if (!enemy?.isNetworkProxy) zombiePool.push(enemy);
+  for (const enemy of [...activeEnemies]) {
+    if (zombieRegistrySet.has(enemy)) {
+      returnEnemyToPool(enemy, 'network-restore');
+    } else if (enemy?.mesh) {
+      enemy.mesh.visible = false;
+    }
   }
   activeEnemies.length = 0;
+  rebuildZombiePool('network-restore', { record: true });
 
   const waveState = snapshot.waveState || {};
   currentWave = Math.max(
@@ -635,10 +903,18 @@ export function restoreNetworkEnemySnapshot(snapshot = {}) {
     zombiesSpawnedSoFar = states.length;
   }
 
-  states.slice(0, zombiePool.length).forEach((state) => {
+  states.slice(0, zombieRegistry.length).forEach((state) => {
     const config = getEnemyTypeMeta(state.type);
-    const restored = zombiePool.pop();
-    if (!restored) return;
+    const { enemy: restored } = takeEnemyFromPool({
+      allowRepair: true,
+      reason: 'network-restore'
+    });
+    if (!restored) {
+      recordEnemyIncident('NETWORK_RESTORE_POOL_EXHAUSTED', {
+        requestedStates: states.length
+      });
+      return;
+    }
 
     restored.networkId = state.id || null;
     restored.isNetworkProxy = false;
@@ -706,6 +982,8 @@ export function restoreNetworkEnemySnapshot(snapshot = {}) {
     actorManager.register(restored);
   });
 
+  rebuildZombiePool('network-restore-complete', { record: true });
+  enemyWaveGeneration += 1;
   toggleSwarmLighting(isSpecialRound);
   updateRoundHUD(currentWave);
   beginAIDirectorWave(currentWave);
@@ -731,12 +1009,9 @@ export function resumeNetworkWaveAfterMigration(snapshot = {}) {
     return false;
   }
 
-  // The old host's timeout cannot survive migration. The checkpoint already
-  // carries the incremented next-wave number, so restart that wave directly.
-  nextWaveTimeout = setTimeout(() => {
-    nextWaveTimeout = null;
-    if (getEnemyTargetCandidates().length > 0) startWave(currentWave);
-  }, 1200);
+  // The old host's timeout cannot survive migration. Use a generation-bound
+  // schedule so a timeout from an older authority/run can never start a wave.
+  scheduleWaveStart(1200, 'host-migration-resume', currentWave);
   return true;
 }
 
@@ -778,9 +1053,17 @@ function announceWaveStart(waveNumber) {
 }
 
 function startWave(waveNumber) {
+  if (nextWaveTimeout || nextWaveScheduleToken) {
+    clearNextWaveSchedule('wave-start');
+  }
+  enemyWaveGeneration += 1;
   zombiesSpawnedSoFar = 0;
-  nextWaveTimeout = null;
   announcedTypesThisWave = new Set();
+  spawnFailureStreak = 0;
+  const wavePoolIntegrity = getPoolIntegritySnapshot();
+  if (!wavePoolIntegrity.invariantOk) {
+    rebuildZombiePool('wave-start', { record: true });
+  }
   resetEnemyReliabilityState('wave-start');
   isSpecialRound = (waveNumber > 0 && waveNumber % 5 === 0);
   spawnTimer = isSpecialRound ? -SPECIAL_WAVE_LEAD_IN : -NORMAL_WAVE_LEAD_IN;
@@ -848,10 +1131,7 @@ function completeCurrentWave() {
     }, 2850);
   }
 
-  nextWaveTimeout = setTimeout(() => {
-    nextWaveTimeout = null;
-    if (getEnemyTargetCandidates().length > 0) startWave(currentWave);
-  }, 5000);
+  scheduleWaveStart(5000, 'round-clear', currentWave);
 }
 
 function getSpawnInterval() {
@@ -1173,95 +1453,160 @@ function applyEnemySeparation(enemy, enemyIndex, dt) {
   }
 }
 
-function spawnZombie() {
-  if (zombiePool.length === 0) return; 
+function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
+  const take = takeEnemyFromPool({ allowRepair, reason });
+  const recycled = take.enemy;
+
+  if (!recycled) {
+    spawnFailures += 1;
+    spawnFailureStreak += 1;
+    const now = performance.now();
+    if (
+      spawnFailureStreak === 1
+      || now - lastSpawnFailureIncidentAt >= 5000
+    ) {
+      lastSpawnFailureIncidentAt = now;
+      recordEnemyIncident('SPAWN_POOL_EMPTY', {
+        reason,
+        repaired: take.repaired,
+        failureStreak: spawnFailureStreak
+      });
+    }
+    return createSpawnAttemptResult({
+      ok: false,
+      reason: 'POOL_EMPTY',
+      repaired: take.repaired,
+      poolSize: zombiePool.length,
+      activeCount: activeEnemies.length,
+      spawned: zombiesSpawnedSoFar,
+      total: zombiesToSpawnThisRound
+    });
+  }
 
   const config = pickEnemyTypeConfig();
 
-  const recycled = zombiePool.pop();
-  
-  recycled.type = config.name;
-  const coopScaling = getCoopScalingProfile();
-  recycled.health = Math.max(1, Math.round(config.maxHealth * coopScaling.enemyHealthScale));
-  recycled.maxHealth = recycled.health;
-  const directorTuning = getAIDirectorTuning();
-  recycled.speed = (
-    config.speed +
-    (Math.random() - 0.5) * 0.32 +
-    getWaveSpeedBonus(config)
-  ) * directorTuning.speedScale;
-  recycled.directorRole = assignEnemyDirectorRole(config.name);
-  recycled.damage = config.damage;
-  recycled.attackRate = config.attackCooldown;
-  recycled.aiTimer = Math.random() * 0.15;
-  recycled.atkCD = Math.random() * config.attackCooldown;
-  recycled.attackRange = config.attackRange;
-  recycled.colRadius = config.colRadius;
-  recycled.walkT = Math.random() * Math.PI * 2;
-  recycled.hitReactT = 0;
-  recycled.hitReactDir = 1;
-  recycled.attackAnimT = 0;
-  recycled.attackAnimDuration = config.name === 'CRAWLER' ? 0.46 : 0.30;
-  recycled.rangedLosTimer = Math.random() * 0.12;
-  recycled.rangedHasLos = false;
-  recycled.lastHitDamage = 0;
-  recycled.lastHitHeadshot = false;
-  recycled.lastHitAt = 0;
-  registerAttackEnemy(recycled);
-  recycled.dyingT = -1;
-  recycled.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
-  recycled.cachedGroundY = 0;
-  recycled.alive = true;
-  recycled.originalScale.copy(config.scale);
-  recycled.scoreReward = config.killScore || 50;
-  recycled.headshotReward = config.headshotScore || 100;
-  recycled.bossBounty = config.bossBounty || 0;
-  recycled.role = config.role || 'standard';
+  try {
+    recycled.networkId = null;
+    recycled.isNetworkProxy = false;
+    recycled.handleNetworkHit = null;
+    recycled.targetPlayerId = null;
+    recycled.type = config.name;
+    const coopScaling = getCoopScalingProfile();
+    recycled.health = Math.max(1, Math.round(config.maxHealth * coopScaling.enemyHealthScale));
+    recycled.maxHealth = recycled.health;
+    const directorTuning = getAIDirectorTuning();
+    recycled.speed = (
+      config.speed +
+      (Math.random() - 0.5) * 0.32 +
+      getWaveSpeedBonus(config)
+    ) * directorTuning.speedScale;
+    recycled.directorRole = assignEnemyDirectorRole(config.name);
+    recycled.damage = config.damage;
+    recycled.attackRate = config.attackCooldown;
+    recycled.aiTimer = Math.random() * 0.15;
+    recycled.atkCD = Math.random() * config.attackCooldown;
+    recycled.attackRange = config.attackRange;
+    recycled.colRadius = config.colRadius;
+    recycled.walkT = Math.random() * Math.PI * 2;
+    recycled.hitReactT = 0;
+    recycled.hitReactDir = 1;
+    recycled.attackAnimT = 0;
+    recycled.attackAnimDuration = config.name === 'CRAWLER' ? 0.46 : 0.30;
+    recycled.rangedLosTimer = Math.random() * 0.12;
+    recycled.rangedHasLos = false;
+    recycled.lastHitDamage = 0;
+    recycled.lastHitHeadshot = false;
+    recycled.lastHitAt = 0;
+    registerAttackEnemy(recycled);
+    recycled.dyingT = -1;
+    recycled.groundUpdateTimer = Math.random() * ENEMY_GROUND_SAMPLE_FAR;
+    recycled.cachedGroundY = 0;
+    recycled.alive = true;
+    recycled.originalScale.copy(config.scale);
+    recycled.scoreReward = config.killScore || 50;
+    recycled.headshotReward = config.headshotScore || 100;
+    recycled.bossBounty = config.bossBounty || 0;
+    recycled.role = config.role || 'standard';
 
-  if (recycled.mixer && ASSETS.enemies.zombie && ASSETS.enemies.zombie.animations.length > 0) {
-    recycled.mixer.stopAllAction();
-    const walkAnim = recycled.mixer.clipAction(ASSETS.enemies.zombie.animations[0]);
-    walkAnim.setLoop(THREE.LoopRepeat);
-    walkAnim.play();
+    if (recycled.mixer && ASSETS.enemies.zombie && ASSETS.enemies.zombie.animations.length > 0) {
+      recycled.mixer.stopAllAction();
+      const walkAnim = recycled.mixer.clipAction(ASSETS.enemies.zombie.animations[0]);
+      walkAnim.setLoop(THREE.LoopRepeat);
+      walkAnim.play();
+    }
+
+    recycled.mesh.scale.copy(config.scale);
+    recycled.mesh.rotation.set(0, 0, 0);
+    recycled.mesh.position.y = 0;
+    recycled.mesh.visible = true;
+
+    recycled.mesh.traverse(child => {
+      if (child.isMesh || child.isSkinnedMesh) {
+        if (child.userData.keepMaterial) return;
+
+        child.material = getZombieMaterial(config, child.material);
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
+
+    const spawnPoint = pickSafeEnemySpawnPoint();
+
+    if (spawnPoint) {
+      recycled.mesh.position.set(
+        spawnPoint.x + (Math.random() - 0.5) * 1.15,
+        0,
+        spawnPoint.z + (Math.random() - 0.5) * 1.15
+      );
+    } else {
+      recycled.mesh.position.set(0, 0, 0);
+    }
+
+    updateProceduralZombieStyle(recycled.lodMesh, config);
+    if (!activeEnemies.includes(recycled)) activeEnemies.push(recycled);
+    registerSquadEnemy(recycled);
+    registerArchetypeEnemy(recycled);
+    registerFormationEnemy(recycled);
+    registerNavigationEnemy(recycled);
+    actorManager.register(recycled);
+    zombiesSpawnedSoFar += 1;
+    spawnFailureStreak = 0;
+
+    announceEnemyVariant(config);
+
+    const integrity = getPoolIntegritySnapshot();
+    if (!integrity.invariantOk) {
+      rebuildZombiePool('post-spawn', { record: true });
+    }
+
+    return createSpawnAttemptResult({
+      ok: true,
+      reason: 'SPAWNED',
+      repaired: take.repaired,
+      poolSize: zombiePool.length,
+      activeCount: activeEnemies.length,
+      spawned: zombiesSpawnedSoFar,
+      total: zombiesToSpawnThisRound
+    });
+  } catch (error) {
+    if (config.name === 'GOLIATH') goliathsToSpawn += 1;
+    spawnFailures += 1;
+    spawnFailureStreak += 1;
+    returnEnemyToPool(recycled, 'spawn-exception');
+    recordEnemyIncident('SPAWN_EXCEPTION', {
+      reason,
+      message: String(error?.message || error || 'unknown').slice(0, 240)
+    });
+    return createSpawnAttemptResult({
+      ok: false,
+      reason: 'EXCEPTION',
+      repaired: take.repaired,
+      poolSize: zombiePool.length,
+      activeCount: activeEnemies.length,
+      spawned: zombiesSpawnedSoFar,
+      total: zombiesToSpawnThisRound
+    });
   }
-
-  recycled.mesh.scale.copy(config.scale);
-  recycled.mesh.rotation.set(0, 0, 0);
-  recycled.mesh.position.y = 0; 
-  recycled.mesh.visible = true;
-
-recycled.mesh.traverse(child => {
-  if (child.isMesh || child.isSkinnedMesh) {
-    if (child.userData.keepMaterial) return;
-
-    child.material = getZombieMaterial(config, child.material);
-    child.castShadow = false;
-    child.receiveShadow = false;
-  }
-});
-
-  const spawnPoint = pickSafeEnemySpawnPoint();
-
-  if (spawnPoint) {
-    recycled.mesh.position.set(
-      spawnPoint.x + (Math.random() - 0.5) * 1.15,
-      0,
-      spawnPoint.z + (Math.random() - 0.5) * 1.15
-    );
-  } else {
-    recycled.mesh.position.set(0, 0, 0); 
-  }
-
-  updateProceduralZombieStyle(recycled.lodMesh, config);
-  activeEnemies.push(recycled);
-  registerSquadEnemy(recycled);
-  registerArchetypeEnemy(recycled);
-  registerFormationEnemy(recycled);
-  registerNavigationEnemy(recycled);
-  actorManager.register(recycled);
-  zombiesSpawnedSoFar++;
-
-  announceEnemyVariant(config);
 }
 
 const _eToP = new THREE.Vector3();
@@ -1451,7 +1796,7 @@ function canRangedAttackPlayer(
 function resetEnemyReliabilityState(reason = 'reset') {
   enemyReliabilityState = createWaveWatchdogState(currentWave);
   enemyReliabilitySnapshot = Object.freeze({
-    patch: 'm4-gameplay-reliability-r1',
+    patch: WAVE_SPAWN_INTEGRITY_PATCH,
     wave: currentWave,
     reason: String(reason || 'reset'),
     action: 'NONE',
@@ -1461,27 +1806,28 @@ function resetEnemyReliabilityState(reason = 'reset') {
     recycledDying: enemyReliabilityRecycledDying,
     spawnerKicks: enemyReliabilitySpawnerKicks,
     forcedWaveCompletions: enemyReliabilityForcedWaveCompletions,
+    runGeneration: enemyRunGeneration,
+    waveGeneration: enemyWaveGeneration,
+    poolRebuilds,
+    spawnFailures,
+    spawnFailureStreak,
+    staleWaveSchedulesIgnored,
+    pool: getPoolIntegritySnapshot(),
+    latestIncident: enemyIncidents[enemyIncidents.length - 1] || null,
+    incidents: Object.freeze(enemyIncidents.slice(-12)),
     counts: inspectEnemyReliability(activeEnemies)
   });
 }
 
 function recycleStaleEnemy(enemy, index) {
   if (!enemy) return false;
-  cancelEnemyAttack(enemy);
   recordSquadEnemyDeath(enemy);
   recordNavigationEnemyRemoved(enemy);
   recordFormationEnemyRemoved(enemy);
-  actorManager.unregister(enemy);
-  enemy.alive = false;
-  enemy.dyingT = -1;
-  enemy.mesh.visible = false;
-  enemy.mesh.rotation.set(0, 0, 0);
-  if (!zombiePool.includes(enemy) && !enemy.isNetworkProxy) {
-    zombiePool.push(enemy);
-  }
-  activeEnemies.splice(index, 1);
-  enemyReliabilityRecycledDying += 1;
-  return true;
+  if (activeEnemies[index] === enemy) activeEnemies.splice(index, 1);
+  const returned = returnEnemyToPool(enemy, 'stale-dying');
+  if (returned) enemyReliabilityRecycledDying += 1;
+  return returned;
 }
 
 function repairEnemyReliabilityState() {
@@ -1548,6 +1894,12 @@ function repairEnemyReliabilityState() {
     }
   }
 
+  const poolIntegrity = getPoolIntegritySnapshot();
+  if (!poolIntegrity.invariantOk) {
+    const poolRepair = rebuildZombiePool('enemy-reliability', { record: true });
+    if (poolRepair.repaired) repaired += 1;
+  }
+
   if (repaired > 0) enemyReliabilityRepairs += repaired;
   return repaired;
 }
@@ -1574,13 +1926,19 @@ function updateEnemyReliability(dt) {
     if (
       zombiesSpawnedSoFar < zombiesToSpawnThisRound
       && activeEnemies.length < getActiveZombieCap()
-      && zombiePool.length > 0
       && getEnemyTargetCandidates().length > 0
     ) {
-      spawnZombie();
-      spawnTimer = 0;
-      enemyReliabilitySpawnerKicks += 1;
-      enemyReliabilityState = createWaveWatchdogState(currentWave);
+      const attempt = spawnZombie({
+        reason: 'watchdog-kick',
+        allowRepair: true
+      });
+      if (attempt.ok) {
+        spawnTimer = 0;
+        enemyReliabilitySpawnerKicks += 1;
+        enemyReliabilityState = createWaveWatchdogState(currentWave);
+      } else {
+        spawnTimer = Math.max(spawnTimer, getSpawnInterval());
+      }
     } else {
       spawnTimer = Math.max(spawnTimer, getSpawnInterval());
     }
@@ -1592,7 +1950,7 @@ function updateEnemyReliability(dt) {
 
   const after = inspectEnemyReliability(activeEnemies);
   enemyReliabilitySnapshot = Object.freeze({
-    patch: 'm4-gameplay-reliability-r1',
+    patch: WAVE_SPAWN_INTEGRITY_PATCH,
     wave: currentWave,
     action: result.action,
     repairs: enemyReliabilityRepairs,
@@ -1604,6 +1962,15 @@ function updateEnemyReliability(dt) {
     spawned: zombiesSpawnedSoFar,
     total: zombiesToSpawnThisRound,
     nextWavePending: nextWaveTimeout !== null,
+    runGeneration: enemyRunGeneration,
+    waveGeneration: enemyWaveGeneration,
+    poolRebuilds,
+    spawnFailures,
+    spawnFailureStreak,
+    staleWaveSchedulesIgnored,
+    pool: getPoolIntegritySnapshot(),
+    latestIncident: enemyIncidents[enemyIncidents.length - 1] || null,
+    incidents: Object.freeze(enemyIncidents.slice(-12)),
     watchdog: enemyReliabilityState,
     counts: after
   });
@@ -1770,8 +2137,17 @@ if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
     spawnTimer += dt;
 
     if (spawnTimer >= getSpawnInterval()) {
-      spawnZombie();
-      spawnTimer = 0;
+      const attempt = spawnZombie({
+        reason: 'spawn-timer',
+        allowRepair: true
+      });
+      if (attempt.ok) {
+        spawnTimer = 0;
+      } else {
+        // Keep the timer eligible so the next frame retries instead of
+        // silently waiting through another full interval.
+        spawnTimer = Math.max(spawnTimer, getSpawnInterval());
+      }
     }
   } else {
     spawnTimer = Math.min(spawnTimer, getSpawnInterval());
@@ -1857,11 +2233,9 @@ for (let i = activeEnemies.length - 1; i >= 0; i--) {
       e.mesh.position.y = -fall * 0.18;
       
       if (e.dyingT >= 0.75) {
-        e.mesh.visible = false;
-        zombiePool.push(e);
-		actorManager.unregister(e);
         activeEnemies.splice(i, 1);
-        
+        returnEnemyToPool(e, 'death-animation-complete');
+
         if (zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 0) {
           completeCurrentWave();
         }

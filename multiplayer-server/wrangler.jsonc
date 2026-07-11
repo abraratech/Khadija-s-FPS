@@ -8,6 +8,10 @@
       {
         "name": "ROOMS",
         "class_name": "ArenaRoom"
+      },
+      {
+        "name": "LEADERBOARDS",
+        "class_name": "LeaderboardHub"
       }
     ]
   },
@@ -16,6 +20,12 @@
       "tag": "v1",
       "new_sqlite_classes": [
         "ArenaRoom"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "LeaderboardHub"
       ]
     }
   ],

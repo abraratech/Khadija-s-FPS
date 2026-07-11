@@ -1,6 +1,9 @@
 // multiplayer-server/src/index.js
 
 import { DurableObject } from 'cloudflare:workers';
+import { LeaderboardHub } from './leaderboard_hub.js';
+
+export { LeaderboardHub };
 
 const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/;
 const MAX_PLAYERS = 4;
@@ -9,9 +12,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm3-team-final-world-reconnect-r3';
-const SERVER_PATCH = 'm3-production-release-manifest-r1';
-const CERTIFIED_FRONTEND_SHA = '3d57aab9b75e6b1e04ceeedd5afd5957f3ae361b';
+const SERVER_BUILD = 'm4-online-leaderboards-r1';
+const SERVER_PATCH = 'm4-online-leaderboards-r1';
+const CERTIFIED_FRONTEND_SHA = '4efad4b395263fc342d685125f724df261257263';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -20,6 +23,8 @@ function json(data, init = {}) {
   headers.set('content-type', 'application/json; charset=utf-8');
   headers.set('cache-control', 'no-store');
   headers.set('access-control-allow-origin', '*');
+  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
+  headers.set('access-control-allow-headers', 'content-type');
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
@@ -67,6 +72,36 @@ function originAllowed(request, env) {
   if (!allowed) return true;
   const origin = request.headers.get('origin');
   return !origin || allowed.has(origin);
+}
+
+function corsify(response) {
+  const headers = new Headers(response.headers);
+  headers.set('access-control-allow-origin', '*');
+  headers.set('access-control-allow-methods', 'GET, POST, OPTIONS');
+  headers.set('access-control-allow-headers', 'content-type');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+async function shortRequestHash(request) {
+  const source = `${request.headers.get('cf-connecting-ip') || 'unknown'}|${request.headers.get('user-agent') || 'unknown'}`;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source));
+  return [...new Uint8Array(digest)].slice(0, 12).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+async function proxyLeaderboardRequest(request, env) {
+  if (!env.LEADERBOARDS) return json({ ok: false, error: 'LEADERBOARD_BINDING_UNAVAILABLE' }, { status: 503 });
+  const sourceUrl = new URL(request.url);
+  const headers = new Headers(request.headers);
+  headers.set('x-ka-region', String(request.cf?.country || 'ZZ'));
+  headers.set('x-ka-rate-key', await shortRequestHash(request));
+  headers.delete('cf-connecting-ip');
+  const internal = new Request(`https://leaderboards.internal${sourceUrl.pathname}${sourceUrl.search}`, {
+    method: request.method,
+    headers,
+    body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+    redirect: 'manual'
+  });
+  const id = env.LEADERBOARDS.idFromName('global-v1');
+  const response = await env.LEADERBOARDS.get(id).fetch(internal);
+  return corsify(response);
 }
 
 function publicPlayer(player) {
@@ -1129,11 +1164,23 @@ if (action === 'start-run') {
 
 export default {
   async fetch(request, env) {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-headers': 'content-type',
+        'access-control-max-age': '86400'
+      }});
+    }
     if (!originAllowed(request, env)) {
       return json({ error: 'Origin not allowed.' }, { status: 403 });
     }
 
     const url = new URL(request.url);
+
+    if (url.pathname === '/leaderboards' || url.pathname === '/leaderboards/challenge' || url.pathname === '/leaderboards/submit') {
+      return proxyLeaderboardRequest(request, env);
+    }
 
     if (url.pathname === '/health') {
       return json({
@@ -1143,7 +1190,8 @@ export default {
         build: SERVER_BUILD,
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
-        releaseStatus: RELEASE_STATUS
+        releaseStatus: RELEASE_STATUS,
+        leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] }
       });
     }
 
@@ -1156,6 +1204,7 @@ export default {
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
+        leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
         deployedAt: new Date().toISOString()
       });
     }
@@ -1163,7 +1212,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/ws']
+        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/ws']
       });
     }
 

@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { selectOriginalMusicTrack, calculateOriginalMusicLevel, normalizeOriginalMusicMap, selectOriginalStinger } from './original_music_core.js';
+assert.equal(selectOriginalMusicTrack({state:'menu'}),'menu');
+assert.equal(selectOriginalMusicTrack({state:'ambient',mapId:'neon_depot'}),'ambient_neon_depot');
+assert.equal(selectOriginalMusicTrack({state:'combat',mapId:'hospital_wing'}),'combat');
+assert.equal(selectOriginalMusicTrack({state:'silence'}),'');
+assert.equal(normalizeOriginalMusicMap('unknown'),'grid_bunker');
+assert.equal(calculateOriginalMusicLevel({masterVolume:1,musicVolume:50,state:'combat'}),.25);
+assert.equal(calculateOriginalMusicLevel({masterVolume:1,musicVolume:100,state:'menu',documentHidden:true}),0);
+assert.equal(selectOriginalStinger('wave-start'),'wave_start');
+assert.equal(selectOriginalStinger('other'),'');
+console.log('Original music core tests passed');

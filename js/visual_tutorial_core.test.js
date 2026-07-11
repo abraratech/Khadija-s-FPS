@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { getVisualTutorialCue, normalizeVisualTutorialSnapshot, VISUAL_TUTORIAL_CUES } from './visual_tutorial_core.js';
+assert.equal(Object.keys(VISUAL_TUTORIAL_CUES).length, 5);
+assert.equal(getVisualTutorialCue({ runActive: true, enabled: true, complete: false, stage: 'MOVE', stageIndex: 0 }).control, 'WASD');
+assert.equal(getVisualTutorialCue({ runActive: true, enabled: true, complete: false, stage: 'MOVE', stageIndex: 0 }, { isMobile: true }).highlightId, 'joystick-left');
+assert.equal(getVisualTutorialCue({ runActive: true, enabled: true, complete: false, stage: 'FIRE' }, { isMobile: true }).control, 'FIRE');
+assert.equal(getVisualTutorialCue({ runActive: false, stage: 'RELOAD' }).visible, false);
+assert.equal(getVisualTutorialCue({ runActive: true, enabled: false, stage: 'INTERACT' }).visible, false);
+assert.equal(getVisualTutorialCue({ runActive: true, complete: true, stage: 'SURVIVE' }).visible, false);
+assert.equal(normalizeVisualTutorialSnapshot({ stage: 'unknown' }).stage, 'COMPLETE');
+console.log('Visual tutorial core tests passed');

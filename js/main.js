@@ -46,6 +46,7 @@ import {
 import { initAccessibilityControls } from './accessibility.js';
 import { initPlayerPreferencesControls, getAdsMode, getInvertYEnabled } from './player_preferences.js';
 import { initAdaptiveMusic } from './adaptive_music.js';
+import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisualTutorial } from './visual_tutorial.js';
 import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
 import {
   initTutorialControls,
@@ -548,6 +549,7 @@ initPlayerPreferencesControls({
   }
 });
 initTutorialControls();
+initVisualTutorial({ isMobile });
 initLocalLeaderboards();
 runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
 console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
@@ -1160,6 +1162,7 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
 
     placePlayerAtRandomSpawn();
     resetTutorialRun({ mapId: chosenMap, isMobile, player });
+    resetVisualTutorial();
 
     scene.add(camera);
     initAudio();
@@ -1200,6 +1203,7 @@ function handleOnlineRunEnded(details = {}) {
   endAIDirectorRun();
   endMapGameplay();
   endTutorialRun();
+  endVisualTutorial();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1280,6 +1284,7 @@ function returnToMenu(source = 'pause') {
   endAIDirectorRun();
   endMapGameplay();
   endTutorialRun();
+  endVisualTutorial();
   refreshAIMemoryControls();
   clearDeathScreenTimer();
   clearInputState();
@@ -1453,6 +1458,7 @@ updateTutorial(dt, {
   wave: currentWave,
   enemies: getActiveEnemies()
 });
+updateVisualTutorial();
 
 for (const event of consumeTutorialEvents()) {
   showStatusToast(event.text, event.color || '#00d4ff', event.duration || 1900);
@@ -1524,6 +1530,7 @@ const effectsMs = performance.now() - mark;
       finalizeCurrentRun('DEATH');
       endMapGameplay();
       endTutorialRun();
+  endVisualTutorial();
       refreshAIMemoryControls();
       gs = 'dead';
       clearInputState();

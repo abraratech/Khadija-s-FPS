@@ -1,5 +1,6 @@
 import { getMasterVolume } from './audio.js';
 import { getMusicVolumePercent } from './player_preferences.js';
+import { initOriginalMusic, updateOriginalMusic, destroyOriginalMusic } from './original_music.js';
 import {
   ADAPTIVE_MUSIC_STATES,
   calculateAdaptiveMusicMix,
@@ -222,23 +223,38 @@ export function updateAdaptiveMusic() {
   if (!controller) return null;
   const snapshot = snapshotState();
   const state = selectAdaptiveMusicState(snapshot);
+  const masterVolume = getMasterVolume();
+  const musicVolume = getMusicVolumePercent();
   const mix = calculateAdaptiveMusicMix({
     state,
-    masterVolume: getMasterVolume(),
-    musicVolume: getMusicVolumePercent(),
+    masterVolume,
+    musicVolume,
     documentHidden: document.hidden
   });
   applyProfile(snapshot.mapId);
-  if (controller.lastSnapshot) {
-    detectAdaptiveMusicEvents(controller.lastSnapshot, snapshot).forEach(playStinger);
-  }
+  const musicEvents = controller.lastSnapshot
+    ? detectAdaptiveMusicEvents(controller.lastSnapshot, snapshot)
+    : [];
+  const originalMusicActive = updateOriginalMusic({
+    state,
+    mapId: snapshot.mapId,
+    events: musicEvents,
+    masterVolume,
+    musicVolume,
+    documentHidden: document.hidden
+  });
+  if (!originalMusicActive) musicEvents.forEach(playStinger);
   controller.lastSnapshot = snapshot;
   controller.currentState = state;
-  applyMix(mix);
-  document.documentElement.dataset.kaAdaptiveMusic = controller.context ? 'ready' : 'locked';
+  applyMix(originalMusicActive
+    ? Object.freeze({ ...mix, menu: 0, ambient: 0, combat: 0 })
+    : mix);
+  document.documentElement.dataset.kaAdaptiveMusic = originalMusicActive
+    ? 'original'
+    : (controller.context ? 'procedural-fallback' : 'locked');
   document.documentElement.dataset.kaMusicState = state;
   document.documentElement.dataset.kaMusicMap = snapshot.mapId;
-  return Object.freeze({ snapshot, mix });
+  return Object.freeze({ snapshot, mix, originalMusicActive });
 }
 
 async function unlockAdaptiveMusic() {
@@ -268,6 +284,7 @@ export function initAdaptiveMusic(bindings = {}) {
     updateAdaptiveMusic();
     return controller;
   }
+  initOriginalMusic();
   controller = {
     bindings: { ...bindings },
     context: null,
@@ -299,6 +316,7 @@ export function destroyAdaptiveMusic() {
   controller.synth?.ambient?.stop?.();
   controller.synth?.combat?.stop?.();
   try { void controller.context?.close?.(); } catch { /* ignore */ }
+  destroyOriginalMusic();
   controller = null;
   document.documentElement.dataset.kaAdaptiveMusic = 'stopped';
 }

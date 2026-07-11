@@ -30,7 +30,7 @@ import {
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
 import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot } from './run_summary.js';
-import { initCloudProfile, syncCloudProfile } from './cloud_profile.js';
+import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
 import {
   CONTROL_ACTIONS,
   initControlsUI,
@@ -181,10 +181,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm4-online-leaderboards-r1';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm4-online-leaderboards-r1';
-console.info('[Multiplayer Build] m4-online-leaderboards-r1 | protocol 6');
-console.info('[Multiplayer Patch] m4-online-leaderboards-r1');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm4-cloud-guest-sync-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm4-cloud-guest-sync-r1';
+console.info('[Multiplayer Build] m4-cloud-guest-sync-r1 | protocol 6');
+console.info('[Multiplayer Patch] m4-cloud-guest-sync-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }
@@ -1028,6 +1028,7 @@ function saveRunRecords() {
 
   updateMenuBestStats();
   syncCloudProfile('run-records-updated');
+  void syncCloudProfileRemote('run-records-updated');
 }
 
 function clearInputState() {

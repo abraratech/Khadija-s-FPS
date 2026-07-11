@@ -1008,20 +1008,30 @@
 
 <div class="ka-setting-row" id="cloud-profile-settings-row">
 <div>
-<strong>Guest Profile &amp; Cloud Backup</strong>
-<small>Combines progression, achievements, records, leaderboard identity, controls, and settings into one validated profile. Authentication and remote cloud storage are not enabled yet.</small>
-<small id="cloud-profile-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;letter-spacing:.7px;">INITIALIZING LOCAL GUEST PROFILE…</small>
-<small style="display:block;margin-top:4px;color:#8aa;">ID: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">REV —</span></small>
-<small style="display:block;margin-top:3px;color:#708592;">Last saved: <span id="cloud-profile-updated">—</span></small>
+<strong>Guest Profile &amp; Cloud Sync</strong>
+<small>Your progression, achievements, records, leaderboard identity, controls, and settings can now synchronize through a secure guest account. No password or email is required.</small>
+<small id="cloud-profile-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;letter-spacing:.7px;">INITIALIZING GUEST PROFILE…</small>
+<small style="display:block;margin-top:4px;color:#8aa;">Profile: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">LOCAL REV —</span></small>
+<small style="display:block;margin-top:3px;color:#8aa;">Cloud: <span id="cloud-profile-account-id">NOT CONNECTED</span> · <span id="cloud-profile-cloud-revision">CLOUD OFF</span></small>
+<small style="display:block;margin-top:3px;color:#708592;">Last local save: <span id="cloud-profile-updated">—</span></small>
+<small style="display:block;margin-top:6px;color:#ffaa00;">Device link code: <b id="cloud-profile-link-code" style="letter-spacing:2px;">—</b></small>
 </div>
 <div style="display:grid;gap:8px;">
-<button class="ka-link-btn" id="cloud-profile-export-btn" style="width:100%;text-align:center;border-color:rgba(34,255,136,.42);" type="button">Export Profile Backup</button>
-<button class="ka-link-btn" id="cloud-profile-import-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Import &amp; Merge Backup</button>
+<button class="ka-nav-btn" id="cloud-profile-enable-btn" style="width:100%;text-align:center;" type="button">Enable Cloud Sync</button>
+<button class="ka-link-btn" id="cloud-profile-sync-btn" style="width:100%;text-align:center;border-color:rgba(34,255,136,.42);" type="button">Sync Now</button>
+<button class="ka-link-btn" id="cloud-profile-link-create-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Create Device Link Code</button>
+<div style="display:grid;grid-template-columns:1fr auto;gap:6px;">
+<input class="ka-setting-control" id="cloud-profile-link-input" maxlength="8" placeholder="8-character code" style="text-transform:uppercase;letter-spacing:1.5px;" type="text"/>
+<button class="ka-link-btn" id="cloud-profile-link-consume-btn" style="text-align:center;" type="button">Link</button>
+</div>
+<button class="ka-link-btn" id="cloud-profile-server-export-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Export Cloud Backup</button>
+<button class="ka-link-btn" id="cloud-profile-export-btn" style="width:100%;text-align:center;" type="button">Export Local Backup</button>
+<button class="ka-link-btn" id="cloud-profile-import-btn" style="width:100%;text-align:center;" type="button">Import &amp; Merge Backup</button>
 <button class="ka-link-btn" id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
+<button class="ka-link-btn" id="cloud-profile-delete-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Delete Cloud Account</button>
 <input accept="application/json,.json" id="cloud-profile-import-file" style="display:none;" type="file"/>
 </div>
 </div>
-
 <div class="ka-setting-row">
 <div><strong>Accessibility Defaults</strong><small>Restore HUD, crosshair, motion, contrast, and damage-flash defaults.</small></div>
 <div><button class="ka-link-btn" id="reset-accessibility-btn" style="width:100%;text-align:center;" type="button">Reset Accessibility</button></div>

@@ -5,6 +5,7 @@ import {
   createGuestCloudProfile,
   deriveCloudProfileSections,
   getCloudProfileMergePolicy,
+  isGameOwnedStorageKey,
   mergeCloudProfiles,
   parseCloudProfileImport,
   profileChecksum,
@@ -41,6 +42,8 @@ assert.equal(first.achievements.totalUnlocked, 1);
 assert.equal(first.records.highWave, 4);
 assert.equal(validateCloudProfile(first).valid, true);
 assert.equal(sanitizeLegacyStorage({ evil: 'x', ka_ok: 'yes' }).evil, undefined);
+assert.equal(isGameOwnedStorageKey('ka_cloud_profile_token_v1'), false);
+assert.equal(isGameOwnedStorageKey('ka_cloud_profile_account_v1'), false);
 assert.equal(deriveCloudProfileSections(storage()).identity.displayName, 'Survivor-A001');
 
 const second = createGuestCloudProfile({

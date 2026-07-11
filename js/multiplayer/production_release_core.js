@@ -1,16 +1,18 @@
 // js/multiplayer/production_release_core.js
-// M4.51-M4.54 — deterministic frontend/Worker release, leaderboard, and cloud-profile capability gate.
+// M4.55-M4.58 — deterministic frontend/Worker release, cloud-profile, and passkey-authentication capability gate.
 
-export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm4-cloud-sync-reliability-r1';
+export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm4-passkey-account-upgrade-r1';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
-export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm4-cloud-sync-reliability-r1';
-export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = '1f2b50f0cc779c1695971af7e0528becfae34e10';
+export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm4-passkey-account-upgrade-r1';
+export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = '2b5edc90f9a319c7b8fc7ab01969379ed2930e12';
 export const MULTIPLAYER_PRODUCTION_RELEASE_STATUS = 'CERTIFIED';
 export const MULTIPLAYER_PRODUCTION_WORKER_URL = 'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev';
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA = 1;
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH = 'm4-online-leaderboards-r1';
 export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_SCHEMA = 1;
-export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH = 'm4-cloud-sync-reliability-r1';
+export const MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH = 'm4-passkey-account-upgrade-r1';
+export const MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH = 'm4-passkey-account-upgrade-r1';
+export const MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM = 'passkey';
 
 function cleanText(value, fallback = '', limit = 300) {
   const text = String(value ?? fallback).trim();
@@ -47,7 +49,14 @@ export function createMultiplayerFrontendReleaseManifest() {
     releaseStatus: MULTIPLAYER_PRODUCTION_RELEASE_STATUS,
     workerUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
     leaderboards: Object.freeze({ schema: MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH }),
-    cloudProfiles: Object.freeze({ schema: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_SCHEMA, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH })
+    cloudProfiles: Object.freeze({
+      schema: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_SCHEMA,
+      patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH,
+      auth: Object.freeze({
+        patch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH,
+        mechanism: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM
+      })
+    })
   });
 }
 export function evaluateMultiplayerProductionRelease({ workerManifest = null, frontendManifest = createMultiplayerFrontendReleaseManifest() } = {}) {
@@ -66,7 +75,9 @@ export function evaluateMultiplayerProductionRelease({ workerManifest = null, fr
     ['LEADERBOARD_SCHEMA_MISMATCH','leaderboard schema',finiteInteger(frontend.leaderboards?.schema),finiteInteger(worker.leaderboards?.schema,-1)],
     ['LEADERBOARD_PATCH_MISMATCH','leaderboard patch',cleanText(frontend.leaderboards?.patch),cleanText(worker.leaderboards?.patch,'missing')],
     ['CLOUD_PROFILE_SCHEMA_MISMATCH','cloud profile schema',finiteInteger(frontend.cloudProfiles?.schema),finiteInteger(worker.cloudProfiles?.schema,-1)],
-    ['CLOUD_PROFILE_PATCH_MISMATCH','cloud profile patch',cleanText(frontend.cloudProfiles?.patch),cleanText(worker.cloudProfiles?.patch,'missing')]
+    ['CLOUD_PROFILE_PATCH_MISMATCH','cloud profile patch',cleanText(frontend.cloudProfiles?.patch),cleanText(worker.cloudProfiles?.patch,'missing')],
+    ['CLOUD_AUTH_PATCH_MISMATCH','cloud authentication patch',cleanText(frontend.cloudProfiles?.auth?.patch),cleanText(worker.cloudProfiles?.authPatch,'missing')],
+    ['CLOUD_AUTH_MECHANISM_MISMATCH','cloud authentication mechanism',cleanText(frontend.cloudProfiles?.auth?.mechanism),cleanText(worker.cloudProfiles?.authentication,'missing')]
   ]) if (expected !== received) errors.push(finding(code, `Frontend and Worker ${label} do not match.`, { expected, received }));
   if (!cleanText(worker.deployedAt)) warnings.push(finding('WORKER_DEPLOYED_AT_MISSING', 'The Worker release manifest does not include a deployment timestamp.'));
   const status = errors.length > 0 ? 'FAIL' : warnings.length > 0 ? 'WARN' : 'PASS';

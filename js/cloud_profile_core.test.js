@@ -37,7 +37,7 @@ const first = createGuestCloudProfile({
   metadata: { migrationSources: ['legacy-local-storage'] }
 });
 assert.equal(first.patch, CLOUD_PROFILE_PATCH);
-assert.equal(CLOUD_PROFILE_PATCH, 'm4-cloud-sync-reliability-r1');
+assert.equal(CLOUD_PROFILE_PATCH, 'm4-passkey-account-upgrade-r1');
 assert.equal(first.progression.bestScore, 900);
 assert.equal(first.achievements.totalUnlocked, 1);
 assert.equal(first.records.highWave, 4);

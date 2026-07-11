@@ -92,6 +92,7 @@ globalThis.fetch = async (url, options = {}) => {
   }
   if (path === '/profiles/recovery/generate') return json({ ok: true, account: account(), recoveryCode: 'ABCD-EFGH-JKLM-NPQR', generatedAt: new Date().toISOString() });
   if (path === '/profiles/recovery/consume') return json(profileResponse({ ok: true, token, account: account(), devices }));
+  if (path === '/profiles/auth/passkeys') return json({ ok: true, account: { ...account(), accountType: 'guest', accountLabel: 'Khadija’s Arena Player', passkeys: 0, authVersion: 0 }, passkeys: [] });
   if (path === '/profiles/history' && options.method !== 'POST') return json({ ok: true, account: account(), history });
   if (path === '/profiles/history/restore') return json(profileResponse({ ok: true, restoredRevision: body.revision, account: account(), history }));
   if (path === '/profiles/activity') return json({ ok: true, account: account(), activity });

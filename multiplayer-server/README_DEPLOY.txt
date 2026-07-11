@@ -19,8 +19,8 @@ The Worker must be deployed separately whenever multiplayer-server changes.
 
 CURRENT RELEASE
 Protocol: 6
-Build: m4-cloud-sync-reliability-r1
-Patch: m4-cloud-sync-reliability-r1
+Build: m4-passkey-account-upgrade-r1
+Patch: m4-passkey-account-upgrade-r1
 
 CLOUD PROFILE SECURITY
 CloudProfileHub stores guest profiles, linked-device records, one-time recovery
@@ -36,7 +36,7 @@ HEALTH CHECK
 curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/health
 
 Expected fields:
-{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-cloud-sync-reliability-r1","patch":"m4-cloud-sync-reliability-r1"}
+{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-passkey-account-upgrade-r1","patch":"m4-passkey-account-upgrade-r1"}
 
 RELEASE CHECK
 curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/release
@@ -47,3 +47,15 @@ build, patch, certified baseline, leaderboard capability, and cloud-profile patc
 M4.51-M4.54 CLOUD RELIABILITY
 Persistent client retry queue, multi-tab lease, staged profile chunks, checksum verification, deletion tombstones, and history-integrity checks are active.
 Expected build: m4-cloud-sync-reliability-r1; protocol remains 6.
+
+
+M4.55-M4.58 PASSKEY ACCOUNT UPGRADE
+Existing cloud guest accounts can be upgraded in place with WebAuthn passkeys.
+The Worker stores only public passkey material, counters, labels, and activity;
+private keys remain inside the player’s authenticator. Passkey sign-in issues a
+new per-device cloud token and preserves the same profile, devices, history,
+recovery code, and leaderboard identity.
+
+Passkey registration and sign-in must be initiated from the HTTPS Pages origin.
+The Worker derives and verifies the WebAuthn RP ID from the trusted Origin header.
+Expected build: m4-passkey-account-upgrade-r1; protocol remains 6.

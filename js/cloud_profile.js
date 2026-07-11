@@ -45,6 +45,7 @@ const AUTO_SYNC_MS = 10000;
 const REMOTE_SYNC_MS = 30000;
 const REMOTE_REQUEST_TIMEOUT_MS = 12000;
 const REMOTE_ACCOUNT_KEY = 'ka_cloud_profile_account_v1';
+const REMOTE_ACCOUNT_HINT_KEY = 'ka_cloud_profile_account_hint_v1';
 const REMOTE_TOKEN_KEY = 'ka_cloud_profile_token_v1';
 const REMOTE_REVISION_KEY = 'ka_cloud_profile_remote_revision_v1';
 const REMOTE_DEVICE_KEY = 'ka_cloud_profile_device_v1';
@@ -55,6 +56,7 @@ const REMOTE_LEASE_KEY = 'ka_cloud_profile_sync_lease_v1';
 const REMOTE_CLOCK_KEY = 'ka_cloud_profile_clock_v1';
 const REMOTE_TOMBSTONE_KEY = 'ka_cloud_profile_tombstone_v1';
 const REMOTE_LAST_SUCCESS_KEY = 'ka_cloud_profile_last_success_v1';
+const CLOUD_AUTH_PATCH = 'm4-passkey-account-upgrade-r1';
 
 let currentProfile = null;
 let initialized = false;
@@ -96,7 +98,13 @@ let remoteState = {
   serverRoundTripMs: 0,
   clockSkewWarning: false,
   lastOperationId: '',
-  tombstonedAccountId: ''
+  tombstonedAccountId: '',
+  accountType: 'guest',
+  accountLabel: 'Khadija’s Arena Player',
+  passkeys: [],
+  authVersion: 0,
+  lastAuthenticatedAt: 0,
+  webAuthnSupported: typeof PublicKeyCredential !== 'undefined' && typeof navigator !== 'undefined' && Boolean(navigator.credentials)
 };
 
 function nowMs() {
@@ -182,6 +190,7 @@ function saveRemoteCredentials(account, token) {
     throw new Error('CLOUD_CREDENTIALS_INVALID');
   }
   writeRaw(REMOTE_ACCOUNT_KEY, accountId);
+  writeRaw(REMOTE_ACCOUNT_HINT_KEY, accountId);
   writeRaw(REMOTE_TOKEN_KEY, secret);
   writeRaw(REMOTE_REVISION_KEY, String(Math.max(0, Number(account?.cloudRevision) || 0)));
   writeRaw(REMOTE_PENDING_KEY, '0');
@@ -335,7 +344,13 @@ function clearRemoteCredentials({ preserveQueue = false } = {}) {
     serverRoundTripMs: 0,
     clockSkewWarning: false,
     lastOperationId: '',
-    tombstonedAccountId: readLocalTombstone()?.accountId || ''
+    tombstonedAccountId: readLocalTombstone()?.accountId || '',
+    accountType: 'guest',
+    accountLabel: 'Khadija’s Arena Player',
+    passkeys: [],
+    authVersion: 0,
+    lastAuthenticatedAt: 0,
+    webAuthnSupported: typeof PublicKeyCredential !== 'undefined' && typeof navigator !== 'undefined' && Boolean(navigator.credentials)
   };
   remoteLastFingerprint = '';
 }
@@ -503,6 +518,11 @@ function updateRemoteAccountState(value = {}) {
   if (account.accountId) remoteState.accountId = String(account.accountId);
   if (Number.isFinite(Number(account.cloudRevision))) remoteState.cloudRevision = Math.max(0, Number(account.cloudRevision));
   if (typeof account.recoveryEnabled === 'boolean') remoteState.recoveryEnabled = account.recoveryEnabled;
+  if (account.accountType) remoteState.accountType = account.accountType === 'passkey' ? 'passkey' : 'guest';
+  if (account.accountLabel) remoteState.accountLabel = String(account.accountLabel).slice(0, 48);
+  if (Number.isFinite(Number(account.authVersion))) remoteState.authVersion = Math.max(0, Number(account.authVersion));
+  if (Number.isFinite(Number(account.lastAuthenticatedAt))) remoteState.lastAuthenticatedAt = Math.max(0, Number(account.lastAuthenticatedAt));
+  if (Array.isArray(value.passkeys)) remoteState.passkeys = value.passkeys.map((entry) => ({ ...entry }));
   if (Array.isArray(value.devices)) remoteState.devices = value.devices.map((entry) => ({ ...entry }));
   if (Array.isArray(value.history)) remoteState.history = value.history.map((entry) => ({ ...entry }));
   if (Array.isArray(value.activity)) remoteState.activity = value.activity.map((entry) => ({ ...entry }));
@@ -519,6 +539,274 @@ function verifyRemoteProfileResponse(value) {
   }
   remoteState.checksumVerified = true;
   return integrity;
+}
+
+
+function webAuthnAvailable() {
+  return typeof PublicKeyCredential !== 'undefined'
+    && typeof navigator !== 'undefined'
+    && Boolean(navigator.credentials);
+}
+
+function base64UrlToBytes(value) {
+  const text = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = text + '='.repeat((4 - text.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function bytesToBase64Url(value) {
+  const bytes = value instanceof Uint8Array
+    ? value
+    : value instanceof ArrayBuffer
+      ? new Uint8Array(value)
+      : ArrayBuffer.isView(value)
+        ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+        : new Uint8Array();
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function decodePasskeyCreationOptions(value = {}) {
+  const options = JSON.parse(JSON.stringify(value || {}));
+  options.challenge = base64UrlToBytes(options.challenge);
+  if (options.user?.id) options.user.id = base64UrlToBytes(options.user.id);
+  options.excludeCredentials = Array.isArray(options.excludeCredentials)
+    ? options.excludeCredentials.map((entry) => ({ ...entry, id: base64UrlToBytes(entry.id) }))
+    : [];
+  return options;
+}
+
+function decodePasskeyRequestOptions(value = {}) {
+  const options = JSON.parse(JSON.stringify(value || {}));
+  options.challenge = base64UrlToBytes(options.challenge);
+  options.allowCredentials = Array.isArray(options.allowCredentials)
+    ? options.allowCredentials.map((entry) => ({ ...entry, id: base64UrlToBytes(entry.id) }))
+    : [];
+  return options;
+}
+
+function serializePublicKeyCredential(credential) {
+  if (!credential || credential.type !== 'public-key') throw new Error('PASSKEY_CREDENTIAL_INVALID');
+  const response = credential.response || {};
+  const value = {
+    id: String(credential.id || ''),
+    rawId: bytesToBase64Url(credential.rawId),
+    type: credential.type,
+    authenticatorAttachment: credential.authenticatorAttachment || null,
+    clientExtensionResults: credential.getClientExtensionResults?.() || {},
+    response: {
+      clientDataJSON: bytesToBase64Url(response.clientDataJSON)
+    }
+  };
+  if (response.attestationObject) {
+    value.response.attestationObject = bytesToBase64Url(response.attestationObject);
+    value.response.transports = response.getTransports?.() || [];
+  }
+  if (response.authenticatorData) value.response.authenticatorData = bytesToBase64Url(response.authenticatorData);
+  if (response.signature) value.response.signature = bytesToBase64Url(response.signature);
+  if (response.userHandle) value.response.userHandle = bytesToBase64Url(response.userHandle);
+  return value;
+}
+
+function cleanAccountLabel(value) {
+  return String(value || 'Khadija’s Arena Player')
+    .trim()
+    .replace(/[<>\u0000-\u001f\u007f]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 48) || 'Khadija’s Arena Player';
+}
+
+export async function upgradeCloudAccountToPasskey(name = 'Khadija’s Arena Player') {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  if (!webAuthnAvailable()) {
+    statusMessage = 'PASSKEYS ARE NOT SUPPORTED IN THIS BROWSER';
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: 'PASSKEY_UNSUPPORTED' });
+  }
+  const label = cleanAccountLabel(name);
+  statusMessage = 'PREPARING PASSKEY…';
+  refreshProfileUi();
+  try {
+    await syncCloudProfileRemote('before-passkey-upgrade', { force: true });
+    const optionsValue = await remoteRequest('/profiles/auth/passkey/register/options', {
+      method: 'POST',
+      body: { name: label }
+    });
+    const credential = await navigator.credentials.create({
+      publicKey: decodePasskeyCreationOptions(optionsValue.options)
+    });
+    if (!credential) throw new Error('PASSKEY_CREATION_CANCELLED');
+    const verified = await remoteRequest('/profiles/auth/passkey/register/verify', {
+      method: 'POST',
+      body: { name: label, credential: serializePublicKeyCredential(credential) }
+    });
+    updateRemoteAccountState(verified);
+    remoteState.passkeys = Array.isArray(verified.passkeys) ? verified.passkeys.map((entry) => ({ ...entry })) : remoteState.passkeys;
+    statusMessage = verified.upgraded ? 'CLOUD ACCOUNT UPGRADED TO PASSKEY' : 'PASSKEY ADDED';
+    toast?.(verified.upgraded ? 'PERMANENT PASSKEY ACCOUNT READY' : 'PASSKEY ADDED', '#22ff88', 1900);
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, upgraded: verified.upgraded === true, account: verified.account });
+  } catch (error) {
+    const reason = String(error?.code || error?.name || error?.message || error).slice(0, 120);
+    statusMessage = reason === 'NotAllowedError'
+      ? 'PASSKEY SETUP CANCELLED'
+      : `PASSKEY SETUP FAILED · ${reason}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason });
+  }
+}
+
+export async function signInCloudAccountWithPasskey(accountId, { reload = true } = {}) {
+  if (!webAuthnAvailable()) {
+    statusMessage = 'PASSKEYS ARE NOT SUPPORTED IN THIS BROWSER';
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: 'PASSKEY_UNSUPPORTED' });
+  }
+  const cleanAccount = String(accountId || '').trim();
+  if (!/^cloud-[a-f0-9]{32}$/i.test(cleanAccount)) {
+    return Object.freeze({ accepted: false, reason: 'PROFILE_ACCOUNT_ID_INVALID' });
+  }
+  statusMessage = 'WAITING FOR PASSKEY…';
+  refreshProfileUi();
+  try {
+    const optionsValue = await remoteRequest('/profiles/auth/passkey/login/options', {
+      method: 'POST',
+      authenticated: false,
+      body: { accountId: cleanAccount }
+    });
+    const credential = await navigator.credentials.get({
+      publicKey: decodePasskeyRequestOptions(optionsValue.options)
+    });
+    if (!credential) throw new Error('PASSKEY_SIGNIN_CANCELLED');
+    const verified = await remoteRequest('/profiles/auth/passkey/login/verify', {
+      method: 'POST',
+      authenticated: false,
+      body: {
+        accountId: cleanAccount,
+        credential: serializePublicKeyCredential(credential),
+        deviceId: getOrCreateDeviceId(),
+        deviceName: getDeviceName()
+      }
+    });
+    verifyRemoteProfileResponse(verified);
+    saveRemoteCredentials(verified.account, verified.token);
+    updateRemoteAccountState(verified);
+    remoteState.passkeys = Array.isArray(verified.passkeys) ? verified.passkeys.map((entry) => ({ ...entry })) : [];
+    replaceWithRemoteProfile(verified.profile, { forceHydrate: true });
+    removeRaw(REMOTE_TOMBSTONE_KEY);
+    writeRemoteQueue([]);
+    remoteState.lastSuccessfulSyncAt = nowMs();
+    writeRaw(REMOTE_LAST_SUCCESS_KEY, String(remoteState.lastSuccessfulSyncAt));
+    statusMessage = 'PASSKEY SIGN-IN COMPLETE · RELOADING';
+    toast?.('CLOUD ACCOUNT SIGNED IN', '#22ff88', 1800);
+    refreshProfileUi();
+    if (reload && typeof location !== 'undefined') setTimeout(() => location.reload(), 650);
+    return Object.freeze({ accepted: true, account: verified.account });
+  } catch (error) {
+    const reason = String(error?.code || error?.name || error?.message || error).slice(0, 120);
+    statusMessage = reason === 'NotAllowedError'
+      ? 'PASSKEY SIGN-IN CANCELLED'
+      : `PASSKEY SIGN-IN FAILED · ${reason}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason });
+  }
+}
+
+export async function refreshCloudAuthenticatedSession({ merge = true } = {}) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  statusMessage = 'REFRESHING AUTHENTICATED SESSION…';
+  refreshProfileUi();
+  try {
+    const value = await remoteRequest('/profiles/auth/session');
+    verifyRemoteProfileResponse(value);
+    updateRemoteAccountState(value);
+    remoteState.passkeys = Array.isArray(value.passkeys) ? value.passkeys.map((entry) => ({ ...entry })) : remoteState.passkeys;
+    if (merge) applyRemoteProfile(value.profile, { forceHydrate: false });
+    statusMessage = remoteState.accountType === 'passkey' ? 'PASSKEY SESSION REFRESHED' : 'GUEST SESSION REFRESHED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, account: value.account });
+  } catch (error) {
+    statusMessage = `SESSION REFRESH FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function signOutCloudAccount() {
+  const credentials = getRemoteCredentials();
+  if (!credentials.valid) return Object.freeze({ accepted: true, alreadySignedOut: true });
+  if (remoteState.accountType !== 'passkey') {
+    statusMessage = 'UPGRADE TO PASSKEY BEFORE SIGNING OUT';
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: 'PASSKEY_ACCOUNT_NOT_ENABLED' });
+  }
+  try {
+    await remoteRequest('/profiles/auth/signout', { method: 'POST', body: {} });
+  } catch {
+    // Local sign-out must remain available when the Worker is unreachable.
+  }
+  clearRemoteCredentials();
+  statusMessage = 'SIGNED OUT · LOCAL PROFILE KEPT';
+  toast?.('SIGNED OUT · LOCAL SAVE KEPT', '#ffaa00', 1700);
+  refreshProfileUi();
+  return Object.freeze({ accepted: true });
+}
+
+export async function refreshCloudPasskeys() {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/auth/passkeys');
+    updateRemoteAccountState(value);
+    remoteState.passkeys = Array.isArray(value.passkeys) ? value.passkeys.map((entry) => ({ ...entry })) : [];
+    refreshProfileUi();
+    return Object.freeze({ accepted: true, passkeys: remoteState.passkeys });
+  } catch (error) {
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function renameCloudPasskey(credentialId, name) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/auth/passkeys/name', {
+      method: 'POST',
+      body: { credentialId: String(credentialId || ''), name: cleanAccountLabel(name) }
+    });
+    updateRemoteAccountState(value);
+    remoteState.passkeys = Array.isArray(value.passkeys) ? value.passkeys.map((entry) => ({ ...entry })) : [];
+    statusMessage = 'PASSKEY NAME UPDATED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true });
+  } catch (error) {
+    statusMessage = `PASSKEY RENAME FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
+}
+
+export async function revokeCloudPasskey(credentialId) {
+  if (!getRemoteCredentials().valid) return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  try {
+    const value = await remoteRequest('/profiles/auth/passkeys/revoke', {
+      method: 'POST',
+      body: { credentialId: String(credentialId || '') }
+    });
+    updateRemoteAccountState(value);
+    remoteState.passkeys = Array.isArray(value.passkeys) ? value.passkeys.map((entry) => ({ ...entry })) : [];
+    statusMessage = 'PASSKEY REVOKED';
+    refreshProfileUi();
+    return Object.freeze({ accepted: true });
+  } catch (error) {
+    statusMessage = `PASSKEY REVOKE FAILED · ${String(error?.message || error).slice(0, 80)}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, reason: String(error?.message || error) });
+  }
 }
 
 export async function registerCloudGuestAccount() {
@@ -777,6 +1065,7 @@ export async function deleteCloudGuestAccount() {
       deviceId: getOrCreateDeviceId()
     });
     clearRemoteCredentials();
+    removeRaw(REMOTE_ACCOUNT_HINT_KEY);
     statusMessage = 'CLOUD ACCOUNT DELETED · TOMBSTONE ACTIVE · LOCAL PROFILE KEPT';
     toast?.('CLOUD ACCOUNT DELETED · LOCAL SAVE KEPT', '#ffaa00', 2000);
     refreshProfileUi();
@@ -795,14 +1084,16 @@ export async function refreshCloudAccountSecurity({ silent = false } = {}) {
     refreshProfileUi();
   }
   try {
-    const [devices, history, activity] = await Promise.all([
+    const [devices, history, activity, passkeys] = await Promise.all([
       remoteRequest('/profiles/devices'),
       remoteRequest('/profiles/history'),
-      remoteRequest('/profiles/activity')
+      remoteRequest('/profiles/activity'),
+      remoteRequest('/profiles/auth/passkeys')
     ]);
     updateRemoteAccountState(devices);
     updateRemoteAccountState(history);
     updateRemoteAccountState(activity);
+    updateRemoteAccountState(passkeys);
     if (!silent) statusMessage = 'CLOUD SECURITY REFRESHED';
     refreshProfileUi();
     return Object.freeze({ accepted: true, devices: remoteState.devices, history: remoteState.history, activity: remoteState.activity });
@@ -1232,6 +1523,50 @@ function renderCloudSecurityUi() {
   }
 
   setText('cloud-profile-current-device-id', currentDeviceId);
+  const authStatus = remoteState.accountType === 'passkey'
+    ? `PASSKEY ACCOUNT · ${remoteState.passkeys.length} CREDENTIAL${remoteState.passkeys.length === 1 ? '' : 'S'}`
+    : getRemoteCredentials().valid
+      ? 'CLOUD GUEST · UPGRADE AVAILABLE'
+      : 'SIGNED OUT';
+  setText('cloud-profile-auth-status', authStatus);
+  setText('cloud-profile-auth-support', remoteState.webAuthnSupported ? 'SUPPORTED' : 'NOT SUPPORTED');
+  setText('cloud-profile-auth-last', formatTimestamp(remoteState.lastAuthenticatedAt));
+
+  const accountLabelInput = document.getElementById('cloud-profile-auth-label-input');
+  if (accountLabelInput && document.activeElement !== accountLabelInput) {
+    accountLabelInput.value = remoteState.accountLabel || 'Khadija’s Arena Player';
+  }
+  const signInAccountInput = document.getElementById('cloud-profile-passkey-account-input');
+  if (signInAccountInput && document.activeElement !== signInAccountInput) {
+    const accountHint = getRemoteCredentials().accountId || String(readRaw(REMOTE_ACCOUNT_HINT_KEY, '') || '');
+    if (accountHint) signInAccountInput.value = accountHint;
+  }
+  const upgradeButton = document.getElementById('cloud-profile-passkey-upgrade-btn');
+  if (upgradeButton) upgradeButton.textContent = remoteState.accountType === 'passkey' ? 'Add Another Passkey' : 'Upgrade Guest Account to Passkey';
+
+  const passkeySelect = document.getElementById('cloud-profile-passkey-select');
+  if (passkeySelect) {
+    const selected = passkeySelect.value;
+    passkeySelect.replaceChildren();
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = remoteState.passkeys.length ? 'Select registered passkey' : 'No passkeys registered';
+    passkeySelect.append(placeholder);
+    remoteState.passkeys.forEach((passkey) => {
+      const option = document.createElement('option');
+      option.value = passkey.credentialId;
+      option.textContent = `${passkey.name || 'Passkey'} · ${passkey.lastUsedAt ? `used ${formatTimestamp(passkey.lastUsedAt)}` : 'not used yet'}`;
+      passkeySelect.append(option);
+    });
+    if ([...passkeySelect.options].some((option) => option.value === selected)) passkeySelect.value = selected;
+  }
+
+  const passkeyList = document.getElementById('cloud-profile-passkey-list');
+  if (passkeyList) {
+    passkeyList.textContent = remoteState.passkeys.length
+      ? remoteState.passkeys.map((entry) => `${entry.name || 'Passkey'} · ${entry.transports?.join(', ') || 'platform/synced'} · ${entry.lastUsedAt ? formatTimestamp(entry.lastUsedAt) : 'never used'}`).join('\n')
+      : 'No passkeys registered.';
+  }
 }
 
 function refreshProfileUi() {
@@ -1249,10 +1584,16 @@ function refreshProfileUi() {
   setText('cloud-profile-link-code', remoteState.linkCode || '—');
   const enableButton = document.getElementById('cloud-profile-enable-btn');
   if (enableButton) enableButton.style.display = credentials.valid ? 'none' : '';
-  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn', 'cloud-profile-retry-queue-btn'].forEach((id) => {
+  ['cloud-profile-sync-btn', 'cloud-profile-link-create-btn', 'cloud-profile-server-export-btn', 'cloud-profile-delete-btn', 'cloud-profile-security-refresh-btn', 'cloud-profile-device-name-btn', 'cloud-profile-revoke-others-btn', 'cloud-profile-rotate-token-btn', 'cloud-profile-recovery-generate-btn', 'cloud-profile-history-restore-btn', 'cloud-profile-retry-queue-btn', 'cloud-profile-passkey-upgrade-btn', 'cloud-profile-auth-refresh-btn', 'cloud-profile-auth-signout-btn', 'cloud-profile-passkey-rename-btn', 'cloud-profile-passkey-revoke-btn'].forEach((id) => {
     const element = document.getElementById(id);
     if (element) element.disabled = !credentials.valid || remoteState.syncing;
   });
+  const passkeyUpgrade = document.getElementById('cloud-profile-passkey-upgrade-btn');
+  if (passkeyUpgrade) passkeyUpgrade.disabled = !credentials.valid || remoteState.syncing || !remoteState.webAuthnSupported;
+  const passkeySignIn = document.getElementById('cloud-profile-passkey-signin-btn');
+  if (passkeySignIn) passkeySignIn.disabled = remoteState.syncing || !remoteState.webAuthnSupported;
+  const authSignOut = document.getElementById('cloud-profile-auth-signout-btn');
+  if (authSignOut) authSignOut.disabled = !credentials.valid || remoteState.syncing || remoteState.accountType !== 'passkey';
   const linkInput = document.getElementById('cloud-profile-link-input');
   const consumeButton = document.getElementById('cloud-profile-link-consume-btn');
   if (linkInput) linkInput.disabled = remoteState.syncing;
@@ -1354,6 +1695,33 @@ function bindProfileUi() {
   document.getElementById('cloud-profile-security-refresh-btn')?.addEventListener('click', () => {
     void refreshCloudAccountSecurity();
   });
+  document.getElementById('cloud-profile-passkey-upgrade-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('cloud-profile-auth-label-input');
+    void upgradeCloudAccountToPasskey(input?.value || remoteState.accountLabel);
+  });
+  document.getElementById('cloud-profile-passkey-signin-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('cloud-profile-passkey-account-input');
+    void signInCloudAccountWithPasskey(input?.value || '', { reload: true });
+  });
+  document.getElementById('cloud-profile-auth-refresh-btn')?.addEventListener('click', () => {
+    void refreshCloudAuthenticatedSession({ merge: true });
+  });
+  document.getElementById('cloud-profile-auth-signout-btn')?.addEventListener('click', () => {
+    if (!window.confirm('Sign out of cloud sync on this browser? The local save will remain.')) return;
+    void signOutCloudAccount();
+  });
+  document.getElementById('cloud-profile-passkey-rename-btn')?.addEventListener('click', () => {
+    const select = document.getElementById('cloud-profile-passkey-select');
+    const input = document.getElementById('cloud-profile-passkey-name-input');
+    if (!select?.value) return;
+    void renameCloudPasskey(select.value, input?.value || 'Khadija’s Arena Passkey');
+  });
+  document.getElementById('cloud-profile-passkey-revoke-btn')?.addEventListener('click', () => {
+    const select = document.getElementById('cloud-profile-passkey-select');
+    if (!select?.value) return;
+    if (!window.confirm('Revoke this passkey? Keep another passkey or an active recovery code before removing the last credential.')) return;
+    void revokeCloudPasskey(select.value);
+  });
   document.getElementById('cloud-profile-device-name-btn')?.addEventListener('click', () => {
     const input = document.getElementById('cloud-profile-device-name-input');
     void renameCloudDevice(input?.value || getDeviceName());
@@ -1428,7 +1796,7 @@ export function getCloudProfileDiagnostics() {
     patch: CLOUD_PROFILE_PATCH,
     schema: CLOUD_PROFILE_SCHEMA,
     version: CLOUD_PROFILE_VERSION,
-    accountType: currentProfile.accountType,
+    accountType: remoteState.connected ? remoteState.accountType : currentProfile.accountType,
     profileId: currentProfile.profileId,
     revision: currentProfile.revision,
     createdAt: currentProfile.createdAt,
@@ -1445,13 +1813,14 @@ export function getCloudProfileDiagnostics() {
     mergePolicy: getCloudProfileMergePolicy(),
     status: statusMessage,
     remoteSync: remoteState.connected,
-    authentication: remoteState.connected ? 'guest-token' : false,
+    authentication: remoteState.connected ? (remoteState.accountType === 'passkey' ? 'passkey-session' : 'guest-token') : false,
     remote: {
       connected: remoteState.connected,
       syncing: remoteState.syncing,
       pending: remoteState.pending,
       conflict: remoteState.conflict,
       accountId: remoteState.accountId,
+      accountHint: String(readRaw(REMOTE_ACCOUNT_HINT_KEY, '') || ''),
       cloudRevision: remoteState.cloudRevision,
       lastSyncAt: remoteState.lastSyncAt,
       lastError: remoteState.lastError,
@@ -1461,6 +1830,15 @@ export function getCloudProfileDiagnostics() {
       history: remoteState.history.map((entry) => ({ ...entry })),
       activity: remoteState.activity.map((entry) => ({ ...entry })),
       recoveryEnabled: remoteState.recoveryEnabled,
+      auth: {
+        patch: CLOUD_AUTH_PATCH,
+        accountType: remoteState.accountType,
+        accountLabel: remoteState.accountLabel,
+        authVersion: remoteState.authVersion,
+        lastAuthenticatedAt: remoteState.lastAuthenticatedAt,
+        webAuthnSupported: remoteState.webAuthnSupported,
+        passkeys: remoteState.passkeys.map((entry) => ({ ...entry }))
+      },
       reliability: buildReliabilitySnapshot({
         queue: readRemoteQueue(),
         lease: readRemoteLease(),
@@ -1580,6 +1958,13 @@ if (typeof window !== 'undefined') {
   window.KAGenerateCloudRecoveryCode = generateCloudRecoveryCode;
   window.KARecoverCloudGuestAccount = recoverCloudGuestAccount;
   window.KARestoreCloudProfileRevision = restoreCloudProfileRevision;
+  window.KAUpgradeCloudAccountToPasskey = upgradeCloudAccountToPasskey;
+  window.KASignInCloudAccountWithPasskey = signInCloudAccountWithPasskey;
+  window.KARefreshCloudAuthenticatedSession = refreshCloudAuthenticatedSession;
+  window.KASignOutCloudAccount = signOutCloudAccount;
+  window.KARefreshCloudPasskeys = refreshCloudPasskeys;
+  window.KARenameCloudPasskey = renameCloudPasskey;
+  window.KARevokeCloudPasskey = revokeCloudPasskey;
   window.KARetryCloudSyncQueue = retryCloudSyncQueue;
   window.KAGetCloudSyncQueue = () => readRemoteQueue().map((entry) => ({ ...entry, profile: undefined }));
   window.KAGetCloudSyncLease = () => ({ ...readRemoteLease() });

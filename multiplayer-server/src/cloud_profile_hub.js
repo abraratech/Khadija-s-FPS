@@ -39,6 +39,20 @@ import {
   verifyHistoryIntegrity,
   verifyProfileIntegrity
 } from './cloud_profile_reliability_core.js';
+import {
+  CLOUD_AUTH_CHALLENGE_TTL_MS,
+  CLOUD_AUTH_PATCH,
+  CLOUD_PASSKEY_LIMIT,
+  cleanPasskeyLabel,
+  createPasskeyAuthenticationOptions,
+  createPasskeyRegistrationOptions,
+  createRandomChallenge,
+  normalizePasskeys,
+  publicPasskeys,
+  readPasskeyChallenge,
+  verifyPasskeyAuthentication,
+  verifyPasskeyRegistration
+} from './cloud_profile_auth_core.js';
 
 const MAX_BODY_BYTES = 2_800_000;
 const MAX_PROFILE_BYTES = 2_600_000;
@@ -175,6 +189,11 @@ function ensureMeta(meta) {
     : null;
   output.deletedAt = Math.max(0, Number(output.deletedAt) || 0);
   output.deletionId = String(output.deletionId || '').slice(0, 120);
+  output.accountType = output.accountType === 'passkey' ? 'passkey' : 'guest';
+  output.accountLabel = cleanPasskeyLabel(output.accountLabel, 'Khadija’s Arena Player');
+  output.passkeys = normalizePasskeys(output.passkeys);
+  output.authVersion = Math.max(0, Math.floor(Number(output.authVersion) || 0));
+  output.lastAuthenticatedAt = Math.max(0, Number(output.lastAuthenticatedAt) || 0);
   return output;
 }
 
@@ -196,7 +215,12 @@ function publicAccount(meta) {
     checksumVerifiedAt: Number(safe.checksumVerifiedAt || 0),
     recoveryEnabled: /^[a-f0-9]{64}$/.test(safe.recoveryHash),
     historyEntries: safe.history.length,
-    tombstoned: safe.deletedAt > 0
+    tombstoned: safe.deletedAt > 0,
+    accountType: safe.accountType,
+    accountLabel: safe.accountLabel,
+    passkeys: safe.passkeys.length,
+    authVersion: safe.authVersion,
+    lastAuthenticatedAt: safe.lastAuthenticatedAt
   };
 }
 
@@ -222,6 +246,25 @@ function reliabilityForRequest(request, extra = {}) {
     checksumVerified: extra.checksumVerified === true,
     idempotentRecovered: extra.idempotentRecovered === true
   };
+}
+
+
+function passkeyRequestContext(request) {
+  const origin = String(request.headers.get('x-ka-origin') || '').trim().slice(0, 500);
+  const rpId = String(request.headers.get('x-ka-rp-id') || '').trim().toLowerCase().slice(0, 253);
+  if (!origin || !rpId) throw new Error('PASSKEY_ORIGIN_REQUIRED');
+  let parsed;
+  try { parsed = new URL(origin); } catch { throw new Error('PASSKEY_ORIGIN_INVALID'); }
+  if (!['https:', 'http:'].includes(parsed.protocol)) throw new Error('PASSKEY_ORIGIN_INVALID');
+  if (parsed.hostname.toLowerCase() !== rpId) throw new Error('PASSKEY_RP_ID_INVALID');
+  if (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(rpId)) {
+    throw new Error('PASSKEY_SECURE_CONTEXT_REQUIRED');
+  }
+  return { origin: parsed.origin, rpId };
+}
+
+function authChallengeKey(challenge) {
+  return `authchallenge:${String(challenge || '').slice(0, 160)}`;
 }
 
 export class CloudProfileHub extends DurableObject {
@@ -255,7 +298,7 @@ export class CloudProfileHub extends DurableObject {
   async alarm() {
     const now = Date.now();
     const removals = [];
-    for (const prefix of ['rate:', 'link:', 'op:']) {
+    for (const prefix of ['rate:', 'link:', 'op:', 'authchallenge:']) {
       const items = await this.ctx.storage.list({ prefix });
       for (const [key, value] of items) {
         if (Number(value?.expiresAt || 0) > 0 && Number(value.expiresAt) <= now) removals.push(key);
@@ -313,6 +356,15 @@ export class CloudProfileHub extends DurableObject {
       if (request.method === 'POST' && url.pathname === '/profiles/token/rotate') return this.rotateToken(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/recovery/generate') return this.generateRecovery(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/recovery/consume') return this.consumeRecovery(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkey/register/options') return this.passkeyRegisterOptions(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkey/register/verify') return this.passkeyRegisterVerify(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkey/login/options') return this.passkeyLoginOptions(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkey/login/verify') return this.passkeyLoginVerify(request, rateKey);
+      if (request.method === 'GET' && url.pathname === '/profiles/auth/session') return this.authSession(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/signout') return this.authSignOut(request, rateKey);
+      if (request.method === 'GET' && url.pathname === '/profiles/auth/passkeys') return this.listPasskeys(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkeys/name') return this.namePasskey(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/auth/passkeys/revoke') return this.revokePasskey(request, rateKey);
       if (request.method === 'GET' && url.pathname === '/profiles/history') return this.listHistory(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/history/restore') return this.restoreHistory(request, rateKey);
       if (request.method === 'GET' && url.pathname === '/profiles/activity') return this.listActivity(request, rateKey);
@@ -321,7 +373,7 @@ export class CloudProfileHub extends DurableObject {
       const code = String(error?.message || error || 'PROFILE_ERROR').slice(0, 160);
       const status = code === 'REQUEST_TOO_LARGE' || code === 'PROFILE_TOO_LARGE'
         ? 413
-        : code === 'INVALID_JSON'
+        : code === 'INVALID_JSON' || code.startsWith('PASSKEY_')
           ? 400
           : 500;
       return responseJson({ ok: false, error: code }, { status });
@@ -581,14 +633,20 @@ export class CloudProfileHub extends DurableObject {
       activity: [],
       recoveryHash: '',
       recoveryCreatedAt: 0,
-      recoveryGeneration: 0
+      recoveryGeneration: 0,
+      accountType: 'guest',
+      accountLabel: 'Khadija’s Arena Player',
+      passkeys: [],
+      authVersion: 0,
+      lastAuthenticatedAt: 0
     });
     this.addActivity(meta, { device: meta.devices[0], region }, 'ACCOUNT_CREATED', 'Cloud guest account created');
     const profile = await this.saveProfile(meta, validated.profile);
     return responseJson({
       ok: true,
       schema: 1,
-      patch: CLOUD_RELIABILITY_PATCH,
+      patch: CLOUD_AUTH_PATCH,
+  reliabilityPatch: CLOUD_RELIABILITY_PATCH,
   securityPatch: CLOUD_SECURITY_PATCH,
       account: publicAccount(meta),
       token,
@@ -890,6 +948,304 @@ export class CloudProfileHub extends DurableObject {
     return responseJson({ ok: true, token, account: publicAccount(meta), devices: publicDevices(meta.devices, deviceId), profile, profileChecksum: meta.profileChecksum, checksumVerified: true, reliability: reliabilityForRequest(request, { checksumVerified: true }) });
   }
 
+  async passkeyRegisterOptions(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-register-options', rateKey, 8, 60 * 60 * 1000)) {
+      return responseJson({ ok: false, error: 'PASSKEY_REGISTER_RATE_LIMITED' }, { status: 429 });
+    }
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    if (normalizePasskeys(auth.meta.passkeys).length >= CLOUD_PASSKEY_LIMIT) {
+      return responseJson({ ok: false, error: 'PASSKEY_LIMIT_REACHED' }, { status: 409 });
+    }
+    const payload = await requestJson(request);
+    const context = passkeyRequestContext(request);
+    const challenge = createRandomChallenge();
+    const now = Date.now();
+    const record = {
+      purpose: 'register',
+      challenge,
+      accountId: auth.accountId,
+      origin: context.origin,
+      rpId: context.rpId,
+      name: cleanPasskeyLabel(payload.name || auth.meta.accountLabel),
+      createdAt: now,
+      expiresAt: now + CLOUD_AUTH_CHALLENGE_TTL_MS
+    };
+    await this.ctx.storage.put(authChallengeKey(challenge), record);
+    await this.scheduleCleanup();
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      options: createPasskeyRegistrationOptions({
+        accountId: auth.accountId,
+        accountLabel: record.name,
+        challenge,
+        rpId: context.rpId,
+        passkeys: auth.meta.passkeys
+      }),
+      expiresAt: new Date(record.expiresAt).toISOString()
+    });
+  }
+
+  async passkeyRegisterVerify(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-register-verify', rateKey, 8, 60 * 60 * 1000)) {
+      return responseJson({ ok: false, error: 'PASSKEY_REGISTER_RATE_LIMITED' }, { status: 429 });
+    }
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    const payload = await requestJson(request);
+    let challenge;
+    try { challenge = readPasskeyChallenge(payload.credential); }
+    catch (error) { return responseJson({ ok: false, error: String(error?.message || error) }, { status: 400 }); }
+    const key = authChallengeKey(challenge);
+    const record = await this.ctx.storage.get(key);
+    if (!record || record.purpose !== 'register' || record.accountId !== auth.accountId) {
+      return responseJson({ ok: false, error: 'PASSKEY_CHALLENGE_NOT_FOUND' }, { status: 404 });
+    }
+    if (Number(record.expiresAt || 0) <= Date.now()) {
+      await this.ctx.storage.delete(key);
+      return responseJson({ ok: false, error: 'PASSKEY_CHALLENGE_EXPIRED' }, { status: 410 });
+    }
+    let credential;
+    try {
+      credential = await verifyPasskeyRegistration({
+        response: payload.credential,
+        challenge,
+        origin: record.origin,
+        rpId: record.rpId,
+        name: payload.name || record.name,
+        now: Date.now()
+      });
+    } catch (error) {
+      return responseJson({ ok: false, error: String(error?.message || error) }, { status: 400 });
+    }
+    const passkeys = normalizePasskeys(auth.meta.passkeys);
+    if (passkeys.some((entry) => entry.credentialId === credential.credentialId)) {
+      await this.ctx.storage.delete(key);
+      return responseJson({ ok: false, error: 'PASSKEY_ALREADY_REGISTERED' }, { status: 409 });
+    }
+    const firstUpgrade = auth.meta.accountType !== 'passkey';
+    auth.meta.passkeys = normalizePasskeys([...passkeys, credential]);
+    auth.meta.accountType = 'passkey';
+    auth.meta.accountLabel = cleanPasskeyLabel(payload.name || record.name);
+    auth.meta.authVersion = Number(auth.meta.authVersion || 0) + 1;
+    auth.meta.lastAuthenticatedAt = Date.now();
+    this.addActivity(
+      auth.meta,
+      auth,
+      firstUpgrade ? 'ACCOUNT_UPGRADED_TO_PASSKEY' : 'PASSKEY_REGISTERED',
+      firstUpgrade ? 'Guest cloud account upgraded to passkey authentication' : 'Additional passkey registered'
+    );
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    await this.ctx.storage.delete(key);
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      upgraded: firstUpgrade,
+      account: publicAccount(auth.meta),
+      passkeys: publicPasskeys(auth.meta.passkeys)
+    });
+  }
+
+  async passkeyLoginOptions(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-login-options', rateKey, 12, 60 * 60 * 1000)) {
+      return responseJson({ ok: false, error: 'PASSKEY_LOGIN_RATE_LIMITED' }, { status: 429 });
+    }
+    const payload = await requestJson(request);
+    const accountId = cleanAccountId(payload.accountId);
+    if (!accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_ID_INVALID' }, { status: 400 });
+    const meta = ensureMeta(await this.ctx.storage.get(accountKey(accountId)));
+    if (!meta.accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND' }, { status: 404 });
+    if (meta.deletedAt) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_DELETED' }, { status: 410 });
+    const passkeys = normalizePasskeys(meta.passkeys);
+    if (meta.accountType !== 'passkey' || !passkeys.length) {
+      return responseJson({ ok: false, error: 'PASSKEY_ACCOUNT_NOT_ENABLED' }, { status: 409 });
+    }
+    const context = passkeyRequestContext(request);
+    const challenge = createRandomChallenge();
+    const now = Date.now();
+    const record = {
+      purpose: 'login',
+      challenge,
+      accountId,
+      origin: context.origin,
+      rpId: context.rpId,
+      createdAt: now,
+      expiresAt: now + CLOUD_AUTH_CHALLENGE_TTL_MS
+    };
+    await this.ctx.storage.put(authChallengeKey(challenge), record);
+    await this.scheduleCleanup();
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      account: publicAccount(meta),
+      options: createPasskeyAuthenticationOptions({ challenge, rpId: context.rpId, passkeys }),
+      expiresAt: new Date(record.expiresAt).toISOString()
+    });
+  }
+
+  async passkeyLoginVerify(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-login-verify', rateKey, 12, 60 * 60 * 1000)) {
+      return responseJson({ ok: false, error: 'PASSKEY_LOGIN_RATE_LIMITED' }, { status: 429 });
+    }
+    const payload = await requestJson(request);
+    const accountId = cleanAccountId(payload.accountId);
+    if (!accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_ID_INVALID' }, { status: 400 });
+    let challenge;
+    try { challenge = readPasskeyChallenge(payload.credential); }
+    catch (error) { return responseJson({ ok: false, error: String(error?.message || error) }, { status: 400 }); }
+    const key = authChallengeKey(challenge);
+    const record = await this.ctx.storage.get(key);
+    if (!record || record.purpose !== 'login' || record.accountId !== accountId) {
+      return responseJson({ ok: false, error: 'PASSKEY_CHALLENGE_NOT_FOUND' }, { status: 404 });
+    }
+    if (Number(record.expiresAt || 0) <= Date.now()) {
+      await this.ctx.storage.delete(key);
+      return responseJson({ ok: false, error: 'PASSKEY_CHALLENGE_EXPIRED' }, { status: 410 });
+    }
+    const meta = ensureMeta(await this.ctx.storage.get(accountKey(accountId)));
+    if (!meta.accountId) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_NOT_FOUND' }, { status: 404 });
+    if (meta.deletedAt) return responseJson({ ok: false, error: 'PROFILE_ACCOUNT_DELETED' }, { status: 410 });
+    const credentialId = String(payload.credential?.id || payload.credential?.rawId || '');
+    const passkeys = normalizePasskeys(meta.passkeys);
+    const credential = passkeys.find((entry) => entry.credentialId === credentialId);
+    if (!credential) return responseJson({ ok: false, error: 'PASSKEY_CREDENTIAL_NOT_FOUND' }, { status: 404 });
+    let verified;
+    try {
+      verified = await verifyPasskeyAuthentication({
+        response: payload.credential,
+        credential,
+        challenge,
+        origin: record.origin,
+        rpId: record.rpId,
+        accountId,
+        now: Date.now()
+      });
+    } catch (error) {
+      return responseJson({ ok: false, error: String(error?.message || error) }, { status: 401 });
+    }
+    meta.passkeys = passkeys.map((entry) => entry.credentialId === credentialId ? verified : entry);
+    meta.accountType = 'passkey';
+    meta.authVersion = Math.max(1, Number(meta.authVersion || 0));
+    meta.lastAuthenticatedAt = Date.now();
+    const token = randomToken();
+    const tokenHash = await sha256(token);
+    const now = Date.now();
+    const region = normalizeRegion(request.headers.get('x-ka-region'));
+    const deviceId = cleanDeviceId(payload.deviceId || request.headers.get('x-ka-device-id')) || `device-${crypto.randomUUID().replace(/-/g, '')}`;
+    meta.devices = upsertDevice(meta.devices, {
+      deviceId,
+      tokenHash,
+      name: payload.deviceName || 'Passkey Device',
+      region,
+      now
+    });
+    syncLegacyTokenHashes(meta);
+    const device = meta.devices.find((entry) => entry.deviceId === deviceId);
+    this.addActivity(meta, { device, region }, 'PASSKEY_SIGNED_IN', 'Cloud account signed in with a passkey');
+    await this.ctx.storage.put(accountKey(accountId), meta);
+    await this.ctx.storage.delete(key);
+    const profile = await this.loadProfile(meta);
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      token,
+      account: publicAccount(meta),
+      devices: publicDevices(meta.devices, deviceId),
+      passkeys: publicPasskeys(meta.passkeys),
+      profile,
+      profileChecksum: meta.profileChecksum,
+      checksumVerified: true,
+      reliability: reliabilityForRequest(request, { checksumVerified: true })
+    });
+  }
+
+  async authSession(request, rateKey) {
+    if (!await this.consumeRateLimit('auth-session', rateKey, 60)) {
+      return responseJson({ ok: false, error: 'PASSKEY_SESSION_RATE_LIMITED' }, { status: 429 });
+    }
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    auth.meta.lastAuthenticatedAt = Date.now();
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    const profile = await this.loadProfile(auth.meta);
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      account: publicAccount(auth.meta),
+      devices: publicDevices(auth.meta.devices, auth.device?.deviceId),
+      passkeys: publicPasskeys(auth.meta.passkeys),
+      profile,
+      profileChecksum: auth.meta.profileChecksum,
+      checksumVerified: true,
+      reliability: reliabilityForRequest(request, { checksumVerified: true })
+    });
+  }
+
+  async authSignOut(request, rateKey) {
+    if (!await this.consumeRateLimit('auth-signout', rateKey, 30)) {
+      return responseJson({ ok: false, error: 'PASSKEY_SIGNOUT_RATE_LIMITED' }, { status: 429 });
+    }
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    if (auth.meta.accountType !== 'passkey' || !normalizePasskeys(auth.meta.passkeys).length) {
+      return responseJson({ ok: false, error: 'PASSKEY_ACCOUNT_NOT_ENABLED' }, { status: 409 });
+    }
+    this.addActivity(auth.meta, auth, 'PASSKEY_SIGNED_OUT', 'Current device session revoked during sign-out');
+    auth.meta.devices = normalizeDevices(auth.meta.devices).filter((entry) => entry.tokenHash !== auth.tokenHash);
+    syncLegacyTokenHashes(auth.meta);
+    auth.meta.updatedAt = Date.now();
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    return responseJson({ ok: true, signedOut: true, account: publicAccount(auth.meta) });
+  }
+
+  async listPasskeys(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-list', rateKey, 60)) return responseJson({ ok: false, error: 'PASSKEY_LIST_RATE_LIMITED' }, { status: 429 });
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    return responseJson({ ok: true, account: publicAccount(auth.meta), passkeys: publicPasskeys(auth.meta.passkeys) });
+  }
+
+  async namePasskey(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-name', rateKey, 20, 60 * 60 * 1000)) return responseJson({ ok: false, error: 'PASSKEY_NAME_RATE_LIMITED' }, { status: 429 });
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    const payload = await requestJson(request);
+    const credentialId = String(payload.credentialId || '').slice(0, 1024);
+    const name = cleanPasskeyLabel(payload.name);
+    let changed = false;
+    auth.meta.passkeys = normalizePasskeys(auth.meta.passkeys).map((entry) => {
+      if (entry.credentialId !== credentialId) return entry;
+      changed = true;
+      return { ...entry, name };
+    });
+    if (!changed) return responseJson({ ok: false, error: 'PASSKEY_CREDENTIAL_NOT_FOUND' }, { status: 404 });
+    this.addActivity(auth.meta, auth, 'PASSKEY_RENAMED', `Passkey renamed to ${name}`);
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    return responseJson({ ok: true, account: publicAccount(auth.meta), passkeys: publicPasskeys(auth.meta.passkeys) });
+  }
+
+  async revokePasskey(request, rateKey) {
+    if (!await this.consumeRateLimit('passkey-revoke', rateKey, 12, 60 * 60 * 1000)) return responseJson({ ok: false, error: 'PASSKEY_REVOKE_RATE_LIMITED' }, { status: 429 });
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    const payload = await requestJson(request);
+    const credentialId = String(payload.credentialId || '').slice(0, 1024);
+    const passkeys = normalizePasskeys(auth.meta.passkeys);
+    if (!passkeys.some((entry) => entry.credentialId === credentialId)) {
+      return responseJson({ ok: false, error: 'PASSKEY_CREDENTIAL_NOT_FOUND' }, { status: 404 });
+    }
+    if (passkeys.length <= 1 && !/^[a-f0-9]{64}$/.test(auth.meta.recoveryHash)) {
+      return responseJson({ ok: false, error: 'PASSKEY_LAST_CREDENTIAL_REQUIRES_RECOVERY' }, { status: 409 });
+    }
+    auth.meta.passkeys = passkeys.filter((entry) => entry.credentialId !== credentialId);
+    if (!auth.meta.passkeys.length) auth.meta.accountType = 'guest';
+    auth.meta.authVersion = Number(auth.meta.authVersion || 0) + 1;
+    this.addActivity(auth.meta, auth, 'PASSKEY_REVOKED', 'Passkey credential revoked');
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    return responseJson({ ok: true, account: publicAccount(auth.meta), passkeys: publicPasskeys(auth.meta.passkeys) });
+  }
+
   async listHistory(request, rateKey) {
     if (!await this.consumeRateLimit('history-list', rateKey, 60)) return responseJson({ ok: false, error: 'PROFILE_HISTORY_RATE_LIMITED', reliability: reliabilityForRequest(request) }, { status: 429 });
     const auth = await this.authenticate(request);
@@ -996,7 +1352,8 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   schema: CLOUD_PROFILE_VERSION,
   profileSchema: CLOUD_PROFILE_SCHEMA,
   profilePatch: CLOUD_PROFILE_PATCH,
-  patch: CLOUD_RELIABILITY_PATCH,
+  patch: CLOUD_AUTH_PATCH,
+  reliabilityPatch: CLOUD_RELIABILITY_PATCH,
   securityPatch: CLOUD_SECURITY_PATCH,
   linkTtlMs: LINK_TTL_MS,
   maxProfileBytes: MAX_PROFILE_BYTES,
@@ -1006,5 +1363,9 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   recoveryCodeLength: RECOVERY_CODE_LENGTH,
   incompleteUploadTtlMs: INCOMPLETE_UPLOAD_TTL_MS,
   activityRetentionMs: CLOUD_ACTIVITY_RETENTION_MS,
-  tombstoneRetentionMs: CLOUD_TOMBSTONE_RETENTION_MS
+  tombstoneRetentionMs: CLOUD_TOMBSTONE_RETENTION_MS,
+  authPatch: CLOUD_AUTH_PATCH,
+  passkeyLimit: CLOUD_PASSKEY_LIMIT,
+  authChallengeTtlMs: CLOUD_AUTH_CHALLENGE_TTL_MS,
+  authentication: 'passkey'
 });

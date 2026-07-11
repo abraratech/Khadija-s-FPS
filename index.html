@@ -1009,7 +1009,7 @@
 <div class="ka-setting-row" id="cloud-profile-settings-row">
 <div>
 <strong>Guest Profile &amp; Cloud Sync</strong>
-<small>Your progression, achievements, records, leaderboard identity, controls, and settings can now synchronize through a secure guest account. No password or email is required.</small>
+<small>Your progression, achievements, records, leaderboard identity, controls, and settings can now synchronize through a secure guest account. No password or email is required for guest mode; you can later upgrade the same account with a device passkey.</small>
 <small id="cloud-profile-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;letter-spacing:.7px;">INITIALIZING GUEST PROFILE…</small>
 <small style="display:block;margin-top:4px;color:#8aa;">Profile: <span id="cloud-profile-id">—</span> · <span id="cloud-profile-revision">LOCAL REV —</span></small>
 <small style="display:block;margin-top:3px;color:#8aa;">Cloud: <span id="cloud-profile-account-id">NOT CONNECTED</span> · <span id="cloud-profile-cloud-revision">CLOUD OFF</span></small>
@@ -1030,6 +1030,31 @@
 <button class="ka-link-btn" id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
 <button class="ka-link-btn" id="cloud-profile-delete-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Delete Cloud Account</button>
 <input accept="application/json,.json" id="cloud-profile-import-file" style="display:none;" type="file"/>
+</div>
+</div>
+<div class="ka-setting-row" id="cloud-profile-auth-row">
+<div>
+<strong>Permanent Account &amp; Passkey Sign-In</strong>
+<small>Upgrade the current cloud guest account using your device passkey. No game password is stored. Existing progress, devices, history, recovery code, and leaderboard identity remain attached to the same account.</small>
+<small id="cloud-profile-auth-status" style="display:block;margin-top:7px;color:#22ff88;font-weight:900;">SIGNED OUT</small>
+<small style="display:block;margin-top:3px;color:#8aa;">Browser passkeys: <span id="cloud-profile-auth-support">CHECKING</span> · Last authenticated: <span id="cloud-profile-auth-last">NOT YET</span></small>
+<pre id="cloud-profile-passkey-list" style="margin:9px 0 0;max-height:110px;overflow:auto;white-space:pre-wrap;color:#9fb4c5;background:rgba(0,0,0,.24);border:1px solid rgba(255,255,255,.09);border-radius:8px;padding:8px;font:11px/1.45 monospace;">No passkeys registered.</pre>
+</div>
+<div style="display:grid;gap:8px;">
+<input class="ka-setting-control" id="cloud-profile-auth-label-input" maxlength="48" placeholder="Account / passkey label" type="text"/>
+<button class="ka-nav-btn" id="cloud-profile-passkey-upgrade-btn" style="width:100%;text-align:center;" type="button">Upgrade Guest Account to Passkey</button>
+<div style="display:grid;grid-template-columns:1fr auto;gap:6px;">
+<input class="ka-setting-control" id="cloud-profile-passkey-account-input" maxlength="40" placeholder="Cloud account ID" type="text"/>
+<button class="ka-nav-btn" id="cloud-profile-passkey-signin-btn" style="text-align:center;" type="button">Sign In</button>
+</div>
+<button class="ka-link-btn" id="cloud-profile-auth-refresh-btn" style="width:100%;text-align:center;border-color:rgba(34,255,136,.42);" type="button">Refresh Signed-In Session</button>
+<select class="ka-setting-control" id="cloud-profile-passkey-select"><option value="">No passkeys registered</option></select>
+<div style="display:grid;grid-template-columns:1fr auto;gap:6px;">
+<input class="ka-setting-control" id="cloud-profile-passkey-name-input" maxlength="48" placeholder="New passkey name" type="text"/>
+<button class="ka-link-btn" id="cloud-profile-passkey-rename-btn" style="text-align:center;" type="button">Rename</button>
+</div>
+<button class="ka-link-btn" id="cloud-profile-passkey-revoke-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Revoke Selected Passkey</button>
+<button class="ka-link-btn" id="cloud-profile-auth-signout-btn" style="width:100%;text-align:center;border-color:rgba(255,170,0,.42);" type="button">Sign Out on This Browser</button>
 </div>
 </div>
 <div class="ka-setting-row" id="cloud-profile-device-security-row">

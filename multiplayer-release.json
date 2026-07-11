@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m4-cloud-sync-reliability-r1",
-  "patch": "m4-cloud-sync-reliability-r1",
-  "certifiedBaselineSha": "1f2b50f0cc779c1695971af7e0528becfae34e10",
+  "build": "m4-passkey-account-upgrade-r1",
+  "patch": "m4-passkey-account-upgrade-r1",
+  "certifiedBaselineSha": "2b5edc90f9a319c7b8fc7ab01969379ed2930e12",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -19,7 +19,7 @@
   "cloudProfiles": {
     "schema": 1,
     "profileSchema": "khadijas-arena-player-profile",
-    "patch": "m4-cloud-sync-reliability-r1",
+    "patch": "m4-passkey-account-upgrade-r1",
     "endpoints": [
       "/profiles/register",
       "/profiles/profile",
@@ -35,6 +35,15 @@
       "/profiles/token/rotate",
       "/profiles/recovery/generate",
       "/profiles/recovery/consume",
+      "/profiles/auth/passkey/register/options",
+      "/profiles/auth/passkey/register/verify",
+      "/profiles/auth/passkey/login/options",
+      "/profiles/auth/passkey/login/verify",
+      "/profiles/auth/session",
+      "/profiles/auth/signout",
+      "/profiles/auth/passkeys",
+      "/profiles/auth/passkeys/name",
+      "/profiles/auth/passkeys/revoke",
       "/profiles/history",
       "/profiles/history/restore",
       "/profiles/activity"
@@ -45,6 +54,12 @@
       "checksumVerification": true,
       "tombstoneProtection": true,
       "historyIntegrity": true
+    },
+    "authentication": {
+      "mechanism": "passkey",
+      "patch": "m4-passkey-account-upgrade-r1",
+      "guestUpgrade": true,
+      "passwordStorage": false
     }
   }
 }

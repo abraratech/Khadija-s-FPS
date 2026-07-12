@@ -423,7 +423,9 @@ export class MultiplayerLiveVoice {
   }
 
   schedulePeerRetry(playerId) {
-    if (!this.active || this.retryTimers.has(playerId)) return;
+    if (!this.active || !playerId) return false;
+    if (window.KHADIJA_VOICE_RELIABILITY?.schedulePeerRepair?.(playerId, 'failed') === true) return true;
+    if (this.retryTimers.has(playerId)) return false;
     const timer = setTimeout(() => {
       this.retryTimers.delete(playerId);
       const teammate = this.teammates().find((entry) => entry.playerId === playerId);
@@ -434,8 +436,8 @@ export class MultiplayerLiveVoice {
       if (peer && shouldInitiateVoiceOffer(this.localPlayerId(), playerId)) void this.makeOffer(peer, { force: true });
     }, RETRY_DELAY_MS);
     this.retryTimers.set(playerId, timer);
+    return true;
   }
-
   removePeer(playerId) {
     const peer = this.peers.get(playerId);
     if (!peer) return false;
@@ -680,6 +682,7 @@ export class MultiplayerLiveVoice {
       connectedPeerCount: [...this.peers.values()].filter((peer) => peer.connected).length,
       stunUrl: LIVE_VOICE_STUN_URL,
       serverReceivesAudio: false,
+      reliability: window.KHADIJA_VOICE_RELIABILITY?.getSnapshot?.() || null,
       availability: this.availability(),
     });
   }

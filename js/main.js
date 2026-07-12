@@ -71,7 +71,7 @@ import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
 import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
-import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js'; import './multiplayer/voice_readiness.js'; import './multiplayer/live_voice.js'; import './multiplayer/suspend_resume.js';
+import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js'; import './multiplayer/voice_readiness.js'; import './multiplayer/live_voice.js'; import './multiplayer/live_voice_reliability.js'; import './multiplayer/suspend_resume.js';
 import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
 import './multiplayer/certification_session.js';
 import './multiplayer/certification_pairing.js';
@@ -190,10 +190,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm5-coop-live-voice-r1';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm5-coop-live-voice-r1';
-console.info('[Multiplayer Build] m5-coop-live-voice-r1 | protocol 6');
-console.info('[Multiplayer Patch] m5-coop-live-voice-r1');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm5-coop-voice-reliability-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm5-coop-voice-reliability-r1';
+console.info('[Multiplayer Build] m5-coop-voice-reliability-r1 | protocol 6');
+console.info('[Multiplayer Patch] m5-coop-voice-reliability-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }

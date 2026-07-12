@@ -12,7 +12,7 @@ import {
   shouldInitiateVoiceOffer,
 } from './live_voice_core.js';
 
-assert.equal(LIVE_VOICE_PATCH, 'm5-coop-live-voice-r1');
+assert.equal(LIVE_VOICE_PATCH, 'm5-coop-voice-reliability-r1');
 assert.equal(LIVE_VOICE_STUN_URL, 'stun:stun.cloudflare.com:3478');
 assert.equal(shouldInitiateVoiceOffer('player-a', 'player-b'), true);
 assert.equal(shouldInitiateVoiceOffer('player-b', 'player-a'), false);

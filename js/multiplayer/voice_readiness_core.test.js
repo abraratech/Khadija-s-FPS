@@ -17,7 +17,7 @@ class MemoryStorage {
   removeItem(key) { this.values.delete(key); }
 }
 
-assert.equal(VOICE_READINESS_PATCH, 'm5-coop-live-voice-r1');
+assert.equal(VOICE_READINESS_PATCH, 'm5-coop-voice-reliability-r1');
 assert.equal(VOICE_PUSH_TO_TALK_CODE, 'KeyT');
 assert.equal(inspectVoiceEnvironment({ secureContext: false, mediaDevices: {} }).reason, 'insecure-context');
 assert.equal(inspectVoiceEnvironment({ secureContext: true, mediaDevices: {} }).reason, 'media-devices-unavailable');

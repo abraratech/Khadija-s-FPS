@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-live-voice-r1';
-const SERVER_PATCH = 'm5-coop-live-voice-r1';
-const CERTIFIED_FRONTEND_SHA = 'd2840511b7eb6c9ae3e8f051072f2fa807240db5';
+const SERVER_BUILD = 'm5-coop-voice-reliability-r1';
+const SERVER_PATCH = 'm5-coop-voice-reliability-r1';
+const CERTIFIED_FRONTEND_SHA = '04984d114ff649494be12151a6d22e9abe429687';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 

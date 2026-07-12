@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-live-voice-r1",
-  "patch": "m5-coop-live-voice-r1",
-  "certifiedBaselineSha": "d2840511b7eb6c9ae3e8f051072f2fa807240db5",
+  "build": "m5-coop-voice-reliability-r1",
+  "patch": "m5-coop-voice-reliability-r1",
+  "certifiedBaselineSha": "04984d114ff649494be12151a6d22e9abe429687",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -79,8 +79,8 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.20",
-    "patch": "m5-coop-live-voice-r1",
+    "milestone": "M5.1-M5.24",
+    "patch": "m5-coop-voice-reliability-r1",
     "quickMessages": [
       "ENEMY_HERE",
       "NEED_HELP",
@@ -132,7 +132,24 @@
       "perPlayerMute": true,
       "stun": "stun.cloudflare.com:3478",
       "turnRelay": false,
-      "serverRecordsAudio": false
+      "serverRecordsAudio": false,
+      "reliability": {
+        "boundedAutomaticRepair": true,
+        "iceRestart": true,
+        "peerRebuildFallback": true,
+        "disconnectGraceMs": 4000,
+        "maxAutomaticRepairAttempts": 4,
+        "rollingRepairWindowMs": 60000,
+        "connectionStats": [
+          "rtt",
+          "jitter",
+          "packetLoss"
+        ],
+        "manualRetry": true,
+        "onlineVisibilityRecovery": true,
+        "restrictiveNetworkDiagnosis": true,
+        "turnRelayConfigured": false
+      }
     }
   }
 }

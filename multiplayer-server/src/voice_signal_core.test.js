@@ -7,7 +7,7 @@ import {
   validateVoiceSignalRequest,
 } from './voice_signal_core.js';
 
-assert.equal(VOICE_SIGNAL_PATCH, 'm5-coop-voice-reliability-r1');
+assert.equal(VOICE_SIGNAL_PATCH, 'm5-coop-turn-fallback-r1');
 
 const context = {
   senderPlayerId: 'player-a',

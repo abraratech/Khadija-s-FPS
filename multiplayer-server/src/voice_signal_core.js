@@ -1,5 +1,5 @@
 // multiplayer-server/src/voice_signal_core.js
-export const VOICE_SIGNAL_PATCH = 'm5-coop-voice-reliability-r1';
+export const VOICE_SIGNAL_PATCH = 'm5-coop-turn-fallback-r1';
 export const VOICE_SIGNAL_KINDS = Object.freeze({
   READY: 'ready',
   OFFER: 'offer',

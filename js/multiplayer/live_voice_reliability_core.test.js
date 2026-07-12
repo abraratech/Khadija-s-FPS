@@ -12,7 +12,7 @@ import {
   voiceRepairDelay,
 } from './live_voice_reliability_core.js';
 
-assert.equal(LIVE_VOICE_RELIABILITY_PATCH, 'm5-coop-voice-reliability-r1');
+assert.equal(LIVE_VOICE_RELIABILITY_PATCH, 'm5-coop-turn-fallback-r1');
 assert.equal(normalizeVoicePeerState('connected', 'checking'), 'connected');
 assert.equal(normalizeVoicePeerState('connecting', 'failed'), 'failed');
 assert.equal(normalizeVoicePeerState('connected', 'disconnected'), 'connected');

@@ -1,5 +1,5 @@
 // js/multiplayer/live_voice_reliability_core.js
-export const LIVE_VOICE_RELIABILITY_PATCH = 'm5-coop-voice-reliability-r1';
+export const LIVE_VOICE_RELIABILITY_PATCH = 'm5-coop-turn-fallback-r1';
 export const VOICE_DISCONNECT_GRACE_MS = 4000;
 export const VOICE_MAX_AUTOMATIC_REPAIR_ATTEMPTS = 4;
 export const VOICE_REPAIR_WINDOW_MS = 60000;

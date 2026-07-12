@@ -67,3 +67,16 @@ Certified frontend baseline: d4024500eaf52ef1660e09a96a3bbec792a1ec48
 Passkey registration and verification support ES256 and RS256.
 Local/online leaderboard feedback, Career & Achievements, and simplified Cloud Save are included.
 Protocol remains 6.
+
+M5.25-M5.28 SECURE TURN FALLBACK
+Release identity: m5-coop-turn-fallback-r1
+Certified frontend baseline: 0fb4d8abc89c064e1bac60bd0573793037334999
+Protocol remains 6.
+
+Cloudflare Realtime TURN long-term credentials must be stored only as Worker secrets:
+  npx wrangler secret put TURN_KEY_ID
+  npx wrangler secret put TURN_KEY_API_TOKEN
+
+Never place either value in source, wrangler.jsonc, screenshots, logs, or commits.
+Without these secrets, live voice continues in direct P2P / STUN-only mode.
+After setting or rotating either secret, redeploy the Worker.

@@ -1,5 +1,5 @@
 // js/multiplayer/live_voice_core.js
-export const LIVE_VOICE_PATCH = 'm5-coop-voice-reliability-r1';
+export const LIVE_VOICE_PATCH = 'm5-coop-turn-fallback-r1';
 export const LIVE_VOICE_SIGNAL_ACTION = 'voice-signal';
 export const LIVE_VOICE_STUN_URL = 'stun:stun.cloudflare.com:3478';
 export const LIVE_VOICE_SIGNAL_KINDS = Object.freeze({

@@ -2,7 +2,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
-import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js'; import { buildVoiceSignalRelay, validateVoiceSignalRequest } from './voice_signal_core.js';
+import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js'; import { buildVoiceSignalRelay, validateVoiceSignalRequest } from './voice_signal_core.js'; import { VOICE_ICE_CONFIG_ACTION, VOICE_ICE_CONFIG_REQUEST_ACTION, consumeVoiceIceRequestRate, generateVoiceIceConfig, voiceIceConfigFresh } from './voice_turn_core.js';
 
 export { LeaderboardHub, CloudProfileHub };
 
@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-voice-reliability-r1';
-const SERVER_PATCH = 'm5-coop-voice-reliability-r1';
-const CERTIFIED_FRONTEND_SHA = '04984d114ff649494be12151a6d22e9abe429687';
+const SERVER_BUILD = 'm5-coop-turn-fallback-r1';
+const SERVER_PATCH = 'm5-coop-turn-fallback-r1';
+const CERTIFIED_FRONTEND_SHA = '0fb4d8abc89c064e1bac60bd0573793037334999';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -174,6 +174,7 @@ export class ArenaRoom extends DurableObject {
     this.env = env;
     this.room = null;
     this.lastCheckpointWriteAt = 0;
+    this.voiceIceConfigCache = null;
 
     this.ctx.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair('ka-ping', 'ka-pong')
@@ -792,7 +793,21 @@ isAuthorityCheckpointEnvelope(envelope) {
   });
   this.broadcast({ kind: 'control', action: 'chat-message', payload: { message } });
   return;
-} if (action === 'voice-signal') {
+} if (action === VOICE_ICE_CONFIG_REQUEST_ACTION) {
+      const attachment = this.readAttachment(socket) || {};
+      const rate = consumeVoiceIceRequestRate(attachment, Date.now());
+      socket.serializeAttachment({ ...attachment, ...rate.state });
+      const now = Date.now();
+      if (!rate.allowed && !voiceIceConfigFresh(this.voiceIceConfigCache, now)) {
+        socket.send(JSON.stringify({ kind: 'control', action: 'voice-ice-config-rejected', payload: { reason: 'cooldown', retryAfterMs: rate.retryAfterMs } }));
+        return;
+      }
+      if (!voiceIceConfigFresh(this.voiceIceConfigCache, now)) {
+        this.voiceIceConfigCache = await generateVoiceIceConfig(this.env, { now });
+      }
+      socket.send(JSON.stringify({ kind: 'control', action: VOICE_ICE_CONFIG_ACTION, payload: { config: this.voiceIceConfigCache } }));
+      return;
+    } if (action === 'voice-signal') {
       const connectedIds = this.connectedPlayers().map((entry) => entry.playerId);
       const validation = validateVoiceSignalRequest(payload, {
         senderPlayerId: player.playerId,

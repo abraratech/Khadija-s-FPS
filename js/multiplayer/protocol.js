@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm5-coop-voice-reliability-r1';
+export const MULTIPLAYER_BUILD_ID = 'm5-coop-turn-fallback-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 6;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([5, 6]);
 

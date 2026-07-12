@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-voice-reliability-r1",
-  "patch": "m5-coop-voice-reliability-r1",
-  "certifiedBaselineSha": "04984d114ff649494be12151a6d22e9abe429687",
+  "build": "m5-coop-turn-fallback-r1",
+  "patch": "m5-coop-turn-fallback-r1",
+  "certifiedBaselineSha": "0fb4d8abc89c064e1bac60bd0573793037334999",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -79,8 +79,8 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.24",
-    "patch": "m5-coop-voice-reliability-r1",
+    "milestone": "M5.1-M5.28",
+    "patch": "m5-coop-turn-fallback-r1",
     "quickMessages": [
       "ENEMY_HERE",
       "NEED_HELP",
@@ -148,7 +148,15 @@
         "manualRetry": true,
         "onlineVisibilityRecovery": true,
         "restrictiveNetworkDiagnosis": true,
-        "turnRelayConfigured": false
+        "turnRelayConfigured": "runtime-worker-secrets"
+      },
+      "turnFallback": {
+        "credentialBroker": "authenticated-room-websocket",
+        "provider": "cloudflare-realtime-turn",
+        "shortLivedCredentials": true,
+        "stunOnlyFallback": true,
+        "refreshBeforeExpiry": true,
+        "longTermSecretsClientVisible": false
       }
     }
   }

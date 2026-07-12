@@ -2,7 +2,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
-import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js';
+import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js'; import { buildVoiceSignalRelay, validateVoiceSignalRequest } from './voice_signal_core.js';
 
 export { LeaderboardHub, CloudProfileHub };
 
@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-voice-readiness-r1';
-const SERVER_PATCH = 'm5-coop-voice-readiness-r1';
-const CERTIFIED_FRONTEND_SHA = 'c0e1b744dbb25ec236b8a532903707da6e1571d1';
+const SERVER_BUILD = 'm5-coop-live-voice-r1';
+const SERVER_PATCH = 'm5-coop-live-voice-r1';
+const CERTIFIED_FRONTEND_SHA = 'd2840511b7eb6c9ae3e8f051072f2fa807240db5';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -792,7 +792,46 @@ isAuthorityCheckpointEnvelope(envelope) {
   });
   this.broadcast({ kind: 'control', action: 'chat-message', payload: { message } });
   return;
-} if (action === 'set-ready') {
+} if (action === 'voice-signal') {
+      const connectedIds = this.connectedPlayers().map((entry) => entry.playerId);
+      const validation = validateVoiceSignalRequest(payload, {
+        senderPlayerId: player.playerId,
+        connectedPlayerIds: connectedIds,
+      });
+      if (!validation.ok) {
+        socket.send(JSON.stringify({
+          kind: 'control',
+          action: 'voice-signal-rejected',
+          payload: { reason: validation.reason },
+        }));
+        return;
+      }
+      const relay = buildVoiceSignalRelay({
+        signal: validation.signal,
+        fromPlayerId: player.playerId,
+        fromDisplayName: player.displayName,
+        sentAt: Date.now(),
+      });
+      const targetSockets = this.ctx.getWebSockets(`player:${relay.targetPlayerId}`);
+      if (!targetSockets.length) {
+        socket.send(JSON.stringify({
+          kind: 'control',
+          action: 'voice-signal-rejected',
+          payload: { reason: 'target-unavailable' },
+        }));
+        return;
+      }
+      const serialized = JSON.stringify({
+        kind: 'control',
+        action: 'voice-signal',
+        payload: { signal: relay },
+      });
+      targetSockets.forEach((targetSocket) => {
+        try { targetSocket.send(serialized); } catch {}
+      });
+      return;
+    }
+    if (action === 'set-ready') {
       if (this.room.status === 'in-run') return;
       player.ready = player.isHost ? true : payload.ready === true;
       await this.commit();

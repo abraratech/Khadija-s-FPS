@@ -1,10 +1,10 @@
 // js/multiplayer/production_release_core.js
 // M4.55-M4.58 — deterministic frontend/Worker release, cloud-profile, and passkey-authentication capability gate.
 
-export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm5-coop-voice-readiness-r1';
+export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm5-coop-live-voice-r1';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
-export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm5-coop-voice-readiness-r1';
-export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = 'c0e1b744dbb25ec236b8a532903707da6e1571d1';
+export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm5-coop-live-voice-r1';
+export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = 'd2840511b7eb6c9ae3e8f051072f2fa807240db5';
 export const MULTIPLAYER_PRODUCTION_RELEASE_STATUS = 'CERTIFIED';
 export const MULTIPLAYER_PRODUCTION_WORKER_URL = 'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev';
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA = 1;

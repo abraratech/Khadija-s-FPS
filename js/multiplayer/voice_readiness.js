@@ -107,7 +107,7 @@ class VoiceReadinessController {
     titleRow.append(title, closeButton);
 
     const notice = document.createElement('p');
-    notice.textContent = 'Setup only: live teammate audio is added in the next voice phase. No audio is recorded or sent by this screen.';
+    notice.textContent = 'Live push-to-talk uses peer-to-peer WebRTC. Audio is never recorded by the game server.';
     Object.assign(notice.style, { margin: '9px 0', color: '#b8ced8', fontSize: '11px', lineHeight: '1.35' });
 
     this.status = document.createElement('div');
@@ -124,13 +124,13 @@ class VoiceReadinessController {
       width: '100%', marginTop: '4px', padding: '8px', borderRadius: '8px',
       border: '1px solid rgba(89, 232, 255, .45)', background: '#061923', color: '#effcff',
     });
-    this.deviceSelect.addEventListener('change', () => this.store.setSelectedDeviceId(this.deviceSelect.value));
+    this.deviceSelect.addEventListener('change', () => { this.store.setSelectedDeviceId(this.deviceSelect.value); window.KHADIJA_LIVE_VOICE?.handleDeviceChanged?.(); });
 
     const controls = document.createElement('div');
     Object.assign(controls.style, { display: 'flex', flexWrap: 'wrap', gap: '7px', marginTop: '10px' });
     const checkButton = button('CHECK / TEST MIC', 'Check microphone permission and test input level');
     checkButton.addEventListener('click', () => void this.checkMicrophone());
-    this.enableButton = button('ENABLE VOICE LATER');
+    this.enableButton = button('VOICE PREFERENCE OFF');
     this.enableButton.addEventListener('click', () => {
       const enabled = this.store.getSnapshot().voiceEnabled !== true;
       this.store.setVoiceEnabled(enabled);
@@ -193,6 +193,10 @@ class VoiceReadinessController {
   }
 
   async checkMicrophone() {
+    if (window.KHADIJA_LIVE_VOICE?.getSnapshot?.().active === true) {
+      this.setStatus('STOP LIVE VOICE BEFORE RUNNING THE MIC TEST', true);
+      return false;
+    }
     const environment = inspectVoiceEnvironment();
     if (!environment.canRequestMicrophone) {
       this.setStatus(environment.label, true);
@@ -262,9 +266,12 @@ class VoiceReadinessController {
 
   setPttHeld(held) {
     this.pttHeld = held === true;
+    const liveActive = window.KHADIJA_LIVE_VOICE?.getSnapshot?.().active === true;
     const element = document.getElementById('ka-voice-ptt-status');
     if (element) {
-      element.textContent = this.pttHeld ? 'PTT INPUT ACTIVE · NOT TRANSMITTING YET' : 'PTT INPUT TEST · HOLD T';
+      element.textContent = this.pttHeld
+        ? (liveActive ? 'PTT TRANSMITTING · RELEASE T TO MUTE' : 'PTT INPUT ACTIVE · LIVE VOICE OFF')
+        : (liveActive ? 'LIVE VOICE READY · HOLD T' : 'PTT INPUT TEST · HOLD T');
       element.style.color = this.pttHeld ? '#8effb0' : '#effcff';
       element.style.borderColor = this.pttHeld ? '#6dff9f' : 'rgba(255,255,255,.16)';
     }
@@ -308,7 +315,7 @@ class VoiceReadinessController {
   render() {
     const environment = inspectVoiceEnvironment();
     const snapshot = this.store.getSnapshot();
-    if (this.enableButton) this.enableButton.textContent = snapshot.voiceEnabled ? 'VOICE ENABLED LATER' : 'ENABLE VOICE LATER';
+    if (this.enableButton) this.enableButton.textContent = snapshot.voiceEnabled ? 'VOICE PREFERENCE ON' : 'VOICE PREFERENCE OFF';
     if (this.muteAllButton) this.muteAllButton.textContent = snapshot.muteAllVoice ? 'UNMUTE ALL VOICE' : 'MUTE ALL VOICE';
     if (this.status && !this.stream) this.setStatus(environment.label, !environment.supported);
   }
@@ -320,7 +327,7 @@ class VoiceReadinessController {
       pttHeld: this.pttHeld,
       environment: inspectVoiceEnvironment(),
       preferences: this.store.getSnapshot(),
-      liveAudioTransport: false,
+      liveAudioTransport: window.KHADIJA_LIVE_VOICE?.getSnapshot?.().active === true,
     });
   }
 }

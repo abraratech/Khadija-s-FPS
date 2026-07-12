@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-voice-readiness-r1",
-  "patch": "m5-coop-voice-readiness-r1",
-  "certifiedBaselineSha": "c0e1b744dbb25ec236b8a532903707da6e1571d1",
+  "build": "m5-coop-live-voice-r1",
+  "patch": "m5-coop-live-voice-r1",
+  "certifiedBaselineSha": "d2840511b7eb6c9ae3e8f051072f2fa807240db5",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -79,8 +79,8 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.16",
-    "patch": "m5-coop-voice-readiness-r1",
+    "milestone": "M5.1-M5.20",
+    "patch": "m5-coop-live-voice-r1",
     "quickMessages": [
       "ENEMY_HERE",
       "NEED_HELP",
@@ -112,7 +112,7 @@
       "htmlRendered": false
     },
     "voiceReadiness": {
-      "liveAudioTransport": false,
+      "liveAudioTransport": true,
       "secureContextDiagnostics": true,
       "microphonePermissionCheck": true,
       "microphoneDeviceSelection": true,
@@ -120,6 +120,18 @@
       "pushToTalkInput": "KeyT",
       "muteAllVoicePreference": true,
       "persistentPreferences": true,
+      "serverRecordsAudio": false
+    },
+    "liveVoice": {
+      "transport": "WebRTC peer-to-peer mesh",
+      "signaling": "targeted authenticated Worker control messages",
+      "pushToTalkInput": "KeyT",
+      "lobby": true,
+      "inGame": true,
+      "muteAllVoice": true,
+      "perPlayerMute": true,
+      "stun": "stun.cloudflare.com:3478",
+      "turnRelay": false,
       "serverRecordsAudio": false
     }
   }

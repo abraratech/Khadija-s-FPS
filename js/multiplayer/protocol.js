@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm5-coop-voice-readiness-r1';
+export const MULTIPLAYER_BUILD_ID = 'm5-coop-live-voice-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 6;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([5, 6]);
 

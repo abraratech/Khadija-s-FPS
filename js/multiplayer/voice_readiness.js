@@ -158,7 +158,7 @@ class VoiceReadinessController {
 
     const ptt = document.createElement('div');
     ptt.id = 'ka-voice-ptt-status';
-    ptt.textContent = 'PTT INPUT TEST · HOLD V';
+    ptt.textContent = 'PTT INPUT TEST · HOLD T';
     Object.assign(ptt.style, {
       marginTop: '10px', padding: '8px', border: '1px solid rgba(255,255,255,.16)',
       borderRadius: '8px', textAlign: 'center', fontSize: '11px', fontWeight: '900', letterSpacing: '.08em',
@@ -209,7 +209,7 @@ class VoiceReadinessController {
       this.startLevelTest(this.stream);
       this.testTimer = window.setTimeout(() => {
         this.stopLevelTest();
-        this.setStatus('MICROPHONE READY · HOLD V TO TEST PTT INPUT', false);
+        this.setStatus('MICROPHONE READY · HOLD T TO TEST PTT INPUT', false);
       }, LEVEL_TEST_MS);
       this.render();
       return true;
@@ -264,7 +264,7 @@ class VoiceReadinessController {
     this.pttHeld = held === true;
     const element = document.getElementById('ka-voice-ptt-status');
     if (element) {
-      element.textContent = this.pttHeld ? 'PTT INPUT ACTIVE · NOT TRANSMITTING YET' : 'PTT INPUT TEST · HOLD V';
+      element.textContent = this.pttHeld ? 'PTT INPUT ACTIVE · NOT TRANSMITTING YET' : 'PTT INPUT TEST · HOLD T';
       element.style.color = this.pttHeld ? '#8effb0' : '#effcff';
       element.style.borderColor = this.pttHeld ? '#6dff9f' : 'rgba(255,255,255,.16)';
     }

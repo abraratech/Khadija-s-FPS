@@ -14,7 +14,7 @@ export class MultiplayerNetworkHud {
   ensureRoot() {
     if (this.root || typeof document === 'undefined') return this.root;
     const root=document.createElement('section'); root.id='multiplayer-network-hud'; root.setAttribute('aria-label','Co-op network and teammate status');
-    Object.assign(root.style,{position:'fixed',top:'72px',right:'12px',zIndex:'70',width:'250px',padding:'8px',border:'1px solid rgba(160,220,255,.32)',borderRadius:'8px',background:'rgba(5,12,20,.78)',boxShadow:'0 4px 18px rgba(0,0,0,.34)',color:'#edf8ff',fontFamily:'system-ui,sans-serif',fontSize:'11px',lineHeight:'1.3',pointerEvents:'none',backdropFilter:'blur(4px)'});
+    Object.assign(root.style,{position:'fixed',top:'132px',right:'12px',zIndex:'70',width:'250px',padding:'8px',border:'1px solid rgba(160,220,255,.32)',borderRadius:'8px',background:'rgba(5,12,20,.78)',boxShadow:'0 4px 18px rgba(0,0,0,.34)',color:'#edf8ff',fontFamily:'system-ui,sans-serif',fontSize:'11px',lineHeight:'1.3',pointerEvents:'none',backdropFilter:'blur(4px)'});
     document.body.appendChild(root); this.root=root; return root;
   }
   reset(){ this.lastSnapshot=null; this.lastUpdateAt=0; if(this.root) this.root.style.display='none'; }

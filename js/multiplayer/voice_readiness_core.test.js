@@ -18,7 +18,7 @@ class MemoryStorage {
 }
 
 assert.equal(VOICE_READINESS_PATCH, 'm5-coop-voice-readiness-r1');
-assert.equal(VOICE_PUSH_TO_TALK_CODE, 'KeyV');
+assert.equal(VOICE_PUSH_TO_TALK_CODE, 'KeyT');
 assert.equal(inspectVoiceEnvironment({ secureContext: false, mediaDevices: {} }).reason, 'insecure-context');
 assert.equal(inspectVoiceEnvironment({ secureContext: true, mediaDevices: {} }).reason, 'media-devices-unavailable');
 assert.equal(inspectVoiceEnvironment({ secureContext: true, mediaDevices: { getUserMedia() {} } }).supported, true);
@@ -36,7 +36,7 @@ assert.equal(normalized.voiceEnabled, true);
 assert.equal(normalized.selectedDeviceId, 'mic-1');
 assert.equal(normalized.muteAllVoice, true);
 assert.deepEqual(normalized.mutedVoicePlayerIds, ['player-a', 'player-b']);
-assert.equal(normalized.pushToTalkCode, 'KeyV');
+assert.equal(normalized.pushToTalkCode, 'KeyT');
 
 const storage = new MemoryStorage();
 const store = new VoiceReadinessStore({ storage, storageKey: 'voice-test' });

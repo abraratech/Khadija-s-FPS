@@ -117,7 +117,7 @@
       "microphonePermissionCheck": true,
       "microphoneDeviceSelection": true,
       "microphoneLevelTest": true,
-      "pushToTalkInput": "KeyV",
+      "pushToTalkInput": "KeyT",
       "muteAllVoicePreference": true,
       "persistentPreferences": true,
       "serverRecordsAudio": false

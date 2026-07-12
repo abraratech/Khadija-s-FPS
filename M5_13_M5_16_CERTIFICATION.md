@@ -12,7 +12,8 @@
 - Requests microphone permission only after a user clicks `CHECK / TEST MIC`.
 - Enumerates microphone input devices and persists the selected device locally.
 - Provides a five-second local microphone-level test and always stops its tracks.
-- Adds a local push-to-talk input test on `V`.
+- Adds a local push-to-talk input test on `T`.
+- Moves the co-op network/player panel below the local points HUD so both remain readable.
 - Persists voice-enabled and mute-all-voice preferences for the later live-audio phase.
 - Does not transmit, record, upload, or relay audio in this milestone.
 - Protocol remains 6; the Worker changes only release identity/version.
@@ -24,7 +25,7 @@
 3. On HTTPS or localhost, open Voice and click `CHECK / TEST MIC`.
 4. Grant permission and confirm microphone devices populate and the level meter moves.
 5. Select another microphone when available, refresh normally, and confirm it remains selected.
-6. Hold `V` while the panel is open and confirm the PTT input indicator activates.
+6. Hold `T` while the panel is open and confirm the PTT input indicator activates.
 7. Confirm the panel explicitly says live teammate audio is not active yet.
 8. On a LAN-IP HTTP client, confirm it shows `VOICE REQUIRES HTTPS OR LOCALHOST` without throwing an error.
 9. Confirm closing the panel stops the microphone indicator/browser capture icon.

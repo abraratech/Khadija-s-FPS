@@ -1,7 +1,7 @@
 // js/multiplayer/voice_readiness_core.js
 export const VOICE_READINESS_PATCH = 'm5-coop-voice-readiness-r1';
 export const VOICE_READINESS_STORAGE_KEY = 'khadijasArena.multiplayer.voiceReadiness.v1';
-export const VOICE_PUSH_TO_TALK_CODE = 'KeyV';
+export const VOICE_PUSH_TO_TALK_CODE = 'KeyT';
 export const VOICE_MAX_MUTED_PLAYERS = 64;
 
 function cleanString(value, maxLength = 180) {

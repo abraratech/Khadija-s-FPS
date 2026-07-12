@@ -4,11 +4,17 @@ import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('./voice_readiness.js', import.meta.url), 'utf8');
 const core = await readFile(new URL('./voice_readiness_core.js', import.meta.url), 'utf8');
+const networkHud = await readFile(new URL('./network_hud.js', import.meta.url), 'utf8');
 const joined = `${source}\n${core}`;
 assert.match(source, /getUserMedia/);
 assert.match(source, /enumerateDevices/);
 assert.match(joined, /VOICE REQUIRES HTTPS OR LOCALHOST/);
 assert.match(source, /PTT INPUT ACTIVE · NOT TRANSMITTING YET/);
+assert.match(joined, /KeyT/);
+assert.match(source, /HOLD T/);
+assert.doesNotMatch(joined, /KeyV|HOLD V/);
+assert.match(networkHud, /top:'132px'/);
+assert.doesNotMatch(networkHud, /top:'72px'/);
 assert.match(source, /No audio is recorded or sent by this screen/);
 assert.match(source, /window\.KHADIJA_VOICE_READINESS/);
 assert.doesNotMatch(joined, /RTCPeerConnection/);

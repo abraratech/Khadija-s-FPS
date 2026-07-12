@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-quick-message-wheel-r1",
-  "patch": "m5-coop-quick-message-wheel-r1",
-  "certifiedBaselineSha": "b10075c9b9634685b8d73531fe3d62ad7bfde7cc",
+  "build": "m5-coop-text-chat-r1",
+  "patch": "m5-coop-text-chat-r1",
+  "certifiedBaselineSha": "8da251c37c061f359e747e442fcdabc23d3c7287",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -79,8 +79,8 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.4",
-    "patch": "m5-coop-quick-message-wheel-r1",
+    "milestone": "M5.1-M5.8",
+    "patch": "m5-coop-text-chat-r1",
     "quickMessages": [
       "ENEMY_HERE",
       "NEED_HELP",
@@ -91,6 +91,16 @@
     ],
     "desktopControl": "Hold C and press 1-6",
     "mobileControl": "COMMS button",
-    "protocolUnchanged": true
+    "protocolUnchanged": true,
+    "textChat": {
+      "lobby": true,
+      "inGame": true,
+      "desktopControl": "Enter",
+      "maxLength": 160,
+      "historyLimit": 50,
+      "serverAuthoritativeSender": true,
+      "serverRateLimited": true,
+      "htmlRendered": false
+    }
   }
 }

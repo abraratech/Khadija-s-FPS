@@ -7,7 +7,7 @@ import {
   MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_BUILD_ID, 'm5-coop-quick-message-wheel-r1');
+assert.equal(MULTIPLAYER_BUILD_ID, 'm5-coop-text-chat-r1');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_BUILD, MULTIPLAYER_BUILD_ID);
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, MULTIPLAYER_BUILD_ID);
 assert.equal(MULTIPLAYER_PROTOCOL_VERSION, 6);

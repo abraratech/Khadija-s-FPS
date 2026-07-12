@@ -29,7 +29,7 @@ import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
 import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
-import { MultiplayerTacticalAwareness } from './tactical_ping.js';
+import { MultiplayerTacticalAwareness } from './tactical_ping.js'; import { MultiplayerTextChat } from './text_chat.js';
 import { MultiplayerCoopStatsManager } from './coop_stats.js';
 import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
 
@@ -44,7 +44,7 @@ let economyManager = null;
 let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
 let recoveryCertification = null;
 let multiplayerReleaseGuard = null;
-let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let multiplayerReleaseSeal = null; let tacticalAwareness = null; let coopStatsManager = null; let coopScoreboard = null;
+let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let multiplayerReleaseSeal = null; let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 const hostMigrationState = new HostMigrationState();
 
@@ -298,6 +298,14 @@ export function initializeMultiplayerFoundation(
     stats: coopStatsManager,
     session: multiplayerSession
   });
+textChat = new MultiplayerTextChat({
+  eventBus: multiplayerEvents,
+  transport: multiplayerTransport,
+  session: multiplayerSession,
+  runtime: multiplayerRuntime
+});
+textChat.initialize();
+
   multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, () => { syncCoopScalingFromRoom();
     coopScoreboard?.update?.(performance.now(), { force: true });
   });
@@ -712,6 +720,18 @@ export function placeMultiplayerQuickMessage(type, now = performance.now()) {
   if (!initialized) return { accepted: false, reason: 'not-initialized' };
   return tacticalAwareness?.placeQuickMessage?.(type, now)
     || { accepted: false, reason: 'not-ready' };
+}
+export function openMultiplayerTextChat() {
+  if (!initialized) return false;
+  return textChat?.open?.() === true;
+}
+export function toggleMultiplayerTextChat() {
+  if (!initialized) return false;
+  return textChat?.toggle?.() === true;
+}
+export function sendMultiplayerTextChat(text) {
+  if (!initialized) return { accepted: false, reason: 'not-initialized' };
+  return textChat?.send?.(text) || { accepted: false, reason: 'not-ready' };
 }
 export function toggleMultiplayerRecoveryDiagnostics(force = null) {
   if (!initialized) return false;

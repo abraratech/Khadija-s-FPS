@@ -2,7 +2,7 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
-import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js';
+import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js';
 
 export { LeaderboardHub, CloudProfileHub };
 
@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-quick-message-wheel-r1';
-const SERVER_PATCH = 'm5-coop-quick-message-wheel-r1';
-const CERTIFIED_FRONTEND_SHA = 'b10075c9b9634685b8d73531fe3d62ad7bfde7cc';
+const SERVER_BUILD = 'm5-coop-text-chat-r1';
+const SERVER_PATCH = 'm5-coop-text-chat-r1';
+const CERTIFIED_FRONTEND_SHA = '8da251c37c061f359e747e442fcdabc23d3c7287';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
@@ -768,7 +768,31 @@ isAuthorityCheckpointEnvelope(envelope) {
       return;
     }
 
-    if (action === 'set-ready') {
+    if (action === 'chat-message') {
+  const chatText = sanitizeTextChatText(payload?.text);
+  if (!chatText) {
+    socket.send(JSON.stringify({ kind: 'control', action: 'chat-rejected', payload: { reason: 'invalid-text' } }));
+    return;
+  }
+  const attachment = this.readAttachment(socket) || {};
+  const rate = consumeTextChatRate(attachment, Date.now());
+  socket.serializeAttachment({ ...attachment, ...rate.state });
+  if (!rate.allowed) {
+    socket.send(JSON.stringify({ kind: 'control', action: 'chat-rejected', payload: { reason: rate.reason, retryAfterMs: rate.retryAfterMs } }));
+    return;
+  }
+  const message = buildTextChatMessage({
+    messageId: makeId('chat'),
+    playerId: player.playerId,
+    displayName: player.displayName,
+    text: chatText,
+    roomCode: this.room.roomCode,
+    runId: this.room.runId || null,
+    sentAt: Date.now()
+  });
+  this.broadcast({ kind: 'control', action: 'chat-message', payload: { message } });
+  return;
+} if (action === 'set-ready') {
       if (this.room.status === 'in-run') return;
       player.ready = player.isHost ? true : payload.ready === true;
       await this.commit();

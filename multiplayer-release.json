@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m4-final-player-polish-r1",
-  "patch": "m4-final-player-polish-r1",
-  "certifiedBaselineSha": "d4024500eaf52ef1660e09a96a3bbec792a1ec48",
+  "build": "m5-coop-quick-message-wheel-r1",
+  "patch": "m5-coop-quick-message-wheel-r1",
+  "certifiedBaselineSha": "b10075c9b9634685b8d73531fe3d62ad7bfde7cc",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -74,8 +74,23 @@
     "friendlyPasskeyErrors": true
   },
   "finalCertification": {
-    "milestone": "M4.59-M4.62",
-    "status": "READY_FOR_BROWSER_CERTIFICATION",
+    "milestone": "M4.65-M4.66",
+    "status": "COMPLETE",
+    "protocolUnchanged": true
+  },
+  "m5Communication": {
+    "milestone": "M5.1-M5.4",
+    "patch": "m5-coop-quick-message-wheel-r1",
+    "quickMessages": [
+      "ENEMY_HERE",
+      "NEED_HELP",
+      "NEED_AMMO",
+      "REVIVE_ME",
+      "BUY_OPEN_THIS",
+      "FOLLOW_ME"
+    ],
+    "desktopControl": "Hold C and press 1-6",
+    "mobileControl": "COMMS button",
     "protocolUnchanged": true
   }
 }

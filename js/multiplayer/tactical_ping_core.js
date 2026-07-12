@@ -2,22 +2,42 @@
 
 export const TACTICAL_PING_TYPES = Object.freeze({
   ENEMY: 'ENEMY',
-  MOVE: 'MOVE'
+  MOVE: 'MOVE',
+  NEED_HELP: 'NEED_HELP',
+  NEED_AMMO: 'NEED_AMMO',
+  REVIVE_ME: 'REVIVE_ME',
+  BUY_OPEN: 'BUY_OPEN',
+  FOLLOW_ME: 'FOLLOW_ME'
 });
 
 export const TACTICAL_PING_LIFETIMES_MS = Object.freeze({
   [TACTICAL_PING_TYPES.ENEMY]: 6000,
-  [TACTICAL_PING_TYPES.MOVE]: 7500
+  [TACTICAL_PING_TYPES.MOVE]: 7500,
+  [TACTICAL_PING_TYPES.NEED_HELP]: 8500,
+  [TACTICAL_PING_TYPES.NEED_AMMO]: 8000,
+  [TACTICAL_PING_TYPES.REVIVE_ME]: 9000,
+  [TACTICAL_PING_TYPES.BUY_OPEN]: 8500,
+  [TACTICAL_PING_TYPES.FOLLOW_ME]: 8000
 });
 
 export const TACTICAL_PING_COLORS = Object.freeze({
   [TACTICAL_PING_TYPES.ENEMY]: '#ff4a36',
-  [TACTICAL_PING_TYPES.MOVE]: '#34d8ff'
+  [TACTICAL_PING_TYPES.MOVE]: '#34d8ff',
+  [TACTICAL_PING_TYPES.NEED_HELP]: '#ffb347',
+  [TACTICAL_PING_TYPES.NEED_AMMO]: '#ffe45c',
+  [TACTICAL_PING_TYPES.REVIVE_ME]: '#ff5c8a',
+  [TACTICAL_PING_TYPES.BUY_OPEN]: '#b38cff',
+  [TACTICAL_PING_TYPES.FOLLOW_ME]: '#6dff9f'
 });
 
 export const TACTICAL_PING_LABELS = Object.freeze({
-  [TACTICAL_PING_TYPES.ENEMY]: 'ENEMY',
-  [TACTICAL_PING_TYPES.MOVE]: 'MOVE HERE'
+  [TACTICAL_PING_TYPES.ENEMY]: 'ENEMY HERE',
+  [TACTICAL_PING_TYPES.MOVE]: 'MOVE HERE',
+  [TACTICAL_PING_TYPES.NEED_HELP]: 'NEED HELP',
+  [TACTICAL_PING_TYPES.NEED_AMMO]: 'NEED AMMO',
+  [TACTICAL_PING_TYPES.REVIVE_ME]: 'REVIVE ME',
+  [TACTICAL_PING_TYPES.BUY_OPEN]: 'BUY / OPEN THIS',
+  [TACTICAL_PING_TYPES.FOLLOW_ME]: 'FOLLOW ME'
 });
 
 const MAX_TEXT_LENGTH = 24;
@@ -85,12 +105,27 @@ export function validatePingPosition(position) {
 }
 
 export function normalizePingType(value) {
-  const type = String(value || '').trim().toUpperCase().replace(/[-\s]/g, '_');
-  if (type === 'ENEMY') return TACTICAL_PING_TYPES.ENEMY;
-  if (type === 'MOVE' || type === 'MOVE_HERE' || type === 'WORLD') {
-    return TACTICAL_PING_TYPES.MOVE;
-  }
-  return null;
+  const type = String(value || '').trim().toUpperCase().replace(/[-\s/]+/g, '_');
+  const aliases = {
+    ENEMY: TACTICAL_PING_TYPES.ENEMY,
+    ENEMY_HERE: TACTICAL_PING_TYPES.ENEMY,
+    MOVE: TACTICAL_PING_TYPES.MOVE,
+    MOVE_HERE: TACTICAL_PING_TYPES.MOVE,
+    WORLD: TACTICAL_PING_TYPES.MOVE,
+    NEED_HELP: TACTICAL_PING_TYPES.NEED_HELP,
+    HELP: TACTICAL_PING_TYPES.NEED_HELP,
+    NEED_AMMO: TACTICAL_PING_TYPES.NEED_AMMO,
+    AMMO: TACTICAL_PING_TYPES.NEED_AMMO,
+    REVIVE_ME: TACTICAL_PING_TYPES.REVIVE_ME,
+    REVIVE: TACTICAL_PING_TYPES.REVIVE_ME,
+    BUY_OPEN: TACTICAL_PING_TYPES.BUY_OPEN,
+    BUY_OPEN_THIS: TACTICAL_PING_TYPES.BUY_OPEN,
+    BUY_THIS: TACTICAL_PING_TYPES.BUY_OPEN,
+    OPEN_THIS: TACTICAL_PING_TYPES.BUY_OPEN,
+    FOLLOW_ME: TACTICAL_PING_TYPES.FOLLOW_ME,
+    FOLLOW: TACTICAL_PING_TYPES.FOLLOW_ME
+  };
+  return aliases[type] || null;
 }
 
 export function validateTacticalPingPayload(candidate, {
@@ -108,7 +143,7 @@ export function validateTacticalPingPayload(candidate, {
   if (!pingId) errors.push('pingId is required.');
 
   const type = normalizePingType(candidate.type);
-  if (!type) errors.push('type must be ENEMY or MOVE.');
+  if (!type) errors.push('type must be a supported tactical quick-message type.');
 
   const normalizedOwnerId = sanitizePingId(ownerPlayerId || candidate.ownerPlayerId);
   if (!normalizedOwnerId) errors.push('ownerPlayerId is required.');

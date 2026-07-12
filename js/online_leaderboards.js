@@ -34,10 +34,45 @@ function writeStorage(key, value) {
 function removeStorage(key) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
+export function createOnlineLeaderboardPlayerToken({
+  cryptoObject = globalThis.crypto,
+  random = Math.random,
+  now = Date.now
+} = {}) {
+  try {
+    if (typeof cryptoObject?.randomUUID === 'function') {
+      const value = String(cryptoObject.randomUUID())
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .slice(0, 96);
+      if (value.length >= 8) return value;
+    }
+  } catch {
+    // Fall through to getRandomValues or the compatibility path.
+  }
+
+  try {
+    if (typeof cryptoObject?.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      cryptoObject.getRandomValues(bytes);
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+  } catch {
+    // Fall through to the compatibility path.
+  }
+
+  const timestamp = Math.max(0, Math.floor(Number(now?.()) || Date.now())).toString(36);
+  let entropy = '';
+  for (let index = 0; index < 4; index += 1) {
+    const sample = Math.max(0, Math.min(0.999999999999, Number(random?.()) || 0));
+    entropy += Math.floor(sample * 0x100000000).toString(36).padStart(7, '0');
+  }
+  return `compat-${timestamp}-${entropy}`.slice(0, 96);
+}
+
 function playerId() {
   let value = readStorage(PLAYER_ID_KEY);
   if (!/^[a-zA-Z0-9:_-]{8,120}$/.test(value)) {
-    value = `player-${crypto.randomUUID()}`;
+    value = `player-${createOnlineLeaderboardPlayerToken()}`;
     writeStorage(PLAYER_ID_KEY, value);
   }
   return value;

@@ -2,11 +2,7 @@
 
 import * as THREE from 'three';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
-import {
-  TacticalPingStore,
-  TACTICAL_PING_TYPES,
-  sanitizePingText
-} from './tactical_ping_core.js';
+import { TacticalPingStore, TACTICAL_PING_TYPES, normalizePingType, sanitizePingText } from './tactical_ping_core.js';
 
 const TEAMMATE_MARKER_DISTANCE_M = 65;
 const ENEMY_PING_MAX_DISTANCE_M = 95;
@@ -257,6 +253,69 @@ export class MultiplayerTacticalAwareness {
     this.runtime?.sendTacticalPing?.(result.ping);
     return result;
   }
+  placeQuickMessage(type, now = nowMs()) {
+    const normalizedType = normalizePingType(type);
+    if (!normalizedType || !this.active || !this.isOnlineRun()) {
+      this.metrics.localRejected += 1;
+      return { accepted: false, reason: 'offline' };
+    }
+
+    const canUseWhileDowned = (
+      normalizedType === TACTICAL_PING_TYPES.REVIVE_ME
+      || normalizedType === TACTICAL_PING_TYPES.NEED_HELP
+    );
+    if (this.player?.alive !== true && !canUseWhileDowned) {
+      this.metrics.localRejected += 1;
+      return { accepted: false, reason: 'downed' };
+    }
+
+    const ownerPlayerId = this.runtime?.localPlayerId || this.players?.localPlayerId;
+    if (!ownerPlayerId || !this.camera) {
+      this.metrics.localRejected += 1;
+      return { accepted: false, reason: 'not-ready' };
+    }
+
+    let aimedEnemy = null;
+    let position = null;
+    if (normalizedType === TACTICAL_PING_TYPES.ENEMY) {
+      aimedEnemy = this.findAimedEnemy();
+      position = aimedEnemy ? this.enemyPingPosition(aimedEnemy) : this.findMovePingPosition();
+    } else if (normalizedType === TACTICAL_PING_TYPES.BUY_OPEN) {
+      position = this.findMovePingPosition();
+    } else {
+      position = new THREE.Vector3(
+        finite(this.player?.pos?.x),
+        finite(this.player?.pos?.y) + 1.55,
+        finite(this.player?.pos?.z)
+      );
+    }
+
+    this.localPingSequence += 1;
+    const candidate = {
+      pingId: makePingId(ownerPlayerId, this.localPingSequence),
+      type: normalizedType,
+      ownerPlayerId,
+      ownerName: this.localOwnerName(),
+      position: vectorPayload(position),
+      targetId: aimedEnemy?.networkId || aimedEnemy?.mesh?.uuid || null,
+      createdAt: now
+    };
+    const result = this.store.addPing(candidate, {
+      now,
+      local: true,
+      ownerPlayerId,
+      ownerName: candidate.ownerName
+    });
+    if (!result.accepted) {
+      this.metrics.localRejected += 1;
+      return result;
+    }
+    this.metrics.localAccepted += 1;
+    this.runtime?.sendTacticalPing?.(result.ping);
+    return result;
+  }
+
+
 
   findAimedEnemy() {
     const enemies = (this.getActiveEnemies?.() || [])

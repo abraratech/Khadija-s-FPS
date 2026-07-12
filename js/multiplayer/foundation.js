@@ -708,8 +708,11 @@ export function placeMultiplayerTacticalPing(now = performance.now()) {
   return tacticalAwareness?.placeContextualPing?.(now)
     || { accepted: false, reason: 'not-ready' };
 }
-
-
+export function placeMultiplayerQuickMessage(type, now = performance.now()) {
+  if (!initialized) return { accepted: false, reason: 'not-initialized' };
+  return tacticalAwareness?.placeQuickMessage?.(type, now)
+    || { accepted: false, reason: 'not-ready' };
+}
 export function toggleMultiplayerRecoveryDiagnostics(force = null) {
   if (!initialized) return false;
   return recoveryDiagnostics?.toggle?.(force) === true;

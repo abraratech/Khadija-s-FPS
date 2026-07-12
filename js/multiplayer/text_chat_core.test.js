@@ -9,7 +9,7 @@ import {
   sanitizeTextChatText
 } from './text_chat_core.js';
 
-assert.equal(TEXT_CHAT_PATCH, 'm5-coop-text-chat-r1');
+assert.equal(TEXT_CHAT_PATCH, 'm5-coop-communication-safety-r1');
 assert.equal(TEXT_CHAT_MAX_LENGTH, 160);
 assert.equal(TEXT_CHAT_HISTORY_LIMIT, 50);
 assert.equal(sanitizeTextChatText('  hello\n\tteam  '), 'hello team');

@@ -13,9 +13,9 @@ const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-text-chat-r1';
-const SERVER_PATCH = 'm5-coop-text-chat-r1';
-const CERTIFIED_FRONTEND_SHA = '8da251c37c061f359e747e442fcdabc23d3c7287';
+const SERVER_BUILD = 'm5-coop-communication-safety-r1';
+const SERVER_PATCH = 'm5-coop-communication-safety-r1';
+const CERTIFIED_FRONTEND_SHA = '9e2db2f06fce3804b435c5f98eb4ce9bd625bc84';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 

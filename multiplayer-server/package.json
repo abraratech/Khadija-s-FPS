@@ -1,6 +1,6 @@
 {
   "name": "khadijas-arena-multiplayer",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "type": "module",
   "scripts": {

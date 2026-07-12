@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-text-chat-r1",
-  "patch": "m5-coop-text-chat-r1",
-  "certifiedBaselineSha": "8da251c37c061f359e747e442fcdabc23d3c7287",
+  "build": "m5-coop-communication-safety-r1",
+  "patch": "m5-coop-communication-safety-r1",
+  "certifiedBaselineSha": "9e2db2f06fce3804b435c5f98eb4ce9bd625bc84",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -79,8 +79,8 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.8",
-    "patch": "m5-coop-text-chat-r1",
+    "milestone": "M5.1-M5.12",
+    "patch": "m5-coop-communication-safety-r1",
     "quickMessages": [
       "ENEMY_HERE",
       "NEED_HELP",
@@ -100,6 +100,15 @@
       "historyLimit": 50,
       "serverAuthoritativeSender": true,
       "serverRateLimited": true,
+      "htmlRendered": false
+    },
+    "communicationSafety": {
+      "localOnly": true,
+      "muteAllText": true,
+      "perPlayerTextMute": true,
+      "persistentPreferences": true,
+      "clearLocalHistory": true,
+      "senderIsNotNotified": true,
       "htmlRendered": false
     }
   }

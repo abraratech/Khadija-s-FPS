@@ -1,5 +1,5 @@
 // js/multiplayer/text_chat_core.js
-export const TEXT_CHAT_PATCH = 'm5-coop-text-chat-r1';
+export const TEXT_CHAT_PATCH = 'm5-coop-communication-safety-r1';
 export const TEXT_CHAT_MAX_LENGTH = 160;
 export const TEXT_CHAT_HISTORY_LIMIT = 50;
 

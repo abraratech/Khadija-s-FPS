@@ -190,10 +190,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm5-coop-text-chat-r1';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm5-coop-text-chat-r1';
-console.info('[Multiplayer Build] m5-coop-text-chat-r1 | protocol 6');
-console.info('[Multiplayer Patch] m5-coop-text-chat-r1');
+window.KHADIJA_MULTIPLAYER_BUILD = 'm5-coop-communication-safety-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'm5-coop-communication-safety-r1';
+console.info('[Multiplayer Build] m5-coop-communication-safety-r1 | protocol 6');
+console.info('[Multiplayer Patch] m5-coop-communication-safety-r1');
 if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
   console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
 }

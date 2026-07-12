@@ -7,6 +7,10 @@ import {
   TextChatStore,
   sanitizeTextChatText
 } from './text_chat_core.js';
+import {
+  COMMUNICATION_SAFETY_PATCH,
+  CommunicationSafetyStore
+} from './communication_safety_core.js';
 
 const ROOT_ID = 'ka-multiplayer-text-chat';
 
@@ -19,6 +23,17 @@ function bestPointerLockTarget() {
   return document.querySelector('canvas') || document.body;
 }
 
+function roomPlayers(room) {
+  const entries = Array.isArray(room?.players) ? room.players : [];
+  return entries
+    .map((entry) => ({
+      playerId: String(entry?.playerId || entry?.id || '').trim(),
+      displayName: String(entry?.displayName || entry?.name || 'Player').trim().slice(0, 24) || 'Player',
+      connected: entry?.connected !== false
+    }))
+    .filter((entry) => entry.playerId && entry.connected);
+}
+
 export class MultiplayerTextChat {
   constructor({ eventBus, transport, session, runtime } = {}) {
     this.eventBus = eventBus;
@@ -26,6 +41,7 @@ export class MultiplayerTextChat {
     this.session = session;
     this.runtime = runtime;
     this.store = new TextChatStore();
+    this.safety = new CommunicationSafetyStore();
     this.initialized = false;
     this.opened = false;
     this.available = false;
@@ -36,6 +52,10 @@ export class MultiplayerTextChat {
     this.input = null;
     this.status = null;
     this.toggleButton = null;
+    this.muteAllButton = null;
+    this.clearButton = null;
+    this.playerSelect = null;
+    this.playerMuteButton = null;
     this.unsubscribers = [];
     this.syncTimer = null;
     this.onKeyDown = this.onKeyDown.bind(this);
@@ -61,15 +81,19 @@ export class MultiplayerTextChat {
     return this.getSnapshot();
   }
 
+  currentRoom() {
+    return this.runtime?.room?.getSnapshot?.() || null;
+  }
+
   isAvailable() {
-    const room = this.runtime?.room?.getSnapshot?.() || null;
+    const room = this.currentRoom();
     return this.transport?.getMode?.() === TRANSPORT_MODES.ONLINE
       && this.transport?.getState?.() === TRANSPORT_STATES.CONNECTED
       && Boolean(room?.roomId || room?.roomCode);
   }
 
   syncAvailability() {
-    const room = this.runtime?.room?.getSnapshot?.() || null;
+    const room = this.currentRoom();
     const nextRoomCode = room?.roomCode || null;
     if (this.roomCode && nextRoomCode && this.roomCode !== nextRoomCode) {
       this.store.clear();
@@ -80,7 +104,21 @@ export class MultiplayerTextChat {
     if (!this.available) this.close({ restorePointerLock: false });
     if (this.toggleButton) this.toggleButton.style.display = this.available ? 'block' : 'none';
     if (this.root) this.root.style.display = this.available ? 'block' : 'none';
+    this.renderSafetyControls();
     return this.available;
+  }
+
+  makeButton(label, ariaLabel = label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.setAttribute('aria-label', ariaLabel);
+    Object.assign(button.style, {
+      padding: '6px 8px', border: '1px solid rgba(89, 232, 255, .62)',
+      borderRadius: '7px', background: '#073044', color: '#effcff',
+      fontSize: '10px', fontWeight: '800', letterSpacing: '.04em', cursor: 'pointer'
+    });
+    return button;
   }
 
   ensureUi() {
@@ -90,7 +128,7 @@ export class MultiplayerTextChat {
     this.root.setAttribute('aria-label', 'Co-op text chat');
     Object.assign(this.root.style, {
       position: 'fixed', left: '18px', bottom: '18px', zIndex: '76',
-      width: 'min(390px, calc(100vw - 36px))', display: 'none',
+      width: 'min(410px, calc(100vw - 36px))', display: 'none',
       fontFamily: 'system-ui, sans-serif', pointerEvents: 'none'
     });
 
@@ -102,9 +140,31 @@ export class MultiplayerTextChat {
       pointerEvents: 'auto'
     });
 
+    const titleRow = document.createElement('div');
+    Object.assign(titleRow.style, { display: 'flex', alignItems: 'center', gap: '6px' });
     const title = document.createElement('div');
     title.textContent = 'CO-OP TEXT CHAT';
-    Object.assign(title.style, { color: '#74eaff', fontWeight: '900', fontSize: '12px', letterSpacing: '.1em' });
+    Object.assign(title.style, {
+      flex: '1', color: '#74eaff', fontWeight: '900',
+      fontSize: '12px', letterSpacing: '.1em'
+    });
+
+    this.muteAllButton = this.makeButton('MUTE ALL', 'Mute all co-op text chat');
+    this.muteAllButton.addEventListener('click', () => {
+      const muted = this.safety.getSnapshot().muteAllText !== true;
+      this.safety.setMuteAllText(muted);
+      this.render();
+      this.renderSafetyControls();
+      this.showStatus(muted ? 'All co-op text muted locally' : 'Co-op text unmuted');
+    });
+
+    this.clearButton = this.makeButton('CLEAR', 'Clear local chat history');
+    this.clearButton.addEventListener('click', () => {
+      this.store.clear();
+      this.render();
+      this.showStatus('Local chat history cleared');
+    });
+    titleRow.append(title, this.muteAllButton, this.clearButton);
 
     this.list = document.createElement('div');
     this.list.setAttribute('aria-live', 'polite');
@@ -113,6 +173,26 @@ export class MultiplayerTextChat {
       borderRadius: '8px', background: 'rgba(0, 0, 0, .28)', color: '#eefbff',
       fontSize: '13px', lineHeight: '1.35'
     });
+
+    const safetyRow = document.createElement('div');
+    Object.assign(safetyRow.style, { display: 'flex', gap: '7px', marginBottom: '8px' });
+    this.playerSelect = document.createElement('select');
+    this.playerSelect.setAttribute('aria-label', 'Choose teammate to mute or unmute');
+    Object.assign(this.playerSelect.style, {
+      flex: '1', minWidth: '0', padding: '7px 8px', borderRadius: '7px',
+      border: '1px solid rgba(100, 190, 210, .55)', background: '#061018', color: '#fff'
+    });
+    this.playerSelect.addEventListener('change', () => this.renderSafetyControls());
+    this.playerMuteButton = this.makeButton('MUTE PLAYER', 'Mute selected teammate text');
+    this.playerMuteButton.addEventListener('click', () => {
+      const playerId = this.playerSelect?.value || '';
+      const result = this.safety.toggleTextPlayer(playerId);
+      this.render();
+      this.renderSafetyControls();
+      const selected = this.playerSelect?.selectedOptions?.[0]?.textContent || 'Player';
+      this.showStatus(result.reason === 'muted' ? `${selected} muted locally` : `${selected} unmuted`);
+    });
+    safetyRow.append(this.playerSelect, this.playerMuteButton);
 
     const composer = document.createElement('div');
     Object.assign(composer.style, { display: 'flex', gap: '7px' });
@@ -125,13 +205,8 @@ export class MultiplayerTextChat {
       flex: '1', minWidth: '0', padding: '9px 10px', borderRadius: '8px',
       border: '1px solid rgba(100, 190, 210, .55)', background: '#061018', color: '#fff'
     });
-    const sendButton = document.createElement('button');
-    sendButton.type = 'button';
-    sendButton.textContent = 'SEND';
-    Object.assign(sendButton.style, {
-      padding: '8px 12px', border: '1px solid #59e8ff', borderRadius: '8px',
-      background: '#073044', color: '#effcff', fontWeight: '800', cursor: 'pointer'
-    });
+    const sendButton = this.makeButton('SEND', 'Send co-op text message');
+    Object.assign(sendButton.style, { padding: '8px 12px', fontSize: '11px' });
     sendButton.addEventListener('click', () => this.sendFromInput());
     this.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
@@ -144,11 +219,13 @@ export class MultiplayerTextChat {
     });
 
     this.status = document.createElement('div');
-    Object.assign(this.status.style, { minHeight: '16px', marginTop: '6px', color: '#a8c3cf', fontSize: '11px' });
+    Object.assign(this.status.style, {
+      minHeight: '16px', marginTop: '6px', color: '#a8c3cf', fontSize: '11px'
+    });
     this.status.textContent = 'Press Enter to chat · Esc to close';
 
     composer.append(this.input, sendButton);
-    this.panel.append(title, this.list, composer, this.status);
+    this.panel.append(titleRow, this.list, safetyRow, composer, this.status);
 
     this.toggleButton = document.createElement('button');
     this.toggleButton.type = 'button';
@@ -156,14 +233,51 @@ export class MultiplayerTextChat {
     this.toggleButton.setAttribute('aria-label', 'Open co-op text chat');
     Object.assign(this.toggleButton.style, {
       display: 'none', pointerEvents: 'auto', width: '68px', height: '42px',
-      border: '1px solid #55e5ff', borderRadius: '11px', background: 'rgba(2, 14, 22, .9)',
-      color: '#ecfbff', fontWeight: '900', letterSpacing: '.08em', cursor: 'pointer',
-      boxShadow: '0 0 15px rgba(0, 212, 255, .22)'
+      border: '1px solid #55e5ff', borderRadius: '11px',
+      background: 'rgba(2, 14, 22, .9)', color: '#ecfbff', fontWeight: '900',
+      letterSpacing: '.08em', cursor: 'pointer', boxShadow: '0 0 15px rgba(0, 212, 255, .22)'
     });
     this.toggleButton.addEventListener('click', () => this.toggle());
-
     this.root.append(this.panel, this.toggleButton);
     document.body.appendChild(this.root);
+    this.renderSafetyControls();
+  }
+
+  renderSafetyControls() {
+    if (!this.playerSelect) return;
+    const previous = this.playerSelect.value;
+    const localPlayerId = String(this.runtime?.localPlayerId || '');
+    const teammates = roomPlayers(this.currentRoom()).filter((entry) => entry.playerId !== localPlayerId);
+    this.playerSelect.replaceChildren();
+    if (!teammates.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No teammate available';
+      this.playerSelect.appendChild(option);
+    } else {
+      teammates.forEach((entry) => {
+        const option = document.createElement('option');
+        option.value = entry.playerId;
+        option.textContent = this.safety.isTextPlayerMuted(entry.playerId)
+          ? `${entry.displayName} · MUTED`
+          : entry.displayName;
+        this.playerSelect.appendChild(option);
+      });
+      if (teammates.some((entry) => entry.playerId === previous)) this.playerSelect.value = previous;
+    }
+    const selectedId = this.playerSelect.value;
+    const selectedMuted = selectedId && this.safety.isTextPlayerMuted(selectedId);
+    if (this.playerMuteButton) {
+      this.playerMuteButton.disabled = !selectedId;
+      this.playerMuteButton.textContent = selectedMuted ? 'UNMUTE PLAYER' : 'MUTE PLAYER';
+      this.playerMuteButton.setAttribute('aria-label', selectedMuted ? 'Unmute selected teammate text' : 'Mute selected teammate text');
+      this.playerMuteButton.style.opacity = selectedId ? '1' : '.55';
+    }
+    const muteAll = this.safety.getSnapshot().muteAllText;
+    if (this.muteAllButton) {
+      this.muteAllButton.textContent = muteAll ? 'UNMUTE ALL' : 'MUTE ALL';
+      this.muteAllButton.setAttribute('aria-label', muteAll ? 'Unmute all co-op text chat' : 'Mute all co-op text chat');
+    }
   }
 
   onKeyDown(event) {
@@ -223,15 +337,24 @@ export class MultiplayerTextChat {
   receive(candidate) {
     const result = this.store.add(candidate, { now: Date.now() });
     if (!result.accepted) return result;
+    const hidden = this.safety.shouldHideText(result.message.playerId);
     this.render();
-    if (!this.opened) this.showStatus(`${result.message.displayName}: ${result.message.text}`);
-    return result;
+    if (!this.opened) {
+      this.showStatus(hidden
+        ? 'Message from a muted player hidden'
+        : `${result.message.displayName}: ${result.message.text}`);
+    }
+    return { ...result, hidden };
   }
 
   render() {
     if (!this.list) return;
     this.list.replaceChildren();
-    this.store.getSnapshot().messages.forEach((message) => {
+    const messages = this.store.getSnapshot().messages;
+    let visibleCount = 0;
+    messages.forEach((message) => {
+      if (this.safety.shouldHideText(message.playerId)) return;
+      visibleCount += 1;
       const row = document.createElement('div');
       row.style.marginBottom = '5px';
       const name = document.createElement('strong');
@@ -242,7 +365,15 @@ export class MultiplayerTextChat {
       row.append(name, text);
       this.list.appendChild(row);
     });
+    if (!visibleCount && messages.length) {
+      const muted = document.createElement('div');
+      muted.textContent = 'Messages are hidden by your local mute settings.';
+      muted.style.color = '#8aa4af';
+      muted.style.fontStyle = 'italic';
+      this.list.appendChild(muted);
+    }
     this.list.scrollTop = this.list.scrollHeight;
+    this.renderSafetyControls();
   }
 
   rejectionText(payload = {}) {
@@ -269,11 +400,13 @@ export class MultiplayerTextChat {
   getSnapshot() {
     return Object.freeze({
       patch: TEXT_CHAT_PATCH,
+      safetyPatch: COMMUNICATION_SAFETY_PATCH,
       initialized: this.initialized,
       available: this.available,
       open: this.opened,
       roomCode: this.roomCode,
-      history: this.store.getSnapshot()
+      history: this.store.getSnapshot(),
+      safety: this.safety.getSnapshot()
     });
   }
 }

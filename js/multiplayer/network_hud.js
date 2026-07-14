@@ -11,13 +11,13 @@ const QUALITY_COLORS = Object.freeze({
   RECONNECTING: '#ff4fd8'
 });
 const QUALITY_LABELS = Object.freeze({
-  WAITING: 'CONNECTING',
-  EXCELLENT: 'CONNECTION EXCELLENT',
-  GOOD: 'CONNECTION GOOD',
-  FAIR: 'MINOR NETWORK DELAY',
-  POOR: 'NOTICEABLE NETWORK DELAY',
-  UNSTABLE: 'HIGH DELAY - ACTIONS MAY ARRIVE LATE',
-  RECONNECTING: 'RESTORING CONNECTION'
+  WAITING: 'MEASURING CLOUD RELAY',
+  EXCELLENT: 'CLOUD RELAY EXCELLENT',
+  GOOD: 'CLOUD RELAY READY',
+  FAIR: 'CLOUD RELAY DELAY - PREDICTION ACTIVE',
+  POOR: 'HIGH CLOUD RELAY DELAY',
+  UNSTABLE: 'CLOUD RELAY UNSTABLE - ACTIONS MAY ARRIVE LATE',
+  RECONNECTING: 'RESTORING CLOUD RELAY'
 });
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -155,11 +155,16 @@ export class MultiplayerNetworkHud {
     root.appendChild(heading);
 
     const qualityDetail = document.createElement('div');
-    qualityDetail.textContent = QUALITY_LABELS[quality] || 'CONNECTION STATUS UNKNOWN';
+    qualityDetail.textContent = QUALITY_LABELS[quality] || 'CLOUD RELAY STATUS UNKNOWN';
     Object.assign(qualityDetail.style, {
-      marginBottom: '7px', color: quality === 'UNSTABLE' ? '#ff9696' : '#b9d8ea'
+      marginBottom: '7px',
+      color: quality === 'UNSTABLE' ? '#ff9696' : '#b9d8ea'
     });
     root.appendChild(qualityDetail);
+    root.title = (
+      'This status measures the peer-to-peer path through the shared '
+      + 'Cloudflare room relay, not the speed between devices on the same LAN.'
+    );
 
     if (debugNetworkMetricsEnabled()) {
       const stats = document.createElement('div');

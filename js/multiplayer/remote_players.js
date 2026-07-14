@@ -1,4 +1,6 @@
 // js/multiplayer/remote_players.js
+// POST.1B R1.1 — animated remote operators, authored-family silhouettes, and
+// restrained ally readability.
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
@@ -8,6 +10,22 @@ import {
 } from '../actors/survivor_operator.js';
 
 const PLAYER_EYE_HEIGHT = 1.65;
+const REMOTE_WEAPON_FAMILIES = Object.freeze([
+  'PISTOL',
+  'SMG',
+  'RIFLE',
+  'SHOTGUN',
+  'SNIPER',
+]);
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || 0));
+}
+
+function damp(current, target, rate, dt) {
+  const factor = 1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt));
+  return current + (target - current) * factor;
+}
 
 function colorFromId(THREE, id) {
   let hash = 0;
@@ -16,7 +34,7 @@ function colorFromId(THREE, id) {
     hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
   }
   const hue = Math.abs(hash % 360) / 360;
-  return new THREE.Color().setHSL(hue, 0.68, 0.55);
+  return new THREE.Color().setHSL(hue, 0.58, 0.48);
 }
 
 function makeLabelTexture(THREE, label) {
@@ -25,15 +43,15 @@ function makeLabelTexture(THREE, label) {
   canvas.height = 128;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(3, 12, 18, 0.82)';
-  ctx.fillRect(4, 20, 504, 88);
-  ctx.strokeStyle = '#00d4ff';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(4, 20, 504, 88);
-  ctx.font = '700 42px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(3, 12, 18, 0.90)';
+  ctx.fillRect(20, 30, 472, 68);
+  ctx.strokeStyle = 'rgba(53, 132, 154, 0.88)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(20, 30, 472, 68);
+  ctx.font = '700 34px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#8ed7e8';
   ctx.fillText(String(label || 'PLAYER').slice(0, 24), 256, 64);
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -56,58 +74,387 @@ function disposeObject(object) {
   });
 }
 
+function makeWeaponMaterial(THREE, color, {
+  metalness = 0.42,
+  roughness = 0.50,
+} = {}) {
+  return new THREE.MeshStandardMaterial({
+    color,
+    metalness,
+    roughness,
+    flatShading: true,
+    envMapIntensity: 0.28,
+  });
+}
+
+function addWeaponBox(THREE, parent, name, size, position, material, rotation = null) {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(size[0], size[1], size[2]),
+    material
+  );
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  if (rotation) mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function addWeaponCylinder(
+  THREE,
+  parent,
+  name,
+  radius,
+  length,
+  position,
+  material,
+  rotation = [Math.PI / 2, 0, 0],
+  segments = 8
+) {
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius * 1.06, length, segments),
+    material
+  );
+  mesh.name = name;
+  mesh.position.set(position[0], position[1], position[2]);
+  mesh.rotation.set(rotation[0], rotation[1], rotation[2]);
+  mesh.castShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+export function resolveRemoteWeaponFamily(weaponKey) {
+  const key = String(weaponKey || '').trim().toLowerCase();
+  if (key.includes('sniper')) return 'SNIPER';
+  if (key.includes('shotgun')) return 'SHOTGUN';
+  if (key.includes('smg') || key.includes('submachine')) return 'SMG';
+  if (key.includes('rifle') || key.includes('assault')) return 'RIFLE';
+  return 'PISTOL';
+}
+
+function createPistolModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-pistol';
+  addWeaponBox(THREE, group, 'remote-pistol-frame', [0.12, 0.10, 0.28], [0, 0, -0.02], materials.body);
+  addWeaponBox(THREE, group, 'remote-pistol-slide', [0.115, 0.065, 0.34], [0, 0.055, -0.06], materials.metal);
+  addWeaponBox(
+    THREE,
+    group,
+    'remote-pistol-grip',
+    [0.09, 0.22, 0.10],
+    [0, -0.14, 0.07],
+    materials.dark,
+    [-0.16, 0, 0]
+  );
+  addWeaponCylinder(THREE, group, 'remote-pistol-barrel', 0.022, 0.16, [0, 0.03, -0.27], materials.metal);
+  group.userData.muzzleZ = -0.36;
+  return group;
+}
+
+function createSmgModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-smg';
+  addWeaponBox(THREE, group, 'remote-smg-receiver', [0.17, 0.15, 0.38], [0, 0, -0.03], materials.body);
+  addWeaponBox(THREE, group, 'remote-smg-handguard', [0.15, 0.13, 0.20], [0, 0.01, -0.27], materials.armor);
+  addWeaponCylinder(THREE, group, 'remote-smg-barrel', 0.027, 0.26, [0, 0.01, -0.46], materials.metal);
+  addWeaponBox(THREE, group, 'remote-smg-stock', [0.12, 0.08, 0.25], [0, 0.015, 0.29], materials.dark);
+  addWeaponBox(
+    THREE,
+    group,
+    'remote-smg-magazine',
+    [0.09, 0.30, 0.10],
+    [0, -0.23, -0.03],
+    materials.dark,
+    [-0.05, 0, 0]
+  );
+  group.userData.muzzleZ = -0.60;
+  return group;
+}
+
+function createRifleModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-rifle';
+  addWeaponBox(THREE, group, 'remote-rifle-receiver', [0.18, 0.16, 0.42], [0, 0, -0.01], materials.body);
+  addWeaponBox(THREE, group, 'remote-rifle-stock', [0.15, 0.16, 0.34], [0, 0, 0.38], materials.dark);
+  addWeaponBox(THREE, group, 'remote-rifle-handguard', [0.17, 0.14, 0.34], [0, 0.01, -0.34], materials.armor);
+  addWeaponCylinder(THREE, group, 'remote-rifle-barrel', 0.028, 0.48, [0, 0.015, -0.72], materials.metal);
+  addWeaponBox(
+    THREE,
+    group,
+    'remote-rifle-magazine',
+    [0.11, 0.31, 0.12],
+    [0, -0.24, -0.04],
+    materials.dark,
+    [-0.20, 0, 0]
+  );
+  addWeaponBox(THREE, group, 'remote-rifle-sight', [0.07, 0.06, 0.14], [0, 0.13, -0.06], materials.metal);
+  group.userData.muzzleZ = -0.97;
+  return group;
+}
+
+function createShotgunModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-shotgun';
+  addWeaponBox(THREE, group, 'remote-shotgun-receiver', [0.19, 0.17, 0.38], [0, 0, 0], materials.body);
+  addWeaponBox(THREE, group, 'remote-shotgun-stock', [0.16, 0.17, 0.35], [0, 0, 0.38], materials.dark);
+  addWeaponBox(THREE, group, 'remote-shotgun-pump', [0.18, 0.17, 0.25], [0, -0.01, -0.37], materials.armor);
+  addWeaponCylinder(THREE, group, 'remote-shotgun-barrel-top', 0.032, 0.62, [0, 0.05, -0.62], materials.metal);
+  addWeaponCylinder(THREE, group, 'remote-shotgun-barrel-bottom', 0.030, 0.59, [0, -0.035, -0.60], materials.metal);
+  group.userData.muzzleZ = -0.96;
+  return group;
+}
+
+function createSniperModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-sniper';
+  addWeaponBox(THREE, group, 'remote-sniper-receiver', [0.17, 0.16, 0.42], [0, 0, 0], materials.body);
+  addWeaponBox(THREE, group, 'remote-sniper-stock', [0.16, 0.17, 0.42], [0, -0.005, 0.44], materials.dark);
+  addWeaponBox(THREE, group, 'remote-sniper-handguard', [0.13, 0.11, 0.34], [0, 0, -0.36], materials.armor);
+  addWeaponCylinder(THREE, group, 'remote-sniper-barrel', 0.025, 0.80, [0, 0.005, -0.83], materials.metal);
+  addWeaponCylinder(
+    THREE,
+    group,
+    'remote-sniper-scope',
+    0.050,
+    0.34,
+    [0, 0.16, -0.04],
+    materials.metal,
+    [Math.PI / 2, 0, 0],
+    10
+  );
+  addWeaponBox(THREE, group, 'remote-sniper-magazine', [0.10, 0.24, 0.11], [0, -0.19, -0.03], materials.dark);
+  group.userData.muzzleZ = -1.24;
+  return group;
+}
+
+function createRemoteWeaponModels(THREE, weapon, muzzleFlash) {
+  [...weapon.children].forEach((child) => {
+    if (child !== muzzleFlash) child.visible = false;
+  });
+
+  const materials = {
+    body: makeWeaponMaterial(THREE, 0x39454c, { metalness: 0.42, roughness: 0.52 }),
+    armor: makeWeaponMaterial(THREE, 0x59666d, { metalness: 0.32, roughness: 0.56 }),
+    metal: makeWeaponMaterial(THREE, 0x20282d, { metalness: 0.62, roughness: 0.38 }),
+    dark: makeWeaponMaterial(THREE, 0x10171b, { metalness: 0.16, roughness: 0.72 }),
+  };
+  const modelsRoot = new THREE.Group();
+  modelsRoot.name = 'remote-weapon-family-models';
+  weapon.add(modelsRoot);
+
+  const models = new Map([
+    ['PISTOL', createPistolModel(THREE, materials)],
+    ['SMG', createSmgModel(THREE, materials)],
+    ['RIFLE', createRifleModel(THREE, materials)],
+    ['SHOTGUN', createShotgunModel(THREE, materials)],
+    ['SNIPER', createSniperModel(THREE, materials)],
+  ]);
+  models.forEach((model, family) => {
+    model.visible = family === 'PISTOL';
+    model.userData.weaponFamily = family;
+    modelsRoot.add(model);
+  });
+  muzzleFlash.position.set(0, 0.015, models.get('PISTOL').userData.muzzleZ);
+  return models;
+}
+
+function normalizeRemoteBoots(THREE, rig) {
+  const bootMaterial = rig.materials?.boot;
+  const edgeMaterial = rig.materials?.armorEdge || bootMaterial;
+  [rig.parts?.leftBoot, rig.parts?.rightBoot].forEach((boot, index) => {
+    if (!boot || !bootMaterial) return;
+    boot.traverse?.((child) => {
+      if (/(?:-toe|-sole|-instep)$/.test(String(child.name || ''))) {
+        child.visible = false;
+      }
+    });
+    const shell = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.115, 0.24),
+      bootMaterial
+    );
+    shell.name = `remote-boot-shell-${index}`;
+    shell.position.set(0, -0.018, -0.035);
+    shell.castShadow = true;
+    boot.add(shell);
+
+    const cap = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.045, 0.16),
+      edgeMaterial
+    );
+    cap.name = `remote-boot-cap-${index}`;
+    cap.position.set(0, 0.045, -0.055);
+    cap.castShadow = true;
+    boot.add(cap);
+  });
+}
+
+function makeGaitState(THREE) {
+  return {
+    lastPosition: new THREE.Vector3(),
+    hasLastPosition: false,
+    lastUpdateAt: 0,
+    phase: 0,
+    moveBlend: 0,
+    smoothedSpeed: 0,
+    leftHip: new THREE.Vector3(),
+    rightHip: new THREE.Vector3(),
+    leftKnee: new THREE.Vector3(),
+    rightKnee: new THREE.Vector3(),
+    leftFoot: new THREE.Vector3(),
+    rightFoot: new THREE.Vector3(),
+    midpoint: new THREE.Vector3(),
+    direction: new THREE.Vector3(),
+    up: new THREE.Vector3(0, 1, 0),
+  };
+}
+
+function setSegmentBetween(mesh, start, end, gait) {
+  gait.midpoint.copy(start).add(end).multiplyScalar(0.5);
+  gait.direction.copy(end).sub(start);
+  const length = gait.direction.length();
+  mesh.position.copy(gait.midpoint);
+  if (length > 0.0001) {
+    mesh.quaternion.setFromUnitVectors(gait.up, gait.direction.normalize());
+  }
+  mesh.scale.set(1, length, 1);
+}
+
+function applyRemoteGait(THREE, remote, {
+  now,
+  x,
+  z,
+  isSprinting,
+  isADS,
+  disabled,
+} = {}) {
+  const gait = remote.gait;
+  const parts = remote.parts;
+  if (!gait || !parts) return;
+
+  const dt = gait.lastUpdateAt
+    ? clamp((now - gait.lastUpdateAt) / 1000, 0.001, 0.10)
+    : 1 / 60;
+  let instantSpeed = 0;
+  if (gait.hasLastPosition) {
+    const dx = x - gait.lastPosition.x;
+    const dz = z - gait.lastPosition.z;
+    instantSpeed = clamp(Math.hypot(dx, dz) / dt, 0, 8);
+  }
+  gait.lastPosition.set(x, 0, z);
+  gait.hasLastPosition = true;
+  gait.lastUpdateAt = now;
+  gait.smoothedSpeed = damp(gait.smoothedSpeed, instantSpeed, 8.5, dt);
+
+  const moving = !disabled && gait.smoothedSpeed > 0.10;
+  const targetBlend = moving
+    ? clamp(gait.smoothedSpeed / (isSprinting ? 4.6 : 3.2), 0.18, 1)
+    : 0;
+  gait.moveBlend = damp(gait.moveBlend, targetBlend, moving ? 10 : 7, dt);
+  gait.phase += dt * (4.0 + Math.min(gait.smoothedSpeed, 6) * 1.45)
+    * (isSprinting ? 1.20 : 1);
+
+  const amplitude = (isSprinting ? 0.22 : 0.15) * gait.moveBlend;
+  const leftWave = Math.sin(gait.phase);
+  const rightWave = -leftWave;
+  const leftLift = Math.max(0, -leftWave) * 0.10 * gait.moveBlend;
+  const rightLift = Math.max(0, -rightWave) * 0.10 * gait.moveBlend;
+  const leftStride = leftWave * amplitude;
+  const rightStride = rightWave * amplitude;
+
+  gait.leftHip.set(-0.158, 0.82, 0);
+  gait.rightHip.set(0.158, 0.82, 0);
+  gait.leftKnee.set(-0.184, 0.45 + leftLift * 0.30, -0.038 + leftStride * 0.48);
+  gait.rightKnee.set(0.184, 0.45 + rightLift * 0.30, -0.038 + rightStride * 0.48);
+  gait.leftFoot.set(-0.212, 0.10 + leftLift, -0.018 + leftStride);
+  gait.rightFoot.set(0.212, 0.10 + rightLift, -0.018 + rightStride);
+
+  setSegmentBetween(parts.leftUpperLeg, gait.leftHip, gait.leftKnee, gait);
+  setSegmentBetween(parts.leftLowerLeg, gait.leftKnee, gait.leftFoot, gait);
+  setSegmentBetween(parts.rightUpperLeg, gait.rightHip, gait.rightKnee, gait);
+  setSegmentBetween(parts.rightLowerLeg, gait.rightKnee, gait.rightFoot, gait);
+
+  parts.leftBoot.position.copy(gait.leftFoot).setY(0.055 + leftLift);
+  parts.rightBoot.position.copy(gait.rightFoot).setY(0.055 + rightLift);
+  parts.leftBoot.rotation.x = -leftStride * 1.5;
+  parts.rightBoot.rotation.x = -rightStride * 1.5;
+
+  const bob = Math.abs(Math.sin(gait.phase * 2)) * 0.018 * gait.moveBlend;
+  remote.body.position.y = damp(remote.body.position.y, bob, 12, dt);
+  remote.body.rotation.z = damp(
+    remote.body.rotation.z,
+    Math.sin(gait.phase) * 0.015 * gait.moveBlend,
+    10,
+    dt
+  );
+  remote.arms.position.y = damp(remote.arms.position.y, 1.40 + bob, 12, dt);
+  remote.arms.rotation.z = damp(
+    remote.arms.rotation.z,
+    (isADS ? 0 : Math.sin(gait.phase) * 0.022 * gait.moveBlend),
+    10,
+    dt
+  );
+}
+
 function createAvatar(THREE, player) {
   const accentColor = colorFromId(THREE, player.playerId);
   const rig = createRemoteOperatorRig(THREE, { accentColor });
+  normalizeRemoteBoots(THREE, rig);
+
   const group = rig.group;
   group.name = `remote-player-${player.playerId}`;
   group.visible = false;
   group.userData.visualPatch = SURVIVOR_OPERATOR_PATCH;
 
   const labelTexture = makeLabelTexture(THREE, player.displayName);
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({
+  const labelMaterial = new THREE.SpriteMaterial({
     map: labelTexture,
     transparent: true,
+    opacity: 0.82,
     depthTest: false,
-  }));
-  label.position.set(0, 2.18, 0);
-  label.scale.set(2.05, 0.50, 1);
+    toneMapped: true,
+  });
+  const label = new THREE.Sprite(labelMaterial);
+  label.position.set(0, 2.10, 0);
+  label.scale.set(1.52, 0.34, 1);
   group.add(label);
+
+  const weaponModels = createRemoteWeaponModels(
+    THREE,
+    rig.weapon,
+    rig.muzzleFlash
+  );
 
   group.userData.remote = {
     body: rig.body,
     head: rig.parts.head,
     legs: rig.legs,
     arms: rig.arms,
+    parts: rig.parts,
     weapon: rig.weapon,
+    weaponModels,
     muzzleFlash: rig.muzzleFlash,
     muzzleFlashUntil: 0,
-    lastWeaponKey: null,
+    lastWeaponFamily: 'PISTOL',
     label,
+    gait: makeGaitState(THREE),
   };
 
   return group;
 }
 
 function updateWeaponShape(avatar, weaponKey) {
-  const weapon = avatar.userData.remote?.weapon;
-  if (!weapon || weapon.userData.weaponKey === weaponKey) return;
+  const remote = avatar.userData.remote;
+  if (!remote) return;
+  const family = resolveRemoteWeaponFamily(weaponKey);
+  if (remote.lastWeaponFamily === family) return;
 
-  weapon.userData.weaponKey = weaponKey;
-  const receiver = weapon.children[0];
-  if (!receiver) return;
-
-  const key = String(weaponKey || '').toLowerCase();
-  if (key.includes('sniper')) {
-    receiver.scale.set(0.82, 0.82, 1.45);
-  } else if (key.includes('shotgun')) {
-    receiver.scale.set(1.1, 1.0, 1.25);
-  } else if (key.includes('smg')) {
-    receiver.scale.set(0.9, 0.9, 0.82);
-  } else if (key.includes('pistol')) {
-    receiver.scale.set(0.7, 0.82, 0.58);
-  } else {
-    receiver.scale.set(1, 1, 1);
+  remote.lastWeaponFamily = family;
+  remote.weaponModels?.forEach?.((model, key) => {
+    model.visible = key === family;
+  });
+  const activeModel = remote.weaponModels?.get?.(family);
+  if (activeModel) {
+    remote.muzzleFlash.position.z = Number(activeModel.userData.muzzleZ) || -0.60;
   }
 }
 
@@ -210,36 +557,54 @@ export class RemotePlayerManager {
 
       const state = sampled.state;
       const isAway = playerRecord?.connected === false;
-            const lifeState = String(
-                state.lifeState
-                || (state.alive === false ? 'DOWNED' : 'ACTIVE')
-            );
-            const isDowned = lifeState === 'DOWNED';
-            const isSpectating = lifeState === 'SPECTATING';
-            avatar.visible = !isSpectating;
+      const lifeState = String(
+        state.lifeState
+        || (state.alive === false ? 'DOWNED' : 'ACTIVE')
+      );
+      const isDowned = lifeState === 'DOWNED';
+      const isSpectating = lifeState === 'SPECTATING';
+      const positionX = Number(state.position?.x || 0);
+      const positionY = Number(state.position?.y || PLAYER_EYE_HEIGHT);
+      const positionZ = Number(state.position?.z || 0);
+
+      avatar.visible = !isSpectating;
       avatar.position.set(
-        Number(state.position?.x || 0),
-        Number(state.position?.y || PLAYER_EYE_HEIGHT) - PLAYER_EYE_HEIGHT,
-        Number(state.position?.z || 0)
+        positionX,
+        positionY - PLAYER_EYE_HEIGHT,
+        positionZ
       );
       avatar.rotation.y = Number(state.yaw || 0);
-            avatar.rotation.z = isDowned ? Math.PI * 0.5 : 0;
-            const remote = avatar.userData.remote;
+      avatar.rotation.z = isDowned ? Math.PI * 0.5 : 0;
+
+      const remote = avatar.userData.remote;
       if (remote) {
+        applyRemoteGait(this.THREE, remote, {
+          now,
+          x: positionX,
+          z: positionZ,
+          isSprinting: state.isSprinting === true,
+          isADS: state.isADS === true,
+          disabled: isDowned || isAway || isSpectating,
+        });
+
         remote.arms.rotation.x = Number(state.pitch || 0) * 0.72;
         remote.weapon.rotation.x = Number(state.pitch || 0) * 0.72;
-        remote.weapon.position.y = state.isADS ? 1.34 : 1.25;
+        remote.weapon.position.y = (
+          state.isADS ? 1.34 : 1.25
+        ) + remote.body.position.y;
         remote.weapon.position.x = state.isADS ? 0.02 : 0.12;
-        remote.body.scale.y = state.isSprinting ? 0.97 : 1;
+        remote.body.scale.y = state.isSprinting ? 0.985 : 1;
         remote.arms.visible = !isDowned && !isAway;
-                remote.weapon.visible = !isDowned && !isAway;
-                remote.muzzleFlash.visible = (
-                    !isDowned && !isAway && now < remote.muzzleFlashUntil
-                );
-                if (remote.label?.material) {
-                    remote.label.material.opacity = isAway ? 0.62 : 1;
-                }
-                updateWeaponShape(avatar, state.weaponKey);
+        remote.weapon.visible = !isDowned && !isAway;
+        remote.muzzleFlash.visible = (
+          !isDowned
+          && !isAway
+          && now < remote.muzzleFlashUntil
+        );
+        if (remote.label?.material) {
+          remote.label.material.opacity = isAway ? 0.48 : 0.82;
+        }
+        updateWeaponShape(avatar, state.weaponKey);
       }
     });
   }
@@ -247,6 +612,8 @@ export class RemotePlayerManager {
   getSnapshot() {
     return {
       active: this.active,
+      visualPatch: 'post1b-r1-1-remote-presentation',
+      weaponFamilies: [...REMOTE_WEAPON_FAMILIES],
       remotePlayers: Array.from(this.avatars.keys())
     };
   }

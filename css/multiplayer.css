@@ -560,3 +560,53 @@
     justify-content: flex-end;
   }
 }
+/* UI.5: centered, font-independent co-op modal close control */
+.ka-coop-card button.ka-coop-icon-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  min-height: 46px;
+  padding: 0;
+  border-radius: 12px;
+  font-size: 0;
+  line-height: 1;
+  transform: none;
+}
+.ka-coop-card button.ka-coop-icon-btn::before,
+.ka-coop-card button.ka-coop-icon-btn::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+.ka-coop-card button.ka-coop-icon-btn::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.ka-coop-card button.ka-coop-icon-btn::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+.ka-coop-card button.ka-coop-icon-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.ka-coop-card button.ka-coop-icon-btn:focus-visible {
+  outline: 3px solid rgba(0, 212, 255, 0.42);
+  outline-offset: 3px;
+}
+@media (max-width: 680px), (max-height: 560px) {
+  .ka-coop-card button.ka-coop-icon-btn {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

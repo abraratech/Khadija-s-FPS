@@ -4,21 +4,25 @@ import {
   makeStandardMaterial,
   makeBoxPart,
   makeCylinderPart,
-  getPartBasePosition
+  getPartBasePosition,
+  addTacticalHandRig,
+  addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
 export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'RIFLE';
+  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.850 });
   group.userData.thirdPersonMuzzleSize = 0.170;
 
-  const receiverColor = upgraded ? 0x4a2630 : 0x27323a;
-  const woodColor = upgraded ? 0x3b1d23 : 0x5a351f;
+  const receiverColor = upgraded ? 0x542a32 : 0x887453;
+  const woodColor = upgraded ? 0x40232a : 0x40382d;
   const darkColor = 0x07090b;
-  const magColor = upgraded ? 0x28121c : 0x11161b;
-  const accentColor = upgraded ? 0xff3355 : 0x00d4ff;
+  const magColor = upgraded ? 0x301822 : 0x20262a;
+  const accentColor = upgraded ? 0xff4963 : 0xe6a13a;
   const skinColor = 0xd2b48c;
 
   const receiverMat = makeStandardMaterial({
@@ -35,7 +39,7 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: upgraded ? 0.72 : 0.22,
+    emissiveIntensity: upgraded ? 0.50 : 0.10,
     roughness: 0.34
   });
   const skinMat = makeStandardMaterial({ color: skinColor, roughness: 0.82 });
@@ -44,16 +48,16 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const receiver = makeBoxPart(
     group,
     'rifle_receiver',
-    new THREE.Vector3(0.132, 0.086, 0.360),
-    new THREE.Vector3(0.000, 0.018, -0.082),
+    new THREE.Vector3(0.132, 0.074, 0.315),
+    new THREE.Vector3(0.000, 0.025, -0.082),
     receiverMat
   );
 
   const upper = makeBoxPart(
     group,
     'rifle_dust_cover',
-    new THREE.Vector3(0.118, 0.030, 0.285),
-    new THREE.Vector3(0.000, 0.078, -0.090),
+    new THREE.Vector3(0.108, 0.026, 0.230),
+    new THREE.Vector3(0.000, 0.074, -0.102),
     darkMat
   );
 
@@ -68,8 +72,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const stock = makeBoxPart(
     group,
     'rifle_ak_stock',
-    new THREE.Vector3(0.118, 0.100, 0.275),
-    new THREE.Vector3(0.000, -0.028, 0.300),
+    new THREE.Vector3(0.106, 0.078, 0.230),
+    new THREE.Vector3(0.000, -0.020, 0.278),
     woodMat,
     new THREE.Vector3(0.10, 0, 0)
   );
@@ -77,8 +81,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const stockPad = makeBoxPart(
     group,
     'rifle_stock_pad',
-    new THREE.Vector3(0.126, 0.112, 0.026),
-    new THREE.Vector3(0.000, -0.014, 0.455),
+    new THREE.Vector3(0.116, 0.094, 0.024),
+    new THREE.Vector3(0.000, -0.008, 0.405),
     darkMat,
     new THREE.Vector3(0.10, 0, 0)
   );
@@ -86,8 +90,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const lowerHandguard = makeBoxPart(
     group,
     'rifle_lower_handguard',
-    new THREE.Vector3(0.122, 0.066, 0.265),
-    new THREE.Vector3(0.000, -0.010, -0.345),
+    new THREE.Vector3(0.118, 0.060, 0.285),
+    new THREE.Vector3(0.000, -0.004, -0.332),
     woodMat,
     new THREE.Vector3(-0.025, 0, 0)
   );
@@ -95,8 +99,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const upperHandguard = makeBoxPart(
     group,
     'rifle_upper_handguard',
-    new THREE.Vector3(0.104, 0.036, 0.220),
-    new THREE.Vector3(0.000, 0.064, -0.350),
+    new THREE.Vector3(0.100, 0.030, 0.250),
+    new THREE.Vector3(0.000, 0.058, -0.335),
     woodMat
   );
 
@@ -153,17 +157,17 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const magazine = makeBoxPart(
     group,
     'rifle_magazine',
-    new THREE.Vector3(0.070, 0.096, 0.062),
-    new THREE.Vector3(0.000, -0.088, -0.090),
+    new THREE.Vector3(0.074, 0.086, 0.064),
+    new THREE.Vector3(0.000, -0.082, -0.090),
     magMat,
-    new THREE.Vector3(-0.18, 0, 0)
+    new THREE.Vector3(-0.16, 0, 0)
   );
 
   const magazineMid = makeBoxPart(
     group,
     'rifle_magazine_mid',
-    new THREE.Vector3(0.070, 0.105, 0.062),
-    new THREE.Vector3(0.000, -0.171, -0.118),
+    new THREE.Vector3(0.074, 0.100, 0.064),
+    new THREE.Vector3(0.000, -0.154, -0.120),
     magMat,
     new THREE.Vector3(-0.30, 0, 0)
   );
@@ -171,8 +175,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const magazineLower = makeBoxPart(
     group,
     'rifle_magazine_lower',
-    new THREE.Vector3(0.068, 0.090, 0.060),
-    new THREE.Vector3(0.000, -0.251, -0.162),
+    new THREE.Vector3(0.070, 0.082, 0.062),
+    new THREE.Vector3(0.000, -0.224, -0.162),
     magMat,
     new THREE.Vector3(-0.42, 0, 0)
   );
@@ -180,8 +184,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const magBase = makeBoxPart(
     group,
     'rifle_mag_base',
-    new THREE.Vector3(0.078, 0.026, 0.070),
-    new THREE.Vector3(0.000, -0.302, -0.200),
+    new THREE.Vector3(0.080, 0.024, 0.070),
+    new THREE.Vector3(0.000, -0.274, -0.194),
     darkMat,
     new THREE.Vector3(-0.42, 0, 0)
   );
@@ -284,6 +288,8 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
     accentMat
   );
 
+  addWeaponPresentationDetails(group, 'RIFLE', { upgraded, accentColor });
+
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0xff3355 : 0xffaa00,
     transparent: true,
@@ -299,21 +305,25 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   muzzleFlash.visible = false;
   group.add(muzzleFlash);
 
-  const gripHand = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.052, 0.095), skinMat);
-  gripHand.name = 'rifle_grip_hand';
-  gripHand.userData.isProceduralHand = true;
-  gripHand.userData.defaultVisible = true;
-  gripHand.position.set(0.000, -0.120, 0.055);
-  gripHand.rotation.x = -0.34;
-  group.add(gripHand);
+  const gripHand = addTacticalHandRig(group, {
+    name: 'rifle_grip_hand',
+    position: new THREE.Vector3(0.000, -0.115, 0.044),
+    rotation: new THREE.Vector3(-0.38, 0, 0),
+    defaultVisible: true,
+    upgraded,
+    support: false,
+    accentColor
+  });
 
-  const supportHand = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.050, 0.105), skinMat);
-  supportHand.name = 'rifle_support_hand';
-  supportHand.userData.isProceduralHand = true;
-  supportHand.userData.defaultVisible = true;
-  supportHand.position.set(-0.010, -0.052, -0.335);
-  supportHand.rotation.x = -0.08;
-  group.add(supportHand);
+  const supportHand = addTacticalHandRig(group, {
+    name: 'rifle_support_hand',
+    position: new THREE.Vector3(-0.012, -0.044, -0.320),
+    rotation: new THREE.Vector3(-0.20, 0.02, 0),
+    defaultVisible: true,
+    upgraded,
+    support: true,
+    accentColor
+  });
 
   group.userData.parts = {
     receiver,

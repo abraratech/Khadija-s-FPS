@@ -1,0 +1,322 @@
+/* UI.9 — responsive HUD, controller/TV navigation, and safe-screen certification */
+:root {
+  --ka-ui9-safe-top: max(14px, env(safe-area-inset-top));
+  --ka-ui9-safe-right: max(16px, env(safe-area-inset-right));
+  --ka-ui9-safe-bottom: max(14px, env(safe-area-inset-bottom));
+  --ka-ui9-safe-left: max(16px, env(safe-area-inset-left));
+  --ka-ui9-hud-scale: 1;
+  --ka-ui9-left-width: clamp(232px, 17vw, 310px);
+  --ka-ui9-right-width: clamp(226px, 18vw, 300px);
+  --ka-ui9-focus: #f8feff;
+  --ka-ui9-focus-glow: rgba(16, 216, 255, .42);
+}
+
+html[data-ka-viewport="compact"] { --ka-ui9-hud-scale: .90; }
+html[data-ka-viewport="handheld"] { --ka-ui9-hud-scale: .74; }
+html[data-ka-viewport="wide"] { --ka-ui9-left-width: 320px; --ka-ui9-right-width: 320px; }
+
+/* All critical overlays honor display cut-outs and a shared safe zone. */
+#hud,
+#mobile-ui {
+  inset: 0;
+  padding:
+    var(--ka-ui9-safe-top)
+    var(--ka-ui9-safe-right)
+    var(--ka-ui9-safe-bottom)
+    var(--ka-ui9-safe-left);
+}
+
+#minimap-wrap {
+  top: var(--ka-ui9-safe-top) !important;
+  left: var(--ka-ui9-safe-left) !important;
+  transform: scale(var(--ka-ui9-hud-scale));
+  transform-origin: top left;
+}
+#objective-panel {
+  top: calc(var(--ka-ui9-safe-top) + (178px * var(--ka-ui9-hud-scale))) !important;
+  left: var(--ka-ui9-safe-left) !important;
+  width: var(--ka-ui9-left-width) !important;
+  max-width: calc(46vw - var(--ka-ui9-safe-left)) !important;
+  transform: scale(var(--ka-ui9-hud-scale));
+  transform-origin: top left;
+}
+.challenge-panel-wrap {
+  top: calc(var(--ka-ui9-safe-top) + (320px * var(--ka-ui9-hud-scale))) !important;
+  left: var(--ka-ui9-safe-left) !important;
+  width: var(--ka-ui9-left-width) !important;
+  max-width: calc(46vw - var(--ka-ui9-safe-left)) !important;
+  transform: scale(var(--ka-ui9-hud-scale));
+  transform-origin: top left;
+}
+#map-system-panel {
+  top: calc(var(--ka-ui9-safe-top) + 152px) !important;
+  right: var(--ka-ui9-safe-right) !important;
+  width: var(--ka-ui9-right-width) !important;
+  max-width: calc(40vw - var(--ka-ui9-safe-right)) !important;
+}
+#kills-display {
+  top: var(--ka-ui9-safe-top) !important;
+  left: clamp(250px, 25vw, 480px) !important;
+  right: auto !important;
+  font-size: clamp(16px, 1.25vw, 22px) !important;
+}
+#round-counter-wrap {
+  top: var(--ka-ui9-safe-top) !important;
+  max-width: 34vw;
+  white-space: nowrap;
+  font-size: clamp(20px, 1.7vw, 28px) !important;
+}
+#ammo-wrap {
+  top: calc(var(--ka-ui9-safe-top) + 46px) !important;
+}
+#score-display {
+  top: var(--ka-ui9-safe-top) !important;
+  right: var(--ka-ui9-safe-right) !important;
+  font-size: clamp(30px, 2.6vw, 42px) !important;
+}
+#progression-panel {
+  top: calc(var(--ka-ui9-safe-top) + 78px) !important;
+  right: var(--ka-ui9-safe-right) !important;
+  max-width: var(--ka-ui9-right-width);
+}
+#multiplayer-network-hud {
+  top: calc(var(--ka-ui9-safe-top) + 132px) !important;
+  right: var(--ka-ui9-safe-right) !important;
+  width: min(250px, var(--ka-ui9-right-width)) !important;
+  max-height: calc(100dvh - 190px - var(--ka-ui9-safe-bottom));
+  overflow: hidden;
+}
+#health-wrap {
+  left: var(--ka-ui9-safe-left) !important;
+  bottom: var(--ka-ui9-safe-bottom) !important;
+}
+#performance-stats-panel {
+  left: var(--ka-ui9-safe-left) !important;
+  bottom: calc(var(--ka-ui9-safe-bottom) + 58px) !important;
+}
+#interaction-prompt,
+#reload-wrap {
+  max-width: min(560px, 72vw);
+}
+#lock-hint {
+  bottom: var(--ka-ui9-safe-bottom) !important;
+}
+
+/* Controller navigation remains visible even when focus was set programmatically. */
+html[data-ka-input="gamepad"] :where(
+  button,
+  select,
+  input,
+  [href],
+  [tabindex]:not([tabindex="-1"])
+):focus {
+  outline: 3px solid var(--ka-ui9-focus) !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 7px var(--ka-ui9-focus-glow), 0 0 26px rgba(16,216,255,.28) !important;
+}
+html[data-ka-input="gamepad"] button:focus {
+  transform: translateY(-1px) scale(1.015);
+}
+html[data-ka-input="gamepad"] .ka-map-card:focus {
+  border-color: #fff;
+}
+
+#ka-input-status {
+  position: fixed;
+  z-index: 10020;
+  right: var(--ka-ui9-safe-right);
+  bottom: var(--ka-ui9-safe-bottom);
+  display: none;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(16,216,255,.38);
+  border-radius: 999px;
+  background: rgba(1,9,16,.88);
+  color: #dffaff;
+  box-shadow: 0 8px 24px rgba(0,0,0,.34);
+  backdrop-filter: blur(9px);
+  pointer-events: none;
+  font: 900 9px/1 system-ui, sans-serif;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+#ka-input-status::before {
+  content: "🎮";
+  font-size: 13px;
+}
+html[data-ka-input="gamepad"] #menu:not([style*="display: none"]) ~ #ka-input-status,
+html[data-ka-input="gamepad"] body > #ka-input-status[data-visible="true"] {
+  display: flex;
+}
+#ka-input-status b { color: #21ed91; }
+#ka-input-status span { color: #8298a6; }
+
+/* TV mode adds overscan protection without changing the regular desktop layout. */
+html[data-ka-tv="true"] .ka-menu-shell {
+  padding: max(28px, 3.2vh) max(40px, 3.2vw);
+}
+html[data-ka-tv="true"] .ka-menu-panel {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(16,216,255,.24);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 22px 80px rgba(0,0,0,.58);
+}
+html[data-ka-tv="true"] .ka-rail-nav-btn,
+html[data-ka-tv="true"] .ka-home-actions button,
+html[data-ka-tv="true"] .ka-nav-row button {
+  min-height: 54px;
+  font-size: 12px;
+}
+html[data-ka-tv="true"] .ka-mode-card { min-height: 170px; }
+
+/* Laptop and short-screen HUD density. */
+@media (max-width: 1366px), (max-height: 760px) {
+  #kills-display { left: clamp(210px, 26vw, 390px) !important; }
+  #objective-panel { top: calc(var(--ka-ui9-safe-top) + (158px * var(--ka-ui9-hud-scale))) !important; }
+  .challenge-panel-wrap { top: calc(var(--ka-ui9-safe-top) + (282px * var(--ka-ui9-hud-scale))) !important; }
+  #multiplayer-network-hud { width: 226px !important; font-size: 10px !important; }
+}
+
+/* Mobile landscape: preserve combat visibility and keep controls clear. */
+@media (max-width: 920px), (max-height: 560px) and (orientation: landscape) {
+  :root {
+    --ka-ui9-left-width: 218px;
+    --ka-ui9-right-width: 205px;
+  }
+  #minimap-wrap {
+    width: 118px !important;
+    height: 118px !important;
+  }
+  #minimap-wrap > canvas { width: 118px !important; height: 118px !important; }
+  #kills-display {
+    left: clamp(150px, 25vw, 280px) !important;
+    font-size: 15px !important;
+  }
+  #round-counter-wrap {
+    font-size: 18px !important;
+    letter-spacing: 1px !important;
+  }
+  #ammo-wrap { top: calc(var(--ka-ui9-safe-top) + 34px) !important; }
+  #weapon-name { font-size: 10px !important; }
+  #ammo-current { font-size: 24px !important; }
+  #ammo-reserve { font-size: 14px !important; }
+  #score-display {
+    top: calc(var(--ka-ui9-safe-top) + 50px) !important;
+    font-size: 27px !important;
+  }
+  #progression-panel {
+    top: calc(var(--ka-ui9-safe-top) + 96px) !important;
+    transform: scale(.78);
+    transform-origin: top right;
+  }
+  #objective-panel {
+    top: calc(var(--ka-ui9-safe-top) + 126px) !important;
+    width: 210px !important;
+  }
+  #objective-panel .objective-description,
+  #objective-panel .objective-meter { display: none !important; }
+  .challenge-panel-wrap { display: none !important; }
+  #map-system-panel {
+    top: calc(var(--ka-ui9-safe-top) + 130px) !important;
+    transform: scale(.76);
+    transform-origin: top right;
+  }
+  #multiplayer-network-hud {
+    top: calc(var(--ka-ui9-safe-top) + 132px) !important;
+    width: 205px !important;
+    max-height: 176px;
+    transform: scale(.78);
+    transform-origin: top right;
+  }
+  #health-wrap {
+    bottom: calc(var(--ka-ui9-safe-bottom) + 2px) !important;
+    transform: scale(.86);
+    transform-origin: bottom left;
+  }
+  #performance-stats-panel { display: none !important; }
+  #btn-mobile-pause {
+    top: var(--ka-ui9-safe-top) !important;
+    right: var(--ka-ui9-safe-right) !important;
+  }
+  #ka-input-status { display: none !important; }
+}
+
+@media (max-height: 470px) and (orientation: landscape) {
+  #minimap-wrap { width: 96px !important; height: 96px !important; }
+  #minimap-wrap > canvas { width: 96px !important; height: 96px !important; }
+  #objective-panel { top: calc(var(--ka-ui9-safe-top) + 104px) !important; }
+  #multiplayer-network-hud { max-height: 142px; }
+  #interaction-prompt { top: 54% !important; font-size: 14px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ka-input="gamepad"] button:focus { transform: none; }
+  #ka-input-status { transition: none; }
+}
+
+/* UI.9 R2 — keep the primary pause action visible on short mobile screens. */
+@media (max-width: 920px), (max-height: 560px) and (orientation: landscape) {
+  #pause-screen {
+    justify-content: flex-start !important;
+    align-items: center !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-bottom: calc(94px + var(--ka-ui9-safe-bottom));
+    padding:
+      max(10px, var(--ka-ui9-safe-top))
+      max(12px, var(--ka-ui9-safe-right))
+      calc(94px + var(--ka-ui9-safe-bottom))
+      max(12px, var(--ka-ui9-safe-left)) !important;
+  }
+
+  #pause-screen > div:first-child {
+    flex: 0 0 auto;
+    font-size: clamp(30px, 7vw, 42px) !important;
+    line-height: 1 !important;
+    margin: 0 0 10px !important;
+  }
+
+  #pause-summary-panel {
+    flex: 0 0 auto;
+    width: min(640px, 96%) !important;
+    margin-bottom: 10px !important;
+  }
+
+  #resume-btn {
+    position: fixed !important;
+    left: 50% !important;
+    right: auto !important;
+    bottom: max(10px, var(--ka-ui9-safe-bottom)) !important;
+    transform: translateX(-50%) !important;
+    z-index: 110 !important;
+    width: min(360px, calc(100vw - var(--ka-ui9-safe-left) - var(--ka-ui9-safe-right) - 28px)) !important;
+    min-height: 52px;
+    margin: 0 !important;
+    padding: 12px 22px !important;
+    border-radius: 12px !important;
+    font-size: 20px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 22px rgba(0, 212, 255, .28);
+  }
+}
+
+@media (max-height: 430px) and (orientation: landscape) {
+  #pause-summary-panel {
+    width: min(720px, 96%) !important;
+    padding: 9px 11px !important;
+  }
+
+  #pause-summary-panel > div {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 6px 10px !important;
+    font-size: 10px !important;
+  }
+
+  #pause-summary-panel span {
+    font-size: 12px !important;
+  }
+}

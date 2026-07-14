@@ -4,23 +4,27 @@ import {
   makeStandardMaterial,
   makeBoxPart,
   makeCylinderPart,
-  getPartBasePosition
+  getPartBasePosition,
+  addTacticalHandRig,
+  addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
 export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SHOTGUN';
+  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.028, z: -0.795 });
   group.userData.thirdPersonMuzzleSize = 0.225;
   group.userData.ejectedShellT = 0;
   group.userData.lastFirePulse = 0;
 
-  const receiverColor = upgraded ? 0x322044 : 0x30363a;
-  const woodColor = upgraded ? 0x4b234f : 0x5a351f;
+  const receiverColor = upgraded ? 0x3d2648 : 0x49494a;
+  const woodColor = upgraded ? 0x5b294f : 0x653b2c;
   const darkColor = 0x07090b;
-  const metalColor = upgraded ? 0x6d4e83 : 0x6b7173;
-  const accentColor = upgraded ? 0xaa00ff : 0xffaa33;
+  const metalColor = upgraded ? 0x76598a : 0x74797b;
+  const accentColor = upgraded ? 0xb45cff : 0xe69a37;
   const skinColor = 0xd2b48c;
 
   const receiverMat = makeStandardMaterial({
@@ -37,7 +41,7 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: upgraded ? 0.78 : 0.20,
+    emissiveIntensity: upgraded ? 0.52 : 0.10,
     roughness: 0.34
   });
   const shellMat = makeStandardMaterial({ color: 0xc23b22, metalness: 0.10, roughness: 0.55 });
@@ -48,8 +52,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const receiver = makeBoxPart(
     group,
     'shotgun_receiver',
-    new THREE.Vector3(0.145, 0.095, 0.310),
-    new THREE.Vector3(0.000, 0.024, -0.090),
+    new THREE.Vector3(0.142, 0.082, 0.285),
+    new THREE.Vector3(0.000, 0.028, -0.095),
     receiverMat
   );
 
@@ -64,8 +68,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const stock = makeBoxPart(
     group,
     'shotgun_stock',
-    new THREE.Vector3(0.125, 0.125, 0.270),
-    new THREE.Vector3(0.000, -0.010, 0.250),
+    new THREE.Vector3(0.112, 0.096, 0.232),
+    new THREE.Vector3(0.000, -0.004, 0.238),
     woodMat,
     new THREE.Vector3(0.06, 0, 0)
   );
@@ -73,8 +77,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const stockPad = makeBoxPart(
     group,
     'shotgun_stock_pad',
-    new THREE.Vector3(0.135, 0.135, 0.026),
-    new THREE.Vector3(0.000, -0.007, 0.402),
+    new THREE.Vector3(0.122, 0.112, 0.024),
+    new THREE.Vector3(0.000, -0.002, 0.370),
     darkMat,
     new THREE.Vector3(0.06, 0, 0)
   );
@@ -82,9 +86,9 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const barrelTop = makeCylinderPart(
     group,
     'shotgun_barrel_top',
-    0.024,
-    0.530,
-    new THREE.Vector3(0.000, 0.050, -0.430),
+    0.020,
+    0.525,
+    new THREE.Vector3(0.000, 0.048, -0.430),
     new THREE.Vector3(Math.PI / 2, 0, 0),
     metalMat,
     24
@@ -93,9 +97,9 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const barrelBottom = makeCylinderPart(
     group,
     'shotgun_barrel_bottom',
-    0.024,
-    0.530,
-    new THREE.Vector3(0.000, 0.005, -0.430),
+    0.020,
+    0.525,
+    new THREE.Vector3(0.000, 0.008, -0.430),
     new THREE.Vector3(Math.PI / 2, 0, 0),
     metalMat,
     24
@@ -131,8 +135,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   const pump = makeBoxPart(
     group,
     'shotgun_pump',
-    new THREE.Vector3(0.155, 0.075, 0.205),
-    new THREE.Vector3(0.000, -0.050, -0.385),
+    new THREE.Vector3(0.145, 0.064, 0.190),
+    new THREE.Vector3(0.000, -0.040, -0.382),
     woodMat
   );
 
@@ -245,6 +249,8 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
     accentMat
   );
 
+  addWeaponPresentationDetails(group, 'SHOTGUN', { upgraded, accentColor });
+
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0xaa00ff : 0xffaa00,
     transparent: true,
@@ -260,21 +266,25 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   muzzleFlash.visible = false;
   group.add(muzzleFlash);
 
-  const gripHand = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.054, 0.100), skinMat);
-  gripHand.name = 'shotgun_grip_hand';
-  gripHand.userData.isProceduralHand = true;
-  gripHand.userData.defaultVisible = true;
-  gripHand.position.set(0.000, -0.124, 0.074);
-  gripHand.rotation.x = -0.22;
-  group.add(gripHand);
+  const gripHand = addTacticalHandRig(group, {
+    name: 'shotgun_grip_hand',
+    position: new THREE.Vector3(0.000, -0.116, 0.060),
+    rotation: new THREE.Vector3(-0.30, 0, 0),
+    defaultVisible: true,
+    upgraded,
+    support: false,
+    accentColor
+  });
 
-  const supportHand = new THREE.Mesh(new THREE.BoxGeometry(0.070, 0.054, 0.116), skinMat);
-  supportHand.name = 'shotgun_support_hand';
-  supportHand.userData.isProceduralHand = true;
-  supportHand.userData.defaultVisible = true;
-  supportHand.position.set(-0.010, -0.075, -0.385);
-  supportHand.rotation.x = -0.05;
-  group.add(supportHand);
+  const supportHand = addTacticalHandRig(group, {
+    name: 'shotgun_support_hand',
+    position: new THREE.Vector3(-0.012, -0.060, -0.382),
+    rotation: new THREE.Vector3(-0.20, 0.02, 0),
+    defaultVisible: true,
+    upgraded,
+    support: true,
+    accentColor
+  });
 
   group.userData.parts = {
     receiver,

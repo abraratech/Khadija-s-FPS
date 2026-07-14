@@ -1,3 +1,4 @@
+// PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/map.js
 import * as THREE from 'three';
 import { getMotionScale } from './accessibility.js';
@@ -32,12 +33,12 @@ export let currentMapMeta = getMapMeta(MAP_IDS.GRID_BUNKER);
 
 export function openDoor(doorObj) {
   scene.remove(doorObj.mesh);
-  
+
   // Remove collision and physical rendering data cleanly
   const mIdx = mapMeshes.indexOf(doorObj.mesh); if (mIdx > -1) mapMeshes.splice(mIdx, 1);
   const dIdx = doors.indexOf(doorObj); if (dIdx > -1) doors.splice(dIdx, 1);
   const wIdx = walls.indexOf(doorObj); if (wIdx > -1) walls.splice(wIdx, 1);
-  
+
   // Unlock all the inner vault spawn points dynamically
   if (lockedSpawnPoints.length > 0) {
     spawnPoints.push(...lockedSpawnPoints);
@@ -52,9 +53,23 @@ scene.add(camera);
 camera.add(muzzleLight);
 
 const canvas = document.getElementById('c');
-export const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+const PERF1_DEVICE_PROFILE = Object.freeze((() => {
+  const ua = String(navigator.userAgent || '');
+  const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const consoleBrowser = /Xbox|PlayStation|SMART-TV|SmartTV|Tizen|WebOS/i.test(ua);
+  const cores = Math.max(1, Number(navigator.hardwareConcurrency) || 4);
+  const memory = Math.max(0, Number(navigator.deviceMemory) || 0);
+  const constrained = mobile || consoleBrowser || cores <= 4 || (memory > 0 && memory <= 4);
+  return { mobile, consoleBrowser, cores, memory, constrained };
+})());
+
+export const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: 'high-performance'
+});
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
 
 // ── POST-PROCESSING BLOOM ENGINE ──
 export const composer = new EffectComposer(renderer);
@@ -69,17 +84,23 @@ const bloomPass = new UnrealBloomPass(
 );
 composer.addPass(bloomPass);
 
+function syncComposerResolution() {
+  const ratio = renderer.getPixelRatio();
+  composer.setPixelRatio?.(ratio);
+  composer.setSize(window.innerWidth, window.innerHeight);
+}
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight); 
+  syncComposerResolution();
 });
 
 // ── ENVIRONMENT LIGHTING ──
-export const ambLight = new THREE.AmbientLight(0xffffff, 1.85); 
+export const ambLight = new THREE.AmbientLight(0xffffff, 1.85);
 scene.add(ambLight);
-export const dirLight = new THREE.DirectionalLight(0xbbeeff, 1.2); 
+export const dirLight = new THREE.DirectionalLight(0xbbeeff, 1.2);
 dirLight.position.set(20, 40, -20);
 scene.add(dirLight);
 
@@ -87,110 +108,110 @@ scene.add(dirLight);
 // Each map can now control its fog, lighting, clear color, and bloom mood.
 const MAP_ENVIRONMENTS = {
   [MAP_IDS.GRID_BUNKER]: {
-  name: "Grid Bunker - Classic",
-  fogColor: 0x07101a,
-  fogDensity: 0.024,
-  clearColor: 0x03070c,
+  name: "Grid Bunker - Cold Lockdown",
+  fogColor: 0x06111b,
+  fogDensity: 0.020,
+  clearColor: 0x020609,
 
-  ambientColor: 0xc8e4ff,
-  ambientIntensity: 1.45,
+  ambientColor: 0x7fcfff,
+  ambientIntensity: 0.76,
 
-  dirColor: 0x9ed5ff,
-  dirIntensity: 1.25,
-  dirPosition: new THREE.Vector3(20, 40, -20),
+  dirColor: 0xb7e8ff,
+  dirIntensity: 0.72,
+  dirPosition: new THREE.Vector3(18, 30, -16),
 
-  bloomStrength: 0.62,
-  bloomRadius: 0.32,
-  bloomThreshold: 0.88
+  bloomStrength: 0.78,
+  bloomRadius: 0.36,
+  bloomThreshold: 0.80
 },
 
   [MAP_IDS.INDUSTRIAL_YARD]: {
-  name: "Industrial Yard - Dust",
-  fogColor: 0x241207,
-  fogDensity: 0.014,
-  clearColor: 0x100604,
+  name: "Industrial Yard - Night Shift",
+  fogColor: 0x111820,
+  fogDensity: 0.016,
+  clearColor: 0x05090d,
 
-  ambientColor: 0xffc08a,
-  ambientIntensity: 1.38,
+  ambientColor: 0x8ea7bd,
+  ambientIntensity: 0.86,
 
-  dirColor: 0xffb15c,
-  dirIntensity: 1.15,
-  dirPosition: new THREE.Vector3(-18, 36, 22),
+  dirColor: 0xffb36b,
+  dirIntensity: 1.18,
+  dirPosition: new THREE.Vector3(-22, 34, 18),
 
-  bloomStrength: 0.48,
-  bloomRadius: 0.24,
-  bloomThreshold: 0.92
+  bloomStrength: 0.62,
+  bloomRadius: 0.30,
+  bloomThreshold: 0.86
   },
   [MAP_IDS.NEON_DEPOT]: {
-  name: "Neon Depot - Pulse",
-  fogColor: 0x061018,
-  fogDensity: 0.018,
-  clearColor: 0x03070b,
+  name: "Neon Depot - Storm Circuit",
+  fogColor: 0x0b071a,
+  fogDensity: 0.017,
+  clearColor: 0x01020a,
 
-  ambientColor: 0xb8f4ff,
-  ambientIntensity: 1.42,
+  ambientColor: 0x817dff,
+  ambientIntensity: 0.78,
 
-  dirColor: 0xff77dd,
-  dirIntensity: 1.08,
-  dirPosition: new THREE.Vector3(-16, 34, 24),
+  dirColor: 0xff42cf,
+  dirIntensity: 0.72,
+  dirPosition: new THREE.Vector3(-16, 28, 20),
 
-  bloomStrength: 0.64,
-  bloomRadius: 0.28,
-  bloomThreshold: 0.87
+  bloomStrength: 0.96,
+  bloomRadius: 0.41,
+  bloomThreshold: 0.76
   },
 
   [MAP_IDS.PARKING_GARAGE]: {
-  name: "Parking Garage - Concrete",
-  fogColor: 0x0c0f14,
-  fogDensity: 0.017,
-  clearColor: 0x030405,
+  name: "Parking Garage - Sodium Deck",
+  fogColor: 0x090d12,
+  fogDensity: 0.020,
+  clearColor: 0x020305,
 
-  ambientColor: 0xbfc8d4,
-  ambientIntensity: 1.28,
+  ambientColor: 0x8fa8bb,
+  ambientIntensity: 0.84,
 
-  dirColor: 0xffd895,
-  dirIntensity: 0.88,
-  dirPosition: new THREE.Vector3(18, 32, -20),
+  dirColor: 0xffc36a,
+  dirIntensity: 0.74,
+  dirPosition: new THREE.Vector3(18, 28, -20),
 
-  bloomStrength: 0.48,
-  bloomRadius: 0.22,
-  bloomThreshold: 0.89
+  bloomStrength: 0.68,
+  bloomRadius: 0.30,
+  bloomThreshold: 0.84
   },
 
   [MAP_IDS.HOSPITAL_WING]: {
-  name: "Hospital Wing - Code Red",
-  fogColor: 0x050b0b,
-  fogDensity: 0.025,
-  clearColor: 0x010404,
+  name: "Hospital Wing - Emergency Blackout",
+  fogColor: 0x06100f,
+  fogDensity: 0.029,
+  clearColor: 0x010303,
 
-  ambientColor: 0xc8fff1,
-  ambientIntensity: 1.10,
+  ambientColor: 0x78aaa2,
+  ambientIntensity: 0.74,
 
-  dirColor: 0x92ffe8,
-  dirIntensity: 0.55,
-  dirPosition: new THREE.Vector3(-18, 28, 18),
+  dirColor: 0xb4fff1,
+  dirIntensity: 0.46,
+  dirPosition: new THREE.Vector3(-18, 26, 18),
 
-  bloomStrength: 0.56,
-  bloomRadius: 0.26,
-  bloomThreshold: 0.88
+  bloomStrength: 0.70,
+  bloomRadius: 0.32,
+  bloomThreshold: 0.82
   },
 
   [MAP_IDS.REACTOR_COURTYARD]: {
-  name: "Reactor Courtyard - Coolant Surge",
-  fogColor: 0x071116,
-  fogDensity: 0.016,
-  clearColor: 0x020609,
+  name: "Reactor Courtyard - Critical Coolant",
+  fogColor: 0x04131a,
+  fogDensity: 0.019,
+  clearColor: 0x010408,
 
-  ambientColor: 0xbbeeff,
-  ambientIntensity: 1.30,
+  ambientColor: 0x78dcff,
+  ambientIntensity: 0.88,
 
-  dirColor: 0xffb060,
-  dirIntensity: 1.02,
-  dirPosition: new THREE.Vector3(22, 34, -18),
+  dirColor: 0xff9a42,
+  dirIntensity: 0.94,
+  dirPosition: new THREE.Vector3(24, 32, -20),
 
-  bloomStrength: 0.60,
-  bloomRadius: 0.27,
-  bloomThreshold: 0.87
+  bloomStrength: 0.78,
+  bloomRadius: 0.34,
+  bloomThreshold: 0.81
   }
 };
 
@@ -243,6 +264,12 @@ const GRAPHICS_QUALITY_PROFILES = Object.freeze({
 
 const GRAPHICS_QUALITY_ORDER = ["auto", "low", "medium", "high"];
 
+const GRAPHICS_QUALITY_RANK = Object.freeze({
+  low: 0,
+  medium: 1,
+  high: 2
+});
+
 let autoResolvedGraphicsQuality = null;
 let autoTuneTimer = 0;
 let autoTuneCooldown = 0;
@@ -256,16 +283,16 @@ function normalizeGraphicsMode(mode) {
 }
 
 function guessAutoGraphicsQuality() {
-  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-  const cores = navigator.hardwareConcurrency || 4;
-  const memory = navigator.deviceMemory || 4;
+  const isMobileDevice = PERF1_DEVICE_PROFILE.mobile;
+  const cores = PERF1_DEVICE_PROFILE.cores;
+  const memory = PERF1_DEVICE_PROFILE.memory || 4;
   const dpr = window.devicePixelRatio || 1;
 
   // C5 hotfix: the first auto pick was too conservative. A desktop with
   // normal/high CPU capacity should not be locked to Low just because DPR or
   // browser-reported memory looks modest. Start sane, then let FPS promote or
   // demote during play.
-  if (isMobileDevice) return "low";
+  if (isMobileDevice || PERF1_DEVICE_PROFILE.consoleBrowser) return "low";
 
   if (cores <= 4 && memory <= 4 && dpr > 1.6) {
     return "low";
@@ -341,14 +368,18 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
   const effectiveMode = resolveGraphicsQuality(graphicsQuality);
   const profile = GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap));
+  const targetPixelRatio = Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap);
+  if (Math.abs(renderer.getPixelRatio() - targetPixelRatio) > 0.001) {
+    renderer.setPixelRatio(targetPixelRatio);
+    syncComposerResolution();
+  }
 
   if (scene.fog) {
     scene.fog.density = activeMapEnvironment.fogDensity * profile.fogScale;
   }
 
   if (typeof bloomPass !== "undefined" && bloomPass) {
-    bloomPass.enabled = profile.bloomEnabled;
+    bloomPass.enabled = shouldUsePostProcessing();
     bloomPass.strength = activeMapEnvironment.bloomStrength * profile.bloomStrengthScale;
     bloomPass.radius = activeMapEnvironment.bloomRadius * profile.bloomRadiusScale;
     bloomPass.threshold = Math.max(
@@ -359,7 +390,12 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
 
   mapMeshes.forEach((obj) => {
     if (!obj?.userData?.isMapDressing) return;
-    obj.visible = profile.showMapDressing;
+
+    const minQuality = String(obj.userData.minGraphicsQuality || "medium");
+    const minRank = GRAPHICS_QUALITY_RANK[minQuality] ?? GRAPHICS_QUALITY_RANK.medium;
+    const effectiveRank = GRAPHICS_QUALITY_RANK[effectiveMode] ?? GRAPHICS_QUALITY_RANK.medium;
+
+    obj.visible = profile.showMapDressing && effectiveRank >= minRank;
   });
 
   if (!options.silent) {
@@ -368,6 +404,24 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
   }
 
   return graphicsQuality;
+}
+
+export function shouldUsePostProcessing() {
+  const profile = getGraphicsProfile(graphicsQuality);
+  if (!profile.bloomEnabled) return false;
+  return !(graphicsQuality === 'auto' && PERF1_DEVICE_PROFILE.constrained);
+}
+
+export function getGraphicsPerformanceSnapshot() {
+  return Object.freeze({
+    patch: 'perf1-cross-platform-r1',
+    requested: graphicsQuality,
+    effective: getEffectiveGraphicsQuality(),
+    pixelRatio: renderer.getPixelRatio(),
+    postProcessing: shouldUsePostProcessing(),
+    constrainedDevice: PERF1_DEVICE_PROFILE.constrained,
+    consoleBrowser: PERF1_DEVICE_PROFILE.consoleBrowser
+  });
 }
 
 export function cycleGraphicsQuality() {
@@ -449,10 +503,12 @@ export function autoTuneGraphicsFromFps(fps, dt = 0) {
 window.KASetGraphicsQuality = applyGraphicsQuality;
 window.KAGetGraphicsQuality = getGraphicsQuality;
 window.KAGetEffectiveGraphicsQuality = getEffectiveGraphicsQuality;
+window.KAGetGraphicsPerformanceSnapshot = getGraphicsPerformanceSnapshot;
 window.KARecheckGraphicsQuality = () => applyGraphicsQuality("auto", { repickAuto: true });
 
 // Apply saved graphics quality after graphicsQuality and helper functions exist.
 applyGraphicsQuality(graphicsQuality, { silent: true });
+syncComposerResolution();
 
 export function applyMapEnvironment(mapId = currentMapId) {
   const env = MAP_ENVIRONMENTS[mapId] || DEFAULT_MAP_ENVIRONMENT;
@@ -514,16 +570,16 @@ function createGrungeTexture(size, baseColor, speckleColor) {
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d');
-  
+
   ctx.fillStyle = baseColor;
   ctx.fillRect(0, 0, size, size);
-  
+
   for (let i = 0; i < size * size * 0.15; i++) {
     ctx.fillStyle = speckleColor;
     ctx.globalAlpha = Math.random() * 0.5;
     ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
   }
-  
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
@@ -534,7 +590,7 @@ function createGrungeTexture(size, baseColor, speckleColor) {
 const floorTex = createGrungeTexture(512, '#2a2a35', '#111118');
 const wallTex = createGrungeTexture(512, '#3a3a4a', '#1a1a25');
 
-const TILE_SIZE = 6; 
+const TILE_SIZE = 6;
 const WALL_HEIGHT = 4.5;
 let floorMesh = null;
 
@@ -627,13 +683,13 @@ export function spawnBarricade(x, z, rotY) {
   ghostCore.userData.baseGhostOpacity = 0.08;
 
   repairGhost.add(ghostFloor, ghostFrame, ghostCore);
-  
+
   const barricadeObj = {
     pos: new THREE.Vector3(x, 0, z),
     rotY: rotY,
     maxPlanks: 5,
     currentPlanks: 5,
-    planks: [], 
+    planks: [],
     group: group,
     plankGroup: plankGroup,
     repairGhost: repairGhost,
@@ -642,7 +698,7 @@ export function spawnBarricade(x, z, rotY) {
   };
 
   // Build 5 haphazardly stacked wooden planks
-  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6e4720, roughness: 0.9 }); 
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x6e4720, roughness: 0.9 });
   for (let i = 0; i < 5; i++) {
     const plank = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.3, 0.15), woodMat);
     plank.position.set(0, 0.4 + i * 0.45, 0);
@@ -694,11 +750,11 @@ export function spawnTrap(x, z, width, isZAxis = false) {
   field.position.y = 1.5; field.visible = false;
   group.add(field);
 
-  const trapObj = { 
+  const trapObj = {
     pos: p1.position.clone().add(group.position).setY(0), // Interaction point
-    center: new THREE.Vector3(x, 0, z), width: width, isZAxis: isZAxis, 
-    group: group, field: field, switchMesh: switchBox, 
-    state: 'READY', timer: 0 
+    center: new THREE.Vector3(x, 0, z), width: width, isZAxis: isZAxis,
+    group: group, field: field, switchMesh: switchBox,
+    state: 'READY', timer: 0
   };
   traps.push(trapObj);
 }
@@ -769,6 +825,11 @@ export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {
 
   floorMesh = result?.floorMesh || null;
 
+  // Builders can register new medium/high visual groups after the environment
+  // profile was applied. Re-apply quality once so freshly created dressing
+  // immediately respects Low/Medium/High and Auto on desktop and mobile.
+  applyGraphicsQuality(graphicsQuality, { silent: true });
+
   configureMapValidation({
     mapId: currentMapId,
     walls,
@@ -791,8 +852,8 @@ export function applyScreenShake(dt) {
     camera.position.x += (Math.random() - 0.5) * shakeIntensity;
     camera.position.y += (Math.random() - 0.5) * shakeIntensity;
     camera.position.z += (Math.random() - 0.5) * shakeIntensity;
-    camera.rotation.z = (Math.random() - 0.5) * shakeIntensity * 0.3; 
-    shakeIntensity -= dt * 2.5; 
+    camera.rotation.z = (Math.random() - 0.5) * shakeIntensity * 0.3;
+    shakeIntensity -= dt * 2.5;
     if (shakeIntensity <= 0) { shakeIntensity = 0; camera.rotation.z = 0; }
   }
 }

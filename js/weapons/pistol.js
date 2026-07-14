@@ -4,21 +4,25 @@ import {
   makeStandardMaterial,
   makeBoxPart,
   makeCylinderPart,
-  getPartBasePosition
+  getPartBasePosition,
+  addTacticalHandRig,
+  addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
 export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'PISTOL';
+  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -0.336 });
   group.userData.thirdPersonMuzzleSize = 0.125;
 
-  const slideColor = upgraded ? 0xd8b15a : 0x5f686d;
-  const frameColor = upgraded ? 0x2c1a31 : 0x161b1f;
-  const gripColor = upgraded ? 0x4a2e1c : 0x20272d;
+  const slideColor = upgraded ? 0xc58b42 : 0x9a8765;
+  const frameColor = upgraded ? 0x34202d : 0x20272b;
+  const gripColor = upgraded ? 0x512d22 : 0x332d25;
   const darkColor = 0x07090b;
-  const accentColor = upgraded ? 0xff55ff : 0x00d4ff;
+  const accentColor = upgraded ? 0xff5b78 : 0xe9a43a;
   const skinColor = 0xd2b48c;
 
   const slideMat = makeStandardMaterial({
@@ -50,7 +54,7 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: upgraded ? 0.70 : 0.18,
+    emissiveIntensity: upgraded ? 0.48 : 0.10,
     roughness: 0.32
   });
 
@@ -63,24 +67,24 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const slide = makeBoxPart(
     group,
     'pistol_slide',
-    new THREE.Vector3(0.096, 0.050, 0.318),
-    new THREE.Vector3(0.000, 0.034, -0.100),
+    new THREE.Vector3(0.102, 0.044, 0.300),
+    new THREE.Vector3(0.000, 0.038, -0.108),
     slideMat
   );
 
   const slideTop = makeBoxPart(
     group,
     'pistol_slide_top',
-    new THREE.Vector3(0.074, 0.014, 0.238),
-    new THREE.Vector3(0.000, 0.067, -0.104),
+    new THREE.Vector3(0.070, 0.011, 0.205),
+    new THREE.Vector3(0.000, 0.065, -0.116),
     slideMat
   );
 
   const frame = makeBoxPart(
     group,
     'pistol_frame',
-    new THREE.Vector3(0.088, 0.036, 0.188),
-    new THREE.Vector3(0.000, -0.014, -0.054),
+    new THREE.Vector3(0.092, 0.034, 0.172),
+    new THREE.Vector3(0.000, -0.012, -0.060),
     frameMat
   );
 
@@ -125,8 +129,8 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const grip = makeBoxPart(
     group,
     'pistol_grip',
-    new THREE.Vector3(0.064, 0.152, 0.058),
-    new THREE.Vector3(0.000, -0.112, 0.014),
+    new THREE.Vector3(0.072, 0.164, 0.062),
+    new THREE.Vector3(0.000, -0.116, 0.020),
     gripMat,
     new THREE.Vector3(-0.26, 0, 0)
   );
@@ -267,6 +271,8 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
     );
   }
 
+  addWeaponPresentationDetails(group, 'PISTOL', { upgraded, accentColor });
+
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0xdd00ff : 0xffaa00,
     transparent: true,
@@ -282,21 +288,25 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   muzzleFlash.visible = false;
   group.add(muzzleFlash);
 
-  const gripHand = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.050, 0.092), skinMat);
-  gripHand.name = 'pistol_grip_hand';
-  gripHand.userData.isProceduralHand = true;
-  gripHand.userData.defaultVisible = true;
-  gripHand.position.set(0.000, -0.130, 0.030);
-  gripHand.rotation.x = -0.26;
-  group.add(gripHand);
+  const gripHand = addTacticalHandRig(group, {
+    name: 'pistol_grip_hand',
+    position: new THREE.Vector3(0.000, -0.128, 0.022),
+    rotation: new THREE.Vector3(-0.34, 0, 0),
+    defaultVisible: true,
+    upgraded,
+    support: false,
+    accentColor
+  });
 
-  const hiddenSupportHand = new THREE.Mesh(new THREE.BoxGeometry(0.030, 0.030, 0.060), skinMat);
-  hiddenSupportHand.name = 'pistol_hidden_support_hand';
-  hiddenSupportHand.userData.isProceduralHand = true;
-  hiddenSupportHand.userData.defaultVisible = false;
-  hiddenSupportHand.visible = false;
-  hiddenSupportHand.position.set(0.000, -0.050, 0.050);
-  group.add(hiddenSupportHand);
+  const hiddenSupportHand = addTacticalHandRig(group, {
+    name: 'pistol_hidden_support_hand',
+    position: new THREE.Vector3(0.000, -0.050, 0.050),
+    rotation: new THREE.Vector3(0, 0, 0),
+    defaultVisible: false,
+    upgraded,
+    support: true,
+    accentColor
+  });
 
   group.userData.parts = {
     slide,

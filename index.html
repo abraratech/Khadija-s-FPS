@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
-<meta content="Khadija's Arena is a browser-based single-player wave survival FPS demo." name="description"/>
+<meta content="Khadija's Arena is a cross-platform browser survival shooter with solo and 2–4 player co-op." name="description"/>
 <meta content="#03070c" name="theme-color"/>
 <title>Khadija's Arena</title>
 <link crossorigin="" href="https://cdn.jsdelivr.net" rel="preconnect"/>
@@ -20,6 +20,8 @@
       #portrait-warning { display: flex; }
     }
   </style>
+
+<link as="image" href="assets/ui/maps/grid_bunker.webp" rel="preload"/>
 <link href="css/game.css" rel="stylesheet"/>
 <link href="css/hud.css" rel="stylesheet"/>
 <link href="css/menu.css" rel="stylesheet"/>
@@ -491,6 +493,873 @@
       .ka-map-card { grid-template-columns: 88px 1fr; }
     }
   </style>
+
+<style id="ka-cross-platform-overhaul">
+  :root {
+    --ka-cyan: #10d8ff;
+    --ka-green: #21ed91;
+    --ka-orange: #ff9f1a;
+    --ka-red: #ff4d3d;
+    --ka-panel: rgba(3, 12, 20, 0.92);
+    --ka-panel-soft: rgba(7, 20, 31, 0.82);
+    --ka-line: rgba(33, 216, 255, 0.24);
+    --ka-safe-x: max(18px, env(safe-area-inset-left));
+    --ka-safe-y: max(12px, env(safe-area-inset-top));
+  }
+
+  .ka-menu-shell {
+    padding: 0;
+    background:
+      radial-gradient(circle at 78% 12%, rgba(0, 212, 255, 0.13), transparent 31%),
+      radial-gradient(circle at 16% 88%, rgba(34, 255, 136, 0.08), transparent 28%),
+      linear-gradient(145deg, #02070c 0%, #06111a 52%, #02060a 100%);
+  }
+  .ka-menu-shell::before {
+    opacity: .5;
+    background-size: 56px 56px;
+  }
+  .ka-menu-bg-orb { opacity: .18; }
+  .ka-menu-panel {
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: clamp(218px, 17vw, 292px) minmax(0, 1fr);
+    background: rgba(2, 8, 14, 0.74);
+    box-shadow: none;
+    backdrop-filter: blur(14px);
+  }
+  .ka-game-rail {
+    position: relative;
+    z-index: 3;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2vh, 24px);
+    padding: clamp(22px, 3vw, 42px) clamp(18px, 2vw, 32px);
+    border-right: 1px solid rgba(16, 216, 255, .20);
+    background:
+      linear-gradient(180deg, rgba(3, 13, 22, .98), rgba(2, 8, 14, .94)),
+      url('assets/ui/maps/grid_bunker.webp') center / cover;
+    box-shadow: 16px 0 48px rgba(0,0,0,.28);
+  }
+  .ka-game-rail::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(1,8,14,.80), rgba(1,8,14,.98));
+  }
+  .ka-game-rail > * { position: relative; z-index: 1; }
+  .ka-rail-brand { display: grid; gap: 9px; }
+  .ka-rail-title {
+    color: #fff;
+    font-size: clamp(38px, 3.8vw, 66px);
+    font-weight: 1000;
+    line-height: .82;
+    letter-spacing: -1.5px;
+    text-shadow: 0 0 26px rgba(16,216,255,.20), 4px 4px 0 rgba(0,0,0,.72);
+  }
+  .ka-rail-tagline {
+    color: var(--ka-orange);
+    font-size: clamp(11px, .9vw, 14px);
+    font-weight: 950;
+    letter-spacing: 1.4px;
+    line-height: 1.45;
+    text-transform: uppercase;
+  }
+  .ka-rail-mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ka-rail-mode {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 1px 7px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid rgba(16,216,255,.34);
+    border-radius: 10px;
+    background: rgba(0,12,22,.76);
+  }
+  .ka-rail-mode.coop { border-color: rgba(33,237,145,.42); }
+  .ka-rail-mode > span { grid-row: 1 / 3; color: var(--ka-cyan); font-size: 14px; }
+  .ka-rail-mode.coop > span { color: var(--ka-green); }
+  .ka-rail-mode b { color: #fff; font-size: 11px; letter-spacing: .8px; }
+  .ka-rail-mode small { color: #8ea3b1; font-size: 8px; white-space: nowrap; }
+  .ka-rail-nav { display: grid; gap: 8px; }
+  .ka-rail-nav-btn {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 0 14px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 9px;
+    background: rgba(255,255,255,.035);
+    color: #a9bbc7;
+    font: 900 12px/1 system-ui, sans-serif;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-align: left;
+  }
+  .ka-rail-nav-btn span { color: #738894; }
+  .ka-rail-nav-btn:hover,
+  .ka-rail-nav-btn:focus-visible { border-color: rgba(16,216,255,.62); color: #fff; transform: translateX(2px); }
+  .ka-rail-nav-btn.active {
+    color: #001018;
+    border-color: transparent;
+    background: linear-gradient(90deg, var(--ka-cyan), var(--ka-green));
+    box-shadow: 0 0 24px rgba(16,216,255,.22);
+  }
+  .ka-rail-nav-btn.active span { color: #001018; }
+  .ka-rail-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border-top: 1px solid rgba(255,255,255,.08);
+    color: #fff;
+  }
+  .ka-online-pulse {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    border-radius: 50%;
+    background: var(--ka-green);
+    box-shadow: 0 0 14px var(--ka-green);
+  }
+  .ka-rail-footer b { display: block; font-size: 10px; letter-spacing: 1px; }
+  .ka-rail-footer small { display: block; margin-top: 3px; color: #748895; font-size: 9px; }
+
+  .ka-menu-main {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: var(--ka-safe-y) var(--ka-safe-x);
+    overflow: hidden;
+  }
+  .ka-topline {
+    min-height: 58px;
+    margin: 0;
+    padding: 6px 4px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+  .ka-player-strip { display: flex; align-items: center; gap: 10px; }
+  .ka-brand-chip { width: 40px; height: 40px; border-radius: 11px; font-size: 13px; }
+  .ka-platform-strip { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .ka-platform-strip span {
+    padding: 7px 9px;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 999px;
+    color: #8fa4b1;
+    background: rgba(255,255,255,.035);
+    font-size: 9px;
+    letter-spacing: .7px;
+  }
+  .ka-platform-strip b { color: #d9f8ff; }
+  .ka-stepper { display: none; }
+  .ka-menu-screen.active { padding: clamp(14px, 2vw, 28px) 4px 6px; }
+
+  .ka-home-stage {
+    min-height: clamp(480px, calc(100dvh - 130px), 760px);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 34%);
+    gap: clamp(14px, 1.6vw, 24px);
+  }
+  .ka-home-hero {
+    position: relative;
+    height: 100%;
+    min-height: 430px;
+    overflow: hidden;
+    border: 1px solid rgba(16,216,255,.24);
+    border-radius: 18px;
+    background:
+      linear-gradient(90deg, rgba(1,8,14,.93) 0%, rgba(1,8,14,.72) 42%, rgba(1,8,14,.18) 75%),
+      linear-gradient(0deg, rgba(1,8,14,.88), transparent 54%),
+      url('assets/ui/maps/grid_bunker.webp') center / cover no-repeat;
+    box-shadow: inset 0 0 40px rgba(16,216,255,.04), 0 24px 70px rgba(0,0,0,.28);
+  }
+  .ka-home-copy {
+    position: relative;
+    z-index: 2;
+    width: min(680px, 72%);
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: clamp(22px, 3vw, 42px);
+  }
+  #menu-title { font-size: clamp(54px, 6vw, 100px); line-height: .80; letter-spacing: -2px; }
+  #menu-sub { max-width: 620px; margin: 14px 0 14px; color: var(--ka-orange); font-size: clamp(13px, 1.2vw, 18px); line-height: 1.4; }
+  .ka-home-support-row { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px; }
+  .ka-home-support-row span,
+  .ka-home-live-meta span {
+    padding: 6px 9px;
+    border: 1px solid rgba(16,216,255,.28);
+    border-radius: 999px;
+    background: rgba(0,10,18,.60);
+    color: #d8f7ff;
+    font-size: 9px;
+    font-weight: 950;
+    letter-spacing: .8px;
+  }
+  .ka-stats-row { grid-template-columns: repeat(4, minmax(88px, 1fr)); gap: 8px; margin-top: 0; }
+  .ka-stat-card { min-width: 0; padding: 10px 11px; background: rgba(0,8,14,.64); backdrop-filter: blur(8px); }
+  .ka-stat-card b { font-size: clamp(16px, 1.4vw, 22px); }
+  .ka-home-live-card {
+    position: absolute;
+    right: 18px;
+    bottom: 18px;
+    z-index: 2;
+    width: min(270px, 33%);
+    padding: 18px;
+    border: 1px solid rgba(33,237,145,.36);
+    border-radius: 14px;
+    background: rgba(2,13,21,.88);
+    box-shadow: 0 14px 36px rgba(0,0,0,.34);
+    backdrop-filter: blur(10px);
+  }
+  .ka-home-live-card strong { display: block; color: #fff; font-size: 24px; margin-bottom: 7px; }
+  .ka-home-live-card small { color: #a5b7c2; line-height: 1.45; }
+  .ka-home-live-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .ka-home-live-meta span:nth-child(2) { color: #00130b; background: var(--ka-green); border-color: var(--ka-green); }
+
+  .ka-mode-stack { align-content: stretch; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; }
+  .ka-mode-card {
+    position: relative;
+    min-height: 150px;
+    padding: 20px;
+    overflow: hidden;
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(11,29,43,.96), rgba(4,13,22,.96));
+  }
+  .ka-mode-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: var(--ka-cyan);
+    opacity: .7;
+  }
+  .ka-coop-mode-card::before { background: var(--ka-green); }
+  .ka-mode-card strong { font-size: clamp(22px, 2vw, 32px); }
+  .ka-mode-card small { display: block; max-width: 480px; margin-top: 8px; line-height: 1.45; }
+  .ka-mode-arrow { display: block; margin-top: 16px; color: var(--ka-cyan); font-size: 10px; font-weight: 1000; letter-spacing: 1.2px; }
+  .ka-coop-mode-card .ka-mode-arrow { color: var(--ka-green); }
+  .ka-home-actions { display: grid; grid-template-columns: 1.2fr .8fr; gap: 9px; }
+  .ka-home-actions button { min-height: 52px; margin: 0; text-align: center; }
+
+  .ka-section-heading { display: flex; justify-content: space-between; align-items: end; gap: 18px; margin: 0 0 12px; }
+  .ka-section-heading span { display: block; color: var(--ka-cyan); font-size: 10px; font-weight: 950; letter-spacing: 1.5px; text-transform: uppercase; }
+  .ka-section-heading strong { display: block; color: #fff; font-size: clamp(24px, 2.5vw, 38px); line-height: 1; }
+  .ka-section-heading small { color: #8296a3; font-size: 11px; }
+  .ka-map-layout { grid-template-columns: 1fr; gap: 12px; }
+  .ka-preview-stage {
+    min-height: clamp(340px, 53vh, 600px);
+    border-radius: 18px;
+    background: #02070b;
+  }
+  .ka-map-shot { background-size: cover; background-position: center; transform: scale(1.01); }
+  .ka-map-shot.grid-bunker, .ka-map-thumb.grid-bunker { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/grid_bunker.webp'); }
+  .ka-map-shot.industrial-yard, .ka-map-thumb.industrial-yard { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/industrial_yard.webp'); }
+  .ka-map-shot.neon-depot, .ka-map-thumb.neon-depot { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/neon_depot.webp'); }
+  .ka-map-shot.parking-garage, .ka-map-thumb.parking-garage { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/parking_garage.webp'); }
+  .ka-map-shot.hospital-wing, .ka-map-thumb.hospital-wing { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/hospital_wing.webp'); }
+  .ka-map-shot.reactor-courtyard, .ka-map-thumb.reactor-courtyard { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/reactor_courtyard.webp'); }
+  .ka-preview-stage::after { background: linear-gradient(90deg, transparent 0 54%, rgba(0,6,11,.40) 72%, rgba(0,6,11,.78) 100%), linear-gradient(0deg, rgba(0,0,0,.28), transparent 48%); }
+  .ka-preview-overlay {
+    top: 16px;
+    right: 16px;
+    bottom: 16px;
+    left: auto;
+    width: min(330px, 36%);
+    align-content: end;
+    padding: 20px;
+    border: 1px solid rgba(16,216,255,.22);
+    border-radius: 14px;
+    background: rgba(2,11,18,.84);
+    box-shadow: 0 18px 44px rgba(0,0,0,.34);
+    backdrop-filter: blur(12px);
+  }
+  .ka-preview-title { font-size: clamp(27px, 2.7vw, 42px); }
+  .ka-map-detail { gap: 6px; }
+  .ka-map-detail div { padding: 8px; font-size: 10px; }
+  .ka-map-detail b { font-size: 13px; }
+  .ka-map-grid {
+    grid-template-columns: repeat(6, minmax(150px, 1fr));
+    gap: 9px;
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scroll-snap-type: x mandatory;
+  }
+  .ka-map-card {
+    position: relative;
+    min-width: 150px;
+    min-height: 190px;
+    display: block;
+    overflow: hidden;
+    padding: 0;
+    border-radius: 12px;
+    scroll-snap-align: start;
+    background: rgba(3,12,19,.94);
+  }
+  .ka-map-card.selected { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--ka-cyan), 0 12px 32px rgba(16,216,255,.16); }
+  .ka-map-thumb { height: 118px; border: 0; border-radius: 0; background-size: cover; background-position: center 62%; }
+  .ka-map-thumb.industrial-yard, .ka-map-thumb.neon-depot { background-position: center 70%; }
+  .ka-map-card > div:last-child { padding: 10px 11px 12px; }
+  .ka-map-card strong { margin: 0; font-size: 14px; line-height: 1.05; }
+  .ka-map-card small { display: none; }
+  .ka-map-tag { margin: 0 0 6px; padding: 3px 6px; font-size: 8px; }
+  .ka-map-index {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    min-width: 25px;
+    height: 25px;
+    padding: 0 5px;
+    border-radius: 6px;
+    background: rgba(0,8,14,.78);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 1000;
+  }
+  .ka-map-card::after {
+    content: attr(data-difficulty);
+    position: absolute;
+    right: 9px;
+    bottom: 10px;
+    color: var(--ka-orange);
+    font-size: 8px;
+    font-weight: 1000;
+    letter-spacing: .8px;
+  }
+  .ka-map-card[data-difficulty="EASY"]::after { color: var(--ka-green); }
+  .ka-map-card[data-difficulty="HARD"]::after,
+  .ka-map-card[data-difficulty="EXTREME"]::after { color: #ff5c4d; }
+  .ka-nav-row { position: sticky; bottom: 0; z-index: 6; padding: 10px 0 2px; margin-top: 4px; background: linear-gradient(0deg, rgba(2,8,14,.98) 45%, transparent); }
+
+  .ka-diff-layout,
+  .ka-settings-layout { gap: 14px; }
+  .ka-brief-card,
+  .ka-diff-stack,
+  .ka-settings-card,
+  .ka-setting-row { border-color: rgba(16,216,255,.15); background: rgba(5,17,27,.76); }
+  .ka-setting-row:hover { border-color: rgba(16,216,255,.30); }
+  .ka-setting-control,
+  .ka-setting-row select { min-height: 42px; }
+
+  .ka-nav-btn,
+  .ka-link-btn,
+  .ka-mode-card,
+  .ka-map-card,
+  .ka-diff-card,
+  .ka-rail-nav-btn { -webkit-tap-highlight-color: transparent; }
+  :where(.ka-nav-btn,.ka-link-btn,.ka-mode-card,.ka-map-card,.ka-diff-card,.ka-rail-nav-btn):focus-visible {
+    outline: 3px solid #fff;
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(16,216,255,.34);
+  }
+
+  @media (max-width: 1180px) {
+    .ka-menu-panel { grid-template-columns: 210px minmax(0,1fr); }
+    .ka-game-rail { padding: 22px 16px; }
+    .ka-rail-title { font-size: 43px; }
+    .ka-home-stage { grid-template-columns: minmax(0,1fr) minmax(260px, 36%); }
+    .ka-home-copy { width: 76%; padding: 26px; }
+    .ka-home-live-card { width: 32%; padding: 14px; }
+    .ka-platform-strip span { padding: 6px; }
+    .ka-platform-strip b { display: none; }
+    .ka-map-grid { grid-template-columns: repeat(6, minmax(142px, 1fr)); }
+  }
+
+  @media (max-width: 920px), (max-height: 660px) {
+    .ka-menu-panel { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
+    .ka-game-rail {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+      border-right: 0;
+      border-bottom: 1px solid rgba(16,216,255,.20);
+      background: rgba(2,9,15,.98);
+    }
+    .ka-rail-brand { display: flex; align-items: center; gap: 8px; }
+    .ka-rail-brand .ka-eyebrow,
+    .ka-rail-tagline,
+    .ka-rail-mode-row,
+    .ka-rail-footer { display: none; }
+    .ka-rail-title { font-size: 20px; line-height: .92; letter-spacing: 0; }
+    .ka-rail-nav { display: flex; justify-content: center; gap: 6px; overflow-x: auto; }
+    .ka-rail-nav-btn { width: auto; min-height: 38px; padding: 0 10px; font-size: 9px; white-space: nowrap; }
+    .ka-rail-nav-btn span { display: none; }
+    .ka-menu-main { padding: 0 max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+    .ka-topline { min-height: 46px; padding-bottom: 7px; }
+    .ka-brand-chip { width: 34px; height: 34px; }
+    .ka-status-dot { display: none; }
+    .ka-platform-strip span { font-size: 8px; }
+    .ka-menu-screen.active { padding: 9px 2px 4px; }
+    .ka-home-stage { grid-template-columns: 1fr; }
+    .ka-home-hero { min-height: 330px; }
+    .ka-home-copy { width: 72%; padding: 20px; }
+    #menu-title { font-size: clamp(42px, 8vw, 70px); }
+    .ka-home-support-row span:nth-child(2) { display: none; }
+    .ka-home-live-card { width: 31%; right: 10px; bottom: 10px; padding: 12px; }
+    .ka-home-live-card strong { font-size: 18px; }
+    .ka-home-live-card small { display: none; }
+    .ka-stats-row { grid-template-columns: repeat(4, 1fr); }
+    .ka-mode-stack { grid-template-columns: 1fr 1fr; }
+    .ka-mode-card { min-height: 128px; padding: 15px; }
+    .ka-mode-card small { font-size: 11px; }
+    .ka-home-actions { grid-column: 1 / -1; }
+    .ka-preview-stage { min-height: 330px; }
+    .ka-preview-overlay { width: 34%; padding: 13px; }
+    .ka-preview-meta .ka-pill:nth-child(n+3),
+    .ka-map-detail { display: none; }
+    .ka-map-grid { grid-template-columns: repeat(6, minmax(138px, 155px)); }
+    .ka-map-card { min-width: 138px; min-height: 165px; }
+    .ka-map-thumb { height: 99px; }
+  }
+
+  @media (max-width: 720px) and (orientation: landscape) {
+    .ka-game-rail { grid-template-columns: auto 1fr; }
+    .ka-rail-nav-btn { font-size: 0; min-width: 38px; justify-content: center; }
+    .ka-rail-nav-btn::after { font-size: 10px; }
+    .ka-rail-nav-btn[data-rail-screen="home"]::after { content: "PLAY"; }
+    .ka-rail-nav-btn[data-rail-screen="map"]::after { content: "ARENA"; }
+    .ka-rail-nav-btn[data-rail-screen="difficulty"]::after { content: "LOADOUT"; }
+    .ka-rail-nav-btn[data-rail-screen="avatar"]::after { content: "AVATAR"; }
+    .ka-rail-nav-btn[data-rail-screen="settings"]::after { content: "SETTINGS"; }
+    .ka-platform-strip { display: none; }
+    .ka-topline { display: none; }
+    .ka-home-hero { min-height: 260px; }
+    .ka-home-copy { width: 68%; padding: 15px; }
+    #menu-title { font-size: 44px; }
+    #menu-sub { font-size: 11px; margin: 8px 0; }
+    .ka-home-support-row { display: none; }
+    .ka-home-live-card { width: 29%; }
+    .ka-stats-row { grid-template-columns: repeat(3,1fr); }
+    .ka-stat-card:last-child { display: none; }
+    .ka-mode-stack { grid-template-columns: 1fr 1fr; }
+    .ka-mode-card { min-height: 112px; padding: 12px; }
+    .ka-mode-card strong { font-size: 18px; }
+    .ka-mode-card small { display: none; }
+    .ka-mode-arrow { margin-top: 10px; }
+    .ka-preview-stage { min-height: 245px; }
+    .ka-preview-overlay { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; padding: 10px 12px; }
+    .ka-preview-title { font-size: 23px; }
+    .ka-preview-meta { display: none; }
+    .ka-map-grid { grid-template-columns: repeat(6, 128px); }
+    .ka-map-card { min-width: 128px; min-height: 142px; }
+    .ka-map-thumb { height: 82px; }
+    .ka-map-card strong { font-size: 11px; }
+    .ka-section-heading small { display: none; }
+  }
+
+  @media (max-height: 500px) and (orientation: landscape) {
+    .ka-game-rail { min-height: 48px; padding-top: 5px; padding-bottom: 5px; }
+    .ka-rail-title { font-size: 18px; }
+    .ka-rail-nav-btn { min-height: 34px; padding: 0 8px; }
+    .ka-topline { display: none; }
+    .ka-menu-screen.active { padding: 5px 2px 2px; }
+    .ka-section-heading { margin-bottom: 6px; align-items: center; }
+    .ka-section-heading span { font-size: 8px; }
+    .ka-section-heading strong { font-size: 23px; }
+    .ka-section-heading small { display: none; }
+    .ka-map-layout { gap: 6px; }
+    .ka-preview-stage { min-height: 142px; height: 142px; border-radius: 12px; }
+    .ka-preview-overlay {
+      top: auto;
+      left: 7px;
+      right: 7px;
+      bottom: 7px;
+      width: auto;
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 10px;
+      border-radius: 9px;
+    }
+    .ka-preview-title { font-size: 18px; white-space: nowrap; }
+    .ka-preview-meta { margin-left: auto; }
+    .ka-preview-meta .ka-pill { font-size: 7px; padding: 3px 5px; }
+    .ka-preview-meta .ka-pill:nth-child(n+3),
+    .ka-map-detail { display: none; }
+    .ka-map-grid { grid-template-columns: repeat(6, 112px); gap: 6px; padding-bottom: 3px; }
+    .ka-map-card { min-width: 112px; min-height: 89px; height: 89px; border-radius: 9px; }
+    .ka-map-thumb { height: 54px; }
+    .ka-map-card > div:last-child { padding: 5px 7px 6px; }
+    .ka-map-tag { display: none; }
+    .ka-map-card strong { font-size: 9px; }
+    .ka-map-card::after { right: 6px; bottom: 5px; font-size: 6px; }
+    .ka-map-index { top: 5px; left: 5px; min-width: 20px; height: 20px; font-size: 8px; }
+    .ka-nav-row { position: static; min-height: 36px; margin-top: 2px; padding: 2px 0 0; background: none; }
+    .ka-nav-row button { min-height: 34px; padding: 7px 11px; font-size: 9px; }
+    .ka-home-stage { min-height: 272px; grid-template-columns: minmax(0,1.25fr) minmax(230px,.75fr); }
+    .ka-home-hero { min-height: 272px; height: 272px; }
+    .ka-home-copy { width: 74%; padding: 14px; }
+    #menu-title { font-size: 42px; }
+    #menu-sub { margin: 7px 0; font-size: 10px; }
+    .ka-home-support-row, .ka-home-live-card, .ka-stats-row { display: none; }
+    .ka-mode-stack { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr auto; }
+    .ka-mode-card { min-height: 91px; padding: 10px 12px; }
+    .ka-mode-card strong { font-size: 17px; }
+    .ka-mode-card small { display: none; }
+    .ka-mode-arrow { margin-top: 7px; font-size: 8px; }
+    .ka-home-actions button { min-height: 34px; padding: 7px; font-size: 9px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ka-menu-screen,
+    .ka-menu-screen.active,
+    .ka-mode-card,
+    .ka-map-card,
+    .ka-rail-nav-btn { animation: none !important; transition: none !important; }
+  }
+</style>
+
+
+<style id="ka-avatar-studio-style">
+  /* UI.6-UI.8: responsive Avatar Studio */
+  .ka-avatar-layout {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(330px, .9fr) minmax(430px, 1.1fr);
+    gap: clamp(14px, 2vw, 24px);
+    align-items: stretch;
+  }
+  .ka-avatar-preview-card,
+  .ka-avatar-controls-card {
+    min-width: 0;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 20px;
+    background: rgba(4,13,22,.78);
+    box-shadow: inset 0 0 34px rgba(16,216,255,.035), 0 20px 50px rgba(0,0,0,.22);
+  }
+  .ka-avatar-preview-card {
+    position: relative;
+    min-height: 480px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding: clamp(16px, 2vw, 24px);
+    background:
+      radial-gradient(circle at 50% 26%, color-mix(in srgb, var(--avatar-accent, #10d8ff) 27%, transparent), transparent 34%),
+      linear-gradient(155deg, rgba(7,24,36,.96), rgba(2,8,14,.98));
+  }
+  .ka-avatar-preview-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(rgba(16,216,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(16,216,255,.055) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, #000 0 72%, transparent 100%);
+  }
+  .ka-avatar-preview-head,
+  .ka-avatar-preview-footer { position: relative; z-index: 2; }
+  .ka-avatar-preview-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .ka-avatar-preview-head strong { display: block; color: #fff; font-size: clamp(24px, 2.8vw, 38px); line-height: 1; }
+  .ka-avatar-preview-head small { display: block; margin-top: 7px; color: #8ea4b1; line-height: 1.4; }
+  .ka-avatar-cloud-pill {
+    padding: 7px 10px;
+    border: 1px solid rgba(33,237,145,.34);
+    border-radius: 999px;
+    color: #8dffc4;
+    background: rgba(33,237,145,.08);
+    font-size: 9px;
+    font-weight: 950;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  .ka-avatar-stage {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 310px;
+    display: grid;
+    place-items: center;
+    perspective: 850px;
+  }
+  .ka-avatar-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity .22s ease;
+  }
+  .ka-avatar-canvas:active { cursor: grabbing; }
+  .ka-avatar-stage[data-preview-engine="webgl"] .ka-avatar-canvas { opacity: 1; }
+  .ka-avatar-stage[data-preview-engine="webgl"] .ka-avatar-figure { opacity: 0; pointer-events: none; }
+  .ka-avatar-stage[data-preview-engine="fallback"] .ka-avatar-canvas { display: none; }
+  .ka-avatar-stage::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 34px;
+    width: 210px;
+    height: 48px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: radial-gradient(ellipse, rgba(16,216,255,.28), rgba(0,0,0,.08) 60%, transparent 72%);
+    filter: blur(3px);
+  }
+  .ka-avatar-figure {
+    --avatar-turn: -12deg;
+    --avatar-skin: #b88767;
+    --avatar-suit: #176f88;
+    --avatar-armor: #123448;
+    --avatar-accent: #10d8ff;
+    --avatar-hair: #101820;
+    position: relative;
+    width: 176px;
+    height: 306px;
+    transform-style: preserve-3d;
+    transform: rotateY(var(--avatar-turn)) translateY(8px);
+    transition: transform .22s ease, filter .2s ease, opacity .18s ease;
+    filter: drop-shadow(0 20px 24px rgba(0,0,0,.42));
+  }
+  .ka-avatar-part { position: absolute; left: 50%; transform: translateX(-50%); }
+  .ka-avatar-face { position: absolute; inset: 0; transform: translateZ(9px); pointer-events: none; }
+  .ka-avatar-eye { position: absolute; top: 26px; width: 10px; height: 8px; border-radius: 50%; background: #f4fbff; box-shadow: inset 0 -2px 0 rgba(0,0,0,.16); }
+  .ka-avatar-eye::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; border-radius: 50%; background: #101820; transform: translate(-50%,-50%); }
+  .ka-avatar-eye.left { left: 13px; }
+  .ka-avatar-eye.right { right: 13px; }
+  .ka-avatar-nose { position: absolute; left: 50%; top: 35px; width: 7px; height: 10px; border-radius: 55% 55% 45% 45%; background: color-mix(in srgb, var(--avatar-skin) 80%, #5e3529); transform: translateX(-50%); box-shadow: 1px 1px 0 rgba(255,255,255,.13); }
+  .ka-avatar-smile { position: absolute; left: 50%; top: 47px; width: 24px; height: 10px; border-bottom: 3px solid #4a2024; border-radius: 0 0 50% 50%; transform: translateX(-50%); }
+  .ka-avatar-head {
+    top: 18px; width: 62px; height: 66px; border-radius: 46% 46% 43% 43%;
+    background: linear-gradient(100deg, color-mix(in srgb, var(--avatar-skin) 82%, #000), var(--avatar-skin) 42%, color-mix(in srgb, var(--avatar-skin) 78%, #fff));
+    box-shadow: inset -10px -7px 0 rgba(0,0,0,.10);
+  }
+  .ka-avatar-hair {
+    top: 11px; width: 66px; height: 34px; border-radius: 50% 50% 34% 34%;
+    background: linear-gradient(110deg, color-mix(in srgb, var(--avatar-hair) 80%, #000), var(--avatar-hair));
+    transform: translateX(-50%) translateZ(5px);
+    transform-origin: center bottom;
+    transition: transform .18s ease, opacity .18s ease;
+  }
+  .ka-avatar-figure[data-hair-style="cap"] .ka-avatar-hair { height: 25px; top: 12px; width: 72px; border-radius: 55% 55% 18% 18%; transform: translateX(-50%) translateZ(6px) scaleY(.82); }
+  .ka-avatar-figure[data-hair-style="none"] .ka-avatar-hair { opacity: 0; transform: translateX(-50%) scale(.7); }
+  .ka-avatar-neck { top: 78px; width: 24px; height: 21px; border-radius: 8px; background: var(--avatar-skin); }
+  .ka-avatar-torso {
+    top: 91px; width: 100px; height: 112px; border-radius: 24px 24px 16px 16px;
+    background: linear-gradient(110deg, color-mix(in srgb, var(--avatar-suit) 80%, #000), var(--avatar-suit) 48%, color-mix(in srgb, var(--avatar-suit) 82%, #fff));
+    box-shadow: inset -15px -10px 0 rgba(0,0,0,.12);
+  }
+  .ka-avatar-vest {
+    top: 112px; width: 108px; height: 72px; border-radius: 16px;
+    background:
+      linear-gradient(90deg, transparent 0 42%, var(--avatar-accent) 42% 47%, transparent 47% 100%),
+      linear-gradient(115deg, color-mix(in srgb, var(--avatar-armor) 82%, #000), var(--avatar-armor));
+    border: 1px solid color-mix(in srgb, var(--avatar-accent) 55%, transparent);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--avatar-accent) 18%, transparent);
+  }
+  .ka-avatar-arm { top: 103px; width: 29px; height: 112px; border-radius: 14px; background: color-mix(in srgb, var(--avatar-suit) 58%, #071018); transform-origin: 50% 8px; }
+  .ka-avatar-arm.left { margin-left: -65px; transform: translateX(-50%) rotate(7deg); }
+  .ka-avatar-arm.right { margin-left: 65px; transform: translateX(-50%) rotate(-7deg); }
+  .ka-avatar-hand { top: 198px; width: 28px; height: 31px; border-radius: 45%; background: var(--avatar-skin); }
+  .ka-avatar-hand.left { margin-left: -72px; }
+  .ka-avatar-hand.right { margin-left: 72px; }
+  .ka-avatar-belt { top: 194px; width: 94px; height: 18px; border-radius: 7px; background: var(--avatar-armor); border-bottom: 3px solid var(--avatar-accent); }
+  .ka-avatar-leg { top: 207px; width: 38px; height: 77px; border-radius: 10px 10px 7px 7px; background: color-mix(in srgb, var(--avatar-suit) 38%, #071018); }
+  .ka-avatar-leg.left { margin-left: -23px; }
+  .ka-avatar-leg.right { margin-left: 23px; }
+  .ka-avatar-boot { top: 274px; width: 48px; height: 24px; border-radius: 8px 8px 4px 4px; background: #0a1219; }
+  .ka-avatar-boot.left { margin-left: -27px; }
+  .ka-avatar-boot.right { margin-left: 27px; }
+  .ka-avatar-preview-footer { display: flex; justify-content: center; gap: 9px; }
+  .ka-avatar-rotate-btn {
+    min-width: 48px; min-height: 44px; border: 1px solid rgba(16,216,255,.38); border-radius: 11px;
+    color: #d9f8ff; background: rgba(0,12,22,.72); font-size: 20px; cursor: pointer;
+  }
+  .ka-avatar-rotate-btn:hover, .ka-avatar-rotate-btn:focus-visible { border-color: var(--avatar-accent); box-shadow: 0 0 16px color-mix(in srgb, var(--avatar-accent) 22%, transparent); }
+  .ka-avatar-controls-card { padding: clamp(16px, 2vw, 24px); overflow: auto; }
+  .ka-avatar-controls-card > header { margin-bottom: 16px; }
+  .ka-avatar-controls-card > header strong { display: block; color: #fff; font-size: clamp(24px, 2.4vw, 34px); }
+  .ka-avatar-controls-card > header small { display: block; margin-top: 6px; color: #8ea4b1; line-height: 1.45; }
+  .ka-avatar-control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ka-avatar-control-group {
+    min-width: 0; padding: 13px; border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(0,0,0,.20);
+  }
+  .ka-avatar-control-group.wide { grid-column: 1 / -1; }
+  .ka-avatar-control-label { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .ka-avatar-control-label b { color: #dffaff; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+  .ka-avatar-control-label span { color: #6f8795; font-size: 9px; text-transform: uppercase; }
+  .ka-avatar-choice-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ka-avatar-choice {
+    position: relative; min-width: 42px; min-height: 42px; padding: 0 11px; border: 1px solid rgba(255,255,255,.13); border-radius: 10px;
+    color: #c8d9e3; background: rgba(255,255,255,.045); font: 900 10px/1 system-ui,sans-serif; letter-spacing: .7px; cursor: pointer;
+  }
+  .ka-avatar-choice.swatch { width: 42px; padding: 0; background: var(--swatch); }
+  .ka-avatar-choice.swatch::after { content: ""; position: absolute; inset: 5px; border-radius: 6px; border: 1px solid rgba(255,255,255,.22); }
+  .ka-avatar-choice:hover, .ka-avatar-choice:focus-visible { transform: translateY(-1px); border-color: rgba(16,216,255,.7); }
+  .ka-avatar-choice.selected { border-color: var(--avatar-accent); box-shadow: 0 0 0 2px rgba(2,8,14,.95), 0 0 0 4px var(--avatar-accent); color: #fff; }
+  .ka-avatar-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 14px; }
+  .ka-avatar-actions .primary { grid-column: 1 / -1; }
+  #ka-avatar-status { min-height: 18px; margin-top: 10px; color: #8dffc4; font-size: 10px; font-weight: 900; letter-spacing: .8px; text-align: center; }
+  #ka-avatar-status[data-state="dirty"] { color: #ffca63; }
+  #ka-avatar-status[data-state="error"] { color: #ff8f8f; }
+  @media (max-width: 980px), (max-height: 720px) {
+    .ka-avatar-layout { grid-template-columns: minmax(250px,.78fr) minmax(390px,1.22fr); }
+    .ka-avatar-preview-card { min-height: 390px; }
+    .ka-avatar-stage { min-height: 240px; }
+    .ka-avatar-figure { transform: rotateY(var(--avatar-turn)) translateY(20px) scale(.82); }
+  }
+  @media (max-width: 760px) {
+    .ka-avatar-layout { grid-template-columns: 1fr; }
+    .ka-avatar-preview-card { min-height: 330px; }
+    .ka-avatar-stage { min-height: 220px; }
+    .ka-avatar-figure { transform: rotateY(var(--avatar-turn)) translateY(34px) scale(.72); }
+    .ka-avatar-control-grid { grid-template-columns: 1fr; }
+    .ka-avatar-control-group.wide { grid-column: auto; }
+  }
+  @media (max-height: 520px) and (orientation: landscape) {
+    .ka-avatar-layout { grid-template-columns: 240px minmax(0,1fr); gap: 8px; }
+    .ka-avatar-preview-card { min-height: 300px; padding: 10px; }
+    .ka-avatar-preview-head small, .ka-avatar-cloud-pill { display: none; }
+    .ka-avatar-stage { min-height: 190px; }
+    .ka-avatar-figure { transform: rotateY(var(--avatar-turn)) translateY(52px) scale(.60); }
+    .ka-avatar-controls-card { padding: 10px; }
+    .ka-avatar-controls-card > header { display: none; }
+    .ka-avatar-control-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 6px; }
+    .ka-avatar-control-group { padding: 8px; }
+    .ka-avatar-control-label { margin-bottom: 6px; }
+    .ka-avatar-choice { min-width: 36px; min-height: 36px; }
+    .ka-avatar-choice.swatch { width: 36px; }
+    .ka-avatar-actions { grid-template-columns: repeat(3,1fr); margin-top: 7px; }
+    .ka-avatar-actions .primary { grid-column: auto; }
+  }
+</style>
+<link href="css/ui9-responsive.css" rel="stylesheet"/>
+
+<style id="art3-selector-layout-hotfix">
+/* ART.3 R1.1 — selector title containment, full-image preview, and preload cleanup. */
+.ka-game-rail { overflow: hidden; }
+.ka-rail-brand { min-width: 0; max-width: 100%; }
+.ka-rail-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(30px, 3vw, 50px);
+  line-height: .88;
+  letter-spacing: -1px;
+}
+.ka-map-shot {
+  background-color: #02070b;
+  background-size: 100% 100%, contain !important;
+  background-position: center, center !important;
+  background-repeat: no-repeat, no-repeat !important;
+  transform: none !important;
+}
+@media (max-width: 1180px) and (min-width: 921px) {
+  .ka-rail-title { font-size: 36px; line-height: .92; }
+}
+@media (max-width: 920px), (max-height: 660px) {
+  .ka-rail-title {
+    font-size: 17px;
+    line-height: 1;
+    letter-spacing: 0;
+    white-space: nowrap;
+    text-overflow: clip;
+  }
+  .ka-rail-title br { display: none; }
+}
+@media (max-width: 720px) and (orientation: landscape),
+       (max-height: 500px) and (orientation: landscape) {
+  .ka-rail-title { font-size: 15px; }
+}
+</style>
+
+<style id="vis7-r1-2-head-face-crop-polish">
+  /* VIS.7 R1.2 — final head, face, field-crop, and ally-readability fallback polish. */
+  .ka-avatar-figure {
+    width: 188px;
+    height: 320px;
+    filter: drop-shadow(0 24px 28px rgba(0,0,0,.48));
+  }
+  .ka-avatar-head {
+    top: 12px;
+    width: 60px;
+    height: 72px;
+    border-radius: 49% 49% 45% 45%;
+    clip-path: polygon(24% 3%, 76% 3%, 92% 17%, 98% 44%, 88% 76%, 67% 97%, 33% 97%, 12% 76%, 2% 44%, 8% 17%);
+  }
+  .ka-avatar-eye { top: 28px; width: 7px; height: 5px; }
+  .ka-avatar-eye.left { left: 15px; }
+  .ka-avatar-eye.right { right: 15px; }
+  .ka-avatar-nose { top: 37px; width: 5px; height: 7px; }
+  .ka-avatar-smile { top: 49px; width: 16px; height: 6px; border-bottom-width: 2px; }
+  .ka-avatar-hair {
+    top: 4px;
+    width: 67px;
+    height: 39px;
+    border-radius: 54% 54% 31% 31%;
+    clip-path: polygon(12% 47%, 18% 24%, 31% 9%, 50% 2%, 69% 9%, 82% 24%, 90% 47%, 86% 88%, 72% 72%, 61% 79%, 50% 67%, 39% 79%, 28% 72%, 14% 88%);
+  }
+  .ka-avatar-figure[data-hair-style="cap"] .ka-avatar-hair {
+    top: 7px;
+    width: 69px;
+    height: 29px;
+    border-radius: 60% 60% 22% 22%;
+    clip-path: polygon(10% 36%, 20% 14%, 50% 2%, 80% 14%, 90% 36%, 86% 88%, 14% 88%);
+  }
+  .ka-avatar-neck { top: 78px; width: 26px; height: 25px; border-radius: 9px; }
+  .ka-avatar-torso {
+    top: 94px;
+    width: 104px;
+    height: 112px;
+    border-radius: 29px 29px 16px 16px;
+    clip-path: polygon(19% 0, 81% 0, 96% 17%, 88% 100%, 12% 100%, 4% 17%);
+  }
+  .ka-avatar-vest {
+    top: 112px;
+    width: 108px;
+    height: 75px;
+    border-radius: 14px 14px 18px 18px;
+    clip-path: polygon(15% 0, 85% 0, 96% 17%, 88% 100%, 12% 100%, 4% 17%);
+    background:
+      linear-gradient(90deg, transparent 0 47%, var(--avatar-accent) 47% 51%, transparent 51% 100%),
+      linear-gradient(115deg, color-mix(in srgb, var(--avatar-armor) 82%, #000), var(--avatar-armor));
+  }
+  .ka-avatar-arm {
+    top: 108px;
+    width: 31px;
+    height: 116px;
+    border-radius: 14px 14px 11px 11px;
+  }
+  .ka-avatar-arm.left { margin-left: -65px; transform: translateX(-50%) rotate(5deg); }
+  .ka-avatar-arm.right { margin-left: 65px; transform: translateX(-50%) rotate(-5deg); }
+  .ka-avatar-hand { top: 205px; width: 31px; height: 33px; }
+  .ka-avatar-hand.left { margin-left: -68px; }
+  .ka-avatar-hand.right { margin-left: 68px; }
+  .ka-avatar-belt { top: 198px; width: 98px; height: 18px; }
+  .ka-avatar-leg { top: 211px; width: 43px; height: 80px; border-radius: 11px 11px 8px 8px; }
+  .ka-avatar-leg.left { margin-left: -25px; }
+  .ka-avatar-leg.right { margin-left: 25px; }
+  .ka-avatar-boot { top: 280px; width: 52px; height: 26px; }
+  .ka-avatar-boot.left { margin-left: -29px; }
+  .ka-avatar-boot.right { margin-left: 29px; }
+</style>
+
 </head>
 <body>
 <div id="portrait-warning">
@@ -636,13 +1505,39 @@
 <div class="ka-menu-bg-orb ka-orb-a"></div>
 <div class="ka-menu-bg-orb ka-orb-b"></div>
 <div class="ka-menu-panel">
+<aside aria-label="Primary game navigation" class="ka-game-rail">
+<div class="ka-rail-brand">
+<div class="ka-eyebrow">Cross-platform survival</div>
+<div class="ka-rail-title">KHADIJA'S<br/>ARENA</div>
+<div class="ka-rail-tagline">Survive the outbreak.<br/>Master every arena.<br/>Fight together.</div>
+</div>
+<div aria-label="Available modes" class="ka-rail-mode-row">
+<div class="ka-rail-mode solo"><span>◉</span><b>SOLO</b><small>Single player</small></div>
+<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>2–4 players</small></div>
+</div>
+<nav class="ka-rail-nav">
+<button class="ka-rail-nav-btn active" data-next-screen="home" data-rail-screen="home" type="button"><span>▶</span> Quick Play</button>
+<button class="ka-rail-nav-btn" data-next-screen="map" data-rail-screen="map" type="button"><span>▰</span> Select Arena</button>
+<button class="ka-rail-nav-btn" data-next-screen="difficulty" data-rail-screen="difficulty" type="button"><span>⌁</span> Loadout</button>
+<button class="ka-rail-nav-btn" data-next-screen="avatar" data-rail-screen="avatar" type="button"><span>◈</span> Avatar Studio</button>
+<button class="ka-rail-nav-btn" data-next-screen="settings" data-rail-screen="settings" type="button"><span>⚙</span> Settings</button>
+</nav>
+<div class="ka-rail-footer">
+<span class="ka-online-pulse"></span>
+<div><b>BUILD ONLINE</b><small>PC · Controller · Mobile</small></div>
+</div>
+</aside>
+<main class="ka-menu-main">
 <div class="ka-topline">
-<div class="ka-brand-row">
+<div class="ka-player-strip">
 <div class="ka-brand-chip">KA</div>
 <div>
 <div class="ka-eyebrow">Khadija Protocol</div>
-<div class="ka-status-dot"><span></span> Procedural weapons + zombie survival</div>
+<div class="ka-status-dot"><span></span> Procedural survival systems ready</div>
 </div>
+</div>
+<div class="ka-platform-strip" aria-label="Supported input types">
+<span>▣ <b>PC</b></span><span>◉ <b>CONTROLLER</b></span><span>▯ <b>MOBILE</b></span>
 </div>
 <div aria-label="Menu progress" class="ka-stepper">
 <div class="ka-step active" data-step-dot="home">Mode</div>
@@ -664,10 +1559,15 @@
 <option value="1.5">Hard</option>
 </select>
 <section class="ka-menu-screen active" data-menu-screen="home">
-<div class="ka-hero-layout">
-<div class="ka-hero-copy">
-<div id="menu-title">KHADIJA'S ARENA</div>
-<div id="menu-sub">Survive waves. Learn each arena. Master the rotation.</div>
+<div class="ka-home-stage">
+<div class="ka-home-hero">
+<div class="ka-home-copy">
+<div class="ka-card-kicker">Low-poly survival action</div>
+<div id="menu-title">KHADIJA'S<br/>ARENA</div>
+<div id="menu-sub">Survive the outbreak. Master every arena. Fight together.</div>
+<div class="ka-home-support-row" aria-label="Game support summary">
+<span>6 UNIQUE ARENAS</span><span>SOLO + 2–4 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
+</div>
 <div class="ka-stats-row">
 <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
 <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
@@ -675,24 +1575,36 @@
 <div class="ka-stat-card ka-stat-muted"><span>Build</span><b>RELEASE CANDIDATE</b></div>
 </div>
 </div>
+<div class="ka-home-live-card">
+<span class="ka-card-kicker">Featured arena</span>
+<strong>GRID BUNKER</strong>
+<small>Tight lanes, secure zones, and a readable combat flow for your next survival run.</small>
+<div class="ka-home-live-meta"><span>SOLO</span><span>CO-OP</span><span>PLAYABLE</span></div>
+</div>
+</div>
 <div class="ka-mode-stack">
 <button class="ka-mode-card active" data-next-screen="map" type="button">
-<span class="ka-card-kicker">Mode</span>
-<strong>Single Player</strong>
-<small>Wave survival with procedural weapons and procedural zombies. Choose from six arenas, pick a difficulty, then deploy.</small>
+<span class="ka-card-kicker">Survival operation</span>
+<strong>Solo Survival</strong>
+<small>Choose one of six arenas, tune the difficulty, and fight through escalating swarm rounds.</small>
+<span class="ka-mode-arrow">SELECT ARENA →</span>
 </button>
 <button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" type="button">
-          <span class="ka-card-kicker">Online alpha</span>
-          <strong>Co-op Multiplayer</strong>
-          <small>Create or join a private 2–4 player room. Lobby, synchronized launch, movement, aim, sprint, weapon state, and remote firing effects are active.</small>
-        </button>
-<button class="ka-nav-btn" data-next-screen="map" type="button">Continue to Arena Select →</button>
-<button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
+<span class="ka-card-kicker">Online co-op</span>
+<strong>Co-op Survival</strong>
+<small>Team up with 2–4 players. Share zombie pressure while keeping individual points, perks, weapons, and purchases.</small>
+<span class="ka-mode-arrow">CREATE OR JOIN ROOM →</span>
+</button>
+<div class="ka-home-actions">
+<button class="ka-nav-btn" data-next-screen="map" type="button">SELECT ARENA</button>
+<button class="ka-link-btn" data-next-screen="avatar" type="button">CUSTOMIZE AVATAR</button>
+<button class="ka-link-btn" data-next-screen="settings" type="button">GAME SETTINGS</button>
+</div>
 </div>
 </div>
 </section>
 <section class="ka-menu-screen" data-menu-screen="map">
-<div class="ka-section-title">Select arena</div>
+<div class="ka-section-heading"><div><span>Operation selection</span><strong>SELECT ARENA</strong></div><small>Choose visually. Details update automatically.</small></div>
 <div class="ka-map-layout">
 <div aria-label="Selected map preview" class="ka-preview-stage">
 <div class="ka-map-shot grid-bunker active" data-preview-shot="grid_bunker"></div>
@@ -717,7 +1629,7 @@
 </div>
 </div>
 <div class="ka-map-grid">
-<button class="ka-map-card selected" data-map="grid_bunker" type="button">
+<button class="ka-map-card selected" data-difficulty="EASY" data-map="grid_bunker" type="button"><span class="ka-map-index">01</span>
 <div class="ka-map-thumb grid-bunker"></div>
 <div>
 <span class="ka-map-tag stable">Playable</span>
@@ -725,7 +1637,7 @@
 <small>Classic survival baseline with tight lanes, gates, traps, and clear training flow.</small>
 </div>
 </button>
-<button class="ka-map-card" data-map="industrial_yard" type="button">
+<button class="ka-map-card" data-difficulty="NORMAL" data-map="industrial_yard" type="button"><span class="ka-map-index">02</span>
 <div class="ka-map-thumb industrial-yard"></div>
 <div>
 <span class="ka-map-tag stable">Playable</span>
@@ -733,7 +1645,7 @@
 <small>Open warm-lit container yard with wider lanes, long sightlines, and trap zones.</small>
 </div>
 </button>
-<button class="ka-map-card" data-map="neon_depot" type="button">
+<button class="ka-map-card" data-difficulty="NORMAL" data-map="neon_depot" type="button"><span class="ka-map-index">03</span>
 <div class="ka-map-thumb neon-depot"></div>
 <div>
 <span class="ka-map-tag stable">Playable</span>
@@ -741,7 +1653,7 @@
 <small>Neon transit arena with open lanes, security gates, side barricades, and outer pressure.</small>
 </div>
 </button>
-<button class="ka-map-card" data-map="parking_garage" type="button">
+<button class="ka-map-card" data-difficulty="HARD" data-map="parking_garage" type="button"><span class="ka-map-index">04</span>
 <div class="ka-map-thumb parking-garage"></div>
 <div>
 <span class="ka-map-tag stable">Playable</span>
@@ -749,7 +1661,7 @@
 <small>Concrete deck with pillars, parked cars, security gate flow, and corner pressure.</small>
 </div>
 </button>
-<button class="ka-map-card" data-map="hospital_wing" type="button">
+<button class="ka-map-card" data-difficulty="HARD" data-map="hospital_wing" type="button"><span class="ka-map-index">05</span>
 <div class="ka-map-thumb hospital-wing"></div>
 <div>
 <span class="ka-map-tag stable">Playable</span>
@@ -757,7 +1669,7 @@
 <small>Horror corridor ward with treatment rooms, quarantine gate flow, and locked pressure.</small>
 </div>
 </button>
-<button class="ka-map-card" data-map="reactor_courtyard" type="button">
+<button class="ka-map-card" data-difficulty="EXTREME" data-map="reactor_courtyard" type="button"><span class="ka-map-index">06</span>
 <div class="ka-map-thumb reactor-courtyard"></div>
 <div>
 <span class="ka-map-tag stable">New</span>
@@ -823,6 +1735,52 @@
 <button class="ka-link-btn" data-next-screen="map" type="button">← Back to Arena</button>
 <button class="ka-link-btn" data-next-screen="settings" type="button">Settings</button>
 </div>
+</section>
+
+<section class="ka-menu-screen" data-menu-screen="avatar">
+<div class="ka-section-heading"><div><span>Player identity</span><strong>AVATAR STUDIO</strong></div><small>Create a recognizable survivor for third-person play and your profile.</small></div>
+<div class="ka-avatar-layout">
+<section class="ka-avatar-preview-card" aria-labelledby="ka-avatar-preview-title">
+<div class="ka-avatar-preview-head">
+<div><span class="ka-card-kicker">Live survivor preview</span><strong id="ka-avatar-preview-title">YOUR OPERATOR</strong><small>Rotate the preview, choose colors, then apply your look.</small></div>
+<span class="ka-avatar-cloud-pill">LOCAL + CLOUD READY</span>
+</div>
+<div class="ka-avatar-stage" id="ka-avatar-stage" data-preview-engine="fallback">
+<canvas class="ka-avatar-canvas" id="ka-avatar-canvas" aria-label="Interactive three-dimensional customized survivor preview"></canvas>
+<div class="ka-avatar-figure" id="ka-avatar-preview" data-hair-style="crop" aria-label="Customized low-poly player avatar preview fallback">
+<div class="ka-avatar-part ka-avatar-head"><span class="ka-avatar-face"><i class="ka-avatar-eye left"></i><i class="ka-avatar-eye right"></i><i class="ka-avatar-nose"></i><i class="ka-avatar-smile"></i></span></div><div class="ka-avatar-part ka-avatar-hair"></div><div class="ka-avatar-part ka-avatar-neck"></div>
+<div class="ka-avatar-part ka-avatar-torso"></div><div class="ka-avatar-part ka-avatar-vest"></div>
+<div class="ka-avatar-part ka-avatar-arm left"></div><div class="ka-avatar-part ka-avatar-arm right"></div>
+<div class="ka-avatar-part ka-avatar-hand left"></div><div class="ka-avatar-part ka-avatar-hand right"></div>
+<div class="ka-avatar-part ka-avatar-belt"></div><div class="ka-avatar-part ka-avatar-leg left"></div><div class="ka-avatar-part ka-avatar-leg right"></div>
+<div class="ka-avatar-part ka-avatar-boot left"></div><div class="ka-avatar-part ka-avatar-boot right"></div>
+</div>
+</div>
+<div class="ka-avatar-preview-footer">
+<button class="ka-avatar-rotate-btn" id="ka-avatar-turn-left" type="button" aria-label="Rotate avatar left">↶</button>
+<button class="ka-avatar-rotate-btn" id="ka-avatar-turn-reset" type="button" aria-label="Reset avatar rotation">◎</button>
+<button class="ka-avatar-rotate-btn" id="ka-avatar-turn-right" type="button" aria-label="Rotate avatar right">↷</button>
+</div>
+</section>
+<section class="ka-avatar-controls-card">
+<header><span class="ka-card-kicker">Appearance loadout</span><strong>BUILD YOUR SURVIVOR</strong><small>These authored low-draw options preserve performance across PC, laptop, controller/TV, and mobile.</small></header>
+<div class="ka-avatar-control-grid">
+<div class="ka-avatar-control-group"><div class="ka-avatar-control-label"><b>Skin tone</b><span id="ka-avatar-skin-label">Warm</span></div><div class="ka-avatar-choice-row" id="ka-avatar-skin-options"></div></div>
+<div class="ka-avatar-control-group"><div class="ka-avatar-control-label"><b>Suit</b><span id="ka-avatar-suit-label">Arena cyan</span></div><div class="ka-avatar-choice-row" id="ka-avatar-suit-options"></div></div>
+<div class="ka-avatar-control-group"><div class="ka-avatar-control-label"><b>Armor</b><span id="ka-avatar-armor-label">Midnight</span></div><div class="ka-avatar-choice-row" id="ka-avatar-armor-options"></div></div>
+<div class="ka-avatar-control-group"><div class="ka-avatar-control-label"><b>Accent</b><span id="ka-avatar-accent-label">Protocol cyan</span></div><div class="ka-avatar-choice-row" id="ka-avatar-accent-options"></div></div>
+<div class="ka-avatar-control-group wide"><div class="ka-avatar-control-label"><b>Hair style</b><span id="ka-avatar-hairStyle-label">Field crop</span></div><div class="ka-avatar-choice-row" id="ka-avatar-hairStyle-options"></div></div>
+<div class="ka-avatar-control-group wide"><div class="ka-avatar-control-label"><b>Hair color</b><span id="ka-avatar-hairColor-label">Black</span></div><div class="ka-avatar-choice-row" id="ka-avatar-hairColor-options"></div></div>
+</div>
+<div class="ka-avatar-actions">
+<button class="ka-link-btn" id="ka-avatar-randomize" type="button">Randomize</button>
+<button class="ka-link-btn" id="ka-avatar-reset" type="button">Reset Defaults</button>
+<button class="ka-nav-btn primary" id="ka-avatar-save" type="button">Apply &amp; Save Avatar</button>
+</div>
+<div id="ka-avatar-status" data-state="saved" aria-live="polite">SAVED LOCALLY · INCLUDED IN CLOUD PROFILE SYNC</div>
+</section>
+</div>
+<div class="ka-nav-row"><button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button><button class="ka-nav-btn" data-next-screen="map" type="button">Select Arena →</button></div>
 </section>
 <section class="ka-menu-screen" data-menu-screen="settings">
 <div class="ka-section-title">Settings</div>
@@ -1148,7 +2106,7 @@
 </section>
 <script>
       (() => {
-        const screenNames = ['home', 'map', 'difficulty', 'settings'];
+        const screenNames = ['home', 'map', 'difficulty', 'avatar', 'settings'];
         const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
         const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
         const mapSelect = document.getElementById('map-select');
@@ -1239,6 +2197,13 @@
             step.classList.toggle('active', step.dataset.stepDot === name);
             step.classList.toggle('done', index < activeIndex);
           });
+          document.querySelectorAll('[data-rail-screen]').forEach((button) => {
+            const active = button.dataset.railScreen === name;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-current', active ? 'page' : 'false');
+          });
+          const activeScreen = screens.find((screen) => screen.dataset.menuScreen === name);
+          if (activeScreen) activeScreen.scrollTop = 0;
         }
 
         function setPreview(id) {
@@ -1278,7 +2243,9 @@
           const safeMapId = isKnownMap(mapId) ? mapId : 'grid_bunker';
 
           document.querySelectorAll('.ka-map-card[data-map]').forEach((card) => {
-            card.classList.toggle('selected', card.dataset.map === safeMapId);
+            const selected = card.dataset.map === safeMapId;
+            card.classList.toggle('selected', selected);
+            card.setAttribute('aria-pressed', selected ? 'true' : 'false');
           });
 
           if (mapSelect) mapSelect.value = safeMapId;
@@ -1323,6 +2290,7 @@
         applyDifficultySelection(savedDifficulty || diffSelect?.value || '1.0', { save: false });
       })();
     </script>
+</main>
 </div>
 </div>
 
@@ -1482,6 +2450,8 @@
 <script src="js/engine/animation_manager.js"></script>
 <script src="js/engine/actor_manager.js"></script>
 <!-- C9.6: active weapons are procedural ES modules; weapon GLB preloads were removed from js/main.js. -->
+<script src="js/ui/cross_platform_input.js" type="module"></script>
 <script src="js/main.js" type="module"></script>
+<script src="js/avatar_customization.js" type="module"></script>
 </body>
 </html>

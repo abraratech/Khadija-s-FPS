@@ -4,22 +4,26 @@ import {
   makeStandardMaterial,
   makeBoxPart,
   makeCylinderPart,
-  getPartBasePosition
+  getPartBasePosition,
+  addTacticalHandRig,
+  addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
 export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SNIPER';
+  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -1.040 });
   group.userData.thirdPersonMuzzleSize = 0.260;
 
-  const receiverColor = upgraded ? 0x27304c : 0x222a32;
-  const stockColor = upgraded ? 0x20112f : 0x2b221c;
+  const receiverColor = upgraded ? 0x2d3654 : 0x3f4a45;
+  const stockColor = upgraded ? 0x291837 : 0x30352b;
   const darkColor = 0x07090b;
-  const metalColor = upgraded ? 0x4b5878 : 0x59666c;
-  const accentColor = upgraded ? 0x66ccff : 0x00d4ff;
-  const lensColor = upgraded ? 0x7df8ff : 0x2ee6ff;
+  const metalColor = upgraded ? 0x566486 : 0x68736f;
+  const accentColor = upgraded ? 0x72d7ff : 0xe0b154;
+  const lensColor = upgraded ? 0x8af5ff : 0x7dcfe2;
   const skinColor = 0xd2b48c;
 
   const receiverMat = makeStandardMaterial({
@@ -36,7 +40,7 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: upgraded ? 0.82 : 0.25,
+    emissiveIntensity: upgraded ? 0.54 : 0.12,
     roughness: 0.30
   });
   const lensMat = makeStandardMaterial({
@@ -44,23 +48,23 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
     metalness: 0.08,
     roughness: 0.18,
     emissive: lensColor,
-    emissiveIntensity: upgraded ? 0.62 : 0.24
+    emissiveIntensity: upgraded ? 0.42 : 0.10
   });
   const skinMat = makeStandardMaterial({ color: skinColor, roughness: 0.82 });
 
   const receiver = makeBoxPart(
     group,
     'sniper_receiver',
-    new THREE.Vector3(0.126, 0.082, 0.365),
-    new THREE.Vector3(0.000, 0.025, -0.085),
+    new THREE.Vector3(0.132, 0.072, 0.330),
+    new THREE.Vector3(0.000, 0.026, -0.092),
     receiverMat
   );
 
   const cheekRest = makeBoxPart(
     group,
     'sniper_cheek_rest',
-    new THREE.Vector3(0.112, 0.044, 0.235),
-    new THREE.Vector3(0.000, 0.040, 0.250),
+    new THREE.Vector3(0.098, 0.034, 0.190),
+    new THREE.Vector3(0.000, 0.036, 0.232),
     stockMat,
     new THREE.Vector3(0.035, 0, 0)
   );
@@ -68,8 +72,8 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const stock = makeBoxPart(
     group,
     'sniper_stock',
-    new THREE.Vector3(0.128, 0.108, 0.320),
-    new THREE.Vector3(0.000, -0.034, 0.305),
+    new THREE.Vector3(0.112, 0.086, 0.258),
+    new THREE.Vector3(0.000, -0.024, 0.292),
     stockMat,
     new THREE.Vector3(0.055, 0, 0)
   );
@@ -77,8 +81,8 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const stockPad = makeBoxPart(
     group,
     'sniper_stock_pad',
-    new THREE.Vector3(0.138, 0.126, 0.026),
-    new THREE.Vector3(0.000, -0.022, 0.485),
+    new THREE.Vector3(0.122, 0.104, 0.024),
+    new THREE.Vector3(0.000, -0.012, 0.435),
     darkMat,
     new THREE.Vector3(0.055, 0, 0)
   );
@@ -86,8 +90,8 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const handguard = makeBoxPart(
     group,
     'sniper_handguard',
-    new THREE.Vector3(0.112, 0.055, 0.295),
-    new THREE.Vector3(0.000, 0.004, -0.345),
+    new THREE.Vector3(0.116, 0.052, 0.330),
+    new THREE.Vector3(0.000, 0.006, -0.330),
     stockMat
   );
 
@@ -140,9 +144,9 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const scopeTube = makeCylinderPart(
     group,
     'sniper_scope_tube',
-    0.030,
-    0.300,
-    new THREE.Vector3(0.000, 0.145, -0.105),
+    0.024,
+    0.260,
+    new THREE.Vector3(0.000, 0.132, -0.105),
     new THREE.Vector3(Math.PI / 2, 0, 0),
     darkMat,
     24
@@ -151,9 +155,9 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const scopeFront = makeCylinderPart(
     group,
     'sniper_scope_front_lens',
-    0.038,
-    0.018,
-    new THREE.Vector3(0.000, 0.145, -0.268),
+    0.031,
+    0.016,
+    new THREE.Vector3(0.000, 0.132, -0.250),
     new THREE.Vector3(Math.PI / 2, 0, 0),
     lensMat,
     24
@@ -162,9 +166,9 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const scopeRear = makeCylinderPart(
     group,
     'sniper_scope_rear_lens',
-    0.034,
-    0.018,
-    new THREE.Vector3(0.000, 0.145, 0.058),
+    0.028,
+    0.016,
+    new THREE.Vector3(0.000, 0.132, 0.044),
     new THREE.Vector3(Math.PI / 2, 0, 0),
     lensMat,
     24
@@ -173,16 +177,16 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const scopeMountFront = makeBoxPart(
     group,
     'sniper_scope_mount_front',
-    new THREE.Vector3(0.050, 0.060, 0.026),
-    new THREE.Vector3(0.000, 0.100, -0.205),
+    new THREE.Vector3(0.044, 0.046, 0.024),
+    new THREE.Vector3(0.000, 0.088, -0.192),
     darkMat
   );
 
   const scopeMountRear = makeBoxPart(
     group,
     'sniper_scope_mount_rear',
-    new THREE.Vector3(0.050, 0.060, 0.026),
-    new THREE.Vector3(0.000, 0.100, 0.005),
+    new THREE.Vector3(0.044, 0.046, 0.024),
+    new THREE.Vector3(0.000, 0.088, 0.000),
     darkMat
   );
 
@@ -267,7 +271,7 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
     group,
     'sniper_bipod_left',
     new THREE.Vector3(0.010, 0.180, 0.012),
-    new THREE.Vector3(-0.046, -0.110, -0.455),
+    new THREE.Vector3(-0.044, -0.094, -0.450),
     darkMat,
     new THREE.Vector3(0.26, 0, 0.16)
   );
@@ -276,10 +280,12 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
     group,
     'sniper_bipod_right',
     new THREE.Vector3(0.010, 0.180, 0.012),
-    new THREE.Vector3(0.046, -0.110, -0.455),
+    new THREE.Vector3(0.044, -0.094, -0.450),
     darkMat,
     new THREE.Vector3(0.26, 0, -0.16)
   );
+
+  addWeaponPresentationDetails(group, 'SNIPER', { upgraded, accentColor });
 
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0x66ccff : 0xffaa00,
@@ -296,21 +302,25 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   muzzleFlash.visible = false;
   group.add(muzzleFlash);
 
-  const gripHand = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.054, 0.104), skinMat);
-  gripHand.name = 'sniper_grip_hand';
-  gripHand.userData.isProceduralHand = true;
-  gripHand.userData.defaultVisible = true;
-  gripHand.position.set(0.000, -0.126, 0.060);
-  gripHand.rotation.x = -0.26;
-  group.add(gripHand);
+  const gripHand = addTacticalHandRig(group, {
+    name: 'sniper_grip_hand',
+    position: new THREE.Vector3(0.000, -0.118, 0.050),
+    rotation: new THREE.Vector3(-0.34, 0, 0),
+    defaultVisible: true,
+    upgraded,
+    support: false,
+    accentColor
+  });
 
-  const supportHand = new THREE.Mesh(new THREE.BoxGeometry(0.070, 0.052, 0.124), skinMat);
-  supportHand.name = 'sniper_support_hand';
-  supportHand.userData.isProceduralHand = true;
-  supportHand.userData.defaultVisible = true;
-  supportHand.position.set(-0.010, -0.066, -0.340);
-  supportHand.rotation.x = -0.06;
-  group.add(supportHand);
+  const supportHand = addTacticalHandRig(group, {
+    name: 'sniper_support_hand',
+    position: new THREE.Vector3(-0.012, -0.048, -0.330),
+    rotation: new THREE.Vector3(-0.20, 0.02, 0),
+    defaultVisible: true,
+    upgraded,
+    support: true,
+    accentColor
+  });
 
   group.userData.parts = {
     receiver,

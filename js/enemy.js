@@ -1,7 +1,8 @@
+// PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/enemy.js
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, currentMapId, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost } from './map.js';
+import { scene, camera, spawnPoints, addScreenShake, mapMeshes, currentMap, currentMapId, barricades, walls, traps, toggleSwarmLighting, updateBarricadeRepairGhost, getEffectiveGraphicsQuality } from './map.js';
 import { player, damagePlayer } from './player.js';
 import { updateKillsHUD, updateRoundHUD, flashWaveBanner, updateScoreHUD, spawnFloatingScore, showStatusToast } from './ui.js';
 import {
@@ -10,14 +11,20 @@ import {
   spawnEnemyProjectileTrail,
   spawnEnemyProjectileImpact,
   spawnEnemyAttackInterrupted,
-  spawnEnemyArchetypePulse
+  spawnEnemyArchetypePulse,
+  spawnEnemyExplosionFX,
+  spawnElectricArc
 } from './particles.js';
 import { giveMaxAmmo } from './weapons.js';
 import { playWorldSound, playEnemySound, playUISound, getMasterVolume } from './audio.js';
 import { pushOut } from './utils.js';
 import { difficultyMultiplier, ASSETS } from './main.js';
 import { scaleEconomyReward } from './economy_balance.js';
-import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion} from './actors/procedural_zombie.js';
+import { createProceduralZombieVisual, updateProceduralZombieStyle, updateProceduralZombieMotion } from './actors/procedural_zombie.js';
+import { createHeroShamblerVisual, updateHeroShamblerStyle, updateHeroShamblerMotion, setHeroShamblerRenderTier } from './actors/hero_shambler.js';
+import { createHeroAgileZombieVisual, updateHeroAgileZombieStyle, updateHeroAgileZombieMotion, setHeroAgileZombieRenderTier } from './actors/hero_runner_crawler.js';
+import { createHeroHeavyZombieVisual, updateHeroHeavyZombieStyle, updateHeroHeavyZombieMotion, setHeroHeavyZombieRenderTier } from './actors/hero_brute_exploder.js';
+import { createHeroSpecialZombieVisual, updateHeroSpecialZombieStyle, updateHeroSpecialZombieMotion, setHeroSpecialZombieRenderTier } from './actors/hero_spitter_goliath.js';
 import {
   beginAIDirectorWave,
   completeAIDirectorWave,
@@ -71,6 +78,9 @@ import {
   recordFormationEnemyRemoved
 } from './ai_formation.js';
 import { getCoopScalingProfile } from './multiplayer/coop_scaling_core.js';
+
+const _trapFxStart = new THREE.Vector3();
+const _trapFxEnd = new THREE.Vector3();
 import {
   recordProgressionKill,
   recordProgressionWaveClear
@@ -117,6 +127,9 @@ const _audioToEnemy = new THREE.Vector3();
 const _audioRight = new THREE.Vector3();
 const _worldUp = new THREE.Vector3(0, 1, 0);
 const _visualCandidates = [];
+const _agileVisualCandidates = [];
+const _heavyVisualCandidates = [];
+const _specialVisualCandidates = [];
 const rangedSightRay = new THREE.Raycaster();
 const rangedSightOrigin = new THREE.Vector3();
 const rangedSightDirection = new THREE.Vector3();
@@ -157,22 +170,22 @@ const actorManager = {
 function getZombieMaterial(config, baseMaterial) {
   // We append whether it has a map so the cache doesn't mix up GLBs and capsules!
   const matKey = config.name + (baseMaterial.map ? "_tex" : "_notex");
-  
+
   if (!materialCache[matKey]) {
     const newMat = baseMaterial.clone();
-    
+
     // Kill the shiny plastic look globally
     newMat.metalness = config.name === "GOLIATH" ? 0.2 : (config.name === "BRUTE" ? 0.08 : 0.0);
-    newMat.roughness = 1.0; 
+    newMat.roughness = 1.0;
     newMat.transparent = false;
     newMat.depthWrite = true;
-    
+
     if (newMat.map) {
       // 1. IT IS THE GLB MODEL (Has a skin texture)
       newMat.color.setHex(0xffffff); // Pure white base lets the actual skin texture show perfectly
       newMat.emissive.setHex(config.color); // Subtle faction tint
-      newMat.emissiveIntensity = 0.15; 
-      
+      newMat.emissiveIntensity = 0.15;
+
       newMat.map.wrapS = THREE.RepeatWrapping;
       newMat.map.wrapT = THREE.RepeatWrapping;
       newMat.map.repeat.set(1, 1);
@@ -182,7 +195,7 @@ function getZombieMaterial(config, baseMaterial) {
       newMat.color.setHex(config.color); // Paint the solid faction color
       newMat.emissive.setHex(0x000000);  // No glow needed for capsules
     }
-    
+
     materialCache[matKey] = newMat;
   }
   return materialCache[matKey];
@@ -192,32 +205,293 @@ const projGeo = new THREE.SphereGeometry(0.18, 8, 8);
 const projMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 const expGeo = new THREE.SphereGeometry(1, 16, 16);
 const expMat = new THREE.MeshBasicMaterial({ color: 0xff4400, transparent: true, opacity: 0.8 });
-// ── PROCEDURAL ZOMBIE VISUALS ──
+// ── HYBRID ZOMBIE VISUALS ──
+// VIS.6 R2F: retain every approved authored-enemy budget while applying a
+// shared anatomy, silhouette, and material-cohesion pass to the full family.
+// Low quality and all additional enemies retain the procedural fallback.
 const USE_GLB_ZOMBIES = false;
-const DETAILED_VISUAL_BUDGET = USE_GLB_ZOMBIES ? 6 : 0;
-const DETAILED_VISUAL_DISTANCE = USE_GLB_ZOMBIES ? 14 : 0;
+const HERO_SHAMBLER_PROFILES = Object.freeze({
+  low: Object.freeze({ budget: 0, fullDetail: 0, distance: 0 }),
+  medium: Object.freeze({ budget: 1, fullDetail: 1, distance: 7 }),
+  high: Object.freeze({ budget: 2, fullDetail: 1, distance: 11 }),
+});
+const HERO_AGILE_PROFILES = Object.freeze({
+  low: Object.freeze({ budget: 0, fullDetail: 0, distance: 0, perType: 0 }),
+  medium: Object.freeze({ budget: 1, fullDetail: 1, distance: 8, perType: 1 }),
+  high: Object.freeze({ budget: 2, fullDetail: 1, distance: 12, perType: 1 }),
+});
+const HERO_HEAVY_PROFILES = Object.freeze({
+  low: Object.freeze({ budget: 0, fullDetail: 0, distance: 0, perType: 0 }),
+  medium: Object.freeze({ budget: 1, fullDetail: 1, distance: 8, perType: 1 }),
+  high: Object.freeze({ budget: 2, fullDetail: 1, distance: 12, perType: 1 }),
+});
+const HERO_SPECIAL_PROFILES = Object.freeze({
+  low: Object.freeze({ budget: 0, fullDetail: 0, distance: 0, perType: 0 }),
+  medium: Object.freeze({ budget: 1, fullDetail: 1, distance: 9, perType: 1 }),
+  high: Object.freeze({ budget: 2, fullDetail: 1, distance: 14, perType: 1 }),
+});
+
+const HERO_SHAMBLER_VARIANTS = Object.freeze(['CIVILIAN', 'WORKER', 'RAVAGED']);
+const HERO_AGILE_TYPES = Object.freeze(['RUNNER', 'CRAWLER']);
+const HERO_HEAVY_TYPES = Object.freeze(['BRUTE', 'EXPLODER']);
+const HERO_SPECIAL_TYPES = Object.freeze(['RANGED', 'GOLIATH']);
 
 let detailedVisualCount = 0;
 let proceduralVisualCount = 0;
+let fullDetailVisualCount = 0;
+let standardDetailVisualCount = 0;
+let runnerDetailedVisualCount = 0;
+let crawlerDetailedVisualCount = 0;
+let bruteDetailedVisualCount = 0;
+let exploderDetailedVisualCount = 0;
+let spitterDetailedVisualCount = 0;
+let goliathDetailedVisualCount = 0;
+const heroVariantCounts = { CIVILIAN: 0, WORKER: 0, RAVAGED: 0 };
 
-function setEnemyVisual(e, useDetailedVisual) {
-  if (e.fullModel) {
-    e.fullModel.visible = useDetailedVisual;
+function getHeroShamblerIdentityHash(enemy) {
+  const key = String(enemy?.poolId || enemy?.networkId || 'zombie-0');
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index += 1) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function getHeroShamblerVariant(enemy) {
+  if (HERO_SHAMBLER_VARIANTS.includes(enemy?._heroVariant)) return enemy._heroVariant;
+  const hash = getHeroShamblerIdentityHash(enemy);
+  enemy._heroVariant = HERO_SHAMBLER_VARIANTS[hash % HERO_SHAMBLER_VARIANTS.length];
+  return enemy._heroVariant;
+}
+
+function getHeroShamblerMotionSeed(enemy) {
+  if (Number.isFinite(Number(enemy?._heroMotionSeed))) return Number(enemy._heroMotionSeed);
+  const hash = getHeroShamblerIdentityHash(enemy);
+  enemy._heroMotionSeed = ((hash >>> 8) % 100000) / 100000;
+  return enemy._heroMotionSeed;
+}
+
+function getHeroShamblerProfile() {
+  const quality = String(getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
+  return HERO_SHAMBLER_PROFILES[quality] || HERO_SHAMBLER_PROFILES.medium;
+}
+
+function getHeroAgileProfile() {
+  const quality = String(getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
+  return HERO_AGILE_PROFILES[quality] || HERO_AGILE_PROFILES.medium;
+}
+
+function getHeroHeavyProfile() {
+  const quality = String(getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
+  return HERO_HEAVY_PROFILES[quality] || HERO_HEAVY_PROFILES.medium;
+}
+
+function getHeroSpecialProfile() {
+  const quality = String(getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
+  return HERO_SPECIAL_PROFILES[quality] || HERO_SPECIAL_PROFILES.medium;
+}
+
+function getAuthoredVisualStore(enemy) {
+  if (!enemy._authoredVisuals) enemy._authoredVisuals = Object.create(null);
+  return enemy._authoredVisuals;
+}
+
+function hideAuthoredVisuals(enemy) {
+  if (!enemy?._authoredVisuals) return;
+  for (const visual of Object.values(enemy._authoredVisuals)) {
+    if (visual) visual.visible = false;
+  }
+}
+
+function prepareEnemyVisualType(enemy, typeName) {
+  if (!enemy) return;
+  hideAuthoredVisuals(enemy);
+  const store = getAuthoredVisualStore(enemy);
+  enemy.fullModel = store[typeName] || null;
+  enemy._authoredType = typeName;
+}
+
+function ensureHeroShamblerVisual(enemy, renderTier = 'STANDARD') {
+  if (!enemy || enemy.type !== 'SHAMBLER') return null;
+  const store = getAuthoredVisualStore(enemy);
+  if (store.SHAMBLER?.userData?.isHeroShambler) {
+    setHeroShamblerRenderTier(store.SHAMBLER, renderTier);
+    enemy.fullModel = store.SHAMBLER;
+    enemy._authoredType = 'SHAMBLER';
+    return store.SHAMBLER;
   }
 
-  if (e.lodMesh) {
-    e.lodMesh.visible = !useDetailedVisual;
+  const hero = createHeroShamblerVisual({
+    motionPhase: enemy.walkT || Math.random() * Math.PI * 2,
+    motionSeed: getHeroShamblerMotionSeed(enemy),
+    variant: getHeroShamblerVariant(enemy),
+    renderTier,
+  });
+  hero.visible = false;
+  hero.userData.eRef = enemy;
+  hero.traverse((child) => {
+    child.userData.eRef = enemy;
+    if (child.isMesh) {
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.frustumCulled = true;
+    }
+  });
+  updateHeroShamblerStyle(hero, ENEMY_TYPES.SHAMBLER);
+  enemy.mesh.add(hero);
+  store.SHAMBLER = hero;
+  enemy.fullModel = hero;
+  enemy._authoredType = 'SHAMBLER';
+  return hero;
+}
+
+function ensureHeroAgileVisual(enemy, renderTier = 'STANDARD') {
+  if (!enemy || !HERO_AGILE_TYPES.includes(enemy.type)) return null;
+  const typeName = enemy.type;
+  const store = getAuthoredVisualStore(enemy);
+  const cached = store[typeName];
+  if (cached?.userData?.isHeroAgileZombie) {
+    setHeroAgileZombieRenderTier(cached, renderTier);
+    updateHeroAgileZombieStyle(cached, ENEMY_TYPES[typeName]);
+    enemy.fullModel = cached;
+    enemy._authoredType = typeName;
+    return cached;
   }
 
-  e.usingLod = !useDetailedVisual;
+  const hero = createHeroAgileZombieVisual({
+    archetype: typeName,
+    motionPhase: enemy.walkT || Math.random() * Math.PI * 2,
+    motionSeed: getHeroShamblerMotionSeed(enemy),
+    renderTier,
+  });
+  hero.visible = false;
+  hero.userData.eRef = enemy;
+  hero.traverse((child) => {
+    child.userData.eRef = enemy;
+    if (child.isMesh) {
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.frustumCulled = true;
+    }
+  });
+  updateHeroAgileZombieStyle(hero, ENEMY_TYPES[typeName]);
+  enemy.mesh.add(hero);
+  store[typeName] = hero;
+  enemy.fullModel = hero;
+  enemy._authoredType = typeName;
+  return hero;
+}
+
+function ensureHeroHeavyVisual(enemy, renderTier = 'STANDARD') {
+  if (!enemy || !HERO_HEAVY_TYPES.includes(enemy.type)) return null;
+  const typeName = enemy.type;
+  const store = getAuthoredVisualStore(enemy);
+  const cached = store[typeName];
+  if (cached?.userData?.isHeroHeavyZombie) {
+    setHeroHeavyZombieRenderTier(cached, renderTier);
+    updateHeroHeavyZombieStyle(cached, ENEMY_TYPES[typeName]);
+    enemy.fullModel = cached;
+    enemy._authoredType = typeName;
+    return cached;
+  }
+
+  const hero = createHeroHeavyZombieVisual({
+    archetype: typeName,
+    motionPhase: enemy.walkT || Math.random() * Math.PI * 2,
+    motionSeed: getHeroShamblerMotionSeed(enemy),
+    renderTier,
+  });
+  hero.visible = false;
+  hero.userData.eRef = enemy;
+  hero.traverse((child) => {
+    child.userData.eRef = enemy;
+    if (child.isMesh) {
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.frustumCulled = true;
+    }
+  });
+  updateHeroHeavyZombieStyle(hero, ENEMY_TYPES[typeName]);
+  enemy.mesh.add(hero);
+  store[typeName] = hero;
+  enemy.fullModel = hero;
+  enemy._authoredType = typeName;
+  return hero;
+}
+
+function ensureHeroSpecialVisual(enemy, renderTier = 'STANDARD') {
+  if (!enemy || !HERO_SPECIAL_TYPES.includes(enemy.type)) return null;
+  const typeName = enemy.type;
+  const store = getAuthoredVisualStore(enemy);
+  const cached = store[typeName];
+  if (cached?.userData?.isHeroSpecialZombie) {
+    setHeroSpecialZombieRenderTier(cached, renderTier);
+    updateHeroSpecialZombieStyle(cached, ENEMY_TYPES[typeName]);
+    enemy.fullModel = cached;
+    enemy._authoredType = typeName;
+    return cached;
+  }
+
+  const hero = createHeroSpecialZombieVisual({
+    archetype: typeName,
+    motionPhase: enemy.walkT || Math.random() * Math.PI * 2,
+    motionSeed: getHeroShamblerMotionSeed(enemy),
+    renderTier,
+  });
+  hero.visible = false;
+  hero.userData.eRef = enemy;
+  hero.traverse((child) => {
+    child.userData.eRef = enemy;
+    if (child.isMesh) {
+      child.castShadow = false;
+      child.receiveShadow = false;
+      child.frustumCulled = true;
+    }
+  });
+  updateHeroSpecialZombieStyle(hero, ENEMY_TYPES[typeName]);
+  enemy.mesh.add(hero);
+  store[typeName] = hero;
+  enemy.fullModel = hero;
+  enemy._authoredType = typeName;
+  return hero;
+}
+
+function setEnemyVisual(enemy, useDetailedVisual) {
+  const current = enemy?.fullModel;
+  const authored = useDetailedVisual === true
+    && Boolean(
+      current?.userData?.isHeroShambler
+      || current?.userData?.isHeroAgileZombie
+      || current?.userData?.isHeroHeavyZombie
+      || current?.userData?.isHeroSpecialZombie
+    );
+
+  hideAuthoredVisuals(enemy);
+  if (authored && current) current.visible = true;
+  if (enemy?.lodMesh) enemy.lodMesh.visible = !authored;
+  enemy.usingLod = !authored;
 }
 
 export function getEnemyVisualStats() {
   return {
+    patch: 'vis6-r2f-enemy-family-cohesion',
     detailedVisuals: detailedVisualCount,
-    proceduralVisuals: proceduralVisualCount
+    fullDetailVisuals: fullDetailVisualCount,
+    standardDetailVisuals: standardDetailVisualCount,
+    proceduralVisuals: proceduralVisualCount,
+    runnerDetailedVisuals: runnerDetailedVisualCount,
+    crawlerDetailedVisuals: crawlerDetailedVisualCount,
+    bruteDetailedVisuals: bruteDetailedVisualCount,
+    exploderDetailedVisuals: exploderDetailedVisualCount,
+    spitterDetailedVisuals: spitterDetailedVisualCount,
+    goliathDetailedVisuals: goliathDetailedVisualCount,
+    variants: { ...heroVariantCounts },
+    motionProfiles: 'deterministic-per-pooled-enemy',
+    quality: getEffectiveGraphicsQuality?.() || 'medium',
   };
 }
+
 // ── AUDIO ENGINE ──
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const noiseBufferSize = audioCtx.sampleRate * 0.15;
@@ -228,8 +502,8 @@ for (let i = 0; i < noiseBufferSize; i++) output[i] = Math.random() * 2 - 1;
 function playSpatialZombieSound(ePos, type, isFootstep = true) {
   if (audioCtx.state === 'suspended') audioCtx.resume();
   const dist = player.pos.distanceTo(ePos);
-  if (dist > 18) return; 
-  
+  if (dist > 18) return;
+
   camera.getWorldDirection(_audioCamDir);
   _audioCamDir.y = 0;
   _audioCamDir.normalize();
@@ -240,20 +514,20 @@ function playSpatialZombieSound(ePos, type, isFootstep = true) {
 
   _audioRight.crossVectors(_audioCamDir, _worldUp).normalize();
   const panX = _audioToEnemy.dot(_audioRight);
-  
+
   const vol = Math.max(0, 1 - (dist / 18)) * ((type === "GOLIATH" ? 1.1 : (type === "BRUTE" ? 0.62 : 0.38))) * getMasterVolume();
   if (vol <= 0.001) return;
 
   const gain = audioCtx.createGain();
   const panner = audioCtx.createStereoPanner ? audioCtx.createStereoPanner() : null;
 
-  if (panner) { panner.pan.value = panX; gain.connect(panner); panner.connect(audioCtx.destination); } 
+  if (panner) { panner.pan.value = panX; gain.connect(panner); panner.connect(audioCtx.destination); }
   else { gain.connect(audioCtx.destination); }
 
   if (isFootstep) {
     const source = audioCtx.createBufferSource(); source.buffer = noiseBuffer;
     const filter = audioCtx.createBiquadFilter(); filter.type = 'lowpass';
-    filter.frequency.value = (type === "GOLIATH" || type === "BRUTE") ? 300 : 800; 
+    filter.frequency.value = (type === "GOLIATH" || type === "BRUTE") ? 300 : 800;
     source.connect(filter); filter.connect(gain);
     gain.gain.setValueAtTime(vol, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
@@ -446,10 +720,12 @@ function initPools() {
 
 for (let i = 0; i < MAX_ZOMBIES; i++) {
     const g = new THREE.Group();
-const enemyInstance = { 
+const enemyInstance = {
   poolId: `zombie-${i + 1}`,
   mesh: g,
   fullModel: null,
+  _authoredVisuals: Object.create(null),
+  _authoredType: null,
   lodMesh: null,
   usingLod: false,
   _useFullVisual: false,
@@ -503,20 +779,20 @@ const enemyInstance = {
       zombieModel.traverse((child) => {
         if (child.isMesh || child.isSkinnedMesh) {
           child.frustumCulled = true; child.castShadow = false; child.receiveShadow = false;
-          child.userData.eRef = enemyInstance; 
+          child.userData.eRef = enemyInstance;
           if (child.name.toLowerCase().includes("head")) child.userData.isHead = true;
         }
       });
       g.add(zombieModel);
 	  enemyInstance.fullModel = zombieModel;
-      
+
       if (ASSETS.enemies.zombie.animations && ASSETS.enemies.zombie.animations.length > 0) {
         enemyInstance.mixer = new THREE.AnimationMixer(zombieModel);
         const walkAnim = enemyInstance.mixer.clipAction(ASSETS.enemies.zombie.animations[0]);
         walkAnim.setLoop(THREE.LoopRepeat); walkAnim.play();
       }
     }
-    
+
 // Primary procedural body used by normal enemy rendering
 const lodMesh = createProceduralZombieVisual({
   color: 0x7fa06b
@@ -544,7 +820,7 @@ zombieRegistry.push(enemyInstance);
 zombieRegistrySet.add(enemyInstance);
 zombiePool.push(enemyInstance);
   }
-  
+
   poolsInitialized = true;
   console.log("🟢 Zombie Pools Initialized!");
 }
@@ -608,6 +884,9 @@ function resetRegistryEnemyForPool(enemy) {
   enemy.attackWindupT = 0;
   enemy.attackRecoveryT = 0;
   enemy.attackTelegraphProgress = 0;
+  hideAuthoredVisuals(enemy);
+  enemy.fullModel = null;
+  enemy._authoredType = null;
   if (enemy.mesh) {
     enemy.mesh.visible = false;
     enemy.mesh.rotation.set(0, 0, 0);
@@ -924,6 +1203,7 @@ export function restoreNetworkEnemySnapshot(snapshot = {}) {
     restored.isNetworkProxy = false;
     restored.handleNetworkHit = null;
     restored.type = config.name;
+    prepareEnemyVisualType(restored, config.name);
     restored.health = Math.max(1, Number(state.health) || config.maxHealth);
     restored.maxHealth = Math.max(1, Number(state.maxHealth) || config.maxHealth);
     restored.speed = (
@@ -1495,6 +1775,7 @@ function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
     recycled.handleNetworkHit = null;
     recycled.targetPlayerId = null;
     recycled.type = config.name;
+    prepareEnemyVisualType(recycled, config.name);
     const coopScaling = getCoopScalingProfile();
     recycled.health = Math.max(1, Math.round(config.maxHealth * coopScaling.enemyHealthScale));
     recycled.maxHealth = recycled.health;
@@ -1619,6 +1900,36 @@ const _squadMoveTarget = { x: 0, z: 0 };
 const _formationMoveTarget = { x: 0, z: 0 };
 const _navigationMoveTarget = { x: 0, z: 0 };
 const _archetypeMoveTarget = { x: 0, z: 0 };
+const _enemyTargetCandidates = [];
+const _enemyTargetLoads = new Map();
+const _localEnemyTarget = {
+  playerId: 'local-player',
+  isLocal: true,
+  pos: player.pos,
+  alive: true,
+  health: 100,
+  maxHealth: 100
+};
+const _visualMotionState = {
+  hitReactT: 0,
+  hitReactDir: 1,
+  attackT: 0,
+  attackDuration: 0.30,
+  attackState: 'IDLE',
+  attackKind: 'NONE',
+  telegraphProgress: 0,
+  runnerBurstT: 0,
+  runnerBurstDuration: 0,
+  spitterRepositionT: 0,
+  spitterRepositionDuration: 0,
+  bruteBraceT: 0,
+  bruteBraceDuration: 0,
+  goliathPhase: 0,
+  goliathPhasePulseT: 0,
+  goliathPhasePulseDuration: 0,
+  exploderStage: 'IDLE',
+  deathT: -1
+};
 
 let multiplayerEnemyAuthority = null;
 
@@ -1629,18 +1940,17 @@ export function configureMultiplayerEnemyAuthority(config = null) {
 }
 
 function getLocalEnemyTarget() {
-  return {
-    playerId: multiplayerEnemyAuthority?.localPlayerId || 'local-player',
-    isLocal: true,
-    pos: player.pos,
-    alive: player.alive === true,
-    health: Number(player.health || 0),
-    maxHealth: Number(player.maxHealth || 100)
-  };
+  _localEnemyTarget.playerId = multiplayerEnemyAuthority?.localPlayerId || 'local-player';
+  _localEnemyTarget.pos = player.pos;
+  _localEnemyTarget.alive = player.alive === true;
+  _localEnemyTarget.health = Number(player.health || 0);
+  _localEnemyTarget.maxHealth = Number(player.maxHealth || 100);
+  return _localEnemyTarget;
 }
 
 function getEnemyTargetCandidates() {
-  const candidates = [];
+  _enemyTargetCandidates.length = 0;
+  const candidates = _enemyTargetCandidates;
   const localTarget = getLocalEnemyTarget();
 
   if (localTarget.alive) candidates.push(localTarget);
@@ -1989,7 +2299,8 @@ export function updateEnemies(dt) {
   const teamTargets = getEnemyTargetCandidates();
   if (teamTargets.length === 0) return;
 
-  const targetLoads = new Map();
+  const targetLoads = _enemyTargetLoads;
+  targetLoads.clear();
 
   meleeDamageGraceT = Math.max(0, meleeDamageGraceT - dt);
   updateAIAttackCoordinator(dt, activeEnemies);
@@ -2010,12 +2321,31 @@ export function updateEnemies(dt) {
     if (t.state === 'ACTIVE') {
       t.timer -= dt;
       t.field.material.opacity = 0.2 + Math.random() * 0.5; // Zap flicker
-      if (t.timer <= 0) { 
+
+      t.fxPulseT = Math.max(0, Number(t.fxPulseT) || 0) - dt;
+      if (t.fxPulseT <= 0) {
+        t.fxPulseT = 0.055 + Math.random() * 0.055;
+        const halfWidth = Math.max(0.5, Number(t.width) || 4) * 0.5;
+        const heightA = 0.35 + Math.random() * 2.35;
+        const heightB = 0.35 + Math.random() * 2.35;
+        if (t.isZAxis) {
+          _trapFxStart.set(t.center.x + (Math.random() - 0.5) * 0.18, heightA, t.center.z - halfWidth);
+          _trapFxEnd.set(t.center.x + (Math.random() - 0.5) * 0.18, heightB, t.center.z + halfWidth);
+        } else {
+          _trapFxStart.set(t.center.x - halfWidth, heightA, t.center.z + (Math.random() - 0.5) * 0.18);
+          _trapFxEnd.set(t.center.x + halfWidth, heightB, t.center.z + (Math.random() - 0.5) * 0.18);
+        }
+        spawnElectricArc(_trapFxStart, _trapFxEnd, 1.0);
+      }
+
+      if (t.timer <= 0) {
         t.state = 'COOLDOWN'; t.timer = 18.0; // 18 sec cooldown
-        t.field.visible = false; t.switchMesh.material.color.setHex(0x444444); 
+        t.field.visible = false; t.switchMesh.material.color.setHex(0x444444);
+        t.fxPulseT = 0;
       }
     } else if (t.state === 'COOLDOWN') {
       t.timer -= dt;
+      t.fxPulseT = 0;
       if (t.timer <= 0) { t.state = 'READY'; t.switchMesh.material.color.setHex(0xaa0000); }
     }
   });
@@ -2114,7 +2444,7 @@ export function updateEnemies(dt) {
     const p = activePowerups[i];
     p.mesh.rotation.y += dt * 2.5; p.mesh.position.y = 0.8 + Math.sin(Date.now() * 0.005) * 0.15; p.life -= dt;
     if (p.life <= 0) { scene.remove(p.mesh); activePowerups.splice(i, 1); continue; }
-    
+
     if (player.pos.distanceTo(p.mesh.position) < 1.6) {
       flashWaveBanner(p.type.name, 2500);
       showStatusToast(p.type.name, '#ffaa00', 1600);
@@ -2126,12 +2456,12 @@ export function updateEnemies(dt) {
         const nukePoints = scaleEconomyReward(400, 'NUKE');
         player.score += nukePoints; updateScoreHUD(player.score); spawnFloatingScore(nukePoints, false);
         recordRunPointsEarned(nukePoints);
-        zombiesSpawnedSoFar = zombiesToSpawnThisRound; 
+        zombiesSpawnedSoFar = zombiesToSpawnThisRound;
         [...activeEnemies].forEach(z => { if (z.alive) killEnemy(z); });
       }
       scene.remove(p.mesh); activePowerups.splice(i, 1);
     }
-  } 
+  }
 
 if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
   const activeLivingEnemies = activeEnemies.reduce((count, e) => {
@@ -2159,51 +2489,184 @@ if (zombiesSpawnedSoFar < zombiesToSpawnThisRound) {
   }
 }
 
-// Update procedural visual counters and optional detailed visuals.
-// C5: avoid allocating/filtering/sorting every frame when GLB visuals are disabled.
+// Select strict distance-sorted authored budgets.
+// Shambler retains the R2B.1 limit; Runner/Crawler, Brute/Exploder, and
+// Spitter/Goliath use separately capped low-draw-call authored budgets.
 detailedVisualCount = 0;
 proceduralVisualCount = 0;
+fullDetailVisualCount = 0;
+standardDetailVisualCount = 0;
+runnerDetailedVisualCount = 0;
+crawlerDetailedVisualCount = 0;
+bruteDetailedVisualCount = 0;
+exploderDetailedVisualCount = 0;
+spitterDetailedVisualCount = 0;
+goliathDetailedVisualCount = 0;
+heroVariantCounts.CIVILIAN = 0;
+heroVariantCounts.WORKER = 0;
+heroVariantCounts.RAVAGED = 0;
+_visualCandidates.length = 0;
+_agileVisualCandidates.length = 0;
+_heavyVisualCandidates.length = 0;
+_specialVisualCandidates.length = 0;
+const heroProfile = getHeroShamblerProfile();
+const agileProfile = getHeroAgileProfile();
+const heavyProfile = getHeroHeavyProfile();
+const specialProfile = getHeroSpecialProfile();
 
-if (DETAILED_VISUAL_BUDGET > 0) {
-  _visualCandidates.length = 0;
+for (let vi = 0; vi < activeEnemies.length; vi++) {
+  const candidate = activeEnemies[vi];
+  if (!candidate?.alive || candidate.dyingT >= 0) continue;
 
-  for (let vi = 0; vi < activeEnemies.length; vi++) {
-    const candidate = activeEnemies[vi];
-    if (!candidate?.alive || candidate.dyingT >= 0) continue;
+  candidate._visualDist = Math.hypot(
+    player.pos.x - candidate.mesh.position.x,
+    player.pos.z - candidate.mesh.position.z
+  );
+  candidate._useFullVisual = false;
 
-    candidate._visualDist = Math.hypot(
-      player.pos.x - candidate.mesh.position.x,
-      player.pos.z - candidate.mesh.position.z
-    );
-    candidate._useFullVisual = false;
+  if (
+    heroProfile.budget > 0
+    && candidate.type === 'SHAMBLER'
+    && candidate._visualDist < heroProfile.distance
+  ) {
     _visualCandidates.push(candidate);
+  } else if (
+    agileProfile.budget > 0
+    && HERO_AGILE_TYPES.includes(candidate.type)
+    && candidate._visualDist < agileProfile.distance
+  ) {
+    _agileVisualCandidates.push(candidate);
+  } else if (
+    heavyProfile.budget > 0
+    && HERO_HEAVY_TYPES.includes(candidate.type)
+    && candidate._visualDist < heavyProfile.distance
+  ) {
+    _heavyVisualCandidates.push(candidate);
+  } else if (
+    specialProfile.budget > 0
+    && HERO_SPECIAL_TYPES.includes(candidate.type)
+    && candidate._visualDist < specialProfile.distance
+  ) {
+    _specialVisualCandidates.push(candidate);
+  } else {
+    proceduralVisualCount += 1;
   }
+}
 
-  _visualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+if (_visualCandidates.length > 1) _visualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+if (_agileVisualCandidates.length > 1) _agileVisualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+if (_heavyVisualCandidates.length > 1) _heavyVisualCandidates.sort((a, b) => a._visualDist - b._visualDist);
+if (_specialVisualCandidates.length > 1) _specialVisualCandidates.sort((a, b) => a._visualDist - b._visualDist);
 
-  let detailedSlots = DETAILED_VISUAL_BUDGET;
+let detailedSlots = heroProfile.budget;
+let fullDetailSlots = Math.min(heroProfile.fullDetail || 0, detailedSlots);
 
-  for (const candidate of _visualCandidates) {
-    if (detailedSlots > 0 && candidate._visualDist < DETAILED_VISUAL_DISTANCE) {
+for (const candidate of _visualCandidates) {
+  if (detailedSlots > 0) {
+    const renderTier = fullDetailSlots > 0 ? 'FULL' : 'STANDARD';
+    if (ensureHeroShamblerVisual(candidate, renderTier)) {
       candidate._useFullVisual = true;
-      detailedSlots--;
-      detailedVisualCount++;
-    } else {
-      proceduralVisualCount++;
+      detailedSlots -= 1;
+      detailedVisualCount += 1;
+      if (renderTier === 'FULL') {
+        fullDetailSlots -= 1;
+        fullDetailVisualCount += 1;
+      } else {
+        standardDetailVisualCount += 1;
+      }
+      const variant = getHeroShamblerVariant(candidate);
+      heroVariantCounts[variant] = (heroVariantCounts[variant] || 0) + 1;
+      continue;
     }
   }
-} else {
-  for (let vi = 0; vi < activeEnemies.length; vi++) {
-    const candidate = activeEnemies[vi];
-    if (!candidate?.alive || candidate.dyingT >= 0) continue;
+  proceduralVisualCount += 1;
+}
 
-    candidate._visualDist = Math.hypot(
-      player.pos.x - candidate.mesh.position.x,
-      player.pos.z - candidate.mesh.position.z
-    );
-    candidate._useFullVisual = false;
-    proceduralVisualCount++;
+let agileSlots = agileProfile.budget;
+let agileFullSlots = Math.min(agileProfile.fullDetail || 0, agileSlots);
+const agileTypeSlots = { RUNNER: 0, CRAWLER: 0 };
+
+for (const candidate of _agileVisualCandidates) {
+  if (
+    agileSlots > 0
+    && agileTypeSlots[candidate.type] < agileProfile.perType
+  ) {
+    const renderTier = agileFullSlots > 0 ? 'FULL' : 'STANDARD';
+    if (ensureHeroAgileVisual(candidate, renderTier)) {
+      candidate._useFullVisual = true;
+      agileSlots -= 1;
+      agileTypeSlots[candidate.type] += 1;
+      detailedVisualCount += 1;
+      if (candidate.type === 'RUNNER') runnerDetailedVisualCount += 1;
+      if (candidate.type === 'CRAWLER') crawlerDetailedVisualCount += 1;
+      if (renderTier === 'FULL') {
+        agileFullSlots -= 1;
+        fullDetailVisualCount += 1;
+      } else {
+        standardDetailVisualCount += 1;
+      }
+      continue;
+    }
   }
+  proceduralVisualCount += 1;
+}
+
+let heavySlots = heavyProfile.budget;
+let heavyFullSlots = Math.min(heavyProfile.fullDetail || 0, heavySlots);
+const heavyTypeSlots = { BRUTE: 0, EXPLODER: 0 };
+
+for (const candidate of _heavyVisualCandidates) {
+  if (
+    heavySlots > 0
+    && heavyTypeSlots[candidate.type] < heavyProfile.perType
+  ) {
+    const renderTier = heavyFullSlots > 0 ? 'FULL' : 'STANDARD';
+    if (ensureHeroHeavyVisual(candidate, renderTier)) {
+      candidate._useFullVisual = true;
+      heavySlots -= 1;
+      heavyTypeSlots[candidate.type] += 1;
+      detailedVisualCount += 1;
+      if (candidate.type === 'BRUTE') bruteDetailedVisualCount += 1;
+      if (candidate.type === 'EXPLODER') exploderDetailedVisualCount += 1;
+      if (renderTier === 'FULL') {
+        heavyFullSlots -= 1;
+        fullDetailVisualCount += 1;
+      } else {
+        standardDetailVisualCount += 1;
+      }
+      continue;
+    }
+  }
+  proceduralVisualCount += 1;
+}
+
+let specialSlots = specialProfile.budget;
+let specialFullSlots = Math.min(specialProfile.fullDetail || 0, specialSlots);
+const specialTypeSlots = { RANGED: 0, GOLIATH: 0 };
+
+for (const candidate of _specialVisualCandidates) {
+  if (
+    specialSlots > 0
+    && specialTypeSlots[candidate.type] < specialProfile.perType
+  ) {
+    const renderTier = specialFullSlots > 0 ? 'FULL' : 'STANDARD';
+    if (ensureHeroSpecialVisual(candidate, renderTier)) {
+      candidate._useFullVisual = true;
+      specialSlots -= 1;
+      specialTypeSlots[candidate.type] += 1;
+      detailedVisualCount += 1;
+      if (candidate.type === 'RANGED') spitterDetailedVisualCount += 1;
+      if (candidate.type === 'GOLIATH') goliathDetailedVisualCount += 1;
+      if (renderTier === 'FULL') {
+        specialFullSlots -= 1;
+        fullDetailVisualCount += 1;
+      } else {
+        standardDetailVisualCount += 1;
+      }
+      continue;
+    }
+  }
+  proceduralVisualCount += 1;
 }
 
 const visualAnimTime = performance.now() * 0.001;
@@ -2214,17 +2677,49 @@ for (let i = activeEnemies.length - 1; i >= 0; i--) {
     e.attackAnimT = Math.max(0, (e.attackAnimT || 0) - dt);
 
     if (e.dyingT >= 0) {
-      e.dyingT += dt; 
+      e.dyingT += dt;
       const t = Math.min(e.dyingT / 0.75, 1);
       const fall = THREE.MathUtils.smoothstep(t, 0, 1);
 
-      if (e.lodMesh) {
+      if (e._useFullVisual && e.fullModel?.userData?.isHeroShambler) {
+        updateHeroShamblerMotion(e.fullModel, visualAnimTime, 0.0, {
+          hitReactT: 0,
+          hitReactDir: e.hitReactDir || 1,
+          attackT: 0,
+          attackDuration: e.attackAnimDuration || 0.30,
+          deathT: e.dyingT,
+        });
+      } else if (e._useFullVisual && e.fullModel?.userData?.isHeroAgileZombie) {
+        updateHeroAgileZombieMotion(e.fullModel, visualAnimTime, 0.0, {
+          hitReactT: 0,
+          hitReactDir: e.hitReactDir || 1,
+          attackT: 0,
+          attackDuration: e.attackAnimDuration || 0.30,
+          deathT: e.dyingT,
+        });
+      } else if (e._useFullVisual && e.fullModel?.userData?.isHeroHeavyZombie) {
+        updateHeroHeavyZombieMotion(e.fullModel, visualAnimTime, 0.0, {
+          hitReactT: 0,
+          hitReactDir: e.hitReactDir || 1,
+          attackT: 0,
+          attackDuration: e.attackAnimDuration || 0.30,
+          deathT: e.dyingT,
+        });
+      } else if (e._useFullVisual && e.fullModel?.userData?.isHeroSpecialZombie) {
+        updateHeroSpecialZombieMotion(e.fullModel, visualAnimTime, 0.0, {
+          hitReactT: 0,
+          hitReactDir: e.hitReactDir || 1,
+          attackT: 0,
+          attackDuration: e.attackAnimDuration || 0.30,
+          deathT: e.dyingT,
+        });
+      } else if (e.lodMesh) {
         updateProceduralZombieMotion(e.lodMesh, visualAnimTime, 0.0, {
           hitReactT: 0,
           hitReactDir: e.hitReactDir || 1,
           attackT: 0,
           attackDuration: e.attackAnimDuration || 0.30,
-          deathT: e.dyingT
+          deathT: e.dyingT,
         });
       }
 
@@ -2236,7 +2731,7 @@ for (let i = activeEnemies.length - 1; i >= 0; i--) {
         e.originalScale.z * (1 + fall * 0.04)
       );
       e.mesh.position.y = -fall * 0.18;
-      
+
       if (e.dyingT >= 0.75) {
         activeEnemies.splice(i, 1);
         returnEnemyToPool(e, 'death-animation-complete');
@@ -2288,31 +2783,60 @@ if (!e.alive) continue;
 
 	setEnemyVisual(e, e._useFullVisual);
 
-if (e.usingLod && e.lodMesh) {
+const visualMotionState = _visualMotionState;
+visualMotionState.hitReactT = e.hitReactT;
+visualMotionState.hitReactDir = e.hitReactDir;
+visualMotionState.attackT = e.attackAnimT;
+visualMotionState.attackDuration = e.attackAnimDuration || 0.30;
+visualMotionState.attackState = e.attackState;
+visualMotionState.attackKind = e.attackKind;
+visualMotionState.telegraphProgress = e.attackTelegraphProgress;
+visualMotionState.runnerBurstT = e.runnerBurstT;
+visualMotionState.runnerBurstDuration = e.runnerBurstDuration;
+visualMotionState.spitterRepositionT = e.spitterRepositionT;
+visualMotionState.spitterRepositionDuration = e.spitterRepositionDuration;
+visualMotionState.bruteBraceT = e.bruteBraceT;
+visualMotionState.bruteBraceDuration = e.bruteBraceDuration;
+visualMotionState.goliathPhase = e.goliathPhase;
+visualMotionState.goliathPhasePulseT = e.goliathPhasePulseT;
+visualMotionState.goliathPhasePulseDuration = e.goliathPhasePulseDuration;
+visualMotionState.exploderStage = e.exploderStage;
+visualMotionState.deathT = e.dyingT;
+
+if (!e.usingLod && e.fullModel?.userData?.isHeroShambler) {
+  updateHeroShamblerMotion(
+    e.fullModel,
+    visualAnimTime,
+    getEnemyVisualMotionSpeed(e),
+    visualMotionState,
+  );
+} else if (!e.usingLod && e.fullModel?.userData?.isHeroAgileZombie) {
+  updateHeroAgileZombieMotion(
+    e.fullModel,
+    visualAnimTime,
+    getEnemyVisualMotionSpeed(e),
+    visualMotionState,
+  );
+} else if (!e.usingLod && e.fullModel?.userData?.isHeroHeavyZombie) {
+  updateHeroHeavyZombieMotion(
+    e.fullModel,
+    visualAnimTime,
+    getEnemyVisualMotionSpeed(e),
+    visualMotionState,
+  );
+} else if (!e.usingLod && e.fullModel?.userData?.isHeroSpecialZombie) {
+  updateHeroSpecialZombieMotion(
+    e.fullModel,
+    visualAnimTime,
+    getEnemyVisualMotionSpeed(e),
+    visualMotionState,
+  );
+} else if (e.lodMesh) {
   updateProceduralZombieMotion(
     e.lodMesh,
     visualAnimTime,
     getEnemyVisualMotionSpeed(e),
-    {
-      hitReactT: e.hitReactT,
-      hitReactDir: e.hitReactDir,
-      attackT: e.attackAnimT,
-      attackDuration: e.attackAnimDuration || 0.30,
-      attackState: e.attackState,
-      attackKind: e.attackKind,
-      telegraphProgress: e.attackTelegraphProgress,
-      runnerBurstT: e.runnerBurstT,
-      runnerBurstDuration: e.runnerBurstDuration,
-      spitterRepositionT: e.spitterRepositionT,
-      spitterRepositionDuration: e.spitterRepositionDuration,
-      bruteBraceT: e.bruteBraceT,
-      bruteBraceDuration: e.bruteBraceDuration,
-      goliathPhase: e.goliathPhase,
-      goliathPhasePulseT: e.goliathPhasePulseT,
-      goliathPhasePulseDuration: e.goliathPhasePulseDuration,
-      exploderStage: e.exploderStage,
-      deathT: e.dyingT
-    }
+    visualMotionState,
   );
 }
     // Reachability/perch state is measured centrally by ai_exploit.js.
@@ -2323,11 +2847,11 @@ if (e.usingLod && e.lodMesh) {
 	  e.mixer.timeScale = e.type === "RUNNER" ? 1.5 : (e.type === "BRUTE" || e.type === "GOLIATH" ? 0.75 : 1.0);
 	  e.mixer.update(dt);
 	}
-	
+
 // ── BARRICADE AGGRO SEARCH (PASTE HERE) ──
     let targetBarricade = null;
     for (const b of barricades) {
-      if (b.currentPlanks > 0 && e.mesh.position.distanceTo(b.pos) < 2.2) {
+      if (b.currentPlanks > 0 && e.mesh.position.distanceToSquared(b.pos) < 4.84) {
         targetBarricade = b;
         break;
       }
@@ -2337,11 +2861,11 @@ if (e.usingLod && e.lodMesh) {
       // INTERCEPT CHASE: Force zombie to stop and rip down boards!
       e.mesh.lookAt(targetBarricade.pos.x, e.mesh.position.y, targetBarricade.pos.z);
       e.atkCD -= dt;
-      
+
       if (e.atkCD <= 0) {
         e.atkCD = e.attackRate;
         targetBarricade.currentPlanks--;
-        
+
         // Remove plank mesh visually from group
         const plankToRemove = targetBarricade.planks[targetBarricade.currentPlanks];
         targetBarricade.plankGroup.remove(plankToRemove);
@@ -2511,7 +3035,7 @@ if (e.usingLod && e.lodMesh) {
         : 1.0;
       const moveSpeed = e.speed * hitMoveScale * getArchetypeMovementScale(e) * getFormationMovementScale(e);
       e.walkT += dt * moveSpeed * 3.5;
-      
+
       const moveTargetX = _archetypeMoveTarget.x - e.mesh.position.x;
       const moveTargetZ = _archetypeMoveTarget.z - e.mesh.position.z;
       const moveTargetDistance = Math.max(0.001, Math.hypot(moveTargetX, moveTargetZ));
@@ -2522,13 +3046,13 @@ if (e.usingLod && e.lodMesh) {
       // ── THE MULTISTORY NAV-MESH FIX ──
       // If player is upstairs (Y > 4) and zombie is down below, route them to the steps!
       if (currentMap === 4 && targetPos.y > 4.0 && e.mesh.position.y < 4.0) {
-        
+
         // Check if the zombie is already inside the physical staircase corridor (Z is between -9 and -26)
         const isOnStairs = e.mesh.position.x > -4 && e.mesh.position.x < 4 && e.mesh.position.z < -9 && e.mesh.position.z > -26;
-        
+
         let targetX = 0;
         // If on stairs, push forward to the top landing! If not, run to the base.
-        let targetZ = isOnStairs ? -25 : -10; 
+        let targetZ = isOnStairs ? -25 : -10;
 
         const toTargetX = targetX - e.mesh.position.x;
         const toTargetZ = targetZ - e.mesh.position.z;
@@ -2571,11 +3095,11 @@ if (e.usingLod && e.lodMesh) {
 
       // Snap up instantly to conquer stairs, drop smoothly if falling
       if (currentGroundY > e.mesh.position.y) {
-        e.mesh.position.y = currentGroundY; 
+        e.mesh.position.y = currentGroundY;
       } else {
         e.mesh.position.y = THREE.MathUtils.lerp(e.mesh.position.y, currentGroundY, dt * 12);
       }
-      
+
       pushOut(e.mesh.position, e.colRadius);
 
       if (Math.floor(oldWalk / Math.PI) !== Math.floor(e.walkT / Math.PI)) playSpatialZombieSound(e.mesh.position, e.type, true);
@@ -2794,20 +3318,24 @@ export function killEnemy(e, context = {}) {
   recordSquadEnemyDeath(e);
   recordFormationEnemyRemoved(e);
   recordNavigationEnemyRemoved(e);
-  e.alive = false; e.dyingT = 0; 
-  spawnBloodBurst(e.mesh.position);
-  
+  e.alive = false; e.dyingT = 0;
+  const deathBurstScale = e.type === 'GOLIATH'
+    ? 1.80
+    : (e.type === 'BRUTE' ? 1.45 : (e.type === 'CRAWLER' ? 0.78 : 1.05));
+  spawnBloodBurst(e.mesh.position, deathBurstScale, headshot);
+
   if (e.type === "EXPLODER") {
-    addScreenShake(0.6); 
-    playEnemySound('exploder', 0.72, true, { cooldownKey: 'enemy_exploder', cooldownMs: 180, pitchMin: 0.88, pitchMax: 1.02 }); 
-    
+    addScreenShake(0.6);
+    playEnemySound('exploder', 0.72, true, { cooldownKey: 'enemy_exploder', cooldownMs: 180, pitchMin: 0.88, pitchMax: 1.02 });
+
     const pool = explosionPool;
     const ex = pool.items[pool.index];
     ex.mesh.position.copy(e.mesh.position);
     ex.mesh.scale.set(1, 1, 1);
     ex.life = 0.3; ex.mesh.visible = true;
     pool.index = (pool.index + 1) % MAX_EXPLOSIONS;
-    
+    spawnEnemyExplosionFX(e.mesh.position, 1.15);
+
     const explosionTargets = getEnemyTargetCandidates();
     explosionTargets.forEach((target) => {
       const dx = target.pos.x - e.mesh.position.x;
@@ -2818,7 +3346,7 @@ export function killEnemy(e, context = {}) {
       }
     });
   }
-  
+
   if (onlineCredit) {
     const reward = getEnemyPointReward(e, headshot);
     const multiplier = context.doublePoints === true ? 2 : 1;
@@ -2841,27 +3369,27 @@ export function killEnemy(e, context = {}) {
     player.kills++;
     updateKillsHUD(player.kills);
   }
-  
+
   // ── GUARANTEED MAX AMMO ON SPECIAL ROUND COMPLETION ──
   const isLastSwarmZombie = isSpecialRound && zombiesSpawnedSoFar >= zombiesToSpawnThisRound && activeEnemies.length === 1;
 
   if (isLastSwarmZombie) {
     const maxAmmoType = POWERUP_TYPES.find(p => p.name === 'MAX AMMO');
     const pMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: maxAmmoType.color, emissive: maxAmmoType.color, emissiveIntensity: 0.8 }));
-    pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh); 
+    pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh);
     activePowerups.push({ mesh: pMesh, type: maxAmmoType, life: 15.0 });
-  } 
+  }
   // ── STANDARD RANDOM POWERUP DROP ──
   else if (Math.random() < 0.10) {
     const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
     const pMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: type.color, emissive: type.color, emissiveIntensity: 0.8 }));
-    pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh); 
+    pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh);
     activePowerups.push({ mesh: pMesh, type: type, life: 15.0 });
   }
 }
 
-export function getActiveEnemies() { 
-  return activeEnemies; 
+export function getActiveEnemies() {
+  return activeEnemies;
 }
 
 export function applyNetworkWaveState(

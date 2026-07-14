@@ -1,5 +1,5 @@
 // js/actors/procedural_zombie.js
-// Procedural Zombie V3 — Pixel Horde / Crawler Edition.
+// Procedural Zombie V5 — Face, anatomy, and class-silhouette refinement.
 import * as THREE from 'three';
 
 function rand(min, max) {
@@ -10,12 +10,24 @@ function pick(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+const GEOMETRY_CACHE = new Map();
+
+function geometryKey(prefix, values) {
+  return `${prefix}:${values.map((value) => Number(value).toFixed(4)).join(':')}`;
+}
+
+function cachedGeometry(key, factory) {
+  if (!GEOMETRY_CACHE.has(key)) GEOMETRY_CACHE.set(key, factory());
+  return GEOMETRY_CACHE.get(key);
+}
+
 function makeStandardMaterial(color, extra = {}) {
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: 1.0,
-    metalness: 0.0,
+    roughness: 0.86,
+    metalness: 0.02,
     flatShading: true,
+    envMapIntensity: 0.34,
     ...extra
   });
 }
@@ -23,6 +35,7 @@ function makeStandardMaterial(color, extra = {}) {
 function makeBasicMaterial(color, extra = {}) {
   return new THREE.MeshBasicMaterial({
     color,
+    toneMapped: false,
     ...extra
   });
 }
@@ -50,11 +63,67 @@ function makePart(name, geometry, material, position, rotation = new THREE.Euler
 }
 
 function makeBox(name, w, h, d, material, position, rotation = new THREE.Euler()) {
-  return makePart(name, new THREE.BoxGeometry(w, h, d), material, position, rotation);
+  const key = geometryKey('box', [w, h, d]);
+  return makePart(name, cachedGeometry(key, () => new THREE.BoxGeometry(w, h, d)), material, position, rotation);
 }
 
 function makeCylinder(name, radiusTop, radiusBottom, height, material, position, rotation = new THREE.Euler(), segments = 6) {
-  return makePart(name, new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments), material, position, rotation);
+  const key = geometryKey('cylinder', [radiusTop, radiusBottom, height, segments]);
+  return makePart(
+    name,
+    cachedGeometry(key, () => new THREE.CylinderGeometry(radiusTop, radiusBottom, height, segments)),
+    material,
+    position,
+    rotation
+  );
+}
+
+function makeFacetedEllipsoid(name, w, h, d, material, position, rotation = new THREE.Euler()) {
+  const key = geometryKey('faceted-ellipsoid', [w, h, d]);
+  const geometry = cachedGeometry(key, () => {
+    const result = new THREE.SphereGeometry(0.5, 7, 5);
+    result.scale(w, h, d);
+    return result;
+  });
+  return makePart(name, geometry, material, position, rotation);
+}
+
+function makeEllipticalCylinder(
+  name,
+  radiusTop,
+  radiusBottom,
+  height,
+  depthScale,
+  material,
+  position,
+  rotation = new THREE.Euler(),
+  segments = 7
+) {
+  const part = makeCylinder(
+    name,
+    radiusTop,
+    radiusBottom,
+    height,
+    material,
+    position,
+    rotation,
+    segments
+  );
+  part.scale.z = depthScale;
+  part.userData.baseScale = part.scale.clone();
+  part.userData.shapeScale = part.scale.clone();
+  return part;
+}
+
+function makeConePart(name, radius, height, material, position, rotation = new THREE.Euler(), segments = 6) {
+  const key = geometryKey('cone', [radius, height, segments]);
+  return makePart(
+    name,
+    cachedGeometry(key, () => new THREE.ConeGeometry(radius, height, segments)),
+    material,
+    position,
+    rotation
+  );
 }
 
 function makePivot(name, position, rotation = new THREE.Euler()) {
@@ -105,17 +174,26 @@ export function createProceduralZombieVisual(options = {}) {
   const woundColor = pick([0x4a0505, 0x5b0b08, 0x3d0507]);
   const boneColor = pick([0xd5c8a0, 0xc6b58c, 0xe2d6b2]);
 
-  const bodyMaterial = makeStandardMaterial(bodyColor);
-  const headMaterial = makeStandardMaterial(bodyColor);
-  const clothMaterial = makeStandardMaterial(clothColor);
-  const pantsMaterial = makeStandardMaterial(pantsColor);
-  const sleeveMaterial = makeStandardMaterial(clothColor - 0x080808 > 0 ? clothColor - 0x080808 : clothColor);
-  const bootMaterial = makeStandardMaterial(0x070707);
-  const hairMaterial = makeStandardMaterial(pick([0x101610, 0x17120f, 0x1a151c]));
-  const armorMaterial = makeStandardMaterial(pick([0x46515e, 0x5a5267, 0x51473f]), { metalness: 0.05 });
-  const woundMaterial = makeStandardMaterial(woundColor, { emissive: new THREE.Color(woundColor), emissiveIntensity: 0.08 });
-  const boneMaterial = makeStandardMaterial(boneColor);
-  const mouthMaterial = makeBasicMaterial(0x020202);
+  const bodyMaterial = makeStandardMaterial(bodyColor, { roughness: 0.90, metalness: 0.01 });
+  const headMaterial = makeStandardMaterial(bodyColor, { roughness: 0.86, metalness: 0.01 });
+  const decayMaterial = makeStandardMaterial(0x4b5d50, { roughness: 0.96, metalness: 0.0 });
+  const clothMaterial = makeStandardMaterial(clothColor, { roughness: 0.98, metalness: 0.0 });
+  const pantsMaterial = makeStandardMaterial(pantsColor, { roughness: 0.99, metalness: 0.0 });
+  const sleeveMaterial = makeStandardMaterial(clothColor - 0x080808 > 0 ? clothColor - 0x080808 : clothColor, { roughness: 0.98 });
+  const bootMaterial = makeStandardMaterial(0x07090a, { roughness: 0.78, metalness: 0.10 });
+  const hairMaterial = makeStandardMaterial(pick([0x101610, 0x17120f, 0x1a151c]), { roughness: 0.96 });
+  const armorMaterial = makeStandardMaterial(pick([0x2f3b43, 0x41434d, 0x433b35]), { roughness: 0.48, metalness: 0.58 });
+  const woundMaterial = makeStandardMaterial(woundColor, { roughness: 0.70, emissive: new THREE.Color(woundColor), emissiveIntensity: 0.10 });
+  const boneMaterial = makeStandardMaterial(boneColor, { roughness: 0.76 });
+  const detailMaterial = makeStandardMaterial(0x101619, { roughness: 0.62, metalness: 0.36 });
+  const hazardMaterial = makeStandardMaterial(0xff8a25, {
+    color: 0xff8a25,
+    roughness: 0.42,
+    metalness: 0.24,
+    emissive: new THREE.Color(0xff3a00),
+    emissiveIntensity: 0.32
+  });
+  const mouthMaterial = makeBasicMaterial(0x010203);
   const eyeMaterial = makeBasicMaterial(0xff2222);
   const eyeGlowMaterial = makeBasicMaterial(0xff2222, {
     transparent: true,
@@ -133,14 +211,16 @@ export function createProceduralZombieVisual(options = {}) {
   const rangedMaterial = makeStandardMaterial(0x35f0ff, { emissive: new THREE.Color(0x00b8ff), emissiveIntensity: 0.35 });
 
   // ── Core body silhouette ──
-  const torso = makeBox(
+  const torso = makeEllipticalCylinder(
     "procedural_zombie_torso",
-    0.64 * widthMul,
+    0.36 * widthMul,
+    0.29 * widthMul,
     0.84 * heightMul,
-    0.38,
+    0.60,
     bodyMaterial,
     new THREE.Vector3(0, 1.20 * heightMul, 0),
-    new THREE.Euler(rand(-0.10, -0.03), rand(-0.03, 0.03), rand(-0.08, 0.08))
+    new THREE.Euler(rand(-0.10, -0.03), rand(-0.03, 0.03), rand(-0.08, 0.08)),
+    8
   );
 
   const chestSkin = makeBox(
@@ -210,16 +290,89 @@ export function createProceduralZombieVisual(options = {}) {
   );
   torso.add(tornShirtLeft, tornShirtRight, bellyShadow, chestScarA, chestScarB);
 
-  const shoulderBar = makeBox(
+  const shoulderBar = makeFacetedEllipsoid(
     "procedural_zombie_shoulders",
     0.90 * widthMul,
-    0.17,
-    0.46,
+    0.18,
+    0.42,
     bodyMaterial,
     new THREE.Vector3(0, 0.42 * heightMul, -0.01),
     new THREE.Euler(0, 0, rand(-0.04, 0.04))
   );
   torso.add(shoulderBar);
+
+  // Containment-era survivor clothing: a readable dark harness, asymmetric
+  // jacket tails, and back plates that catch the new arena lighting without
+  // changing hitboxes or navigation.
+  const harnessLeft = makeBox(
+    "procedural_zombie_harness_left",
+    0.075,
+    0.62 * heightMul,
+    0.045,
+    detailMaterial,
+    new THREE.Vector3(-0.18 * widthMul, 0.01, -0.245),
+    new THREE.Euler(0, 0, -0.16)
+  );
+  const harnessRight = makeBox(
+    "procedural_zombie_harness_right",
+    0.075,
+    0.62 * heightMul,
+    0.045,
+    detailMaterial,
+    new THREE.Vector3(0.18 * widthMul, 0.01, -0.245),
+    new THREE.Euler(0, 0, 0.16)
+  );
+  const harnessClasp = makeBox(
+    "procedural_zombie_harness_clasp",
+    0.20,
+    0.11,
+    0.055,
+    armorMaterial,
+    new THREE.Vector3(0, -0.05, -0.272)
+  );
+  const jacketTailLeft = makeBox(
+    "procedural_zombie_jacket_tail_left",
+    0.22 * widthMul,
+    0.38,
+    0.075,
+    clothMaterial,
+    new THREE.Vector3(-0.17 * widthMul, -0.43 * heightMul, 0.03),
+    new THREE.Euler(0.08, 0, -0.10)
+  );
+  const jacketTailRight = makeBox(
+    "procedural_zombie_jacket_tail_right",
+    0.18 * widthMul,
+    0.31,
+    0.075,
+    clothMaterial,
+    new THREE.Vector3(0.19 * widthMul, -0.45 * heightMul, 0.04),
+    new THREE.Euler(-0.05, 0, 0.12)
+  );
+  const spinePlateA = makeBox(
+    "procedural_zombie_spine_plate_a",
+    0.20,
+    0.10,
+    0.055,
+    armorMaterial,
+    new THREE.Vector3(0, 0.20, 0.225)
+  );
+  const spinePlateB = makeBox(
+    "procedural_zombie_spine_plate_b",
+    0.18,
+    0.10,
+    0.055,
+    armorMaterial,
+    new THREE.Vector3(0.02 * asym, 0.03, 0.225)
+  );
+  const spinePlateC = makeBox(
+    "procedural_zombie_spine_plate_c",
+    0.16,
+    0.10,
+    0.055,
+    armorMaterial,
+    new THREE.Vector3(-0.02 * asym, -0.14, 0.225)
+  );
+  torso.add(harnessLeft, harnessRight, harnessClasp, jacketTailLeft, jacketTailRight, spinePlateA, spinePlateB, spinePlateC);
 
   const collarLeft = makeBox(
     "procedural_zombie_collar_left",
@@ -292,19 +445,73 @@ export function createProceduralZombieVisual(options = {}) {
     new THREE.Vector3(0.48 * widthMul, 0.39 * heightMul, -0.02),
     new THREE.Euler(0, 0, -0.10)
   );
+  const containmentCanister = makeCylinder(
+    "procedural_zombie_containment_canister",
+    0.15,
+    0.15,
+    0.56,
+    armorMaterial,
+    new THREE.Vector3(0.22 * asym * widthMul, -0.02, 0.31),
+    new THREE.Euler(0, 0, 0.04 * asym),
+    8
+  );
+  const containmentCanisterGlow = makeBox(
+    "procedural_zombie_containment_canister_glow",
+    0.12,
+    0.30,
+    0.035,
+    rangedMaterial,
+    new THREE.Vector3(0.22 * asym * widthMul, -0.02, 0.47)
+  );
+  const hazardChestBar = makeBox(
+    "procedural_zombie_hazard_chest_bar",
+    0.38 * widthMul,
+    0.055,
+    0.045,
+    hazardMaterial,
+    new THREE.Vector3(0, -0.15 * heightMul, -0.305),
+    new THREE.Euler(0, 0, -0.06 * asym)
+  );
+  const jawGuard = makeBox(
+    "procedural_zombie_jaw_guard",
+    0.42 * widthMul,
+    0.14,
+    0.08,
+    armorMaterial,
+    new THREE.Vector3(0, -0.25, -0.30),
+    new THREE.Euler(0, 0, 0.04 * asym)
+  );
   goliathChestPlate.visible = false;
   goliathShoulderLeft.visible = false;
   goliathShoulderRight.visible = false;
-  torso.add(collarLeft, collarRight, shirtRipA, shirtRipB, toxicChestNode, goliathChestPlate, goliathShoulderLeft, goliathShoulderRight);
+  containmentCanister.visible = false;
+  containmentCanisterGlow.visible = false;
+  hazardChestBar.visible = false;
+  jawGuard.visible = false;
+  torso.add(
+    collarLeft,
+    collarRight,
+    shirtRipA,
+    shirtRipB,
+    toxicChestNode,
+    goliathChestPlate,
+    goliathShoulderLeft,
+    goliathShoulderRight,
+    containmentCanister,
+    containmentCanisterGlow,
+    hazardChestBar
+  );
 
-  const pelvis = makeBox(
+  const pelvis = makeEllipticalCylinder(
     "procedural_zombie_pelvis",
-    0.54 * widthMul,
-    0.22,
-    0.36,
+    0.28 * widthMul,
+    0.25 * widthMul,
+    0.24,
+    0.72,
     pantsMaterial,
     new THREE.Vector3(0, 0.72 * heightMul, 0),
-    new THREE.Euler(0, 0, rand(-0.04, 0.04))
+    new THREE.Euler(0, 0, rand(-0.04, 0.04)),
+    7
   );
   const waistBand = makeBox(
     "procedural_zombie_waist_band",
@@ -337,11 +544,11 @@ export function createProceduralZombieVisual(options = {}) {
     6
   );
 
-  const head = makeBox(
+  const head = makeFacetedEllipsoid(
     "procedural_zombie_head",
-    0.62 * widthMul,
-    0.58,
-    0.52,
+    0.56 * widthMul,
+    0.64,
+    0.50,
     headMaterial,
     new THREE.Vector3(crooked, 1.88 * heightMul, -0.04),
     new THREE.Euler(rand(-0.05, 0.08), rand(-0.10, 0.10), rand(-0.08, 0.08))
@@ -411,158 +618,270 @@ export function createProceduralZombieVisual(options = {}) {
   head.add(hairChunkA, hairChunkB, hairChunkC, missingSkullPlate, leftEar, rightEar);
 
   // ── Face details ──
-  const brow = makeBox(
+  // VIS.6 replaces the former rectangular eye-band face with layered cheek,
+  // brow, jaw, and socket planes. The headshot contract remains attached to
+  // the full head hierarchy.
+  const brow = makePivot(
     "procedural_zombie_brow",
-    0.46 * widthMul,
-    0.08,
-    0.055,
-    headMaterial,
-    new THREE.Vector3(0, 0.12, -0.275),
-    new THREE.Euler(0, 0, rand(-0.04, 0.04))
+    new THREE.Vector3(0, 0.105, -0.245),
+    new THREE.Euler(0, 0, rand(-0.025, 0.025))
   );
+  const leftBrowPlate = makeBox(
+    "procedural_zombie_left_brow_plate",
+    0.21 * widthMul,
+    0.070,
+    0.055,
+    decayMaterial,
+    new THREE.Vector3(-0.12 * widthMul, 0, -0.035),
+    new THREE.Euler(0.08, -0.08, -0.15)
+  );
+  const rightBrowPlate = makeBox(
+    "procedural_zombie_right_brow_plate",
+    0.21 * widthMul,
+    0.070,
+    0.055,
+    decayMaterial,
+    new THREE.Vector3(0.12 * widthMul, 0, -0.035),
+    new THREE.Euler(0.08, 0.08, 0.15)
+  );
+  brow.add(leftBrowPlate, rightBrowPlate);
+
   const browShadow = makeBox(
     "procedural_zombie_brow_shadow",
-    0.50 * widthMul,
-    0.045,
-    0.025,
+    0.075,
+    0.115,
+    0.030,
     mouthMaterial,
-    new THREE.Vector3(0, 0.075, -0.305)
+    new THREE.Vector3(0, 0.055, -0.292),
+    new THREE.Euler(0, 0, 0.03 * asym)
   );
-  const leftEyeSocket = makeBox(
+  const leftEyeSocket = makeFacetedEllipsoid(
     "procedural_zombie_left_eye_socket",
-    0.18,
-    0.115,
-    0.045,
+    0.145,
+    0.100,
+    0.055,
     mouthMaterial,
-    new THREE.Vector3(-0.15 * widthMul, 0.035, -0.342),
-    new THREE.Euler(0, 0, -0.04)
+    new THREE.Vector3(-0.135 * widthMul, 0.025, -0.286),
+    new THREE.Euler(0.02, -0.08, -0.08)
   );
-  const rightEyeSocket = makeBox(
+  const rightEyeSocket = makeFacetedEllipsoid(
     "procedural_zombie_right_eye_socket",
-    0.18,
-    0.115,
-    0.045,
+    0.145,
+    0.100,
+    0.055,
     mouthMaterial,
-    new THREE.Vector3(0.15 * widthMul, 0.035, -0.342),
-    new THREE.Euler(0, 0, 0.04)
+    new THREE.Vector3(0.135 * widthMul, 0.025, -0.286),
+    new THREE.Euler(0.02, 0.08, 0.08)
   );
-  const leftEyeGlow = makeBox(
+  const leftEyeGlow = makeFacetedEllipsoid(
     "procedural_zombie_left_eye_glow",
-    0.135,
-    0.090,
-    0.025,
+    0.105,
+    0.062,
+    0.034,
     eyeGlowMaterial,
-    new THREE.Vector3(-0.15 * widthMul, 0.04, -0.370)
+    new THREE.Vector3(-0.135 * widthMul, 0.026, -0.322)
   );
-  const rightEyeGlow = makeBox(
+  const rightEyeGlow = makeFacetedEllipsoid(
     "procedural_zombie_right_eye_glow",
-    0.135,
-    0.090,
-    0.025,
+    0.105,
+    0.062,
+    0.034,
     eyeGlowMaterial,
-    new THREE.Vector3(0.15 * widthMul, 0.04, -0.370)
+    new THREE.Vector3(0.135 * widthMul, 0.026, -0.322)
   );
-  const leftEye = makeBox(
+  const leftEye = makeFacetedEllipsoid(
     "procedural_zombie_left_eye",
-    0.080,
-    0.050,
-    0.04,
+    0.056,
+    0.034,
+    0.030,
     eyeMaterial,
-    new THREE.Vector3(-0.15 * widthMul, 0.04, -0.395)
+    new THREE.Vector3(-0.135 * widthMul, 0.026, -0.346)
   );
-  const rightEye = makeBox(
+  const rightEye = makeFacetedEllipsoid(
     "procedural_zombie_right_eye",
-    0.080,
-    0.050,
-    0.04,
+    0.056,
+    0.034,
+    0.030,
     eyeMaterial,
-    new THREE.Vector3(0.15 * widthMul, 0.04, -0.395)
+    new THREE.Vector3(0.135 * widthMul, 0.026, -0.346)
   );
-  const nose = makeBox(
+  const leftEyeLid = makeBox(
+    "procedural_zombie_left_eye_lid",
+    0.125,
+    0.025,
+    0.030,
+    decayMaterial,
+    new THREE.Vector3(-0.135 * widthMul, 0.070, -0.337),
+    new THREE.Euler(0, 0, -0.10)
+  );
+  const rightEyeLid = makeBox(
+    "procedural_zombie_right_eye_lid",
+    0.125,
+    0.025,
+    0.030,
+    decayMaterial,
+    new THREE.Vector3(0.135 * widthMul, 0.070, -0.337),
+    new THREE.Euler(0, 0, 0.10)
+  );
+
+  const nose = makeConePart(
     "procedural_zombie_nose",
-    0.09,
-    0.13,
-    0.08,
-    headMaterial,
-    new THREE.Vector3(0.01 * asym, -0.045, -0.305)
+    0.055,
+    0.145,
+    decayMaterial,
+    new THREE.Vector3(0.01 * asym, -0.035, -0.300),
+    new THREE.Euler(-Math.PI / 2, 0, 0.05 * asym),
+    5
+  );
+  const leftCheek = makeFacetedEllipsoid(
+    "procedural_zombie_left_cheek",
+    0.205,
+    0.165,
+    0.105,
+    decayMaterial,
+    new THREE.Vector3(-0.145 * widthMul, -0.095, -0.230),
+    new THREE.Euler(0.03, -0.08, -0.08)
+  );
+  const rightCheek = makeFacetedEllipsoid(
+    "procedural_zombie_right_cheek",
+    0.205,
+    0.165,
+    0.105,
+    decayMaterial,
+    new THREE.Vector3(0.145 * widthMul, -0.095, -0.230),
+    new THREE.Euler(0.03, 0.08, 0.08)
+  );
+  const upperJaw = makeFacetedEllipsoid(
+    "procedural_zombie_upper_jaw",
+    0.33 * widthMul,
+    0.145,
+    0.135,
+    decayMaterial,
+    new THREE.Vector3(0.015 * asym, -0.165, -0.242),
+    new THREE.Euler(0.02, 0, 0.02 * asym)
+  );
+  const lowerJaw = makeFacetedEllipsoid(
+    "procedural_zombie_lower_jaw",
+    0.29 * widthMul,
+    0.125,
+    0.140,
+    decayMaterial,
+    new THREE.Vector3(0.035 * asym, -0.270, -0.222),
+    new THREE.Euler(0.10, 0, -0.08 * asym)
   );
   const mouth = makeBox(
     "procedural_zombie_mouth",
-    0.30 * widthMul,
-    0.065,
+    0.275 * widthMul,
+    0.055,
     0.045,
     mouthMaterial,
-    new THREE.Vector3(0.02 * asym, -0.19, -0.305),
-    new THREE.Euler(0, 0, rand(-0.03, 0.03))
+    new THREE.Vector3(0.02 * asym, -0.205, -0.320),
+    new THREE.Euler(0, 0, rand(-0.035, 0.035))
   );
-  const toothA = makeBox("procedural_zombie_tooth_a", 0.035, 0.07, 0.025, boneMaterial, new THREE.Vector3(-0.07 * widthMul, -0.205, -0.325));
-  const toothB = makeBox("procedural_zombie_tooth_b", 0.035, 0.055, 0.025, boneMaterial, new THREE.Vector3(0.03 * widthMul, -0.205, -0.325));
-  const toothC = makeBox("procedural_zombie_tooth_c", 0.032, 0.05, 0.025, boneMaterial, new THREE.Vector3(0.11 * widthMul, -0.203, -0.325));
+  const toothA = makeConePart("procedural_zombie_tooth_a", 0.020, 0.070, boneMaterial, new THREE.Vector3(-0.065 * widthMul, -0.210, -0.346), new THREE.Euler(0, 0, Math.PI), 4);
+  const toothB = makeConePart("procedural_zombie_tooth_b", 0.018, 0.060, boneMaterial, new THREE.Vector3(0.015 * widthMul, -0.207, -0.346), new THREE.Euler(0, 0, Math.PI), 4);
+  const toothC = makeConePart("procedural_zombie_tooth_c", 0.018, 0.055, boneMaterial, new THREE.Vector3(0.090 * widthMul, -0.205, -0.346), new THREE.Euler(0, 0, Math.PI), 4);
   const cheekCut = makeBox(
     "procedural_zombie_cheek_cut",
-    0.18,
-    0.045,
-    0.03,
+    0.17,
+    0.036,
+    0.030,
     woundMaterial,
-    new THREE.Vector3(-0.21 * asym * widthMul, -0.07, -0.315),
-    new THREE.Euler(0, 0, 0.25 * asym)
+    new THREE.Vector3(-0.20 * asym * widthMul, -0.085, -0.304),
+    new THREE.Euler(0, 0, 0.28 * asym)
   );
-  const skullPatch = makeBox(
+  const skullPatch = makeFacetedEllipsoid(
     "procedural_zombie_skull_patch",
-    0.24,
-    0.12,
-    0.03,
+    0.23,
+    0.115,
+    0.035,
     woundMaterial,
-    new THREE.Vector3(-0.13 * asym * widthMul, 0.25, -0.295),
+    new THREE.Vector3(-0.13 * asym * widthMul, 0.245, -0.250),
     new THREE.Euler(0, 0, rand(-0.12, 0.12))
   );
   const brokenJaw = makeBox(
     "procedural_zombie_broken_lower_jaw",
-    0.20 * widthMul,
-    0.075,
+    0.17 * widthMul,
+    0.065,
     0.045,
     boneMaterial,
-    new THREE.Vector3(0.07 * asym * widthMul, -0.255, -0.318),
-    new THREE.Euler(0, 0, -0.10 * asym)
+    new THREE.Vector3(0.085 * asym * widthMul, -0.282, -0.302),
+    new THREE.Euler(0, 0, -0.12 * asym)
   );
   const jawWound = makeBox(
     "procedural_zombie_jaw_wound",
-    0.17 * widthMul,
-    0.055,
-    0.04,
+    0.16 * widthMul,
+    0.050,
+    0.038,
     woundMaterial,
-    new THREE.Vector3(-0.09 * asym * widthMul, -0.255, -0.322),
+    new THREE.Vector3(-0.085 * asym * widthMul, -0.280, -0.304),
     new THREE.Euler(0, 0, 0.18 * asym)
   );
   const templeCrack = makeBox(
     "procedural_zombie_temple_crack",
-    0.15,
-    0.032,
+    0.14,
     0.028,
+    0.025,
     mouthMaterial,
-    new THREE.Vector3(0.20 * asym * widthMul, 0.18, -0.300),
+    new THREE.Vector3(0.19 * asym * widthMul, 0.175, -0.275),
     new THREE.Euler(0, 0, 0.72 * asym)
   );
 
-  addHeadFlag(brow);
-  addHeadFlag(browShadow);
-  addHeadFlag(leftEyeSocket);
-  addHeadFlag(rightEyeSocket);
-  addHeadFlag(leftEyeGlow);
-  addHeadFlag(rightEyeGlow);
-  addHeadFlag(leftEye);
-  addHeadFlag(rightEye);
-  addHeadFlag(nose);
-  addHeadFlag(mouth);
-  addHeadFlag(toothA);
-  addHeadFlag(toothB);
-  addHeadFlag(toothC);
-  addHeadFlag(cheekCut);
-  addHeadFlag(skullPatch);
-  addHeadFlag(brokenJaw);
-  addHeadFlag(jawWound);
-  addHeadFlag(templeCrack);
-  head.add(brow, browShadow, leftEyeSocket, rightEyeSocket, leftEyeGlow, rightEyeGlow, leftEye, rightEye, nose, mouth, toothA, toothB, toothC, cheekCut, skullPatch, brokenJaw, jawWound, templeCrack);
+  [
+    brow,
+    leftBrowPlate,
+    rightBrowPlate,
+    browShadow,
+    leftEyeSocket,
+    rightEyeSocket,
+    leftEyeGlow,
+    rightEyeGlow,
+    leftEye,
+    rightEye,
+    leftEyeLid,
+    rightEyeLid,
+    nose,
+    leftCheek,
+    rightCheek,
+    upperJaw,
+    lowerJaw,
+    mouth,
+    toothA,
+    toothB,
+    toothC,
+    cheekCut,
+    skullPatch,
+    brokenJaw,
+    jawWound,
+    templeCrack
+  ].forEach(addHeadFlag);
+  head.add(
+    brow,
+    browShadow,
+    leftEyeSocket,
+    rightEyeSocket,
+    leftEyeGlow,
+    rightEyeGlow,
+    leftEye,
+    rightEye,
+    leftEyeLid,
+    rightEyeLid,
+    nose,
+    leftCheek,
+    rightCheek,
+    upperJaw,
+    lowerJaw,
+    mouth,
+    toothA,
+    toothB,
+    toothC,
+    cheekCut,
+    skullPatch,
+    brokenJaw,
+    jawWound,
+    templeCrack,
+    jawGuard
+  );
 
   // ── Rib and mutation details ──
   const ribA = makeBox("procedural_zombie_rib_a", 0.22, 0.035, 0.035, boneMaterial, new THREE.Vector3(0.03 * asym, 0.17, -0.235), new THREE.Euler(0, 0, 0.12 * asym));
@@ -684,14 +1003,14 @@ export function createProceduralZombieVisual(options = {}) {
     new THREE.Euler(rand(-0.24, -0.12), 0, rand(-0.22, -0.10))
   );
 
-  const leftSleeve = makeBox("procedural_zombie_left_sleeve", 0.24, 0.30, 0.24, sleeveMaterial, new THREE.Vector3(-0.03, -0.16, 0), new THREE.Euler(0.03, 0, 0.02));
-  const rightSleeve = makeBox("procedural_zombie_right_sleeve", 0.24, 0.30, 0.24, sleeveMaterial, new THREE.Vector3(0.03, -0.16, 0), new THREE.Euler(-0.03, 0, -0.02));
-  const leftUpperArm = makeBox("procedural_zombie_left_upper_arm", 0.18, 0.42, 0.18, bodyMaterial, new THREE.Vector3(-0.06, -0.40, 0.01), new THREE.Euler(0.08, 0, 0.05));
-  const rightUpperArm = makeBox("procedural_zombie_right_upper_arm", 0.18, 0.42, 0.18, bodyMaterial, new THREE.Vector3(0.06, -0.40, 0.01), new THREE.Euler(-0.08, 0, -0.05));
-  const leftForearm = makeBox("procedural_zombie_left_forearm", 0.16, 0.50, 0.16, bodyMaterial, new THREE.Vector3(-0.10, -0.78, 0.05), new THREE.Euler(0.18, 0, -0.04));
-  const rightForearm = makeBox("procedural_zombie_right_forearm", 0.16, 0.50, 0.16, bodyMaterial, new THREE.Vector3(0.10, -0.78, 0.05), new THREE.Euler(0.18, 0, 0.04));
-  const leftHand = makeBox("procedural_zombie_left_hand", 0.20, 0.15, 0.20, bodyMaterial, new THREE.Vector3(-0.13, -1.06, 0.09), new THREE.Euler(0, 0, -0.08));
-  const rightHand = makeBox("procedural_zombie_right_hand", 0.20, 0.15, 0.20, bodyMaterial, new THREE.Vector3(0.13, -1.06, 0.09), new THREE.Euler(0, 0, 0.08));
+  const leftSleeve = makeEllipticalCylinder("procedural_zombie_left_sleeve", 0.125, 0.105, 0.30, 0.86, sleeveMaterial, new THREE.Vector3(-0.03, -0.16, 0), new THREE.Euler(0.03, 0, 0.02), 7);
+  const rightSleeve = makeEllipticalCylinder("procedural_zombie_right_sleeve", 0.125, 0.105, 0.30, 0.86, sleeveMaterial, new THREE.Vector3(0.03, -0.16, 0), new THREE.Euler(-0.03, 0, -0.02), 7);
+  const leftUpperArm = makeEllipticalCylinder("procedural_zombie_left_upper_arm", 0.095, 0.078, 0.42, 0.84, bodyMaterial, new THREE.Vector3(-0.06, -0.40, 0.01), new THREE.Euler(0.08, 0, 0.05), 7);
+  const rightUpperArm = makeEllipticalCylinder("procedural_zombie_right_upper_arm", 0.095, 0.078, 0.42, 0.84, bodyMaterial, new THREE.Vector3(0.06, -0.40, 0.01), new THREE.Euler(-0.08, 0, -0.05), 7);
+  const leftForearm = makeEllipticalCylinder("procedural_zombie_left_forearm", 0.084, 0.068, 0.50, 0.82, bodyMaterial, new THREE.Vector3(-0.10, -0.78, 0.05), new THREE.Euler(0.18, 0, -0.04), 7);
+  const rightForearm = makeEllipticalCylinder("procedural_zombie_right_forearm", 0.084, 0.068, 0.50, 0.82, bodyMaterial, new THREE.Vector3(0.10, -0.78, 0.05), new THREE.Euler(0.18, 0, 0.04), 7);
+  const leftHand = makeFacetedEllipsoid("procedural_zombie_left_hand", 0.20, 0.15, 0.19, bodyMaterial, new THREE.Vector3(-0.13, -1.06, 0.09), new THREE.Euler(0, 0, -0.08));
+  const rightHand = makeFacetedEllipsoid("procedural_zombie_right_hand", 0.20, 0.15, 0.19, bodyMaterial, new THREE.Vector3(0.13, -1.06, 0.09), new THREE.Euler(0, 0, 0.08));
   const leftFingerA = makeBox("procedural_zombie_left_finger_a", 0.035, 0.12, 0.035, bodyMaterial, new THREE.Vector3(-0.075, -0.12, -0.03), new THREE.Euler(0.10, 0, -0.18));
   const leftFingerB = makeBox("procedural_zombie_left_finger_b", 0.035, 0.13, 0.035, bodyMaterial, new THREE.Vector3(-0.020, -0.13, -0.04), new THREE.Euler(0.06, 0, -0.03));
   const leftFingerC = makeBox("procedural_zombie_left_finger_c", 0.035, 0.11, 0.035, bodyMaterial, new THREE.Vector3(0.038, -0.12, -0.03), new THREE.Euler(0.10, 0, 0.14));
@@ -706,9 +1025,49 @@ export function createProceduralZombieVisual(options = {}) {
   const rightArmBone = makeCylinder("procedural_zombie_right_arm_bone", 0.035, 0.035, 0.32, boneMaterial, new THREE.Vector3(0.16, -0.72, -0.055), new THREE.Euler(0.22, 0, 0.05), 6);
   const leftForearmScar = makeBox("procedural_zombie_left_forearm_scar", 0.13, 0.032, 0.03, woundMaterial, new THREE.Vector3(-0.13, -0.86, -0.055), new THREE.Euler(0, 0, -0.35));
   const rightSleeveTear = makeBox("procedural_zombie_right_sleeve_tear", 0.13, 0.035, 0.035, mouthMaterial, new THREE.Vector3(0.08, -0.22, -0.085), new THREE.Euler(0, 0, 0.35));
+  const leftForearmGuard = makeBox(
+    "procedural_zombie_left_forearm_guard",
+    0.23,
+    0.34,
+    0.24,
+    armorMaterial,
+    new THREE.Vector3(-0.10, -0.78, 0.04),
+    new THREE.Euler(0.18, 0, -0.04)
+  );
+  const rightForearmGuard = makeBox(
+    "procedural_zombie_right_forearm_guard",
+    0.23,
+    0.34,
+    0.24,
+    armorMaterial,
+    new THREE.Vector3(0.10, -0.78, 0.04),
+    new THREE.Euler(0.18, 0, 0.04)
+  );
+  const leftClawPlate = makeBox(
+    "procedural_zombie_left_claw_plate",
+    0.24,
+    0.08,
+    0.30,
+    detailMaterial,
+    new THREE.Vector3(-0.13, -1.07, -0.05),
+    new THREE.Euler(0.05, 0, -0.08)
+  );
+  const rightClawPlate = makeBox(
+    "procedural_zombie_right_claw_plate",
+    0.24,
+    0.08,
+    0.30,
+    detailMaterial,
+    new THREE.Vector3(0.13, -1.07, -0.05),
+    new THREE.Euler(0.05, 0, 0.08)
+  );
+  leftForearmGuard.visible = false;
+  rightForearmGuard.visible = false;
+  leftClawPlate.visible = false;
+  rightClawPlate.visible = false;
 
-  leftArm.add(leftSleeve, leftUpperArm, leftForearm, leftHand, leftArmWound, leftForearmScar);
-  rightArm.add(rightSleeve, rightUpperArm, rightForearm, rightHand, rightArmBone, rightSleeveTear);
+  leftArm.add(leftSleeve, leftUpperArm, leftForearm, leftHand, leftArmWound, leftForearmScar, leftForearmGuard, leftClawPlate);
+  rightArm.add(rightSleeve, rightUpperArm, rightForearm, rightHand, rightArmBone, rightSleeveTear, rightForearmGuard, rightClawPlate);
 
   // ── Legs: pants, exposed shin, boots ──
   const leftLeg = makePivot(
@@ -722,14 +1081,14 @@ export function createProceduralZombieVisual(options = {}) {
     new THREE.Euler(rand(-0.03, 0.03), 0, rand(-0.08, 0.08))
   );
 
-  const leftThigh = makeBox("procedural_zombie_left_thigh", 0.24, 0.42, 0.24, pantsMaterial, new THREE.Vector3(0, -0.22, 0), new THREE.Euler(0.02, 0, -0.02));
-  const rightThigh = makeBox("procedural_zombie_right_thigh", 0.24, 0.42, 0.24, pantsMaterial, new THREE.Vector3(0, -0.22, 0), new THREE.Euler(-0.02, 0, 0.02));
-  const leftShin = makeBox("procedural_zombie_left_shin", 0.19, 0.46, 0.20, pantsMaterial, new THREE.Vector3(-0.02, -0.64, 0.01), new THREE.Euler(0.04, 0, -0.04));
-  const rightShin = makeBox("procedural_zombie_right_shin", 0.19, 0.46, 0.20, pantsMaterial, new THREE.Vector3(0.02, -0.64, 0.01), new THREE.Euler(-0.04, 0, 0.04));
+  const leftThigh = makeEllipticalCylinder("procedural_zombie_left_thigh", 0.130, 0.108, 0.42, 0.84, pantsMaterial, new THREE.Vector3(0, -0.22, 0), new THREE.Euler(0.02, 0, -0.02), 7);
+  const rightThigh = makeEllipticalCylinder("procedural_zombie_right_thigh", 0.130, 0.108, 0.42, 0.84, pantsMaterial, new THREE.Vector3(0, -0.22, 0), new THREE.Euler(-0.02, 0, 0.02), 7);
+  const leftShin = makeEllipticalCylinder("procedural_zombie_left_shin", 0.105, 0.086, 0.46, 0.80, pantsMaterial, new THREE.Vector3(-0.02, -0.64, 0.01), new THREE.Euler(0.04, 0, -0.04), 7);
+  const rightShin = makeEllipticalCylinder("procedural_zombie_right_shin", 0.105, 0.086, 0.46, 0.80, pantsMaterial, new THREE.Vector3(0.02, -0.64, 0.01), new THREE.Euler(-0.04, 0, 0.04), 7);
   const leftKneeSkin = makeBox("procedural_zombie_left_knee_skin", 0.18, 0.14, 0.045, bodyMaterial, new THREE.Vector3(0.02, -0.43, -0.125));
   const rightKneeWound = makeBox("procedural_zombie_right_knee_wound", 0.17, 0.15, 0.050, woundMaterial, new THREE.Vector3(-0.02, -0.43, -0.130));
-  const leftBoot = makeBox("procedural_zombie_left_bare_foot", 0.28, 0.13, 0.40, bodyMaterial, new THREE.Vector3(-0.02, -0.94, -0.05), new THREE.Euler(0.02, 0, -0.03));
-  const rightBoot = makeBox("procedural_zombie_right_bare_foot", 0.28, 0.13, 0.40, bodyMaterial, new THREE.Vector3(0.02, -0.94, -0.05), new THREE.Euler(-0.02, 0, 0.03));
+  const leftBoot = makeFacetedEllipsoid("procedural_zombie_left_bare_foot", 0.29, 0.14, 0.40, bodyMaterial, new THREE.Vector3(-0.02, -0.94, -0.05), new THREE.Euler(0.02, 0, -0.03));
+  const rightBoot = makeFacetedEllipsoid("procedural_zombie_right_bare_foot", 0.29, 0.14, 0.40, bodyMaterial, new THREE.Vector3(0.02, -0.94, -0.05), new THREE.Euler(-0.02, 0, 0.03));
   const leftBootSole = makeBox("procedural_zombie_left_toes", 0.25, 0.035, 0.10, bodyMaterial, new THREE.Vector3(0.02, -0.045, -0.22), new THREE.Euler(0, 0, -0.04));
   const rightBootSole = makeBox("procedural_zombie_right_toes", 0.25, 0.035, 0.10, bodyMaterial, new THREE.Vector3(-0.02, -0.045, -0.22), new THREE.Euler(0, 0, 0.04));
   const leftPantsCuff = makeBox("procedural_zombie_left_pants_cuff", 0.22, 0.08, 0.17, pantsMaterial, new THREE.Vector3(-0.03, -0.78, -0.01), new THREE.Euler(0, 0, -0.08));
@@ -754,6 +1113,7 @@ export function createProceduralZombieVisual(options = {}) {
 
   group.userData.bodyMaterial = bodyMaterial;
   group.userData.headMaterial = headMaterial;
+  group.userData.decayMaterial = decayMaterial;
   group.userData.clothMaterial = clothMaterial;
   group.userData.pantsMaterial = pantsMaterial;
   group.userData.eyeMaterial = eyeMaterial;
@@ -763,6 +1123,8 @@ export function createProceduralZombieVisual(options = {}) {
   group.userData.bootMaterial = bootMaterial;
   group.userData.hairMaterial = hairMaterial;
   group.userData.armorMaterial = armorMaterial;
+  group.userData.detailMaterial = detailMaterial;
+  group.userData.hazardMaterial = hazardMaterial;
   group.userData.eyeGlowMaterial = eyeGlowMaterial;
   group.userData.toxicMaterial = toxicMaterial;
   group.userData.mutationMaterial = mutationMaterial;
@@ -778,6 +1140,14 @@ export function createProceduralZombieVisual(options = {}) {
     chestScarA,
     chestScarB,
     shoulderBar,
+    harnessLeft,
+    harnessRight,
+    harnessClasp,
+    jacketTailLeft,
+    jacketTailRight,
+    spinePlateA,
+    spinePlateB,
+    spinePlateC,
     collarLeft,
     collarRight,
     shirtRipA,
@@ -786,6 +1156,10 @@ export function createProceduralZombieVisual(options = {}) {
     goliathChestPlate,
     goliathShoulderLeft,
     goliathShoulderRight,
+    containmentCanister,
+    containmentCanisterGlow,
+    hazardChestBar,
+    jawGuard,
     pelvis,
     waistBand,
     beltBuckle,
@@ -798,6 +1172,8 @@ export function createProceduralZombieVisual(options = {}) {
     leftEar,
     rightEar,
     brow,
+    leftBrowPlate,
+    rightBrowPlate,
     browShadow,
     leftEyeSocket,
     rightEyeSocket,
@@ -805,7 +1181,13 @@ export function createProceduralZombieVisual(options = {}) {
     rightEyeGlow,
     leftEye,
     rightEye,
+    leftEyeLid,
+    rightEyeLid,
     nose,
+    leftCheek,
+    rightCheek,
+    upperJaw,
+    lowerJaw,
     mouth,
     toothA,
     toothB,
@@ -849,6 +1231,10 @@ export function createProceduralZombieVisual(options = {}) {
     rightArmBone,
     leftForearmScar,
     rightSleeveTear,
+    leftForearmGuard,
+    rightForearmGuard,
+    leftClawPlate,
+    rightClawPlate,
     leftLeg,
     rightLeg,
     leftThigh,
@@ -879,6 +1265,7 @@ export function createProceduralZombieVisual(options = {}) {
   group.userData.motionSpeed = 1.0;
   group.userData.motionPower = 1.0;
   group.userData.typeName = "SHAMBLER";
+  group.userData.visualPatch = "vis6-zombie-face-silhouette-r1";
 
   return group;
 }
@@ -886,7 +1273,6 @@ export function createProceduralZombieVisual(options = {}) {
 export function updateProceduralZombieStyle(group, config = {}) {
   if (!group) return;
 
-  const color = config.color ?? 0x7fa06b;
   const typeName = config.name ?? config.type ?? "SHAMBLER";
   const parts = group.userData.parts;
   if (!parts) return;
@@ -895,23 +1281,63 @@ export function updateProceduralZombieStyle(group, config = {}) {
 
   const bodyMaterial = group.userData.bodyMaterial;
   const headMaterial = group.userData.headMaterial;
+  const decayMaterial = group.userData.decayMaterial;
+  const clothMaterial = group.userData.clothMaterial;
+  const pantsMaterial = group.userData.pantsMaterial;
+  const armorMaterial = group.userData.armorMaterial;
+  const detailMaterial = group.userData.detailMaterial;
+  const hazardMaterial = group.userData.hazardMaterial;
+  const woundMaterial = group.userData.woundMaterial;
   const eyeMaterial = group.userData.eyeMaterial;
   const eyeGlowMaterial = group.userData.eyeGlowMaterial;
   const toxicMaterial = group.userData.toxicMaterial;
   const mutationMaterial = group.userData.mutationMaterial;
   const rangedMaterial = group.userData.rangedMaterial;
 
+  const palettes = {
+    SHAMBLER: { skin: 0x526b58, head: 0x617765, cloth: 0x252a28, pants: 0x171d20, armor: 0x334149, accent: 0xd5e89a },
+    CRAWLER: { skin: 0x64704a, head: 0x727d55, cloth: 0x293022, pants: 0x171b17, armor: 0x3b4840, accent: 0x8fff44 },
+    RUNNER: { skin: 0x6d3f3f, head: 0x7d4945, cloth: 0x302226, pants: 0x1d171a, armor: 0x4a3535, accent: 0xff3b2f },
+    BRUTE: { skin: 0x55435e, head: 0x65506d, cloth: 0x29232d, pants: 0x19171d, armor: 0x4d4658, accent: 0xc87cff },
+    GOLIATH: { skin: 0x2b3032, head: 0x343a3c, cloth: 0x171b1d, pants: 0x111416, armor: 0x4d5459, accent: 0xffa11a },
+    EXPLODER: { skin: 0x6d4937, head: 0x79503c, cloth: 0x35251f, pants: 0x201814, armor: 0x4a3d32, accent: 0xff6b1a },
+    RANGED: { skin: 0x365f62, head: 0x426e70, cloth: 0x1d3033, pants: 0x141f22, armor: 0x31545b, accent: 0x35f0ff }
+  };
+  const palette = palettes[typeName] || palettes.SHAMBLER;
+
   if (bodyMaterial) {
-    bodyMaterial.color.setHex(color);
-    bodyMaterial.emissive.setHex(color);
-    bodyMaterial.emissiveIntensity = 0.035;
+    bodyMaterial.color.setHex(palette.skin);
+    bodyMaterial.emissive.setHex(palette.skin);
+    bodyMaterial.emissiveIntensity = 0.025;
   }
 
   if (headMaterial) {
-    headMaterial.color.setHex(color);
-    headMaterial.emissive.setHex(color);
-    headMaterial.emissiveIntensity = 0.05;
+    headMaterial.color.setHex(palette.head);
+    headMaterial.emissive.setHex(palette.head);
+    headMaterial.emissiveIntensity = 0.035;
   }
+
+  if (decayMaterial) {
+    decayMaterial.color.setHex(palette.head);
+    decayMaterial.color.multiplyScalar(typeName === 'GOLIATH' ? 0.68 : 0.78);
+    decayMaterial.emissive.setHex(palette.head);
+    decayMaterial.emissiveIntensity = typeName === 'EXPLODER' ? 0.055 : 0.018;
+  }
+
+  if (clothMaterial) clothMaterial.color.setHex(palette.cloth);
+  if (pantsMaterial) pantsMaterial.color.setHex(palette.pants);
+  if (armorMaterial) {
+    armorMaterial.color.setHex(palette.armor);
+    armorMaterial.emissive.setHex(palette.accent);
+    armorMaterial.emissiveIntensity = typeName === 'GOLIATH' ? 0.08 : 0.025;
+  }
+  if (detailMaterial) detailMaterial.color.setHex(typeName === 'RANGED' ? 0x13292d : 0x101619);
+  if (hazardMaterial) {
+    hazardMaterial.color.setHex(palette.accent);
+    hazardMaterial.emissive.setHex(palette.accent);
+    hazardMaterial.emissiveIntensity = typeName === 'GOLIATH' || typeName === 'EXPLODER' ? 0.62 : 0.32;
+  }
+  if (woundMaterial) woundMaterial.emissiveIntensity = typeName === 'EXPLODER' ? 0.18 : 0.08;
 
   if (mutationMaterial) {
     mutationMaterial.emissiveIntensity = typeName === "EXPLODER" ? 0.8 : 0.35;
@@ -921,8 +1347,8 @@ export function updateProceduralZombieStyle(group, config = {}) {
     rangedMaterial.emissiveIntensity = typeName === "RANGED" ? 0.75 : 0.25;
   }
 
-  let eyeColor = 0xdce89a;
-  let accentColor = 0x49ff5a;
+  let eyeColor = palette.accent;
+  let accentColor = palette.accent;
 
   if (typeName === "RUNNER") {
     eyeColor = 0xff2222;
@@ -972,6 +1398,28 @@ export function updateProceduralZombieStyle(group, config = {}) {
   setPartScale(parts.rightArm, 1, 1, 1);
   setPartScale(parts.leftLeg, 1, 1, 1);
   setPartScale(parts.rightLeg, 1, 1, 1);
+  [
+    parts.leftBrowPlate,
+    parts.rightBrowPlate,
+    parts.leftEyeSocket,
+    parts.rightEyeSocket,
+    parts.leftEyeGlow,
+    parts.rightEyeGlow,
+    parts.leftEye,
+    parts.rightEye,
+    parts.leftEyeLid,
+    parts.rightEyeLid,
+    parts.nose,
+    parts.leftCheek,
+    parts.rightCheek,
+    parts.upperJaw,
+    parts.lowerJaw,
+    parts.mouth
+  ].forEach((part) => {
+    resetPart(part);
+    setPartScale(part, 1, 1, 1);
+    part.visible = true;
+  });
 
   parts.exploderCore.visible = typeName === "EXPLODER";
   parts.exploderCoreGlow.visible = typeName === "EXPLODER";
@@ -985,6 +1433,19 @@ export function updateProceduralZombieStyle(group, config = {}) {
   parts.goliathChestPlate.visible = typeName === "GOLIATH" || typeName === "BRUTE";
   parts.goliathShoulderLeft.visible = typeName === "GOLIATH" || typeName === "BRUTE";
   parts.goliathShoulderRight.visible = typeName === "GOLIATH";
+  parts.containmentCanister.visible = typeName === "RANGED" || typeName === "EXPLODER";
+  parts.containmentCanisterGlow.visible = typeName === "RANGED" || typeName === "EXPLODER";
+  parts.hazardChestBar.visible = typeName === "GOLIATH" || typeName === "EXPLODER" || typeName === "RANGED";
+  parts.jawGuard.visible = typeName === "GOLIATH" || typeName === "BRUTE";
+  parts.leftForearmGuard.visible = typeName === "GOLIATH" || typeName === "BRUTE";
+  parts.rightForearmGuard.visible = typeName === "GOLIATH" || typeName === "BRUTE" || typeName === "RANGED";
+  parts.leftClawPlate.visible = typeName === "CRAWLER";
+  parts.rightClawPlate.visible = typeName === "CRAWLER";
+  parts.jacketTailLeft.visible = typeName !== "CRAWLER";
+  parts.jacketTailRight.visible = typeName !== "CRAWLER";
+  parts.spinePlateA.visible = typeName !== "CRAWLER";
+  parts.spinePlateB.visible = typeName !== "CRAWLER";
+  parts.spinePlateC.visible = typeName === "GOLIATH" || typeName === "BRUTE" || typeName === "RANGED";
   parts.toxicChestNode.visible = typeName !== "GOLIATH";
   parts.ribA.visible = typeName !== "GOLIATH";
   parts.ribB.visible = typeName !== "GOLIATH";
@@ -1068,6 +1529,59 @@ export function updateProceduralZombieStyle(group, config = {}) {
     group.userData.motionSpeed = 1.0;
     group.userData.motionPower = 1.0;
   }
+
+  // VIS.6 class-face tuning. These changes are visual-only and remain inside
+  // the procedural mesh hierarchy, so gameplay hitboxes and headshot flags do
+  // not move.
+  if (typeName === "RUNNER") {
+    setPartScale(parts.leftCheek, 0.84, 0.92, 0.86);
+    setPartScale(parts.rightCheek, 0.84, 0.92, 0.86);
+    setPartScale(parts.upperJaw, 0.90, 0.94, 0.90);
+    setPartScale(parts.lowerJaw, 0.86, 1.08, 0.88);
+    parts.lowerJaw.position.y -= 0.018;
+    parts.leftBrowPlate.rotation.z -= 0.08;
+    parts.rightBrowPlate.rotation.z += 0.08;
+  } else if (typeName === "BRUTE") {
+    setPartScale(parts.leftBrowPlate, 1.18, 1.18, 1.12);
+    setPartScale(parts.rightBrowPlate, 1.18, 1.18, 1.12);
+    setPartScale(parts.leftCheek, 1.10, 1.06, 1.10);
+    setPartScale(parts.rightCheek, 1.10, 1.06, 1.10);
+    setPartScale(parts.upperJaw, 1.12, 1.08, 1.10);
+    setPartScale(parts.lowerJaw, 1.16, 1.10, 1.12);
+  } else if (typeName === "GOLIATH") {
+    setPartScale(parts.leftBrowPlate, 1.28, 1.28, 1.20);
+    setPartScale(parts.rightBrowPlate, 1.28, 1.28, 1.20);
+    setPartScale(parts.leftCheek, 1.16, 1.10, 1.18);
+    setPartScale(parts.rightCheek, 1.16, 1.10, 1.18);
+    setPartScale(parts.upperJaw, 1.22, 1.14, 1.18);
+    setPartScale(parts.lowerJaw, 1.28, 1.18, 1.20);
+    parts.lowerJaw.position.y -= 0.010;
+  } else if (typeName === "EXPLODER") {
+    setPartScale(parts.leftCheek, 1.04, 1.08, 1.06);
+    setPartScale(parts.rightCheek, 0.88, 0.92, 0.90);
+    setPartScale(parts.lowerJaw, 1.02, 0.94, 1.06);
+    parts.lowerJaw.rotation.z -= 0.12;
+    parts.leftEyeGlow.scale.multiplyScalar(1.18);
+    parts.leftEye.scale.multiplyScalar(1.12);
+  } else if (typeName === "RANGED") {
+    parts.rightEye.visible = false;
+    parts.rightEyeGlow.visible = false;
+    parts.rightEyeLid.visible = false;
+    setPartScale(parts.leftBrowPlate, 0.94, 1.04, 0.94);
+    setPartScale(parts.rightBrowPlate, 1.10, 1.08, 1.05);
+    setPartScale(parts.leftCheek, 0.92, 1.02, 0.92);
+    setPartScale(parts.rightCheek, 1.02, 1.08, 1.02);
+    setPartScale(parts.lowerJaw, 0.92, 1.04, 0.94);
+  } else if (typeName === "CRAWLER") {
+    setPartScale(parts.leftBrowPlate, 1.05, 0.90, 1.02);
+    setPartScale(parts.rightBrowPlate, 1.05, 0.90, 1.02);
+    setPartScale(parts.leftCheek, 1.08, 0.88, 1.10);
+    setPartScale(parts.rightCheek, 1.08, 0.88, 1.10);
+    setPartScale(parts.upperJaw, 1.08, 0.90, 1.08);
+    setPartScale(parts.lowerJaw, 1.16, 0.94, 1.14);
+    parts.lowerJaw.position.y -= 0.030;
+    parts.mouth.position.y -= 0.020;
+  }
 }
 
 export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, state = {}) {
@@ -1140,6 +1654,10 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   resetPart(parts.runnerSpikeB);
   resetPart(parts.exploderFuseA);
   resetPart(parts.exploderFuseB);
+  resetPart(parts.jacketTailLeft);
+  resetPart(parts.jacketTailRight);
+  resetPart(parts.containmentCanister);
+  resetPart(parts.containmentCanisterGlow);
 
   group.position.y = bob * 0.032 * power;
   group.rotation.y = group.userData.baseYaw ?? Math.PI;
@@ -1155,6 +1673,7 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   parts.pelvis.rotation.z += walkOpp * 0.025 * power;
   parts.head.rotation.y += walk * 0.075 * power;
   parts.head.rotation.z += walkOpp * 0.035 * power;
+  parts.lowerJaw.rotation.x += 0.035 + Math.abs(walk) * 0.025 * power;
 
   parts.leftArm.rotation.x += walkOpp * 0.58 * power;
   parts.rightArm.rotation.x += walk * 0.58 * power;
@@ -1165,6 +1684,16 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   parts.rightLeg.rotation.x += walkOpp * 0.38 * power;
   parts.leftLeg.position.z += walk * 0.045 * power;
   parts.rightLeg.position.z += walkOpp * 0.045 * power;
+
+  if (parts.jacketTailLeft.visible) {
+    parts.jacketTailLeft.rotation.x += 0.08 + walkOpp * 0.06 * power;
+    parts.jacketTailRight.rotation.x += 0.06 + walk * 0.05 * power;
+  }
+  if (parts.containmentCanister.visible) {
+    parts.containmentCanister.rotation.z += Math.sin(slowT * 1.35) * 0.025;
+    const canisterPulse = 1 + Math.sin(timeSeconds * 6.5 + phase) * 0.07;
+    parts.containmentCanisterGlow.scale.set(1, canisterPulse, 1);
+  }
 
   if (typeName === "CRAWLER") {
     group.position.y -= 0.24;
@@ -1277,6 +1806,8 @@ export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, st
   }
 
   if (attackPulse > 0) {
+    parts.lowerJaw.rotation.x += attackPulse * (typeName === "GOLIATH" ? 0.18 : 0.28);
+    parts.lowerJaw.position.y -= attackPulse * 0.018;
     if (typeName === "CRAWLER") {
       // Forward brace and hand contact: both hands reach beyond the face while
       // the torso compresses toward the target, then recoil cleanly.

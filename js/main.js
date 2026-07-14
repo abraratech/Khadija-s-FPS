@@ -1,5 +1,6 @@
+// PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/main.js
-import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps } from './map.js';
+import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
@@ -230,8 +231,11 @@ registerMultiplayerRunEndHandler((details) => {
 });
 document.body.classList.toggle('ka-mobile-device', isMobile);
 renderer.info.autoReset = false;
-let usePostProcessing = true;
 const _minimapCamDir = new THREE.Vector3();
+const PERF1_IDLE_RENDER_INTERVAL_MS = 1000 / 30;
+const PERF1_STATS_INTERVAL_SECONDS = 0.25;
+let lastIdleRenderAt = -Infinity;
+let performanceStatsSampleT = 0;
 
 function setLockHintVisible(visible) {
   const lockHint = document.getElementById('lock-hint');
@@ -285,6 +289,7 @@ let performanceStatsEnabled = localStorage.getItem('ka_performance_stats') === '
 
 function setPerformanceStatsEnabled(enabled) {
   performanceStatsEnabled = enabled === true;
+  if (!performanceStatsEnabled) performanceStatsSampleT = 0;
 
   try {
     localStorage.setItem('ka_performance_stats', performanceStatsEnabled ? 'on' : 'off');
@@ -606,7 +611,7 @@ console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphics
 function renderGameFrame() {
   renderer.info.reset();
 
-  if (usePostProcessing) {
+  if (shouldUsePostProcessing()) {
     composer.render();
   } else {
     renderer.render(scene, camera);
@@ -801,8 +806,8 @@ function pauseGameplay(source = 'input') {
   if (action) setActionKeyState(action, false);
 });
 
-window.addEventListener('mousemove', e => { 
-  if (locked) { mdx += e.movementX; mdy += e.movementY * (getInvertYEnabled() ? -1 : 1); } 
+window.addEventListener('mousemove', e => {
+  if (locked) { mdx += e.movementX; mdy += e.movementY * (getInvertYEnabled() ? -1 : 1); }
 });
 
 window.addEventListener('mousedown', e => {
@@ -872,15 +877,15 @@ document.getElementById('quit-btn').addEventListener('click', () => {
   returnToMenu('pause');
 });
 
-canvas.addEventListener('click', () => { 
-  if (gs === 'playing' && !locked && !isMobile) canvas.requestPointerLock(); 
+canvas.addEventListener('click', () => {
+  if (gs === 'playing' && !locked && !isMobile) canvas.requestPointerLock();
 });
 
 // ── MOBILE IN-GAME PAUSE BUTTON LISTENER ──
 document.getElementById('btn-mobile-pause').addEventListener('touchstart', (e) => {
   e.preventDefault();
   if (gs === 'playing' && player.alive) { togglePauseGameplay('mobile'); }
-}, { passive: false });  
+}, { passive: false });
 
 // ════════════ GAME LOOP ════════════
 
@@ -1444,7 +1449,7 @@ updateMenuBestStats();
 
 function tick(t = 0) {
   requestAnimationFrame(tick);
-  
+
 if (prev === 0) prev = t;
 
 let rawDt = (t - prev) * 0.001;
@@ -1478,7 +1483,10 @@ if (gs !== 'playing') {
   if (gs === 'paused' && gamepadInput.pausePressed) {
     resumeGameplay('gamepad');
   }
-  renderGameFrame();
+  if (t - lastIdleRenderAt >= PERF1_IDLE_RENDER_INTERVAL_MS) {
+    lastIdleRenderAt = t;
+    renderGameFrame();
+  }
   return;
 }
 
@@ -1527,13 +1535,14 @@ if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.firePressed) {
 mdx += gamepadInput.lookX * 1050 * dt;
 mdy += gamepadInput.lookY * 1050 * dt;
 
-const frameStart = performance.now();
-let mark = frameStart;
+const frameStart = performanceStatsEnabled ? performance.now() : 0;
+const frameNow = performance.now();
+const frameEnemies = getActiveEnemies();
 
 updatePlayer(dt, frameKeys, mdx, mdy);
 syncMultiplayerFrame(player, frameKeys, {
     dt,
-    now: performance.now(),
+    now: frameNow,
     lookDeltaX: mdx,
     lookDeltaY: mdy
   });
@@ -1542,17 +1551,14 @@ updateLowHealthHeartbeat(player, dt);
 if (isSharedMultiplayerWorldAuthority()) { updateAIDirector(dt, {
   player,
   activeWeapon: getActiveWeapon(),
-  enemies: getActiveEnemies(),
+  enemies: frameEnemies,
   wave: currentWave
 }); }
 
 mdx = 0; mdy = 0;
-const playerMs = performance.now() - mark;
-mark = performance.now();
-
 if (isSharedMultiplayerWorldAuthority()) { updateMapGameplay(dt, {
   player,
-  enemies: getActiveEnemies(),
+  enemies: frameEnemies,
   damagePlayer,
   killEnemy
 }); }
@@ -1570,7 +1576,7 @@ for (const event of consumeMapGameplayEvents()) {
 updateTutorial(dt, {
   player,
   wave: currentWave,
-  enemies: getActiveEnemies()
+  enemies: frameEnemies
 });
 updateVisualTutorial();
 
@@ -1584,10 +1590,10 @@ for (const event of consumeTutorialEvents()) {
   });
 }
 
-updateSharedMultiplayerWorld(dt, performance.now());
-updateSharedMultiplayerEconomy(performance.now());
+updateSharedMultiplayerWorld(dt, frameNow);
+updateSharedMultiplayerEconomy(frameNow);
 const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
-            updateMultiplayerRevive(dt, performance.now(), {
+            updateMultiplayerRevive(dt, frameNow, {
                 interactHeld: Boolean(
                     multiplayerInteractCode
                     && (
@@ -1596,9 +1602,7 @@ const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
                     )
                 )
             });
-updateGameplayReliability(dt, performance.now());
-const enemiesMs = performance.now() - mark;
-mark = performance.now();
+updateGameplayReliability(dt, frameNow);
 
 const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;
 
@@ -1614,16 +1618,13 @@ updateCameraPresentation(dt, {
 if (!isGameplayInputBlocked()) {
 updateGun(dt, frameKeys, isMoving);
 updateShops(dt);
-checkWorldInteractions(false); 
+checkWorldInteractions(false);
 
-if (pendingShot) { 
-  shoot(); 
-  pendingShot = false; 
+if (pendingShot) {
+  shoot();
+  pendingShot = false;
 }
 }
-
-const weaponMs = performance.now() - mark;
-mark = performance.now();
 
 updateParticles(dt);
 updateUIEffects(dt);
@@ -1632,8 +1633,6 @@ processReloadTick(dt);
 // Weapon animation and reload code can re-enable the FPP viewmodel. Re-assert
 // presentation visibility without recalculating or advancing the camera solver.
 enforceCameraPresentationVisibility();
-const effectsMs = performance.now() - mark;
-
   if (player.alive && onlineDeathReportPending && isOnlineMultiplayerRun()) {
     onlineDeathReportPending = false;
   }
@@ -1672,31 +1671,28 @@ const effectsMs = performance.now() - mark;
       scheduleDeathScreen();
     }
   }
-  
-mark = performance.now();
 
 _minimapCamDir.set(0, 0, -1);
 camera.getWorldDirection(_minimapCamDir);
-updateMinimap(player.pos, _minimapCamDir, getActiveEnemies());
-applyScreenShake(dt); 
-
-const minimapMs = performance.now() - mark;
-
-const renderStart = performance.now();
+updateMinimap(player.pos, _minimapCamDir, frameEnemies);
+applyScreenShake(dt);
 
 renderGameFrame();
 
-const renderMs = performance.now() - renderStart;
-const frameMs = performance.now() - frameStart;
-
-
-updatePerformanceStatsPanel({
-  fps: Math.round(smoothFps),
-  frameMs: frameMs.toFixed(2),
-  worstFrameMs: worstFrameMs.toFixed(2),
-  enemies: getActiveEnemies().length,
-  drawCalls: renderer.info.render.calls
-});
+if (performanceStatsEnabled) {
+  performanceStatsSampleT += dt;
+  if (performanceStatsSampleT >= PERF1_STATS_INTERVAL_SECONDS) {
+    performanceStatsSampleT = 0;
+    const frameMs = performance.now() - frameStart;
+    updatePerformanceStatsPanel({
+      fps: Math.round(smoothFps),
+      frameMs: frameMs.toFixed(2),
+      worstFrameMs: worstFrameMs.toFixed(2),
+      enemies: frameEnemies.length,
+      drawCalls: renderer.info.render.calls
+    });
+  }
+}
 }
 
 // ════════════ INIT / RESPAWN ════════════
@@ -1725,7 +1721,7 @@ document.getElementById('death-quit-btn').addEventListener('click', () => {
 // ════════════ MOBILE TOUCH ENGINE ════════════
 if (isMobile) {
   document.getElementById('mobile-ui').style.display = 'block';
-  document.getElementById('controls-grid').style.display = 'none'; 
+  document.getElementById('controls-grid').style.display = 'none';
 
   const menuSliderWrap = document.getElementById('btn-size-slider')?.parentElement;
   if (menuSliderWrap) menuSliderWrap.style.display = 'block';
@@ -1757,7 +1753,7 @@ if (isMobile) {
   let joyTouchId = null;
 
   joyLeft.addEventListener('touchstart', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     const touch = e.changedTouches[0];
     joyTouchId = touch.identifier;
@@ -1767,7 +1763,7 @@ if (isMobile) {
   }, { passive: false });
 
   joyLeft.addEventListener('touchmove', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === joyTouchId) updateJoy(e.changedTouches[i]);
@@ -1775,7 +1771,7 @@ if (isMobile) {
   }, { passive: false });
 
   joyLeft.addEventListener('touchend', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === joyTouchId) {
@@ -1816,7 +1812,7 @@ if (isMobile) {
   let lastLook = { x: 0, y: 0 };
 
   lookArea.addEventListener('touchstart', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     const touch = e.changedTouches[0];
     lookTouchId = touch.identifier;
@@ -1824,7 +1820,7 @@ if (isMobile) {
   }, { passive: false });
 
   lookArea.addEventListener('touchmove', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === lookTouchId) {
@@ -1834,7 +1830,7 @@ if (isMobile) {
         lastLook = { x: touch.clientX, y: touch.clientY };
 
         const touchSensitivity = 0.007 * getMobileLookSensitivityMultiplier();
-        player.yaw -= dx * touchSensitivity; 
+        player.yaw -= dx * touchSensitivity;
         player.pitch -= dy * touchSensitivity;
         player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
       }
@@ -1842,7 +1838,7 @@ if (isMobile) {
   }, { passive: false });
 
   lookArea.addEventListener('touchend', (e) => {
-    if (isCustomizingLayout) return; 
+    if (isCustomizingLayout) return;
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === lookTouchId) lookTouchId = null;
@@ -1899,7 +1895,7 @@ if (isMobile) {
         if (config.right !== undefined) element.style.right = config.right;
         if (config.top !== undefined) element.style.top = config.top;
         if (config.bottom !== undefined) element.style.bottom = config.bottom;
-        
+
         if (config.size !== undefined) {
           document.documentElement.style.setProperty(`--sz-${key}`, config.size + 'px');
           element.style.width = config.size + 'px';
@@ -1912,10 +1908,10 @@ if (isMobile) {
 
   document.getElementById('mobile-customize-btn').addEventListener('touchstart', (e) => {
     e.preventDefault();
-    document.getElementById('pause-screen').style.display = 'none'; 
-    document.getElementById('layout-editor-bar').style.display = 'flex'; 
+    document.getElementById('pause-screen').style.display = 'none';
+    document.getElementById('layout-editor-bar').style.display = 'flex';
     isCustomizingLayout = true;
-    
+
     document.querySelectorAll('.draggable-btn').forEach(btn => {
       btn.style.border = "2px dashed #00d4ff";
       btn.style.boxShadow = "0 0 8px rgba(0,212,255,0.4)";
@@ -1929,11 +1925,11 @@ if (isMobile) {
     btn.addEventListener('touchstart', (e) => {
       if (!isCustomizingLayout) return;
       e.preventDefault();
-      
-      if (selectedLayoutElement) selectedLayoutElement.style.background = ""; 
+
+      if (selectedLayoutElement) selectedLayoutElement.style.background = "";
       selectedLayoutElement = btn;
-      selectedLayoutElement.style.background = "rgba(0, 212, 255, 0.3)"; 
-      
+      selectedLayoutElement.style.background = "rgba(0, 212, 255, 0.3)";
+
       const currentKey = btn.getAttribute('data-key');
       const computedSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(`--sz-${currentKey}`)) || btn.offsetWidth;
       document.getElementById('layout-element-size').value = computedSize;
@@ -1941,7 +1937,7 @@ if (isMobile) {
       const touch = e.changedTouches[0];
       activeTouchId = touch.identifier;
       const rect = btn.getBoundingClientRect();
-      
+
       touchOffset.x = touch.clientX - rect.left;
       touchOffset.y = touch.clientY - rect.top;
     }, { passive: false });
@@ -1955,7 +1951,7 @@ if (isMobile) {
         if (touch.identifier === activeTouchId) {
           const xPct = (touch.clientX - touchOffset.x) / window.innerWidth * 100;
           const yPct = (window.innerHeight - (touch.clientY - touchOffset.y + btn.offsetHeight)) / window.innerHeight * 100;
-          
+
           if (xPct < 50) {
             btn.style.left = `${Math.max(0, xPct).toFixed(2)}%`;
             btn.style.right = "auto";
@@ -1980,7 +1976,7 @@ if (isMobile) {
     if (!selectedLayoutElement) return;
     const targetSize = e.target.value;
     const currentKey = selectedLayoutElement.getAttribute('data-key');
-    
+
     document.documentElement.style.setProperty(`--sz-${currentKey}`, targetSize + 'px');
     selectedLayoutElement.style.width = targetSize + 'px';
     selectedLayoutElement.style.height = targetSize + 'px';
@@ -1991,7 +1987,7 @@ if (isMobile) {
     document.querySelectorAll('.draggable-btn').forEach(btn => {
       const key = btn.getAttribute('data-key');
       const computedSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(`--sz-${key}`)) || btn.offsetWidth;
-      
+
       layoutData[key] = {
         left: btn.style.left,
         right: btn.style.right,
@@ -2007,7 +2003,7 @@ if (isMobile) {
   document.getElementById('layout-cancel-btn').addEventListener('touchstart', (e) => {
     e.preventDefault();
     layoutData = JSON.parse(localStorage.getItem('mobile_layout_v3')) || {};
-    applySavedLayout(); 
+    applySavedLayout();
     closeLayoutMenu();
   });
 
@@ -2015,9 +2011,9 @@ if (isMobile) {
     isCustomizingLayout = false;
     if (selectedLayoutElement) selectedLayoutElement.style.background = "";
     selectedLayoutElement = null;
-    
+
     document.getElementById('layout-editor-bar').style.display = 'none';
-    document.getElementById('pause-screen').style.display = 'flex'; 
+    document.getElementById('pause-screen').style.display = 'flex';
 
     document.querySelectorAll('.draggable-btn').forEach(btn => {
       btn.style.border = "";
@@ -2029,7 +2025,7 @@ if (isMobile) {
   // ── DESKTOP AUTO-HIDE PROFILE RE-STYLER ──
   const menuSliderWrap = document.getElementById('btn-size-slider')?.parentElement;
   if (menuSliderWrap) menuSliderWrap.style.display = 'none';
-  
+
   const mobileCustomBtn = document.getElementById('mobile-customize-btn');
   if (mobileCustomBtn) mobileCustomBtn.style.display = 'none';
 }

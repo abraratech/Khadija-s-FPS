@@ -22,7 +22,7 @@ const STYLE = `
 #ka-visual-tutorial[data-icon="SHIELD"] .ka-vt-enemy-dot{display:block;animation:kaVTOrbit 2.4s linear infinite;left:69px;top:4px;transform-origin:6px 71px}
 #ka-visual-tutorial[data-icon="SHIELD"] .ka-vt-enemy-dot.d2{animation-delay:-.8s}
 #ka-visual-tutorial[data-icon="SHIELD"] .ka-vt-enemy-dot.d3{animation-delay:-1.6s}
-.ka-tutorial-highlight{position:relative!important;z-index:980!important;outline:4px solid #00d4ff!important;box-shadow:0 0 25px #00d4ff!important;animation:kaVTHighlight .9s ease-in-out infinite!important}
+.ka-tutorial-highlight{z-index:980!important;outline:4px solid #00d4ff!important;outline-offset:2px;box-shadow:0 0 25px #00d4ff!important;animation:kaVTHighlight .9s ease-in-out infinite!important}
 @keyframes kaVTPulse{50%{transform:scale(1.08);filter:brightness(1.25)}}
 @keyframes kaVTRing{0%{transform:scale(.55);opacity:.9}100%{transform:scale(1.3);opacity:0}}
 @keyframes kaVTRotate{to{transform:rotate(360deg)}}

@@ -1,3 +1,4 @@
+// PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 import * as THREE from 'three';
 import {
   CAMERA_MODE_FIRST,
@@ -19,6 +20,10 @@ import {
   normalizeThirdPersonWeaponFamily,
   shouldUseFirstPersonAds
 } from './third_person_avatar_core.js';
+import {
+  SURVIVOR_OPERATOR_PATCH,
+  createOperatorThirdPersonRig,
+} from './actors/survivor_operator.js';
 
 const STORAGE_KEY = 'ka_camera_presentation_v1';
 
@@ -63,6 +68,18 @@ const avatarPointA = new THREE.Vector3();
 const avatarPointB = new THREE.Vector3();
 const avatarPointC = new THREE.Vector3();
 const avatarPointD = new THREE.Vector3();
+const rightShoulderPoint = new THREE.Vector3();
+const rightElbowPoint = new THREE.Vector3();
+const rightHandPoint = new THREE.Vector3();
+const leftShoulderPoint = new THREE.Vector3();
+const leftElbowPoint = new THREE.Vector3();
+const leftHandPoint = new THREE.Vector3();
+const leftHipPoint = new THREE.Vector3(-0.18, 0.78, 0);
+const rightHipPoint = new THREE.Vector3(0.18, 0.78, 0);
+const leftKneePoint = new THREE.Vector3();
+const rightKneePoint = new THREE.Vector3();
+const leftFootPoint = new THREE.Vector3();
+const rightFootPoint = new THREE.Vector3();
 const avatarBox = new THREE.Box3();
 const avatarBoxPart = new THREE.Box3();
 const avatarBoxSize = new THREE.Vector3();
@@ -128,157 +145,14 @@ function installStyles() {
 function createAvatar() {
   if (!refs?.scene || avatarRoot) return;
 
-  const root = new THREE.Group();
+  const rig = createOperatorThirdPersonRig(THREE);
+  const root = rig.root;
   root.name = 'ka-third-person-avatar';
   root.userData.cameraIgnore = true;
   root.userData.isThirdPersonAvatar = true;
+  root.userData.visualPatch = SURVIVOR_OPERATOR_PATCH;
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x176f88,
-    roughness: 0.76,
-    metalness: 0.06
-  });
-  const armorMaterial = new THREE.MeshStandardMaterial({
-    color: 0x123448,
-    roughness: 0.70,
-    metalness: 0.14
-  });
-  const limbMaterial = new THREE.MeshStandardMaterial({
-    color: 0x152836,
-    roughness: 0.86
-  });
-  const skinMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb88767,
-    roughness: 0.92
-  });
-  const bootMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0b141c,
-    roughness: 0.88
-  });
-
-  const hips = new THREE.Mesh(
-    new THREE.BoxGeometry(0.54, 0.26, 0.32),
-    armorMaterial
-  );
-  hips.position.y = 0.76;
-
-  const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.30, 0.36, 0.74, 8),
-    bodyMaterial
-  );
-  torso.position.y = 1.17;
-  torso.scale.z = 0.72;
-
-  const vest = new THREE.Mesh(
-    new THREE.BoxGeometry(0.61, 0.48, 0.28),
-    armorMaterial
-  );
-  vest.position.set(0, 1.18, -0.025);
-
-  const neck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.095, 0.11, 0.14, 8),
-    skinMaterial
-  );
-  neck.position.y = 1.56;
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.22, 16, 12),
-    skinMaterial
-  );
-  head.position.y = 1.76;
-
-  const hair = new THREE.Mesh(
-    new THREE.SphereGeometry(0.225, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.48),
-    bootMaterial
-  );
-  hair.position.set(0, 1.80, 0);
-
-  const makeSegment = (material, radius = 0.09) => {
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius * 0.92, radius, 1, 8),
-      material
-    );
-    mesh.castShadow = true;
-    mesh.receiveShadow = false;
-    return mesh;
-  };
-
-  const leftUpperArm = makeSegment(limbMaterial, 0.095);
-  const leftForearm = makeSegment(limbMaterial, 0.082);
-  const rightUpperArm = makeSegment(limbMaterial, 0.095);
-  const rightForearm = makeSegment(limbMaterial, 0.082);
-  const leftUpperLeg = makeSegment(limbMaterial, 0.12);
-  const leftLowerLeg = makeSegment(limbMaterial, 0.105);
-  const rightUpperLeg = makeSegment(limbMaterial, 0.12);
-  const rightLowerLeg = makeSegment(limbMaterial, 0.105);
-
-  const leftHand = new THREE.Mesh(
-    new THREE.SphereGeometry(0.092, 10, 8),
-    skinMaterial
-  );
-  const rightHand = leftHand.clone();
-  const leftBoot = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.16, 0.38),
-    bootMaterial
-  );
-  const rightBoot = leftBoot.clone();
-
-  const weaponMount = new THREE.Group();
-  weaponMount.name = 'ka-third-person-weapon-mount';
-  weaponMount.userData.cameraIgnore = true;
-
-  [
-    hips,
-    torso,
-    vest,
-    neck,
-    head,
-    hair,
-    leftUpperArm,
-    leftForearm,
-    rightUpperArm,
-    rightForearm,
-    leftUpperLeg,
-    leftLowerLeg,
-    rightUpperLeg,
-    rightLowerLeg,
-    leftHand,
-    rightHand,
-    leftBoot,
-    rightBoot,
-    weaponMount
-  ].forEach((object) => {
-    object.userData.cameraIgnore = true;
-    object.userData.isThirdPersonAvatar = true;
-    if (object.isMesh) {
-      object.castShadow = true;
-      object.receiveShadow = false;
-    }
-    root.add(object);
-  });
-
-  avatarParts = {
-    hips,
-    torso,
-    vest,
-    neck,
-    head,
-    hair,
-    leftUpperArm,
-    leftForearm,
-    rightUpperArm,
-    rightForearm,
-    leftUpperLeg,
-    leftLowerLeg,
-    rightUpperLeg,
-    rightLowerLeg,
-    leftHand,
-    rightHand,
-    leftBoot,
-    rightBoot,
-    weaponMount
-  };
-
+  avatarParts = rig.parts;
   root.visible = false;
   refs.scene.add(root);
   avatarRoot = root;
@@ -811,6 +685,7 @@ function animateAvatar(dt) {
   avatarParts.vest.rotation.z = pose.torso.z;
   avatarParts.head.rotation.x = pose.headPitch;
   avatarParts.hair.rotation.x = pose.headPitch;
+  avatarParts.brim.rotation.x = 0.08 + pose.headPitch;
 
   avatarParts.weaponMount.position.set(
     pose.weapon.position.x,
@@ -835,37 +710,37 @@ function animateAvatar(dt) {
     }
   }
 
-  const rightShoulder = avatarPointA.set(
+  const rightShoulder = rightShoulderPoint.set(
     pose.rightArm.shoulder.x,
     pose.rightArm.shoulder.y,
     pose.rightArm.shoulder.z
-  ).clone();
-  const rightElbow = avatarPointB.set(
+  );
+  const rightElbow = rightElbowPoint.set(
     pose.rightArm.elbow.x,
     pose.rightArm.elbow.y,
     pose.rightArm.elbow.z
-  ).clone();
-  const rightHand = avatarPointC.set(
+  );
+  const rightHand = rightHandPoint.set(
     pose.rightArm.hand.x,
     pose.rightArm.hand.y,
     pose.rightArm.hand.z
-  ).clone();
+  );
 
-  const leftShoulder = avatarPointA.set(
+  const leftShoulder = leftShoulderPoint.set(
     pose.leftArm.shoulder.x,
     pose.leftArm.shoulder.y,
     pose.leftArm.shoulder.z
-  ).clone();
-  const leftElbow = avatarPointB.set(
+  );
+  const leftElbow = leftElbowPoint.set(
     pose.leftArm.elbow.x,
     pose.leftArm.elbow.y,
     pose.leftArm.elbow.z
-  ).clone();
-  const leftHand = avatarPointD.set(
+  );
+  const leftHand = leftHandPoint.set(
     pose.leftArm.hand.x,
     pose.leftArm.hand.y,
     pose.leftArm.hand.z
-  ).clone();
+  );
 
   setSegmentBetween(
     avatarParts.rightUpperArm,
@@ -890,24 +765,24 @@ function animateAvatar(dt) {
   avatarParts.rightHand.position.copy(rightHand);
   avatarParts.leftHand.position.copy(leftHand);
 
-  const leftHip = new THREE.Vector3(-0.18, 0.78, 0);
-  const rightHip = new THREE.Vector3(0.18, 0.78, 0);
-  const leftKnee = new THREE.Vector3(
+  const leftHip = leftHipPoint;
+  const rightHip = rightHipPoint;
+  const leftKnee = leftKneePoint.set(
     -0.18,
     0.42,
     -Math.sin(pose.legs.left) * 0.15
   );
-  const rightKnee = new THREE.Vector3(
+  const rightKnee = rightKneePoint.set(
     0.18,
     0.42,
     -Math.sin(pose.legs.right) * 0.15
   );
-  const leftFoot = new THREE.Vector3(
+  const leftFoot = leftFootPoint.set(
     -0.18,
     0.08,
     -Math.sin(pose.legs.left) * 0.27
   );
-  const rightFoot = new THREE.Vector3(
+  const rightFoot = rightFootPoint.set(
     0.18,
     0.08,
     -Math.sin(pose.legs.right) * 0.27
@@ -1139,11 +1014,9 @@ export function resetCameraPresentation() {
 
 export function updateCameraPresentation(dt, context = {}) {
   if (!initialized || !refs?.camera || !refs?.player) return;
-  lastContext = {
-    gameState: String(context.gameState || 'menu'),
-    coOpMenuOpen: context.coOpMenuOpen === true,
-    inputBlocked: context.inputBlocked === true
-  };
+  lastContext.gameState = String(context.gameState || 'menu');
+  lastContext.coOpMenuOpen = context.coOpMenuOpen === true;
+  lastContext.inputBlocked = context.inputBlocked === true;
 
   const player = refs.player;
   const firstPersonAds = shouldUseFirstPersonAds({

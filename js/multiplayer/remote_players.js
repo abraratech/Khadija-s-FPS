@@ -2,6 +2,10 @@
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
+import {
+  SURVIVOR_OPERATOR_PATCH,
+  createRemoteOperatorRig,
+} from '../actors/survivor_operator.js';
 
 const PLAYER_EYE_HEIGHT = 1.65;
 
@@ -53,123 +57,33 @@ function disposeObject(object) {
 }
 
 function createAvatar(THREE, player) {
-  const color = colorFromId(THREE, player.playerId);
-  const group = new THREE.Group();
+  const accentColor = colorFromId(THREE, player.playerId);
+  const rig = createRemoteOperatorRig(THREE, { accentColor });
+  const group = rig.group;
   group.name = `remote-player-${player.playerId}`;
   group.visible = false;
-
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.62,
-    metalness: 0.08
-  });
-  const darkMaterial = new THREE.MeshStandardMaterial({
-    color: 0x101820,
-    roughness: 0.76,
-    metalness: 0.12
-  });
-  const skinMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb98767,
-    roughness: 0.9
-  });
-  const weaponMaterial = new THREE.MeshStandardMaterial({
-    color: 0x27323a,
-    roughness: 0.45,
-    metalness: 0.55
-  });
-
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.34, 0.76, 5, 10),
-    bodyMaterial
-  );
-  body.position.y = 0.95;
-  body.castShadow = true;
-  group.add(body);
-
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.25, 14, 10),
-    skinMaterial
-  );
-  head.position.y = 1.72;
-  head.castShadow = true;
-  group.add(head);
-
-  const legs = new THREE.Group();
-  for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.12, 0.52, 4, 8),
-      darkMaterial
-    );
-    leg.position.set(side * 0.17, 0.34, 0);
-    leg.castShadow = true;
-    legs.add(leg);
-  }
-  group.add(legs);
-
-  const arms = new THREE.Group();
-  arms.position.set(0, 1.22, -0.18);
-  for (const side of [-1, 1]) {
-    const arm = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.09, 0.52, 4, 8),
-      bodyMaterial
-    );
-    arm.rotation.x = Math.PI * 0.5;
-    arm.rotation.z = side * 0.12;
-    arm.position.set(side * 0.25, 0, -0.18);
-    arm.castShadow = true;
-    arms.add(arm);
-  }
-  group.add(arms);
-
-  const weapon = new THREE.Group();
-  weapon.position.set(0.12, 1.25, -0.62);
-  const receiver = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.16, 0.72),
-    weaponMaterial
-  );
-  const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.035, 0.035, 0.55, 8),
-    weaponMaterial
-  );
-  barrel.rotation.x = Math.PI * 0.5;
-  barrel.position.z = -0.6;
-  weapon.add(receiver, barrel);
-  group.add(weapon);
-
-  const muzzleFlash = new THREE.Mesh(
-    new THREE.SphereGeometry(0.09, 8, 6),
-    new THREE.MeshBasicMaterial({
-      color: 0xffd36a,
-      transparent: true,
-      opacity: 0.95
-    })
-  );
-  muzzleFlash.position.set(0, 0, -0.9);
-  muzzleFlash.visible = false;
-  weapon.add(muzzleFlash);
+  group.userData.visualPatch = SURVIVOR_OPERATOR_PATCH;
 
   const labelTexture = makeLabelTexture(THREE, player.displayName);
-  const label = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: labelTexture,
-      transparent: true,
-      depthTest: false
-    })
-  );
-  label.position.set(0, 2.28, 0);
-  label.scale.set(2.25, 0.56, 1);
+  const label = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: labelTexture,
+    transparent: true,
+    depthTest: false,
+  }));
+  label.position.set(0, 2.18, 0);
+  label.scale.set(2.05, 0.50, 1);
   group.add(label);
 
   group.userData.remote = {
-    body,
-    head,
-    legs,
-    arms,
-    weapon,
-    muzzleFlash,
+    body: rig.body,
+    head: rig.parts.head,
+    legs: rig.legs,
+    arms: rig.arms,
+    weapon: rig.weapon,
+    muzzleFlash: rig.muzzleFlash,
     muzzleFlashUntil: 0,
     lastWeaponKey: null,
-    label
+    label,
   };
 
   return group;

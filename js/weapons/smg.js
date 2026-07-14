@@ -4,21 +4,25 @@ import {
   makeStandardMaterial,
   makeBoxPart,
   makeCylinderPart,
-  getPartBasePosition
+  getPartBasePosition,
+  addTacticalHandRig,
+  addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
 export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SMG';
+  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.440 });
   group.userData.thirdPersonMuzzleSize = 0.145;
 
-  const receiverColor = upgraded ? 0x2f4252 : 0x1e252b;
-  const frameColor = upgraded ? 0x142c26 : 0x11161a;
-  const magColor = upgraded ? 0x14352e : 0x151a1f;
+  const receiverColor = upgraded ? 0x31544e : 0x505960;
+  const frameColor = upgraded ? 0x17302a : 0x1b2227;
+  const magColor = upgraded ? 0x173d34 : 0x20272d;
   const darkColor = 0x050708;
-  const accentColor = upgraded ? 0x00ffaa : 0x00d4ff;
+  const accentColor = upgraded ? 0x22e6a7 : 0xe5a442;
   const skinColor = 0xd2b48c;
 
   const receiverMat = makeStandardMaterial({
@@ -50,7 +54,7 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
-    emissiveIntensity: upgraded ? 0.72 : 0.20,
+    emissiveIntensity: upgraded ? 0.50 : 0.10,
     roughness: 0.34
   });
 
@@ -63,24 +67,24 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const receiver = makeBoxPart(
     group,
     'smg_receiver',
-    new THREE.Vector3(0.126, 0.078, 0.330),
-    new THREE.Vector3(0.000, 0.022, -0.085),
+    new THREE.Vector3(0.136, 0.068, 0.286),
+    new THREE.Vector3(0.000, 0.026, -0.086),
     receiverMat
   );
 
   const topRail = makeBoxPart(
     group,
     'smg_top_rail',
-    new THREE.Vector3(0.105, 0.018, 0.250),
-    new THREE.Vector3(0.000, 0.080, -0.095),
+    new THREE.Vector3(0.096, 0.014, 0.205),
+    new THREE.Vector3(0.000, 0.074, -0.105),
     darkMat
   );
 
   const rearBlock = makeBoxPart(
     group,
     'smg_rear_block',
-    new THREE.Vector3(0.116, 0.072, 0.060),
-    new THREE.Vector3(0.000, 0.010, 0.120),
+    new THREE.Vector3(0.118, 0.062, 0.075),
+    new THREE.Vector3(0.000, 0.015, 0.104),
     darkMat
   );
 
@@ -129,19 +133,19 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const magazine = makeBoxPart(
     group,
     'smg_magazine',
-    new THREE.Vector3(0.058, 0.250, 0.052),
-    new THREE.Vector3(0.000, -0.200, -0.045),
+    new THREE.Vector3(0.064, 0.214, 0.056),
+    new THREE.Vector3(0.000, -0.188, -0.055),
     magMat,
-    new THREE.Vector3(-0.03, 0, 0)
+    new THREE.Vector3(-0.15, 0, 0)
   );
 
   const magBase = makeBoxPart(
     group,
     'smg_mag_base',
-    new THREE.Vector3(0.070, 0.028, 0.064),
-    new THREE.Vector3(0.000, -0.340, -0.038),
+    new THREE.Vector3(0.074, 0.025, 0.066),
+    new THREE.Vector3(0.000, -0.310, -0.026),
     darkMat,
-    new THREE.Vector3(-0.03, 0, 0)
+    new THREE.Vector3(-0.15, 0, 0)
   );
 
   const triggerGuard = makeBoxPart(
@@ -234,6 +238,8 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
     new THREE.Vector3(-0.03, 0, 0)
   );
 
+  addWeaponPresentationDetails(group, 'SMG', { upgraded, accentColor });
+
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0x00ffaa : 0xffaa00,
     transparent: true,
@@ -249,21 +255,25 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   muzzleFlash.visible = false;
   group.add(muzzleFlash);
 
-  const gripHand = new THREE.Mesh(new THREE.BoxGeometry(0.060, 0.052, 0.095), skinMat);
-  gripHand.name = 'smg_grip_hand';
-  gripHand.userData.isProceduralHand = true;
-  gripHand.userData.defaultVisible = true;
-  gripHand.position.set(0.000, -0.115, 0.052);
-  gripHand.rotation.x = -0.12;
-  group.add(gripHand);
+  const gripHand = addTacticalHandRig(group, {
+    name: 'smg_grip_hand',
+    position: new THREE.Vector3(0.000, -0.112, 0.044),
+    rotation: new THREE.Vector3(-0.22, 0, 0),
+    defaultVisible: true,
+    upgraded,
+    support: false,
+    accentColor
+  });
 
-  const supportHand = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.048, 0.090), skinMat);
-  supportHand.name = 'smg_support_hand';
-  supportHand.userData.isProceduralHand = true;
-  supportHand.userData.defaultVisible = true;
-  supportHand.position.set(-0.010, -0.050, -0.205);
-  supportHand.rotation.x = -0.10;
-  group.add(supportHand);
+  const supportHand = addTacticalHandRig(group, {
+    name: 'smg_support_hand',
+    position: new THREE.Vector3(-0.012, -0.054, -0.218),
+    rotation: new THREE.Vector3(-0.22, 0.02, 0),
+    defaultVisible: true,
+    upgraded,
+    support: true,
+    accentColor
+  });
 
   group.userData.parts = {
     receiver,

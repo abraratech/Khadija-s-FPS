@@ -1,3 +1,4 @@
+// PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/ui.js
 import { getProgressionSnapshot, getActivePerkChips, getWeaponUpgradeTier, consumeProgressionLevelUps } from './progression.js';
 import { getObjectiveSnapshot } from './objectives.js';
@@ -18,7 +19,7 @@ export function updateHealthHUD(health, maxHealth = 100) {
 
   // Calculate true percentage so it never overflows the UI box
   const pct = Math.min(100, Math.max(0, (health / Math.max(1, maxHealth)) * 100));
-  f.style.width = pct + '%'; 
+  f.style.width = pct + '%';
   l.textContent = Math.ceil(health);
   f.style.background = pct > 60 ? '#22ff88' : pct > 30 ? '#ffaa00' : '#ff3322';
 
@@ -36,7 +37,20 @@ export function updateWeaponNameHUD(name) {
 let lastAmmoValue = null;
 const MAX_FLOATING_TEXTS = 24;
 const MINIMAP_DRAW_INTERVAL_MS = 85;
+const MINIMAP_RADAR_RANGE = 60;
+const MINIMAP_RADAR_RANGE_SQ = MINIMAP_RADAR_RANGE * MINIMAP_RADAR_RANGE;
+const ENEMY_RADAR_COLORS = Object.freeze({
+  SHAMBLER: '#ff3333',
+  CRAWLER: '#d6ff33',
+  RUNNER: '#ff6600',
+  BRUTE: '#aa55ff',
+  GOLIATH: '#dd00ff',
+  EXPLODER: '#ffcc00',
+  RANGED: '#00ffff'
+});
 let lastMinimapDrawAt = -Infinity;
+let minimapCanvas = null;
+let minimapContext = null;
 
 export function updateAmmoHUD(ammo, reserve, maxAmmo = null) {
   const current = document.getElementById('ammo-current');
@@ -217,10 +231,10 @@ export function updateRoundHUD(round) {
 export function flashWaveBanner(text, durationMs = 2000) {
   const el = document.getElementById('wave-banner');
   if (!el) return;
-  
+
   el.textContent = text;
   el.style.display = 'block';
-  
+
   setTimeout(() => {
     el.style.display = 'none';
   }, durationMs);
@@ -586,7 +600,7 @@ let poolIndex = 0;
 function initIndicatorPool() {
   const container = document.getElementById('damage-indicators-container');
   if (!container) return;
-  
+
   for (let i = 0; i < 5; i++) {
     const arc = document.createElement('div');
     arc.style.position = 'absolute';
@@ -690,47 +704,41 @@ export function updateMinimap(playerPos, camDir, enemies) {
   if (now - lastMinimapDrawAt < MINIMAP_DRAW_INTERVAL_MS) return;
   lastMinimapDrawAt = now;
 
-  const canvas = document.getElementById('minimap');
-  if (!canvas) return; 
-  const ctx = canvas.getContext('2d');
+  if (!minimapCanvas || !minimapCanvas.isConnected) {
+    minimapCanvas = document.getElementById('minimap');
+    minimapContext = minimapCanvas?.getContext?.('2d') || null;
+  }
+  const canvas = minimapCanvas;
+  const ctx = minimapContext;
+  if (!canvas || !ctx) return;
   const w = canvas.width; const h = canvas.height;
   const cx = w / 2; const cy = h / 2;
 
   ctx.clearRect(0, 0, w, h);
-  
-  const radarRange = 60; 
+
+  const radarRange = MINIMAP_RADAR_RANGE;
   const camAngle = Math.atan2(camDir.x, camDir.z);
 
   // LOOP DIRECTLY THROUGH THE LIVE ENGINE ARRAYS
   enemies.forEach(e => {
     // Fail-safe to ensure the zombie instance and its 3D group exist and are alive
     if (!e || !e.mesh || !e.alive || e.dyingT >= 0) return;
-    
+
     // Read the absolute world positions straight from the Three.js Group matrix
     const dx = e.mesh.position.x - playerPos.x;
     const dz = e.mesh.position.z - playerPos.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-    
-    if (dist > radarRange) return; 
+    const distSq = dx * dx + dz * dz;
+    if (distSq > MINIMAP_RADAR_RANGE_SQ) return;
+    const dist = Math.sqrt(distSq);
 
-	const angle = Math.atan2(dx, dz) - camAngle;
-    const radarDist = (dist / radarRange) * ((w / 2) - 10); 
+    const angle = Math.atan2(dx, dz) - camAngle;
+    const radarDist = (dist / radarRange) * ((w / 2) - 10);
 
     // ── FIX: CHANGED + TO - TO CORRECT MIRRORED RADAR ──
-    const blipX = cx - Math.sin(angle) * radarDist; 
+    const blipX = cx - Math.sin(angle) * radarDist;
     const blipY = cy - Math.cos(angle) * radarDist;
 
-    const enemyRadarColors = {
-      SHAMBLER: '#ff3333',
-      CRAWLER: '#d6ff33',
-      RUNNER: '#ff6600',
-      BRUTE: '#aa55ff',
-      GOLIATH: '#dd00ff',
-      EXPLODER: '#ffcc00',
-      RANGED: '#00ffff'
-    };
-
-    ctx.fillStyle = enemyRadarColors[e.type] || '#ff2200';
+    ctx.fillStyle = ENEMY_RADAR_COLORS[e.type] || '#ff2200';
     const blipRadius = e.type === "GOLIATH" ? 5 : (e.type === "BRUTE" ? 4 : 3);
     ctx.beginPath();
     ctx.arc(blipX, blipY, blipRadius, 0, Math.PI * 2);
@@ -763,9 +771,9 @@ export function updateMinimap(playerPos, camDir, enemies) {
 
   // Draw Player Icon (Center triangle pointing UP)
   ctx.fillStyle = '#00ff66';
-  ctx.beginPath(); 
-  ctx.moveTo(cx, cy - 6); 
-  ctx.lineTo(cx - 5, cy + 5); 
-  ctx.lineTo(cx + 5, cy + 5); 
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 6);
+  ctx.lineTo(cx - 5, cy + 5);
+  ctx.lineTo(cx + 5, cy + 5);
   ctx.fill();
 }

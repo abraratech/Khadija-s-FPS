@@ -9,7 +9,7 @@ const readiness = await readFile(new URL('./voice_readiness_core.js', import.met
 const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
 const joined = `${source}\n${core}\n${live}\n${readiness}\n${main}`;
 
-assert.match(main, /live_voice_reliability\.js/);
+assert.doesNotMatch(main, /import ['"]\.\/multiplayer\/live_voice_reliability\.js['"]/);
 assert.match(source, /restartIce/);
 assert.match(source, /getStats/);
 assert.match(source, /schedulePeerRepair/);

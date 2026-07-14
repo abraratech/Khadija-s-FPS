@@ -2767,7 +2767,11 @@ function buildShotTargets() {
     const position = enemy?.mesh?.position;
     const validEnemy = Boolean(
       enemy?.alive
-      && Number(enemy.dyingT) < 0
+      && (
+        enemy.dyingT === undefined
+        || enemy.dyingT === null
+        || Number(enemy.dyingT) < 0
+      )
       && enemy.mesh
       && Number.isFinite(Number(position?.x))
       && Number.isFinite(Number(position?.y))

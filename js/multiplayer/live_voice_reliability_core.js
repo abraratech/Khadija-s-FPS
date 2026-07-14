@@ -45,16 +45,17 @@ export function shouldRepairVoicePeer({
 }
 
 export function normalizeVoiceQualityMetrics(candidate = {}) {
-  const packetsReceived = Math.max(0, Math.floor(finite(candidate.packetsReceived, 0)));
-  const packetsLost = Math.max(0, Math.floor(finite(candidate.packetsLost, 0)));
+  const source = candidate && typeof candidate === 'object' ? candidate : {};
+  const packetsReceived = Math.max(0, Math.floor(finite(source.packetsReceived, 0)));
+  const packetsLost = Math.max(0, Math.floor(finite(source.packetsLost, 0)));
   const total = packetsReceived + packetsLost;
   const inferredLoss = total > 0 ? (packetsLost / total) * 100 : 0;
   return Object.freeze({
     packetsReceived,
     packetsLost,
-    lossPercent: Math.max(0, Math.min(100, finite(candidate.lossPercent, inferredLoss))),
-    jitterMs: Math.max(0, finite(candidate.jitterMs, 0)),
-    rttMs: Math.max(0, finite(candidate.rttMs, 0)),
+    lossPercent: Math.max(0, Math.min(100, finite(source.lossPercent, inferredLoss))),
+    jitterMs: Math.max(0, finite(source.jitterMs, 0)),
+    rttMs: Math.max(0, finite(source.rttMs, 0)),
   });
 }
 

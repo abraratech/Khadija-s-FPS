@@ -107,27 +107,35 @@ async function proxyLeaderboardRequest(request, env) {
 
 async function proxyCloudProfileRequest(request, env) {
   if (!env.CLOUD_PROFILES) return json({ ok: false, error: 'CLOUD_PROFILE_BINDING_UNAVAILABLE' }, { status: 503 });
-  const sourceUrl = new URL(request.url);
-  const headers = new Headers(request.headers);
-  headers.set('x-ka-rate-key', await shortRequestHash(request));
-  headers.set('x-ka-region', String(request.cf?.country || 'ZZ'));
-  const requestOrigin = String(request.headers.get('origin') || '').trim();
-  headers.set('x-ka-origin', requestOrigin);
   try {
-    headers.set('x-ka-rp-id', requestOrigin ? new URL(requestOrigin).hostname.toLowerCase() : '');
-  } catch {
-    headers.set('x-ka-rp-id', '');
+    const sourceUrl = new URL(request.url);
+    const headers = new Headers(request.headers);
+    headers.set('x-ka-rate-key', await shortRequestHash(request));
+    headers.set('x-ka-region', String(request.cf?.country || 'ZZ'));
+    const requestOrigin = String(request.headers.get('origin') || '').trim();
+    headers.set('x-ka-origin', requestOrigin);
+    try {
+      headers.set('x-ka-rp-id', requestOrigin ? new URL(requestOrigin).hostname.toLowerCase() : '');
+    } catch {
+      headers.set('x-ka-rp-id', '');
+    }
+    headers.delete('cf-connecting-ip');
+    const internal = new Request(`https://profiles.internal${sourceUrl.pathname}${sourceUrl.search}`, {
+      method: request.method,
+      headers,
+      body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+      redirect: 'manual'
+    });
+    const id = env.CLOUD_PROFILES.idFromName('global-v1');
+    const response = await env.CLOUD_PROFILES.get(id).fetch(internal);
+    return corsify(response);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: 'CLOUD_PROFILE_UPSTREAM_UNAVAILABLE',
+      detail: String(error?.message || error || 'UNKNOWN').slice(0, 160)
+    }, { status: 502 });
   }
-  headers.delete('cf-connecting-ip');
-  const internal = new Request(`https://profiles.internal${sourceUrl.pathname}${sourceUrl.search}`, {
-    method: request.method,
-    headers,
-    body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-    redirect: 'manual'
-  });
-  const id = env.CLOUD_PROFILES.idFromName('global-v1');
-  const response = await env.CLOUD_PROFILES.get(id).fetch(internal);
-  return corsify(response);
 }
 
 function publicPlayer(player) {
@@ -893,7 +901,7 @@ isAuthorityCheckpointEnvelope(envelope) {
       return;
     }
 
-    
+
     if (action === 'kick-player') {
       if (!player.isHost) {
         this.sendError(socket, 'Only the host can remove players.');

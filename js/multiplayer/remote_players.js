@@ -203,12 +203,13 @@ export class RemotePlayerManager {
     this.avatars.forEach((avatar, playerId) => {
       const playerRecord = this.roomPlayers.get(playerId);
       const sampled = this.runtime?.sampleRemotePlayer?.(playerId, now);
-      if (!sampled?.state || playerRecord?.connected === false) {
+      if (!sampled?.state) {
         avatar.visible = false;
         return;
       }
 
       const state = sampled.state;
+      const isAway = playerRecord?.connected === false;
             const lifeState = String(
                 state.lifeState
                 || (state.alive === false ? 'DOWNED' : 'ACTIVE')
@@ -230,11 +231,14 @@ export class RemotePlayerManager {
         remote.weapon.position.y = state.isADS ? 1.34 : 1.25;
         remote.weapon.position.x = state.isADS ? 0.02 : 0.12;
         remote.body.scale.y = state.isSprinting ? 0.97 : 1;
-        remote.arms.visible = !isDowned;
-                remote.weapon.visible = !isDowned;
+        remote.arms.visible = !isDowned && !isAway;
+                remote.weapon.visible = !isDowned && !isAway;
                 remote.muzzleFlash.visible = (
-                    !isDowned && now < remote.muzzleFlashUntil
+                    !isDowned && !isAway && now < remote.muzzleFlashUntil
                 );
+                if (remote.label?.material) {
+                    remote.label.material.opacity = isAway ? 0.62 : 1;
+                }
                 updateWeaponShape(avatar, state.weaponKey);
       }
     });

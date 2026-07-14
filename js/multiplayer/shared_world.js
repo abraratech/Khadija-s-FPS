@@ -106,7 +106,8 @@ export class SharedWorldManager {
     session,
     player,
     adapter,
-    economy
+    economy,
+    revive
   } = {}) {
     this.scene = scene;
     this.eventBus = eventBus;
@@ -115,6 +116,7 @@ export class SharedWorldManager {
     this.player = player;
     this.adapter = adapter || {};
     this.economy = economy || null;
+    this.revive = revive || null;
     this.active = false;
     this.initializedForRun = false;
     this.lastSnapshotSentAt = -Infinity;
@@ -672,25 +674,24 @@ getRemoteAuthorityTargets(now = nowMs()) {
     if (!this.active || !this.isAuthority() || !this.isOnline()) return [];
 
     const roomPlayers = this.runtime?.room?.getSnapshot?.()?.players || [];
-    const activeIds = new Set();
+    const roomIds = new Set();
     const targets = [];
 
     roomPlayers.forEach((roomPlayer) => {
       const playerId = roomPlayer?.playerId;
-      if (
-        !playerId
-        || playerId === this.runtime?.localPlayerId
-        || roomPlayer.connected === false
-      || this.isLateJoinProtected(playerId, Date.now()) ) {
-        return;
-      }
+      if (!playerId || playerId === this.runtime?.localPlayerId) return;
+      roomIds.add(playerId);
+      if (this.isLateJoinProtected(playerId, Date.now())) return;
 
-      const sampled = this.runtime?.sampleRemotePlayer?.(playerId, now);
-      const state = sampled?.state;
-      if (!state?.position) return;
-
-      activeIds.add(playerId);
+      const sampledState = this.runtime?.sampleRemotePlayer?.(playerId, now)?.state;
+      const authorityState = this.revive?.getAuthorityPlayerState?.(playerId);
       let target = this.remoteTargets.get(playerId);
+      const position = (
+        roomPlayer.connected === false
+          ? authorityState?.position || sampledState?.position || target?.pos
+          : sampledState?.position || authorityState?.position || target?.pos
+      );
+      if (!target && !position) return;
 
       if (!target) {
         target = {
@@ -699,24 +700,37 @@ getRemoteAuthorityTargets(now = nowMs()) {
           pos: new THREE.Vector3(),
           alive: true,
           health: 100,
-          maxHealth: 100
+          maxHealth: 100,
+          connected: roomPlayer.connected !== false
         };
         this.remoteTargets.set(playerId, target);
       }
 
-      target.pos.set(
-        Number(state.position.x || 0),
-        Number(state.position.y || 0),
-        Number(state.position.z || 0)
-      );
-      target.alive = state.alive !== false && Number(state.health || 0) > 0;
-      target.health = Math.max(0, Number(state.health || 0));
-      target.maxHealth = Math.max(1, Number(state.maxHealth || 100));
+      if (position) {
+        target.pos.set(
+          Number(position.x || 0),
+          Number(position.y || 0),
+          Number(position.z || 0)
+        );
+      }
+      target.connected = roomPlayer.connected !== false;
+      target.health = Math.max(0, Number(
+        authorityState?.health ?? sampledState?.health ?? target.health ?? 100
+      ));
+      target.maxHealth = Math.max(1, Number(
+        authorityState?.maxHealth ?? sampledState?.maxHealth ?? target.maxHealth ?? 100
+      ));
+      const lifeState = String(
+        authorityState?.lifeState
+        || sampledState?.lifeState
+        || (sampledState?.alive === false ? 'DOWNED' : 'ACTIVE')
+      ).toUpperCase();
+      target.alive = lifeState === 'ACTIVE' && target.health > 0;
       targets.push(target);
     });
 
     Array.from(this.remoteTargets.keys()).forEach((playerId) => {
-      if (!activeIds.has(playerId)) this.remoteTargets.delete(playerId);
+      if (!roomIds.has(playerId)) this.remoteTargets.delete(playerId);
     });
 
     return targets;
@@ -738,14 +752,31 @@ getRemoteAuthorityTargets(now = nowMs()) {
       return true;
     }
 
-    return Boolean(this.runtime?.sendPlayerDamage?.({
-      targetPlayerId: target.playerId,
-      damage: amount,
-      damageType: String(damageType || 'UNKNOWN').slice(0, 40),
-      sourcePosition: sourcePosition
-        ? vectorPayload(sourcePosition)
-        : null
-    }));
+    const authorityResult = this.revive?.applyAuthorityDamage?.(
+      target.playerId,
+      amount,
+      { sourcePosition, damageType, now: nowMs() }
+    );
+    if (authorityResult?.applied) {
+      target.health = Math.max(0, Number(authorityResult.health) || 0);
+      target.alive = authorityResult.lifeState === 'ACTIVE' && target.health > 0;
+    }
+
+    const delivered = target.connected !== false
+      ? Boolean(this.runtime?.sendPlayerDamage?.({
+          targetPlayerId: target.playerId,
+          damage: amount,
+          authoritativeHealth: authorityResult?.applied
+            ? Math.max(0, Number(authorityResult.health) || 0)
+            : null,
+          authorityLifeState: authorityResult?.lifeState || null,
+          damageType: String(damageType || 'UNKNOWN').slice(0, 40),
+          sourcePosition: sourcePosition
+            ? vectorPayload(sourcePosition)
+            : null
+        }))
+      : false;
+    return Boolean(authorityResult?.applied || delivered);
   }
 
   handlePlayerDamage(envelope) {
@@ -774,8 +805,14 @@ getRemoteAuthorityTargets(now = nowMs()) {
         )
       : null;
 
+    const authoritativeHealth = Number(damage.authoritativeHealth);
+    const amount = Number.isFinite(authoritativeHealth)
+      ? Math.max(0, Number(this.player?.health || 0) - Math.max(0, authoritativeHealth))
+      : Math.max(0, Number(damage.damage) || 0);
+    if (amount <= 0) return;
+
     this.adapter.damagePlayer?.(
-      Math.max(0, Number(damage.damage) || 0),
+      amount,
       source,
       String(damage.damageType || 'UNKNOWN')
     );

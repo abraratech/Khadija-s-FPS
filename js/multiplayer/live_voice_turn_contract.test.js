@@ -7,7 +7,7 @@ const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
 const worker = await readFile(new URL('../../multiplayer-server/src/index.js', import.meta.url), 'utf8');
 const workerCore = await readFile(new URL('../../multiplayer-server/src/voice_turn_core.js', import.meta.url), 'utf8');
 const joined = `${source}\n${core}\n${main}\n${worker}\n${workerCore}`;
-assert.match(main, /live_voice_turn\.js/);
+assert.doesNotMatch(main, /import ['"]\.\/multiplayer\/live_voice_turn\.js['"]/);
 assert.match(source, /VOICE_ICE_CONFIG_REQUEST_ACTION/);
 assert.match(source, /setConfiguration/);
 assert.match(source, /TURN FALLBACK AVAILABLE/);

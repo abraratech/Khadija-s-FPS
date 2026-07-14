@@ -5,10 +5,12 @@ import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('./live_voice.js', import.meta.url), 'utf8');
 const core = await readFile(new URL('./live_voice_core.js', import.meta.url), 'utf8');
 const readiness = await readFile(new URL('./voice_readiness.js', import.meta.url), 'utf8');
+const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
 const worker = await readFile(new URL('../../multiplayer-server/src/index.js', import.meta.url), 'utf8');
 const workerCore = await readFile(new URL('../../multiplayer-server/src/voice_signal_core.js', import.meta.url), 'utf8');
 const joined = `${source}\n${core}\n${readiness}\n${worker}\n${workerCore}`;
 
+assert.doesNotMatch(main, /import ['"]\.\/multiplayer\/live_voice\.js['"]/);
 assert.match(source, /RTCPeerConnection/);
 assert.match(source, /getUserMedia/);
 assert.match(source, /addTrack/);

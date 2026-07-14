@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --check src/index.js && node --check src/text_chat_core.js && node --check src/leaderboard_hub.js && node --check src/cloud_profile_hub.js && node --check src/cloud_profile_security_core.js && node --check src/cloud_profile_reliability_core.js && node --check src/cloud_profile_auth_core.js && node src/leaderboard_core.test.js && node src/cloud_profile_core.test.js && node src/cloud_profile_security_core.test.js && node src/cloud_profile_reliability_core.test.js && node src/cloud_profile_auth_core.test.js && node src/text_chat_core.test.js && node src/voice_signal_core.test.js && node src/voice_turn_core.test.js"
+    "check": "node --check src/index.js && node --check src/text_chat_core.js && node --check src/leaderboard_hub.js && node --check src/cloud_profile_hub.js && node --check src/cloud_profile_security_core.js && node --check src/cloud_profile_reliability_core.js && node --check src/cloud_profile_auth_core.js && node src/leaderboard_core.test.js && node src/cloud_profile_core.test.js && node src/cloud_profile_security_core.test.js && node src/cloud_profile_reliability_core.test.js && node src/cloud_profile_auth_core.test.js && node src/text_chat_core.test.js && node src/voice_signal_core.test.js && node src/voice_turn_core.test.js && node src/post1a_cloud_profile_proxy.test.js"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

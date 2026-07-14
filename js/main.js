@@ -72,7 +72,9 @@ import { runReleaseValidation } from './release_validation.js';
 import { getMapValidationSnapshot } from './map_validation.js';
 import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
-import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js'; import './multiplayer/voice_readiness.js'; import './multiplayer/live_voice.js'; import './multiplayer/live_voice_reliability.js'; import './multiplayer/live_voice_turn.js'; import './multiplayer/suspend_resume.js';
+import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js';
+// POST.1A: live voice was removed from the player-facing build. Text chat remains.
+import './multiplayer/suspend_resume.js';
 import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
 import './multiplayer/certification_session.js';
 import './multiplayer/certification_pairing.js';

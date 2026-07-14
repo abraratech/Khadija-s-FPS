@@ -223,16 +223,6 @@ export function initializeMultiplayerFoundation(
       statsAdapter?.getWave || (() => 1)
   });
 
-  sharedWorldManager = new SharedWorldManager({
-    scene,
-    eventBus: multiplayerEvents,
-    runtime: multiplayerRuntime,
-    session: multiplayerSession,
-    player,
-    adapter: worldAdapter,
-    economy: economyManager
-  });
-
   reviveManager = new MultiplayerReviveManager({
     eventBus: multiplayerEvents,
     runtime: multiplayerRuntime,
@@ -246,7 +236,20 @@ export function initializeMultiplayerFoundation(
         coopStatsManager?.recordReviveEvent?.(event);
       }
     }
-  }); networkHud = new MultiplayerNetworkHud({
+  });
+
+  sharedWorldManager = new SharedWorldManager({
+    scene,
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    adapter: worldAdapter,
+    economy: economyManager,
+    revive: reviveManager
+  });
+
+  networkHud = new MultiplayerNetworkHud({
       runtime: multiplayerRuntime,
       session: multiplayerSession,
       players: multiplayerPlayers,

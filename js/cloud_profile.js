@@ -498,7 +498,12 @@ async function remoteRequest(path, { method = 'GET', body = null, authenticated 
     }
     return value;
   } catch (error) {
-    if (error?.name === 'AbortError') throw new CloudRemoteError('CLOUD_REQUEST_TIMEOUT', 0, {});
+    if (error?.name === 'AbortError') {
+      throw new CloudRemoteError('CLOUD_REQUEST_TIMEOUT', 0, {});
+    }
+    if (error instanceof TypeError) {
+      throw new CloudRemoteError('CLOUD_SERVICE_UNAVAILABLE', 0, {});
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -516,7 +521,7 @@ function queueCurrentRemoteProfile(reason = 'sync') {
   const existing = existingQueue.find((item) => item.fingerprint === currentProfile.legacyFingerprint);
   if (existing) {
     writeRemoteQueue(existingQueue);
-    scheduleRemoteQueueRetry(80);
+    scheduleRemoteQueueRetry();
     return existingQueue;
   }
   const entry = createSyncQueueEntry({

@@ -219,6 +219,19 @@ export class MultiplayerEconomyManager {
     return this.accounts.get(id);
   }
 
+  replaceAccountsFromSnapshot(snapshot) {
+    if (!Array.isArray(snapshot?.players)) return false;
+    const next = new Map();
+    snapshot.players.forEach((entry) => {
+      const playerId = cleanId(entry?.playerId);
+      if (!playerId) return;
+      next.set(playerId, makeAccountFromSnapshot(entry));
+    });
+    this.accounts.clear();
+    next.forEach((account, playerId) => this.accounts.set(playerId, account));
+    return true;
+  }
+
   update(now = nowMs()) {
     if (!this.active || !this.worldReady || !this.isAuthority()) return;
 
@@ -536,6 +549,7 @@ export class MultiplayerEconomyManager {
 
     this.metrics.snapshotsReceived += 1;
     this.latestSnapshot = JSON.parse(JSON.stringify(snapshot));
+    this.replaceAccountsFromSnapshot(snapshot);
     this.authorityEpoch = Math.max(
       this.authorityEpoch,
       Number(envelope?.authorityEpoch ?? snapshot.authorityEpoch) || 0
@@ -584,17 +598,13 @@ export class MultiplayerEconomyManager {
       Number(snapshot.version) || 0
     );
 
+    this.replaceAccountsFromSnapshot(snapshot);
     if (becameHost) {
-      this.accounts.clear();
       this.processedRequests = new Set(
         Array.isArray(snapshot.processedRequestIds)
           ? snapshot.processedRequestIds.slice(-256)
           : []
       );
-      snapshot.players.forEach((entry) => {
-        if (!entry?.playerId) return;
-        this.accounts.set(entry.playerId, makeAccountFromSnapshot(entry));
-      });
       this.ensureRoomAccounts();
       this.snapshotDirty = true;
     }

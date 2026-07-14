@@ -269,27 +269,85 @@ export class MultiplayerReviveManager {
     if (!this.isAuthority()) return;
     const room = this.runtime?.room?.getSnapshot?.() || this.room;
     room?.players?.forEach((entry) => {
-      if (
-        !entry?.playerId
-        || entry.playerId === localId
-        || entry.connected === false
-      ) {
-        return;
-      }
+      if (!entry?.playerId || entry.playerId === localId) return;
       const state = this.runtime?.sampleRemotePlayer?.(
         entry.playerId,
         now
       )?.state;
-      if (!state?.position) return;
       this.core.updatePlayer(entry.playerId, {
         displayName: entry.displayName,
-        connected: true,
-        position: state.position,
-        health: state.health,
-        maxHealth: state.maxHealth,
+        connected: entry.connected !== false,
+        ...(state?.position ? { position: state.position } : {}),
+        ...(Number.isFinite(Number(state?.maxHealth))
+          ? { maxHealth: state.maxHealth }
+          : {}),
         now
       });
     });
+  }
+
+  getAuthorityPlayerState(playerId) {
+    if (!this.active || !this.isAuthority() || !playerId) return null;
+    const state = this.core.players.get(String(playerId));
+    if (!state) return null;
+    return {
+      playerId: state.playerId,
+      connected: state.connected === true,
+      lifeState: state.lifeState,
+      health: Math.max(0, Number(state.health) || 0),
+      maxHealth: Math.max(1, Number(state.maxHealth) || 100),
+      position: {
+        x: Number(state.position?.x || 0),
+        y: Number(state.position?.y || 0),
+        z: Number(state.position?.z || 0)
+      }
+    };
+  }
+
+  applyAuthorityDamage(playerId, damage, {
+    sourcePosition = null,
+    damageType = 'UNKNOWN',
+    now = nowMs()
+  } = {}) {
+    if (!this.active || !this.isAuthority() || !playerId) {
+      return { applied: false, reason: 'not-authority' };
+    }
+    const state = this.core.players.get(String(playerId));
+    if (!state || state.lifeState !== MULTIPLAYER_LIFE_STATES.ACTIVE) {
+      return { applied: false, reason: 'not-active' };
+    }
+    const amount = Math.max(0, Number(damage) || 0);
+    if (amount <= 0) return { applied: false, reason: 'invalid-damage' };
+
+    const nextHealth = Math.max(0, Number(state.health || 0) - amount);
+    this.core.updatePlayer(playerId, {
+      health: nextHealth,
+      position: sourcePosition ? state.position : undefined,
+      now
+    });
+
+    let downed = false;
+    if (nextHealth <= 0) {
+      downed = this.core.downPlayer(playerId, {
+        now,
+        wave: this.adapter.getWave?.() || 1,
+        position: state.position,
+        displayName: state.displayName
+      });
+    }
+
+    this.processAuthorityEvents();
+    this.latestSnapshot = this.core.getSnapshot(now);
+    this.publishSnapshot(now, true);
+    return {
+      applied: true,
+      downed,
+      damageType: String(damageType || 'UNKNOWN').slice(0, 40),
+      health: downed ? 0 : nextHealth,
+      lifeState: downed
+        ? MULTIPLAYER_LIFE_STATES.DOWNED
+        : MULTIPLAYER_LIFE_STATES.ACTIVE
+    };
   }
 
   update(dt, now = nowMs(), { interactHeld = false } = {}) {
@@ -874,6 +932,14 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
             }
             this.adapter.syncHud?.();
         } else {
+            const authoritativeHealth = Number(state.health);
+            if (
+                Number.isFinite(authoritativeHealth)
+                && authoritativeHealth > 0
+                && authoritativeHealth < Number(this.player?.health || 0)
+            ) {
+                this.player.health = Math.max(1, authoritativeHealth);
+            }
             this.adapter.syncHud?.();
         }
     }

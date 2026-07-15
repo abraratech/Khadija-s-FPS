@@ -336,10 +336,29 @@ textChat.initialize();
             const reason = String(
                 envelope?.payload?.reason || 'client-resync'
             ).slice(0, 80);
-            sharedWorldManager?.forceAuthoritativeSnapshot?.(reason);
-            economyManager?.sendSnapshot?.(true);
-            reviveManager?.publishSnapshot?.(now, true);
-            coopStatsManager?.publishSnapshot?.(true, now);
+            const publishRecoveryBurst = (suffix = 'initial') => {
+              if (
+                multiplayerSession?.run?.active !== true
+                || multiplayerSession?.mode !== 'host'
+              ) {
+                return false;
+              }
+              const burstNow = performance.now();
+              multiplayerPlayers?.syncLocalPlayer?.(
+                null,
+                burstNow,
+                { force: true }
+              );
+              sharedWorldManager?.forceAuthoritativeSnapshot?.(
+                `${reason}-${suffix}`
+              );
+              economyManager?.sendSnapshot?.(true);
+              reviveManager?.publishSnapshot?.(burstNow, true);
+              coopStatsManager?.publishSnapshot?.(true, burstNow);
+              return true;
+            };
+            publishRecoveryBurst('initial');
+            setTimeout(() => publishRecoveryBurst('follow-up'), 320);
         }
     );
     lobbyController = new MultiplayerLobbyController({

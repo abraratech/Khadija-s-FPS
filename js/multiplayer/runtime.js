@@ -77,6 +77,15 @@ export class MultiplayerRuntime {
     this.runStatsSequence = 0;
     this.resyncSequence = 0;
     this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.authorityEpoch = 0;
+    this.runRecovery = {
+      active: false,
+      reason: 'idle',
+      attempt: 0,
+      nextAt: 0,
+      runId: null,
+      worldSeen: false,
+      hostSeen: false
+    };
     this.unsubscribe = [];
     this.lastRemoteCommands = new Map();
     this.remoteActions = [];
@@ -110,6 +119,8 @@ export class MultiplayerRuntime {
       sequenceGapsDetected: 0,
       resyncRequestsSent: 0,
       resyncRequestsReceived: 0,
+      runRecoveryBursts: 0,
+      runRecoveriesCompleted: 0,
       authorityMigrations: 0, heartbeatsSent: 0, heartbeatsReceived: 0, heartbeatPongsReceived: 0
     };
   }
@@ -142,7 +153,9 @@ export class MultiplayerRuntime {
             transition.state === TRANSPORT_STATES.CONNECTED
             && transition.previousState === TRANSPORT_STATES.RECONNECTING
           ) {
-            this.reconciliation.noteReconnect(Date.now());
+            const now = Date.now();
+            this.reconciliation.noteReconnect(now);
+            this.scheduleRunRecovery('transport-reconnected', now);
           }
         }
       ) || (() => {})
@@ -163,6 +176,7 @@ export class MultiplayerRuntime {
   }
 
   resetToLocalRoom() {
+    this.resetRunRecovery('local-room-reset');
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -215,9 +229,17 @@ export class MultiplayerRuntime {
       difficulty: run?.difficulty
     });
     this.sendRoomState();
+    if (this.session?.mode === 'client') {
+      this.scheduleRunRecovery(
+        run?.resumed === true ? 'client-run-resume' : 'client-run-start',
+        Date.now()
+      );
+    } else {
+      this.resetRunRecovery('host-run-start');
+    }
   }
 
-  endRun() { this.networkQuality.reset(Date.now());
+  endRun() { this.resetRunRecovery('run-ended'); this.networkQuality.reset(Date.now());
     this.faultSimulator.endRun();
     this.reconciliation.endRun(Date.now());
     this.commandStream.endRun();
@@ -420,7 +442,7 @@ export class MultiplayerRuntime {
     return envelope;
   }
 
-  
+
   updateNetworkQuality(now = Date.now()) {
     if (!this.initialized || !this.session?.run?.active) {
       return this.networkQuality.getSnapshot(now);
@@ -429,6 +451,7 @@ export class MultiplayerRuntime {
     if (this.networkQuality.shouldPing(now)) {
       this.sendHeartbeatPing(now);
     }
+    this.pollRunRecovery(now);
     const resyncRequest = this.reconciliation.poll({
       now,
       active: this.session?.run?.active === true,
@@ -516,6 +539,103 @@ export class MultiplayerRuntime {
 
 getReconciliationSnapshot(now = Date.now()) {
     return this.reconciliation.getSnapshot(now);
+  }
+
+  resetRunRecovery(reason = 'reset') {
+    this.runRecovery = {
+      active: false,
+      reason,
+      attempt: 0,
+      nextAt: 0,
+      runId: null,
+      worldSeen: false,
+      hostSeen: false
+    };
+    return this.runRecovery;
+  }
+
+  scheduleRunRecovery(reason = 'client-run-recovery', now = Date.now()) {
+    if (
+      !this.initialized
+      || this.session?.run?.active !== true
+      || this.session?.mode !== 'client'
+    ) {
+      return false;
+    }
+    this.runRecovery = {
+      active: true,
+      reason: String(reason || 'client-run-recovery').slice(0, 80),
+      attempt: 0,
+      nextAt: Number(now) + 120,
+      runId: this.session?.run?.runId || null,
+      worldSeen: false,
+      hostSeen: false
+    };
+    return true;
+  }
+
+  noteRunRecoveryEnvelope(envelope) {
+    const recovery = this.runRecovery;
+    if (!recovery?.active || !envelope) return false;
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.WORLD_SNAPSHOT) {
+      recovery.worldSeen = true;
+    }
+    if (
+      envelope.type === MULTIPLAYER_MESSAGE_TYPES.PLAYER_SNAPSHOT
+      && envelope.playerId
+      && envelope.playerId === (
+        this.room?.hostPlayerId || this.session?.hostPlayerId || null
+      )
+    ) {
+      recovery.hostSeen = true;
+    }
+    if (recovery.worldSeen && recovery.hostSeen) {
+      recovery.active = false;
+      recovery.reason = 'hydrated';
+      recovery.nextAt = 0;
+      this.metrics.runRecoveriesCompleted += 1;
+      return true;
+    }
+    return false;
+  }
+
+  pollRunRecovery(now = Date.now()) {
+    const recovery = this.runRecovery;
+    if (!recovery?.active || Number(now) < Number(recovery.nextAt || 0)) {
+      return null;
+    }
+    if (
+      this.session?.run?.active !== true
+      || this.session?.mode !== 'client'
+      || this.transport?.getState?.() !== TRANSPORT_STATES.CONNECTED
+    ) {
+      return null;
+    }
+    const delays = [420, 950, 1800, 3200];
+    if (recovery.attempt >= delays.length) {
+      recovery.active = false;
+      recovery.reason = 'retry-budget-exhausted';
+      recovery.nextAt = 0;
+      return null;
+    }
+
+    this.players?.syncLocalPlayer?.(
+      null,
+      nowMs(),
+      { force: true }
+    );
+    const attempt = recovery.attempt + 1;
+    const envelope = this.sendStateResyncRequest({
+      reason: `${recovery.reason}-attempt-${attempt}`,
+      runId: recovery.runId,
+      recoveryAttempt: attempt,
+      requireWorldSnapshot: recovery.worldSeen !== true,
+      requireHostSnapshot: recovery.hostSeen !== true
+    });
+    recovery.attempt = attempt;
+    recovery.nextAt = Number(now) + delays[attempt - 1];
+    this.metrics.runRecoveryBursts += 1;
+    return envelope;
   }
 
   sendStateResyncRequest(request = {}) {
@@ -680,6 +800,7 @@ sendRoomState() {
       }
 
       if (result.accepted) {
+        this.noteRunRecoveryEnvelope(envelope);
         this.eventBus?.emit(MULTIPLAYER_RUNTIME_EVENTS.REMOTE_SNAPSHOT_RECEIVED, {
           envelope
         });
@@ -690,6 +811,7 @@ sendRoomState() {
 
     if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.WORLD_SNAPSHOT) {
       this.metrics.worldSnapshotsReceived += 1;
+      this.noteRunRecoveryEnvelope(envelope);
       this.eventBus?.emit(
         MULTIPLAYER_RUNTIME_EVENTS.REMOTE_WORLD_SNAPSHOT_RECEIVED,
         { envelope }

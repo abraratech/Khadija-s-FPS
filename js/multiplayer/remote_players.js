@@ -1,6 +1,6 @@
 // js/multiplayer/remote_players.js
-// POST.1B R1.1 — animated remote operators, authored-family silhouettes, and
-// restrained ally readability.
+// POST.2A R1 — corrected remote foot geometry and velocity-matched
+// locomotion with directional gait and improved foot planting.
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
@@ -260,31 +260,34 @@ function createRemoteWeaponModels(THREE, weapon, muzzleFlash) {
 
 function normalizeRemoteBoots(THREE, rig) {
   const bootMaterial = rig.materials?.boot;
-  const edgeMaterial = rig.materials?.armorEdge || bootMaterial;
+  const soleMaterial = rig.materials?.strap || bootMaterial;
   [rig.parts?.leftBoot, rig.parts?.rightBoot].forEach((boot, index) => {
     if (!boot || !bootMaterial) return;
+
+    // The authored boot contains ankle/toe/sole detail that does not survive
+    // the remote rig transforms cleanly. Hide every original mesh and replace
+    // it with one compact, symmetrical third-person boot.
     boot.traverse?.((child) => {
-      if (/(?:-toe|-sole|-instep)$/.test(String(child.name || ''))) {
-        child.visible = false;
-      }
+      if (child?.isMesh === true) child.visible = false;
     });
+
     const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.115, 0.24),
+      new THREE.BoxGeometry(0.205, 0.115, 0.285),
       bootMaterial
     );
     shell.name = `remote-boot-shell-${index}`;
-    shell.position.set(0, -0.018, -0.035);
+    shell.position.set(0, -0.018, -0.030);
     shell.castShadow = true;
     boot.add(shell);
 
-    const cap = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.045, 0.16),
-      edgeMaterial
+    const sole = new THREE.Mesh(
+      new THREE.BoxGeometry(0.195, 0.032, 0.265),
+      soleMaterial
     );
-    cap.name = `remote-boot-cap-${index}`;
-    cap.position.set(0, 0.045, -0.055);
-    cap.castShadow = true;
-    boot.add(cap);
+    sole.name = `remote-boot-sole-${index}`;
+    sole.position.set(0, -0.083, -0.024);
+    sole.castShadow = true;
+    boot.add(sole);
   });
 }
 
@@ -294,8 +297,13 @@ function makeGaitState(THREE) {
     hasLastPosition: false,
     lastUpdateAt: 0,
     phase: 0,
+    phaseRate: 0,
     moveBlend: 0,
     smoothedSpeed: 0,
+    smoothedVelocityX: 0,
+    smoothedVelocityZ: 0,
+    localMoveX: 0,
+    localMoveZ: -1,
     leftHip: new THREE.Vector3(),
     rightHip: new THREE.Vector3(),
     leftKnee: new THREE.Vector3(),
@@ -323,6 +331,9 @@ function applyRemoteGait(THREE, remote, {
   now,
   x,
   z,
+  yaw,
+  velocityX,
+  velocityZ,
   isSprinting,
   isADS,
   disabled,
@@ -334,39 +345,125 @@ function applyRemoteGait(THREE, remote, {
   const dt = gait.lastUpdateAt
     ? clamp((now - gait.lastUpdateAt) / 1000, 0.001, 0.10)
     : 1 / 60;
-  let instantSpeed = 0;
+
+  let fallbackVelocityX = 0;
+  let fallbackVelocityZ = 0;
   if (gait.hasLastPosition) {
-    const dx = x - gait.lastPosition.x;
-    const dz = z - gait.lastPosition.z;
-    instantSpeed = clamp(Math.hypot(dx, dz) / dt, 0, 8);
+    fallbackVelocityX = (x - gait.lastPosition.x) / dt;
+    fallbackVelocityZ = (z - gait.lastPosition.z) / dt;
   }
+
+  const reportedVelocityX = Number(velocityX);
+  const reportedVelocityZ = Number(velocityZ);
+  const hasReportedVelocity = (
+    Number.isFinite(reportedVelocityX)
+    && Number.isFinite(reportedVelocityZ)
+  );
+  const rawVelocityX = hasReportedVelocity
+    ? reportedVelocityX
+    : fallbackVelocityX;
+  const rawVelocityZ = hasReportedVelocity
+    ? reportedVelocityZ
+    : fallbackVelocityZ;
+
   gait.lastPosition.set(x, 0, z);
   gait.hasLastPosition = true;
   gait.lastUpdateAt = now;
-  gait.smoothedSpeed = damp(gait.smoothedSpeed, instantSpeed, 8.5, dt);
+  gait.smoothedVelocityX = damp(
+    gait.smoothedVelocityX,
+    clamp(rawVelocityX, -8, 8),
+    10,
+    dt
+  );
+  gait.smoothedVelocityZ = damp(
+    gait.smoothedVelocityZ,
+    clamp(rawVelocityZ, -8, 8),
+    10,
+    dt
+  );
 
-  const moving = !disabled && gait.smoothedSpeed > 0.10;
+  const instantSpeed = clamp(
+    Math.hypot(gait.smoothedVelocityX, gait.smoothedVelocityZ),
+    0,
+    8
+  );
+  gait.smoothedSpeed = damp(gait.smoothedSpeed, instantSpeed, 10, dt);
+
+  const heading = Number(yaw) || 0;
+  const cosYaw = Math.cos(heading);
+  const sinYaw = Math.sin(heading);
+  const localVelocityX = (
+    cosYaw * gait.smoothedVelocityX
+    - sinYaw * gait.smoothedVelocityZ
+  );
+  const localVelocityZ = (
+    sinYaw * gait.smoothedVelocityX
+    + cosYaw * gait.smoothedVelocityZ
+  );
+  const localLength = Math.hypot(localVelocityX, localVelocityZ);
+  if (localLength > 0.04) {
+    gait.localMoveX = damp(
+      gait.localMoveX,
+      localVelocityX / localLength,
+      12,
+      dt
+    );
+    gait.localMoveZ = damp(
+      gait.localMoveZ,
+      localVelocityZ / localLength,
+      12,
+      dt
+    );
+  }
+
+  const moving = !disabled && gait.smoothedSpeed > 0.08;
   const targetBlend = moving
-    ? clamp(gait.smoothedSpeed / (isSprinting ? 4.6 : 3.2), 0.18, 1)
+    ? clamp(gait.smoothedSpeed / (isSprinting ? 4.6 : 3.2), 0.16, 1)
     : 0;
-  gait.moveBlend = damp(gait.moveBlend, targetBlend, moving ? 10 : 7, dt);
-  gait.phase += dt * (4.0 + Math.min(gait.smoothedSpeed, 6) * 1.45)
-    * (isSprinting ? 1.20 : 1);
+  gait.moveBlend = damp(gait.moveBlend, targetBlend, moving ? 12 : 9, dt);
 
-  const amplitude = (isSprinting ? 0.22 : 0.15) * gait.moveBlend;
+  const amplitude = (isSprinting ? 0.265 : 0.205) * gait.moveBlend;
+  const targetPhaseRate = moving
+    ? clamp(
+      gait.smoothedSpeed / Math.max(0.11, amplitude),
+      isSprinting ? 11.5 : 9.5,
+      isSprinting ? 19.5 : 18.0
+    )
+    : 0;
+  gait.phaseRate = damp(gait.phaseRate, targetPhaseRate, moving ? 10 : 7, dt);
+  gait.phase += dt * gait.phaseRate;
+
   const leftWave = Math.sin(gait.phase);
   const rightWave = -leftWave;
-  const leftLift = Math.max(0, -leftWave) * 0.10 * gait.moveBlend;
-  const rightLift = Math.max(0, -rightWave) * 0.10 * gait.moveBlend;
+  const leftLift = Math.max(0, -leftWave) * 0.115 * gait.moveBlend;
+  const rightLift = Math.max(0, -rightWave) * 0.115 * gait.moveBlend;
   const leftStride = leftWave * amplitude;
   const rightStride = rightWave * amplitude;
+  const moveX = gait.localMoveX;
+  const moveZ = gait.localMoveZ;
 
   gait.leftHip.set(-0.158, 0.82, 0);
   gait.rightHip.set(0.158, 0.82, 0);
-  gait.leftKnee.set(-0.184, 0.45 + leftLift * 0.30, -0.038 + leftStride * 0.48);
-  gait.rightKnee.set(0.184, 0.45 + rightLift * 0.30, -0.038 + rightStride * 0.48);
-  gait.leftFoot.set(-0.212, 0.10 + leftLift, -0.018 + leftStride);
-  gait.rightFoot.set(0.212, 0.10 + rightLift, -0.018 + rightStride);
+  gait.leftKnee.set(
+    -0.184 + moveX * leftStride * 0.46,
+    0.45 + leftLift * 0.30,
+    -0.038 + moveZ * leftStride * 0.46
+  );
+  gait.rightKnee.set(
+    0.184 + moveX * rightStride * 0.46,
+    0.45 + rightLift * 0.30,
+    -0.038 + moveZ * rightStride * 0.46
+  );
+  gait.leftFoot.set(
+    -0.212 + moveX * leftStride,
+    0.10 + leftLift,
+    -0.018 + moveZ * leftStride
+  );
+  gait.rightFoot.set(
+    0.212 + moveX * rightStride,
+    0.10 + rightLift,
+    -0.018 + moveZ * rightStride
+  );
 
   setSegmentBetween(parts.leftUpperLeg, gait.leftHip, gait.leftKnee, gait);
   setSegmentBetween(parts.leftLowerLeg, gait.leftKnee, gait.leftFoot, gait);
@@ -375,22 +472,24 @@ function applyRemoteGait(THREE, remote, {
 
   parts.leftBoot.position.copy(gait.leftFoot).setY(0.055 + leftLift);
   parts.rightBoot.position.copy(gait.rightFoot).setY(0.055 + rightLift);
-  parts.leftBoot.rotation.x = -leftStride * 1.5;
-  parts.rightBoot.rotation.x = -rightStride * 1.5;
+  parts.leftBoot.rotation.x = -leftStride * 1.18 * Math.abs(moveZ);
+  parts.rightBoot.rotation.x = -rightStride * 1.18 * Math.abs(moveZ);
+  parts.leftBoot.rotation.z = leftStride * 0.78 * moveX;
+  parts.rightBoot.rotation.z = rightStride * 0.78 * moveX;
 
-  const bob = Math.abs(Math.sin(gait.phase * 2)) * 0.018 * gait.moveBlend;
-  remote.body.position.y = damp(remote.body.position.y, bob, 12, dt);
+  const bob = Math.abs(Math.sin(gait.phase * 2)) * 0.016 * gait.moveBlend;
+  remote.body.position.y = damp(remote.body.position.y, bob, 13, dt);
   remote.body.rotation.z = damp(
     remote.body.rotation.z,
-    Math.sin(gait.phase) * 0.015 * gait.moveBlend,
-    10,
+    -moveX * 0.025 * gait.moveBlend,
+    11,
     dt
   );
-  remote.arms.position.y = damp(remote.arms.position.y, 1.40 + bob, 12, dt);
+  remote.arms.position.y = damp(remote.arms.position.y, 1.40 + bob, 13, dt);
   remote.arms.rotation.z = damp(
     remote.arms.rotation.z,
-    (isADS ? 0 : Math.sin(gait.phase) * 0.022 * gait.moveBlend),
-    10,
+    isADS ? 0 : -moveX * 0.018 * gait.moveBlend,
+    11,
     dt
   );
 }
@@ -582,6 +681,9 @@ export class RemotePlayerManager {
           now,
           x: positionX,
           z: positionZ,
+          yaw: state.yaw,
+          velocityX: state.velocity?.x,
+          velocityZ: state.velocity?.z,
           isSprinting: state.isSprinting === true,
           isADS: state.isADS === true,
           disabled: isDowned || isAway || isSpectating,
@@ -612,7 +714,7 @@ export class RemotePlayerManager {
   getSnapshot() {
     return {
       active: this.active,
-      visualPatch: 'post1b-r1-1-remote-presentation',
+      visualPatch: 'post2a-r1-remote-locomotion-foot-geometry',
       weaponFamilies: [...REMOTE_WEAPON_FAMILIES],
       remotePlayers: Array.from(this.avatars.keys())
     };

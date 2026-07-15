@@ -33,6 +33,7 @@ import {
   requireMultiplayerProductionReleaseReady,
   subscribeMultiplayerProductionRelease
 } from './production_release.js';
+import { PublicMatchmakingClient } from './matchmaking.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -168,11 +169,25 @@ export class MultiplayerLobbyController {
     this.productionRelease = getMultiplayerProductionReleaseSnapshot();
         this.lastRoom = loadLastRoom();
         this.pendingLeaveResolver = null;
+        this.pendingQuickMatchAssignment = null;
+        this.quickMatchConnectInFlight = false;
+        this.matchmaking = new PublicMatchmakingClient({
+          onChange: (snapshot) => {
+            this.matchmakingState = snapshot;
+            this.render();
+          },
+          onMatch: (assignment) => {
+            void this.handleQuickMatchFound(assignment);
+          }
+        });
+        this.matchmakingState = this.matchmaking.getSnapshot();
   }
 
   initialize() {
     this.ui = new MultiplayerLobbyUI({
       actions: {
+        quickMatch: (options) => this.startQuickMatch(options),
+        cancelQuickMatch: () => this.cancelQuickMatch(),
         createRoom: (options) => this.createRoom(options),
         joinRoom: (options) => this.joinRoom(options),
                 rejoinLastRoom: (options) => this.rejoinLastRoom(options),
@@ -277,6 +292,9 @@ export class MultiplayerLobbyController {
   }
 
   async createRoom({ displayName, serverUrl } = {}) {
+    if (this.matchmaking?.isActive?.()) {
+      await this.matchmaking.cancel({ reason: 'private-room-create' });
+    }
     const roomCode = makeRoomCode();
     return this.connect({
       roomCode,
@@ -287,6 +305,9 @@ export class MultiplayerLobbyController {
   }
 
   async joinRoom({ roomCode, displayName, serverUrl } = {}) {
+    if (this.matchmaking?.isActive?.()) {
+      await this.matchmaking.cancel({ reason: 'private-room-join' });
+    }
     const normalized = normalizeRoomCode(roomCode);
     if (normalized.length !== 6) {
       this.error = 'ENTER A VALID SIX-CHARACTER ROOM CODE';
@@ -300,6 +321,95 @@ export class MultiplayerLobbyController {
       serverUrl,
       joinMode: 'join'
     });
+  }
+
+  async startQuickMatch({
+    displayName,
+    serverUrl,
+    mapId = 'grid_bunker',
+    difficulty = 1
+  } = {}) {
+    if (this.connected || this.quickMatchConnectInFlight) return false;
+    this.error = null;
+    this.render();
+
+    try {
+      await requireMultiplayerProductionReleaseReady(serverUrl);
+    } catch (error) {
+      this.error = String(
+        error?.message || 'Certified multiplayer server check failed.'
+      ).toUpperCase();
+      this.render();
+      return false;
+    }
+
+    this.pendingQuickMatchAssignment = null;
+    const snapshot = await this.matchmaking.start({
+      serverUrl,
+      playerId: this.localPlayerId,
+      displayName: String(displayName || 'Player').trim().slice(0, 24),
+      protocol: MULTIPLAYER_PROTOCOL_VERSION,
+      build: MULTIPLAYER_BUILD_ID,
+      preferences: {
+        mode: 'coop',
+        mapId: String(mapId || 'grid_bunker').slice(0, 80),
+        difficulty: Number(difficulty) || 1,
+        maxPlayers: 2
+      }
+    });
+    this.matchmakingState = snapshot;
+    this.render();
+    return snapshot.status !== 'error';
+  }
+
+  async cancelQuickMatch() {
+    const wasConnecting = this.quickMatchConnectInFlight;
+    this.pendingQuickMatchAssignment = null;
+    this.quickMatchConnectInFlight = false;
+    await this.matchmaking.cancel({ reason: 'cancelled-by-player' });
+    if (wasConnecting && !this.connected) {
+      await this.transport.disconnect('quick-match-cancelled', {
+        fallbackLocal: true
+      });
+    }
+    this.error = null;
+    this.render();
+    return true;
+  }
+
+  async handleQuickMatchFound(assignment) {
+    if (
+      !assignment?.roomCode
+      || this.connected
+      || this.quickMatchConnectInFlight
+    ) {
+      return false;
+    }
+
+    this.pendingQuickMatchAssignment = assignment;
+    this.quickMatchConnectInFlight = true;
+    this.error = null;
+    this.render();
+
+    const identity = this.ui?.getConnectionIdentity?.() || {};
+    const connected = await this.connect({
+      roomCode: assignment.roomCode,
+      displayName: identity.displayName || 'Player',
+      serverUrl: identity.serverUrl,
+      joinMode: assignment.joinMode || 'join'
+    });
+
+    if (!connected) {
+      this.quickMatchConnectInFlight = false;
+      this.pendingQuickMatchAssignment = null;
+      this.matchmaking.fail(
+        this.error || 'Unable to connect to the assigned public room.'
+      );
+      this.render();
+      return false;
+    }
+
+    return true;
   }
 
   async rejoinLastRoom({ displayName } = {}) {
@@ -395,6 +505,11 @@ export class MultiplayerLobbyController {
       }
       this.error = String(payload.message || 'Multiplayer server rejected the request.')
         .toUpperCase();
+      if (this.pendingQuickMatchAssignment) {
+        this.quickMatchConnectInFlight = false;
+        this.pendingQuickMatchAssignment = null;
+        this.matchmaking.fail(this.error, 'MATCHED_ROOM_REJECTED');
+      }
       this.render();
       return;
     }
@@ -460,6 +575,15 @@ export class MultiplayerLobbyController {
                     (entry) => entry.playerId === this.localPlayerId
                 )?.displayName || this.lastRoom?.displayName
             }) || this.lastRoom;
+
+      if (
+        this.pendingQuickMatchAssignment
+        && this.matchmaking.isMatchedToRoom(room.roomCode)
+      ) {
+        this.quickMatchConnectInFlight = false;
+        this.pendingQuickMatchAssignment = null;
+        void this.matchmaking.acknowledgeConnected();
+      }
 
       const local = room.players.find(
         (player) => player.playerId === this.localPlayerId
@@ -719,7 +843,7 @@ export class MultiplayerLobbyController {
       return;
     }
 
-    
+
     if (action === 'kicked') {
       const message = String(
         payload.message || 'REMOVED FROM ROOM BY HOST'
@@ -771,7 +895,7 @@ if (action === 'left-room') {
     });
   }
 
-  
+
   kickPlayer(playerId) {
     if (!this.connected) return false;
     return this.transport.sendControl('kick-player', {
@@ -820,6 +944,11 @@ openLobby() {
     this.connected = false;
     this.room = null;
     this.error = null;
+    this.quickMatchConnectInFlight = false;
+    this.pendingQuickMatchAssignment = null;
+    if (this.matchmaking?.isActive?.()) {
+      void this.matchmaking.cancel({ reason: 'room-left' });
+    }
     this.lastAuthorityEpoch = 0;
     this.session.returnToLocalSession({
       hostPlayerId: this.localPlayerId
@@ -832,11 +961,12 @@ openLobby() {
   render() {
     const transportState = this.transport.getState();
     const transportMode = this.transport.getMode();
-    const connecting = transportMode === TRANSPORT_MODES.ONLINE
+    const transportConnecting = transportMode === TRANSPORT_MODES.ONLINE
       && [
         TRANSPORT_STATES.CONNECTING,
         TRANSPORT_STATES.RECONNECTING
       ].includes(transportState);
+    const connecting = transportConnecting || this.quickMatchConnectInFlight;
 
     this.ui?.render({
       connected: this.connected,
@@ -845,6 +975,7 @@ openLobby() {
       transportMode,
       room: this.room,
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
+      matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
             lastRoom: this.lastRoom || loadLastRoom(),
             localPlayerId: this.localPlayerId,
       error: this.error
@@ -858,12 +989,14 @@ openLobby() {
             lastRoom: this.lastRoom || loadLastRoom(),
             error: this.error,
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
+      matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
       transport: this.transport.getConnectionSnapshot()
     };
   }
 
   destroy() {
     cancelMultiplayerRefreshRunProof({ reason: 'multiplayer-lobby-destroyed' });
+    this.matchmaking?.destroy?.();
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
     this.unsubscribe.length = 0;
   }

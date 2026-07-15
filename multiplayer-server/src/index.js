@@ -3,8 +3,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
 import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js'; import { buildVoiceSignalRelay, validateVoiceSignalRequest } from './voice_signal_core.js'; import { VOICE_ICE_CONFIG_ACTION, VOICE_ICE_CONFIG_REQUEST_ACTION, consumeVoiceIceRequestRate, generateVoiceIceConfig, voiceIceConfigFresh } from './voice_turn_core.js';
+import { MatchmakingHub } from './matchmaking_hub.js';
+import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 
-export { LeaderboardHub, CloudProfileHub };
+export { LeaderboardHub, CloudProfileHub, MatchmakingHub };
 
 const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/;
 const MAX_PLAYERS = 4;
@@ -138,6 +140,51 @@ async function proxyCloudProfileRequest(request, env) {
   }
 }
 
+
+async function proxyMatchmakingRequest(request, env) {
+  if (!env.MATCHMAKING) {
+    return json({
+      ok: false,
+      error: 'MATCHMAKING_BINDING_UNAVAILABLE'
+    }, { status: 503 });
+  }
+
+  try {
+    const sourceUrl = new URL(request.url);
+    const headers = new Headers(request.headers);
+    headers.set(
+      'x-ka-region',
+      String(
+        request.cf?.continent
+        || request.cf?.country
+        || request.headers.get('x-ka-region')
+        || 'ZZ'
+      ).toUpperCase()
+    );
+    headers.delete('cf-connecting-ip');
+    const internal = new Request(
+      `https://matchmaking.internal${sourceUrl.pathname}${sourceUrl.search}`,
+      {
+        method: request.method,
+        headers,
+        body: ['GET', 'HEAD'].includes(request.method)
+          ? undefined
+          : request.body,
+        redirect: 'manual'
+      }
+    );
+    const id = env.MATCHMAKING.idFromName('public-v1');
+    const response = await env.MATCHMAKING.get(id).fetch(internal);
+    return corsify(response);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: 'MATCHMAKING_UPSTREAM_UNAVAILABLE',
+      detail: String(error?.message || error || 'UNKNOWN').slice(0, 160)
+    }, { status: 502 });
+  }
+}
+
 function publicPlayer(player) {
   return {
     playerId: player.playerId,
@@ -169,6 +216,7 @@ function defaultRoom(roomCode) {
     authorityEpoch: 0,
     authorityCheckpoint: null,
     finalSummary: null,
+    matchmaking: null,
     revision: 0,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -226,11 +274,77 @@ export class ArenaRoom extends DurableObject {
   }
 
   async fetch(request) {
+    const url = new URL(request.url);
+
+    if (
+      request.method === 'POST'
+      && url.pathname === '/matchmaking-reserve'
+      && request.headers.get('x-ka-internal-matchmaking') === '1'
+    ) {
+      let reservation;
+      try {
+        reservation = await request.json();
+      } catch {
+        return json({ ok: false, error: 'INVALID_RESERVATION_JSON' }, {
+          status: 400
+        });
+      }
+
+      const roomCode = normalizeRoomCode(reservation?.roomCode);
+      const matchId = String(reservation?.matchId || '').slice(0, 200);
+      if (!ROOM_CODE_PATTERN.test(roomCode) || !matchId) {
+        return json({ ok: false, error: 'INVALID_MATCH_RESERVATION' }, {
+          status: 400
+        });
+      }
+
+      const connected = this.connectedPlayers();
+      if (
+        connected.length > 0
+        && this.room?.matchmaking?.matchId !== matchId
+      ) {
+        return json({ ok: false, error: 'ROOM_ALREADY_ACTIVE' }, {
+          status: 409
+        });
+      }
+
+      if (this.room?.matchmaking?.matchId === matchId) {
+        return json({
+          ok: true,
+          roomCode,
+          matchId,
+          room: this.snapshot()
+        });
+      }
+
+      this.room = defaultRoom(roomCode);
+      this.room.settings = {
+        ...this.room.settings,
+        maxPlayers: normalizeMaxPlayers(reservation?.maxPlayers),
+        mapId: String(reservation?.mapId || 'grid_bunker').slice(0, 80),
+        difficulty: Number(reservation?.difficulty) || 1,
+        privacy: 'public',
+        locked: false,
+        allowLateJoin: true
+      };
+      this.room.matchmaking = {
+        matchId,
+        region: String(reservation?.region || 'ZZ').slice(0, 16),
+        reservedAt: Math.max(0, Number(reservation?.reservedAt) || Date.now()),
+        expiresAt: Math.max(0, Number(reservation?.expiresAt) || 0)
+      };
+      await this.commit();
+      return json({
+        ok: true,
+        roomCode,
+        matchId,
+        room: this.snapshot()
+      });
+    }
+
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
       return json({ error: 'Expected WebSocket upgrade.' }, { status: 426 });
     }
-
-    const url = new URL(request.url);
     const roomCode = normalizeRoomCode(url.searchParams.get('room'));
     const playerId = String(url.searchParams.get('playerId') || '').slice(0, 160);
     const displayName = safeName(url.searchParams.get('name'));
@@ -278,6 +392,7 @@ export class ArenaRoom extends DurableObject {
         this.connectedPlayers().length === 0
         && mode === 'create'
         && !this.room.players?.[playerId]
+        && !this.room.matchmaking?.matchId
       )
     ) {
       this.room = defaultRoom(roomCode);
@@ -468,7 +583,14 @@ export class ArenaRoom extends DurableObject {
       runId: this.room.runId,
       authorityEpoch: Math.max(0, Number(this.room.authorityEpoch) || 0),
       revision: this.room.revision,
-      finalSummary: this.room.finalSummary || null
+      finalSummary: this.room.finalSummary || null,
+      matchmaking: this.room.matchmaking
+        ? {
+            public: true,
+            matchId: this.room.matchmaking.matchId,
+            region: this.room.matchmaking.region || 'ZZ'
+          }
+        : null
     };
   }
 
@@ -1298,6 +1420,10 @@ export default {
       return proxyCloudProfileRequest(request, env);
     }
 
+    if (url.pathname.startsWith('/matchmaking/')) {
+      return proxyMatchmakingRequest(request, env);
+    }
+
     if (url.pathname === '/health') {
       return json({
         ok: true,
@@ -1307,6 +1433,17 @@ export default {
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
+        matchmaking: {
+          schema: MATCHMAKING_SCHEMA,
+          patch: MATCHMAKING_PATCH,
+          endpoints: [
+            '/matchmaking/enqueue',
+            '/matchmaking/status',
+            '/matchmaking/cancel',
+            '/matchmaking/ack',
+            '/matchmaking/health'
+          ]
+        },
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
         cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] }
       });
@@ -1321,6 +1458,17 @@ export default {
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
         releaseStatus: RELEASE_STATUS,
+        matchmaking: {
+          schema: MATCHMAKING_SCHEMA,
+          patch: MATCHMAKING_PATCH,
+          endpoints: [
+            '/matchmaking/enqueue',
+            '/matchmaking/status',
+            '/matchmaking/cancel',
+            '/matchmaking/ack',
+            '/matchmaking/health'
+          ]
+        },
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
         cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] },
         deployedAt: new Date().toISOString()
@@ -1330,7 +1478,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', '/ws']
+        endpoints: ['/health', '/release', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', '/ws']
       });
     }
 

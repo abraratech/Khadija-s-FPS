@@ -16,6 +16,10 @@
       {
         "name": "CLOUD_PROFILES",
         "class_name": "CloudProfileHub"
+      },
+      {
+        "name": "MATCHMAKING",
+        "class_name": "MatchmakingHub"
       }
     ]
   },
@@ -36,6 +40,12 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "CloudProfileHub"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "MatchmakingHub"
       ]
     }
   ],

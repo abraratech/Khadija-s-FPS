@@ -1,4 +1,5 @@
 import { deriveMultiplayerProductionReleaseUiState } from './production_release_ui_core.js';
+import { matchmakingStatusPresentation } from './matchmaking_core.js';
 
 // js/multiplayer/lobby_ui.js
 
@@ -130,6 +131,44 @@ export class MultiplayerLobbyUI {
 
           <button id="ka-coop-release-retry" type="button">RECHECK CERTIFIED SERVER</button>
 
+          <section class="ka-matchmaking-panel" aria-labelledby="ka-matchmaking-title">
+            <div class="ka-matchmaking-heading">
+              <div>
+                <span class="ka-coop-kicker">PUBLIC MATCHMAKING</span>
+                <strong id="ka-matchmaking-title">QUICK MATCH</strong>
+              </div>
+              <span class="ka-matchmaking-region">REGION-AWARE</span>
+            </div>
+            <p class="ka-matchmaking-copy">
+              Find a compatible operative using the current arena, difficulty,
+              protocol and game build. Regional matches are preferred before
+              global search expands.
+            </p>
+            <div class="ka-matchmaking-preferences">
+              <label class="ka-coop-field">
+                <span>Arena</span>
+                <select id="ka-matchmaking-map"></select>
+              </label>
+              <label class="ka-coop-field">
+                <span>Difficulty</span>
+                <select id="ka-matchmaking-difficulty"></select>
+              </label>
+            </div>
+            <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
+              FIND PUBLIC MATCH
+            </button>
+            <div id="ka-matchmaking-status" class="ka-matchmaking-status" data-tone="neutral" hidden>
+              <div>
+                <strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong>
+                <span id="ka-matchmaking-status-detail">MATCH BY BUILD, PROTOCOL, ARENA AND REGION</span>
+              </div>
+              <span id="ka-matchmaking-elapsed"></span>
+              <button id="ka-matchmaking-cancel" type="button">CANCEL</button>
+            </div>
+          </section>
+
+          <div class="ka-coop-private-divider"><span>PRIVATE ROOMS</span></div>
+
           <div class="ka-coop-connect-grid">
             <button id="ka-coop-create" class="ka-coop-primary" type="button">CREATE PRIVATE ROOM</button>
             <div class="ka-coop-join-row">
@@ -182,6 +221,14 @@ export class MultiplayerLobbyUI {
       name: modal.querySelector('#ka-coop-name'),
       server: modal.querySelector('#ka-coop-server'),
       releaseRetry: modal.querySelector('#ka-coop-release-retry'),
+      quickMatch: modal.querySelector('#ka-coop-quick-match'),
+      matchmakingMap: modal.querySelector('#ka-matchmaking-map'),
+      matchmakingDifficulty: modal.querySelector('#ka-matchmaking-difficulty'),
+      matchmakingStatus: modal.querySelector('#ka-matchmaking-status'),
+      matchmakingStatusTitle: modal.querySelector('#ka-matchmaking-status-title'),
+      matchmakingStatusDetail: modal.querySelector('#ka-matchmaking-status-detail'),
+      matchmakingElapsed: modal.querySelector('#ka-matchmaking-elapsed'),
+      matchmakingCancel: modal.querySelector('#ka-matchmaking-cancel'),
       create: modal.querySelector('#ka-coop-create'),
       codeInput: modal.querySelector('#ka-coop-code-input'),
       join: modal.querySelector('#ka-coop-join'),
@@ -222,9 +269,29 @@ export class MultiplayerLobbyUI {
         { value: '1.0', label: 'Normal' }
       ])
     );
+    appendOptions(
+      this.elements.matchmakingMap,
+      optionData(document.getElementById('map-select'), [
+        { value: 'grid_bunker', label: 'Grid Bunker' }
+      ])
+    );
+    appendOptions(
+      this.elements.matchmakingDifficulty,
+      optionData(document.getElementById('diff-select'), [
+        { value: '1.0', label: 'Normal' }
+      ])
+    );
 
     this.elements.map.value = 'grid_bunker';
     setNumericSelectValue(this.elements.difficulty, 1, 1);
+    this.elements.matchmakingMap.value = (
+      document.getElementById('map-select')?.value || 'grid_bunker'
+    );
+    setNumericSelectValue(
+      this.elements.matchmakingDifficulty,
+      document.getElementById('diff-select')?.value || 1,
+      1
+    );
 
     this.bindEvents();
     this.render({
@@ -233,13 +300,20 @@ export class MultiplayerLobbyUI {
       transportState: 'connected',
       transportMode: 'local',
       room: null,
+      matchmaking: {
+        status: 'idle',
+        active: false,
+        queuedAt: 0,
+        elapsedMs: 0,
+        fallbackAt: 0
+      },
             lastRoom: null,
             localPlayerId: null,
       error: null
     });
   }
 
-  
+
   installHostControls() {
     const panel = document.createElement('section');
     panel.id = 'ka-coop-host-controls';
@@ -313,6 +387,20 @@ bindEvents() {
       this.actions.retryRelease?.({ serverUrl: this.elements.server.value });
     });
 
+    this.elements.quickMatch.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.quickMatch?.({
+        displayName: this.elements.name.value,
+        serverUrl: this.elements.server.value,
+        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
+      });
+    });
+
+    this.elements.matchmakingCancel.addEventListener('click', () => {
+      this.actions.cancelQuickMatch?.();
+    });
+
     this.elements.create.addEventListener('click', () => {
       this.saveIdentity();
       this.actions.createRoom?.({
@@ -346,7 +434,9 @@ bindEvents() {
     [
       this.elements.name,
       this.elements.server,
-      this.elements.codeInput
+      this.elements.codeInput,
+      this.elements.matchmakingMap,
+      this.elements.matchmakingDifficulty
     ].forEach((input) => {
       input?.addEventListener('keydown', (event) => {
         event.stopPropagation();
@@ -410,6 +500,13 @@ bindEvents() {
     writeStored(SERVER_STORAGE_KEY, serverUrl);
   }
 
+  getConnectionIdentity() {
+    return {
+      displayName: this.elements.name?.value?.trim?.().slice(0, 24) || 'Player',
+      serverUrl: this.elements.server?.value?.trim?.() || ''
+    };
+  }
+
   open() {
     this.opened = true;
     this.elements.modal.classList.add('open');
@@ -459,9 +556,27 @@ bindEvents() {
       ? `CO-OP · ${room.roomCode || 'ONLINE'}`
       : 'CO-OP ALPHA';
 
+    const matchmaking = nextState.matchmaking || { status: 'idle' };
+    const matchmakingUi = matchmakingStatusPresentation(matchmaking);
+    const matchmakingActive = ['searching', 'matched', 'connecting'].includes(
+      matchmaking.status
+    );
     const disabled = nextState.connecting || releaseUi.blockActions;
-    this.elements.create.disabled = disabled;
-    this.elements.join.disabled = disabled;
+    this.elements.quickMatch.disabled = disabled || online || matchmakingActive;
+    this.elements.matchmakingMap.disabled = disabled || matchmakingActive;
+    this.elements.matchmakingDifficulty.disabled = disabled || matchmakingActive;
+    this.elements.matchmakingStatus.hidden = (
+      !matchmakingActive
+      && !['error', 'cancelled', 'expired'].includes(matchmaking.status)
+    );
+    this.elements.matchmakingStatus.dataset.tone = matchmakingUi.tone;
+    this.elements.matchmakingStatusTitle.textContent = matchmakingUi.title;
+    this.elements.matchmakingStatusDetail.textContent = matchmakingUi.detail;
+    this.elements.matchmakingElapsed.textContent = matchmakingUi.elapsedText;
+    this.elements.matchmakingCancel.hidden = !matchmakingUi.cancellable;
+    this.elements.matchmakingCancel.disabled = !matchmakingUi.cancellable;
+    this.elements.create.disabled = disabled || matchmakingActive;
+    this.elements.join.disabled = disabled || matchmakingActive;
     this.elements.releaseRetry.hidden = !releaseUi.retryVisible || online;
     this.elements.releaseRetry.disabled = releaseUi.retryDisabled || nextState.connecting || online;
         const lastRoom = nextState.lastRoom;
@@ -514,7 +629,7 @@ bindEvents() {
           : 'NOT READY';
 
       row.append(identity, state);
-      
+
       if (isHost && player.playerId !== local?.playerId) {
         const controls = document.createElement('div');
         controls.className = 'ka-coop-player-controls';

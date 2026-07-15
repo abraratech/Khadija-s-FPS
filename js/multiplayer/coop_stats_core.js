@@ -102,6 +102,7 @@ function clonePlayer(player) {
     playerId: player.playerId,
     displayName: player.displayName,
     role: player.role,
+    isBot: player.isBot === true,
     connected: player.connected === true,
     lifeState: player.lifeState,
     health: Math.max(0, finite(player.health)),
@@ -119,7 +120,12 @@ function defaultPlayer(playerId, details = {}) {
   return {
     playerId,
     displayName: sanitizeStatsName(details.displayName),
-    role: details.role === 'HOST' ? 'HOST' : 'OPERATIVE',
+    role: details.role === 'HOST'
+      ? 'HOST'
+      : details.role === 'COMPANION' || details.isBot === true
+        ? 'COMPANION'
+        : 'OPERATIVE',
+    isBot: details.isBot === true,
     connected: details.connected !== false,
     lifeState: details.lifeState || 'ACTIVE',
     health: Math.max(0, finite(details.health, 100)),
@@ -134,8 +140,9 @@ function defaultPlayer(playerId, details = {}) {
 
 function playerSortValue(player) {
   if (player.role === 'HOST') return 0;
-  if (player.connected && player.lifeState !== 'RECONNECTING' && player.lifeState !== 'ELIMINATED') return 1;
-  return 2;
+  if (player.role === 'OPERATIVE' && player.connected && player.lifeState !== 'RECONNECTING' && player.lifeState !== 'ELIMINATED') return 1;
+  if (player.role === 'COMPANION' && player.connected && player.lifeState !== 'RECONNECTING' && player.lifeState !== 'ELIMINATED') return 2;
+  return 3;
 }
 
 export function sortCoopPlayers(players = []) {
@@ -202,7 +209,14 @@ export class CoopStatsCore {
       this.players.set(id, player);
     } else {
       if (details.displayName !== undefined) player.displayName = sanitizeStatsName(details.displayName);
-      if (details.role !== undefined) player.role = details.role === 'HOST' ? 'HOST' : 'OPERATIVE';
+      if (details.role !== undefined || details.isBot !== undefined) {
+        player.role = details.role === 'HOST'
+          ? 'HOST'
+          : details.role === 'COMPANION' || details.isBot === true
+            ? 'COMPANION'
+            : 'OPERATIVE';
+      }
+      if (details.isBot !== undefined) player.isBot = details.isBot === true;
       if (details.connected !== undefined) player.connected = details.connected === true;
       if (details.lifeState !== undefined || details.connected !== undefined) {
         player.lifeState = normalizeLifeState(details.lifeState || player.lifeState, player.connected);
@@ -296,7 +310,12 @@ export class CoopStatsCore {
       seen.add(playerId);
       this.ensurePlayer(playerId, {
         displayName: entry.displayName,
-        role: playerId === hostId || entry.isHost === true ? 'HOST' : 'OPERATIVE',
+        role: playerId === hostId || entry.isHost === true
+          ? 'HOST'
+          : entry.isBot === true
+            ? 'COMPANION'
+            : 'OPERATIVE',
+        isBot: entry.isBot === true,
         connected: entry.connected !== false,
         lifeState: entry.connected === false ? 'RECONNECTING' : undefined,
         now
@@ -442,6 +461,7 @@ export class CoopStatsCore {
         playerId: player.playerId,
         displayName: player.displayName,
         role: player.role,
+        isBot: player.isBot === true,
         kills: player.counters.kills,
         headshotKills: player.counters.headshotKills,
         shots: player.counters.shots,

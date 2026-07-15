@@ -818,12 +818,22 @@ getRemoteAuthorityTargets(now = nowMs()) {
     );
   }
 
+  isAuthorizedRemoteCombatant(playerId) {
+    if (!playerId) return false;
+    return (this.runtime?.room?.getSnapshot?.()?.players || []).some((entry) => (
+      entry?.playerId === playerId
+      && entry.isBot !== true
+      && entry.connected !== false
+    ));
+  }
+
   handleEnemyHitRequest(envelope) {
     if (!this.active || !this.isAuthority() || this.session?.mode !== 'host') {
       return;
     }
 
     if (envelope?.runId && envelope.runId !== this.session?.run?.runId) return;
+    if (!this.isAuthorizedRemoteCombatant(envelope?.playerId)) return;
     if (!this.allowHitRequest(envelope?.playerId)) return;
 
     const hit = envelope?.payload;

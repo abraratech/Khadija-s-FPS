@@ -2,7 +2,7 @@
 // js/main.js
 import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
-import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
+import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, damageEnemyForBot, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
@@ -30,7 +30,7 @@ import {
 } from './progression.js';
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
-import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot } from './run_summary.js';
+import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted } from './run_summary.js';
 import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
 import {
   CONTROL_ACTIONS,
@@ -175,6 +175,14 @@ initializeMultiplayerFoundation(player, {
   statsAdapter: {
     getRunSummarySnapshot,
     getWave: () => currentWave
+  },
+  botAdapter: {
+    getActiveEnemies,
+    damageEnemy: damageEnemyForBot,
+    getWorldTargets: () => mapMeshes,
+    getWave: () => currentWave,
+    markRunBotAssisted,
+    showToast: showStatusToast
   }
 });
 initMultiplayerQuickMessageWheel({
@@ -1349,9 +1357,31 @@ function handleOnlineRunEnded(details = {}) {
   );
 }
 
+function hasRecoverableMultiplayerOperative(
+  snapshot = getMultiplayerReviveSnapshot()
+) {
+  const players = Array.isArray(snapshot?.players) ? snapshot.players : [];
+  return players.some((entry) => (
+    entry?.connected !== false
+    && (
+      entry.lifeState === 'ACTIVE'
+      || entry.lifeState === 'DOWNED'
+    )
+  ));
+}
+
 function requestTeamEliminationEnd() {
   if (onlineRunEndHandled) return true;
   if (!isOnlineMultiplayerRun()) return false;
+
+  // Final run-end fence: ACTIVE and DOWNED operatives are still part of the
+  // team. This catches stale/out-of-order elimination events and guarantees
+  // that an active AI wingman receives its revive opportunity.
+  if (hasRecoverableMultiplayerOperative()) {
+    onlineDeathReportPending = player.alive !== true;
+    return false;
+  }
+
   onlineDeathReportPending = true;
   clearInputState();
   endMultiplayerRun({
@@ -1361,6 +1391,44 @@ function requestTeamEliminationEnd() {
   });
   handleOnlineRunEnded({ reason: 'team-eliminated' });
   return true;
+}
+
+function reportLocalMultiplayerDownedIfNeeded() {
+  if (
+    player.alive
+    || gs !== 'playing'
+    || !isOnlineMultiplayerRun()
+  ) {
+    return false;
+  }
+
+  coOpMenuOpen = false;
+  hidePauseScreen();
+  setLockHintVisible(false);
+
+  if (onlineDeathReportPending) return true;
+
+  const accepted = notifyMultiplayerLocalDowned('player-downed');
+  const localPlayerId = getLocalMultiplayerPlayerId();
+  const registered = getMultiplayerReviveSnapshot()?.players?.some(
+    (entry) => (
+      entry?.playerId === localPlayerId
+      && (
+        entry.lifeState === 'DOWNED'
+        || entry.lifeState === 'SPECTATING'
+      )
+    )
+  ) === true;
+
+  onlineDeathReportPending = accepted || registered;
+  if (onlineDeathReportPending) {
+    showStatusToast(
+      'DOWNED · AI WINGMATE ATTEMPTING REVIVE',
+      '#ff5a36',
+      1800
+    );
+  }
+  return onlineDeathReportPending;
 }
 
 function requestOnlineRunEnd(reason = 'ended') {
@@ -1594,6 +1662,10 @@ for (const event of consumeTutorialEvents()) {
 
 updateSharedMultiplayerWorld(dt, frameNow);
 updateSharedMultiplayerEconomy(frameNow);
+// Report lethal local damage before revive authority advances this frame.
+// The previous post-frame report allowed a stale ACTIVE snapshot or team-end
+// event to race ahead of the DOWNED registration.
+reportLocalMultiplayerDownedIfNeeded();
 const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
             updateMultiplayerRevive(dt, frameNow, {
                 interactHeld: Boolean(
@@ -1640,20 +1712,8 @@ enforceCameraPresentationVisibility();
   }
 
   if (!player.alive && gs === 'playing') {
-            if (isOnlineMultiplayerRun()) {
-                // Lethal co-op state owns the screen. Never leave the
-                // live pause overlay open over a DOWNED player.
-                coOpMenuOpen = false;
-                hidePauseScreen();
-                setLockHintVisible(false);
-                if (!onlineDeathReportPending) {
-        onlineDeathReportPending = notifyMultiplayerLocalDowned('player-downed');
-        showStatusToast(
-          'DOWNED · HOLD INTERACT TO REVIVE TEAMMATE',
-          '#ff5a36',
-          1800
-        );
-      }
+    if (isOnlineMultiplayerRun()) {
+      reportLocalMultiplayerDownedIfNeeded();
     } else {
       endMultiplayerRun({ reason: 'death', player });
       endAIDirectorRun();

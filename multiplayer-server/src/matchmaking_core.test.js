@@ -40,7 +40,7 @@ const peer = normalizeMatchmakingRequest({
 }, { region: 'AS', now: 1200 });
 
 assert(MATCHMAKING_SCHEMA === 1, 'schema should be 1');
-assert(MATCHMAKING_PATCH === 'match1-public-foundation-r1', 'patch mismatch');
+assert(MATCHMAKING_PATCH === 'match2-public-room-admission-r1-1', 'patch mismatch');
 assert(matchmakingCompatibilityKey(base) === matchmakingCompatibilityKey(peer), 'compatible key mismatch');
 assert(matchmakingTicketsCompatible(base, peer), 'same build/protocol/mode/map should be compatible');
 

@@ -164,9 +164,7 @@ function setSniperScopeOverlayVisible(visible) {
 export function adjustSniperScopeZoom(delta = 0) {
   const activeWeapon = getActiveWeapon();
   const isSniperADS = Boolean(
-    player.isADS &&
-    activeWeapon?.meshGroup?.userData?.isProceduralWeapon &&
-    activeWeapon.meshGroup.userData.weaponFamily === 'SNIPER'
+    player.isADS && isSniperScopeWeapon(activeWeapon)
   );
 
   if (!isSniperADS || !Number.isFinite(delta) || delta === 0) return false;
@@ -818,6 +816,11 @@ const MYSTERY_BOX_WEAPON_POOL = Object.freeze([
 
 function getWeaponFamily(weapon) {
   return String(weapon?.key || '').replace('_UPG', '');
+}
+
+function isSniperScopeWeapon(weapon) {
+  return getWeaponFamily(weapon) === 'SNIPER'
+    || weapon?.meshGroup?.userData?.weaponFamily === 'SNIPER';
 }
 
 function getWeaponBalance(weapon) {
@@ -3232,16 +3235,19 @@ export function updateGun(dt, keys, isMoving) {
   updateProceduralHandVisibility(w);
 
   const sniperScopeActive = Boolean(
-    player.isADS &&
-    w.meshGroup?.userData?.isProceduralWeapon &&
-    w.meshGroup.userData.weaponFamily === 'SNIPER'
+    player.isADS && isSniperScopeWeapon(w)
   );
 
   player.currentADSFOV = sniperScopeActive ? sniperScopeFOV : null;
   setSniperScopeOverlayVisible(sniperScopeActive);
 
-  // The scope overlay provides the view. Hide the weapon model while scoped.
-  if (w.meshGroup) w.meshGroup.visible = !sniperScopeActive;
+  // True sniper ADS is scope-only. Family detection is keyed from the
+  // weapon definition as well as mesh metadata so restored/upgraded weapons
+  // cannot leave the physical scope or rifle viewmodel visible.
+  if (w.meshGroup) {
+    w.meshGroup.visible = !sniperScopeActive;
+    w.meshGroup.userData.scopeOnlyADSActive = sniperScopeActive;
+  }
 
   if (fireCooldown > 0) fireCooldown -= dt;
 

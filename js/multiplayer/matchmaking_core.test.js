@@ -14,7 +14,7 @@ function assert(condition, message) {
 }
 
 assert(PUBLIC_MATCHMAKING_SCHEMA === 1, 'schema mismatch');
-assert(PUBLIC_MATCHMAKING_PATCH === 'match1-public-foundation-r1', 'patch mismatch');
+assert(PUBLIC_MATCHMAKING_PATCH === 'match2-public-room-admission-r1-1', 'patch mismatch');
 assert(
   normalizeMatchmakingHttpBase('wss://example.workers.dev/ws')
     === 'https://example.workers.dev',

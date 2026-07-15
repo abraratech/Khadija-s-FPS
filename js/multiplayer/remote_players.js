@@ -504,7 +504,10 @@ function createAvatar(THREE, player) {
   group.visible = false;
   group.userData.visualPatch = SURVIVOR_OPERATOR_PATCH;
 
-  const labelTexture = makeLabelTexture(THREE, player.displayName);
+  const labelText = player.isBot === true
+    ? `${player.displayName || 'ARENA WINGMATE'} · AI`
+    : player.displayName;
+  const labelTexture = makeLabelTexture(THREE, labelText);
   const labelMaterial = new THREE.SpriteMaterial({
     map: labelTexture,
     transparent: true,
@@ -576,6 +579,30 @@ export class RemotePlayerManager {
     );
 
     this.unsubscribe.push(
+      this.eventBus?.on(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_SNAPSHOT_RECEIVED,
+        (event) => {
+          const envelope = event?.payload?.envelope;
+          const state = envelope?.payload?.state;
+          if (
+            state?.isBot === true
+            && envelope?.playerId
+            && envelope.playerId !== this.localPlayerId
+          ) {
+            this.upsertVirtualPlayer({
+              playerId: envelope.playerId,
+              displayName: state.displayName || 'ARENA WINGMATE',
+              connected: true,
+              ready: true,
+              isBot: true,
+              botProfile: state.botProfile || null
+            });
+          }
+        }
+      ) || (() => {})
+    );
+
+    this.unsubscribe.push(
       this.eventBus?.on(MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ACTION_RECEIVED, (event) => {
         const envelope = event?.payload?.envelope;
         if (envelope?.payload?.action === 'FIRE') {
@@ -615,6 +642,23 @@ export class RemotePlayerManager {
         this.removePlayer(playerId);
       }
     });
+  }
+
+  upsertVirtualPlayer(player) {
+    if (!player?.playerId || player.playerId === this.localPlayerId) {
+      return false;
+    }
+    const virtualPlayer = {
+      ...player,
+      isBot: true,
+      connected: player.connected !== false
+    };
+    this.roomPlayers.set(player.playerId, virtualPlayer);
+    this.runtime?.room?.upsertVirtualPlayer?.(virtualPlayer);
+    if (!this.avatars.has(player.playerId)) {
+      this.addPlayer(player);
+    }
+    return true;
   }
 
   addPlayer(player) {

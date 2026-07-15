@@ -1,5 +1,6 @@
 import { deriveMultiplayerProductionReleaseUiState } from './production_release_ui_core.js';
 import { matchmakingStatusPresentation } from './matchmaking_core.js';
+import { roomDirectoryStatusPresentation } from './room_directory_core.js';
 
 // js/multiplayer/lobby_ui.js
 
@@ -157,12 +158,29 @@ export class MultiplayerLobbyUI {
             <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
               FIND PUBLIC MATCH
             </button>
+            <div class="ka-public-room-actions">
+              <button id="ka-coop-browse-rooms" type="button">BROWSE OPEN ROOMS</button>
+              <button id="ka-coop-create-public" type="button">CREATE PUBLIC ROOM</button>
+            </div>
+            <section id="ka-room-browser" class="ka-room-browser" hidden aria-live="polite">
+              <div class="ka-room-browser-heading">
+                <div>
+                  <strong id="ka-room-browser-title">OPEN PUBLIC ROOMS</strong>
+                  <span id="ka-room-browser-detail">HOST-APPROVED ROOMS ONLY</span>
+                </div>
+                <button id="ka-room-browser-refresh" type="button">REFRESH</button>
+              </div>
+              <div id="ka-room-browser-list" class="ka-room-browser-list"></div>
+            </section>
             <div id="ka-matchmaking-status" class="ka-matchmaking-status" data-tone="neutral" hidden>
               <div>
                 <strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong>
                 <span id="ka-matchmaking-status-detail">MATCH BY BUILD, PROTOCOL, ARENA AND REGION</span>
               </div>
               <span id="ka-matchmaking-elapsed"></span>
+              <button id="ka-matchmaking-bot" class="ka-matchmaking-bot" type="button" hidden>
+                DEPLOY AI WINGMATE
+              </button>
               <button id="ka-matchmaking-cancel" type="button">CANCEL</button>
             </div>
           </section>
@@ -222,12 +240,20 @@ export class MultiplayerLobbyUI {
       server: modal.querySelector('#ka-coop-server'),
       releaseRetry: modal.querySelector('#ka-coop-release-retry'),
       quickMatch: modal.querySelector('#ka-coop-quick-match'),
+      browseRooms: modal.querySelector('#ka-coop-browse-rooms'),
+      createPublic: modal.querySelector('#ka-coop-create-public'),
+      roomBrowser: modal.querySelector('#ka-room-browser'),
+      roomBrowserTitle: modal.querySelector('#ka-room-browser-title'),
+      roomBrowserDetail: modal.querySelector('#ka-room-browser-detail'),
+      roomBrowserRefresh: modal.querySelector('#ka-room-browser-refresh'),
+      roomBrowserList: modal.querySelector('#ka-room-browser-list'),
       matchmakingMap: modal.querySelector('#ka-matchmaking-map'),
       matchmakingDifficulty: modal.querySelector('#ka-matchmaking-difficulty'),
       matchmakingStatus: modal.querySelector('#ka-matchmaking-status'),
       matchmakingStatusTitle: modal.querySelector('#ka-matchmaking-status-title'),
       matchmakingStatusDetail: modal.querySelector('#ka-matchmaking-status-detail'),
       matchmakingElapsed: modal.querySelector('#ka-matchmaking-elapsed'),
+      matchmakingBot: modal.querySelector('#ka-matchmaking-bot'),
       matchmakingCancel: modal.querySelector('#ka-matchmaking-cancel'),
       create: modal.querySelector('#ka-coop-create'),
       codeInput: modal.querySelector('#ka-coop-code-input'),
@@ -307,6 +333,14 @@ export class MultiplayerLobbyUI {
         elapsedMs: 0,
         fallbackAt: 0
       },
+      roomDirectory: {
+        status: 'idle',
+        active: false,
+        rooms: [],
+        region: 'ZZ',
+        error: null,
+        refreshedAt: 0
+      },
             lastRoom: null,
             localPlayerId: null,
       error: null
@@ -337,6 +371,21 @@ export class MultiplayerLobbyUI {
         <input id="ka-coop-late-join" type="checkbox" checked>
         ALLOW LATE JOIN
       </label>
+      <label class="ka-coop-toggle">
+        <input id="ka-coop-public-listing" type="checkbox">
+        LIST AS PUBLIC ROOM
+      </label>
+      <div id="ka-coop-team-options" class="ka-coop-team-options" hidden>
+        <div class="ka-coop-team-options-copy">
+          <strong>TEAM OPTIONS</strong>
+          <span>Search opens a fresh public room. The AI uses a separate companion slot.</span>
+        </div>
+        <div class="ka-coop-team-options-actions">
+          <button id="ka-coop-find-public-ally" type="button">FIND NEW PUBLIC ALLY</button>
+          <button id="ka-coop-call-wingman" type="button">CALL AI WINGMAN</button>
+          <button id="ka-coop-dismiss-wingman" type="button">DISMISS WINGMAN</button>
+        </div>
+      </div>
     `;
 
     const actionRow = this.elements.ready?.closest(
@@ -358,6 +407,17 @@ export class MultiplayerLobbyUI {
     this.elements.allowLateJoin = panel.querySelector(
       '#ka-coop-late-join'
     );
+    this.elements.publicListing = panel.querySelector(
+      '#ka-coop-public-listing'
+    );
+    this.elements.teamOptions = panel.querySelector('#ka-coop-team-options');
+    this.elements.findPublicAlly = panel.querySelector(
+      '#ka-coop-find-public-ally'
+    );
+    this.elements.callWingman = panel.querySelector('#ka-coop-call-wingman');
+    this.elements.dismissWingman = panel.querySelector(
+      '#ka-coop-dismiss-wingman'
+    );
 
     this.elements.maxPlayers?.addEventListener('change', () => {
       this.actions.updateSettings?.({
@@ -373,6 +433,32 @@ export class MultiplayerLobbyUI {
       this.actions.updateSettings?.({
         allowLateJoin: this.elements.allowLateJoin.checked === true
       });
+    });
+    this.elements.publicListing?.addEventListener('change', () => {
+      this.actions.updateSettings?.({
+        publicListing: this.elements.publicListing.checked === true,
+        locked: this.elements.publicListing.checked === true
+          ? false
+          : this.elements.roomLocked.checked === true
+      });
+    });
+    this.elements.findPublicAlly?.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.findReplacementPublicAlly?.({
+        displayName: this.elements.name.value,
+        serverUrl: this.elements.server.value,
+        mapId: this.elements.map.value || 'grid_bunker',
+        difficulty: Number(this.elements.difficulty.value) || 1
+      });
+    });
+    this.elements.callWingman?.addEventListener('click', () => {
+      this.actions.deployRoomBotFill?.({
+        mapId: this.elements.map.value || 'grid_bunker',
+        difficulty: Number(this.elements.difficulty.value) || 1
+      });
+    });
+    this.elements.dismissWingman?.addEventListener('click', () => {
+      this.actions.dismissRoomBotFill?.();
     });
   }
 
@@ -390,6 +476,32 @@ bindEvents() {
     this.elements.quickMatch.addEventListener('click', () => {
       this.saveIdentity();
       this.actions.quickMatch?.({
+        displayName: this.elements.name.value,
+        serverUrl: this.elements.server.value,
+        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
+      });
+    });
+
+    const browseRooms = () => {
+      this.saveIdentity();
+      this.actions.browseOpenRooms?.({
+        serverUrl: this.elements.server.value
+      });
+    };
+    this.elements.browseRooms.addEventListener('click', browseRooms);
+    this.elements.roomBrowserRefresh.addEventListener('click', browseRooms);
+    this.elements.createPublic.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.createPublicRoom?.({
+        displayName: this.elements.name.value,
+        serverUrl: this.elements.server.value
+      });
+    });
+
+    this.elements.matchmakingBot.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.deployBotFill?.({
         displayName: this.elements.name.value,
         serverUrl: this.elements.server.value,
         mapId: this.elements.matchmakingMap.value || 'grid_bunker',
@@ -573,10 +685,82 @@ bindEvents() {
     this.elements.matchmakingStatusTitle.textContent = matchmakingUi.title;
     this.elements.matchmakingStatusDetail.textContent = matchmakingUi.detail;
     this.elements.matchmakingElapsed.textContent = matchmakingUi.elapsedText;
+    this.elements.matchmakingBot.hidden = matchmaking.botAvailable !== true;
+    this.elements.matchmakingBot.disabled = (
+      disabled
+      || online
+      || matchmaking.botAvailable !== true
+      || matchmaking.status !== 'searching'
+    );
     this.elements.matchmakingCancel.hidden = !matchmakingUi.cancellable;
     this.elements.matchmakingCancel.disabled = !matchmakingUi.cancellable;
-    this.elements.create.disabled = disabled || matchmakingActive;
-    this.elements.join.disabled = disabled || matchmakingActive;
+
+    const roomDirectory = nextState.roomDirectory || { status: 'idle', rooms: [] };
+    const roomDirectoryUi = roomDirectoryStatusPresentation(roomDirectory);
+    const directoryActive = ['loading', 'joining'].includes(roomDirectory.status);
+    this.elements.browseRooms.disabled = disabled || online || matchmakingActive || directoryActive;
+    this.elements.createPublic.disabled = disabled || online || matchmakingActive || directoryActive;
+    this.elements.roomBrowserRefresh.disabled = disabled || online || directoryActive;
+    this.elements.roomBrowser.hidden = roomDirectory.status === 'idle' || online;
+    this.elements.roomBrowser.dataset.tone = roomDirectoryUi.tone;
+    this.elements.roomBrowserTitle.textContent = roomDirectoryUi.title;
+    this.elements.roomBrowserDetail.textContent = roomDirectoryUi.detail;
+    this.elements.roomBrowserList.replaceChildren();
+    if (['ready', 'join-rejected'].includes(roomDirectory.status) && roomDirectory.rooms?.length) {
+      roomDirectory.rooms.forEach((entry) => {
+        const card = document.createElement('article');
+        card.className = 'ka-room-browser-card';
+        card.dataset.status = entry.status;
+        card.dataset.scope = entry.scope;
+
+        const identity = document.createElement('div');
+        identity.className = 'ka-room-browser-card-main';
+        const title = document.createElement('strong');
+        const mapOption = Array.from(this.elements.matchmakingMap.options).find(
+          (option) => option.value === entry.mapId
+        );
+        title.textContent = mapOption?.textContent?.trim?.() || entry.mapId.replace(/_/g, ' ').toUpperCase();
+        const meta = document.createElement('span');
+        const difficultyOption = Array.from(this.elements.matchmakingDifficulty.options).find(
+          (option) => Number(option.value) === Number(entry.difficulty)
+        );
+        const difficultyLabel = difficultyOption?.textContent?.trim?.() || `DIFFICULTY ${entry.difficulty}`;
+        meta.textContent = [
+          difficultyLabel,
+          entry.status === 'in-run' ? 'IN PROGRESS' : 'WAITING',
+          `${entry.connectedHumans}/${entry.maxPlayers} HUMANS`,
+          entry.reservedHumans > 0 ? `${entry.reservedHumans} JOINING` : null,
+          entry.hasBot ? 'AI WINGMAN' : null,
+          entry.scope === 'regional' ? 'YOUR REGION' : 'GLOBAL'
+        ].filter(Boolean).join(' · ');
+        identity.append(title, meta);
+
+        const join = document.createElement('button');
+        join.type = 'button';
+        join.className = 'ka-room-browser-join';
+        join.textContent = entry.status === 'in-run' ? 'JOIN RUN' : 'JOIN ROOM';
+        join.disabled = disabled || directoryActive || entry.openHumanSlots < 1;
+        join.addEventListener('click', () => {
+          this.saveIdentity();
+          this.actions.joinOpenRoom?.({
+            listingId: entry.listingId,
+            joinToken: entry.joinToken,
+            displayName: this.elements.name.value,
+            serverUrl: this.elements.server.value
+          });
+        });
+        card.append(identity, join);
+        this.elements.roomBrowserList.appendChild(card);
+      });
+    } else if (roomDirectory.status !== 'loading' && roomDirectory.status !== 'joining') {
+      const empty = document.createElement('div');
+      empty.className = 'ka-room-browser-empty';
+      empty.textContent = roomDirectoryUi.detail;
+      this.elements.roomBrowserList.appendChild(empty);
+    }
+
+    this.elements.create.disabled = disabled || matchmakingActive || directoryActive;
+    this.elements.join.disabled = disabled || matchmakingActive || directoryActive;
     this.elements.releaseRetry.hidden = !releaseUi.retryVisible || online;
     this.elements.releaseRetry.disabled = releaseUi.retryDisabled || nextState.connecting || online;
         const lastRoom = nextState.lastRoom;
@@ -601,6 +785,7 @@ bindEvents() {
       const row = document.createElement('div');
       row.className = 'ka-coop-player';
       row.id = `ka-coop-player-${escapeForId(player.playerId)}`;
+      row.dataset.bot = player.isBot === true ? 'true' : 'false';
 
       const identity = document.createElement('div');
       identity.className = 'ka-coop-player-identity';
@@ -614,7 +799,11 @@ bindEvents() {
 
       const role = document.createElement('span');
       role.className = 'ka-coop-player-role';
-      role.textContent = player.isHost ? 'HOST' : 'OPERATIVE';
+      role.textContent = player.isBot
+        ? 'AI WINGMATE'
+        : player.isHost
+          ? 'HOST'
+          : 'OPERATIVE';
 
       identity.append(slot, name, role);
 
@@ -630,7 +819,11 @@ bindEvents() {
 
       row.append(identity, state);
 
-      if (isHost && player.playerId !== local?.playerId) {
+      if (
+        isHost
+        && player.playerId !== local?.playerId
+        && player.isBot !== true
+      ) {
         const controls = document.createElement('div');
         controls.className = 'ka-coop-player-controls';
 
@@ -684,6 +877,48 @@ this.elements.playerList.appendChild(row);
       this.elements.allowLateJoin.checked =
         room.settings?.allowLateJoin !== false;
       this.elements.allowLateJoin.disabled = !isHost;
+    }
+    if (this.elements.publicListing) {
+      this.elements.publicListing.checked =
+        room.settings?.publicListing === true;
+      this.elements.publicListing.disabled = !isHost;
+    }
+
+    const botPresent = connectedPlayers.some((player) => player.isBot === true);
+    const connectedHumanCount = connectedPlayers.filter(
+      (player) => player.isBot !== true
+    ).length;
+    if (this.elements.maxPlayers && botPresent) {
+      this.elements.maxPlayers.value = '2';
+      this.elements.maxPlayers.disabled = true;
+    }
+    const teamOptionsAvailable = isHost && room.status !== 'in-run';
+    const canFindPublicAlly = teamOptionsAvailable && connectedHumanCount < 2;
+    const canCallWingman = (
+      teamOptionsAvailable && !botPresent && connectedHumanCount <= 2
+    );
+    const canDismissWingman = teamOptionsAvailable && botPresent;
+    if (this.elements.teamOptions) {
+      this.elements.teamOptions.hidden = !(
+        canFindPublicAlly || canCallWingman || canDismissWingman
+      );
+    }
+    // BOT.1 R2.8.1: the production-release UI intentionally reports online
+    // rooms as action-blocked for connect controls. Lobby recovery actions are
+    // already inside an authenticated room, so they must use room authority
+    // rather than that global connect-view gate. This re-enables immediate
+    // public backfill or AI deployment after the host removes an ally.
+    if (this.elements.findPublicAlly) {
+      this.elements.findPublicAlly.hidden = !canFindPublicAlly;
+      this.elements.findPublicAlly.disabled = !canFindPublicAlly;
+    }
+    if (this.elements.callWingman) {
+      this.elements.callWingman.hidden = !canCallWingman;
+      this.elements.callWingman.disabled = !canCallWingman;
+    }
+    if (this.elements.dismissWingman) {
+      this.elements.dismissWingman.hidden = !canDismissWingman;
+      this.elements.dismissWingman.disabled = !canDismissWingman;
     }
 
 

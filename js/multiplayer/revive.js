@@ -540,13 +540,14 @@ export class MultiplayerReviveManager {
 
   isTeamEliminated(snapshot = this.latestSnapshot) {
     if (!snapshot?.players) return false;
-    if (snapshot.teamEliminated === true) return true;
     const connected = snapshot.players.filter(
       (entry) => entry?.connected !== false
     );
+    // Recompute from operative states instead of trusting a possibly stale
+    // snapshot.teamEliminated flag. DOWNED remains recoverable while an ACTIVE
+    // human or AI wingman can still complete the revive.
     return connected.length > 0 && connected.every((entry) => (
-      entry.lifeState === MULTIPLAYER_LIFE_STATES.DOWNED
-      || entry.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
+      entry.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
       || entry.lifeState === 'ELIMINATED'
     ));
   }
@@ -562,9 +563,9 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
         }
         const eliminated = this.isTeamEliminated(snapshot);
         if (!eliminated) return false;
-        this.teamEndRequested = true;
-        this.adapter.requestTeamGameOver?.();
-        return true;
+        const requested = this.adapter.requestTeamGameOver?.();
+        this.teamEndRequested = requested !== false;
+        return this.teamEndRequested;
     }
 
     processAuthorityEvents() {
@@ -582,9 +583,14 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
       };
       this.adapter.onReviveEvent?.(stampedEvent);
       if (event.type === 'TEAM_ELIMINATED') {
+        // TEAM_ELIMINATED can arrive in the same frame as a local DOWNED
+        // transition. Re-read the authority state and pass through the same
+        // recoverability check before allowing the run to end.
+        this.latestSnapshot = this.core.getSnapshot(nowMs());
+        if (!this.isTeamEliminated(this.latestSnapshot)) return;
         if (!this.teamEndRequested) {
-          this.teamEndRequested = true;
-          this.adapter.requestTeamGameOver?.();
+          const requested = this.adapter.requestTeamGameOver?.();
+          this.teamEndRequested = requested !== false;
         }
         return;
       }

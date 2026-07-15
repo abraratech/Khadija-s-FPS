@@ -16,6 +16,15 @@ import {
   normalizeMatchmakingRegion,
   publicMatchmakingTicket
 } from './matchmaking_core.js';
+import {
+  ROOM_DIRECTORY_MAX_RESULTS,
+  ROOM_DIRECTORY_PATCH,
+  ROOM_DIRECTORY_SCHEMA,
+  cleanupRoomDirectory,
+  normalizeRoomDirectorySync,
+  publicRoomDirectoryEntry,
+  roomDirectoryListingVisible
+} from './room_directory_core.js';
 
 const STATE_KEY = 'matchmaking-state-v1';
 
@@ -62,6 +71,7 @@ export class MatchmakingHub extends DurableObject {
       schema: MATCHMAKING_SCHEMA,
       revision: 0,
       tickets: {},
+      rooms: {},
       updatedAt: Date.now()
     };
 
@@ -73,6 +83,9 @@ export class MatchmakingHub extends DurableObject {
           revision: Math.max(0, Number(stored.revision) || 0),
           tickets: stored.tickets && typeof stored.tickets === 'object'
             ? stored.tickets
+            : {},
+          rooms: stored.rooms && typeof stored.rooms === 'object'
+            ? stored.rooms
             : {},
           updatedAt: Math.max(0, Number(stored.updatedAt) || Date.now())
         };
@@ -98,12 +111,23 @@ export class MatchmakingHub extends DurableObject {
     if (request.method === 'POST' && url.pathname === '/matchmaking/ack') {
       return this.acknowledge(request, now);
     }
+    if (request.method === 'POST' && url.pathname === '/matchmaking/rooms/sync') {
+      return this.syncRoomListing(request, now);
+    }
+    if (request.method === 'GET' && url.pathname === '/matchmaking/rooms/list') {
+      return this.listRooms(request, url, now);
+    }
+    if (request.method === 'POST' && url.pathname === '/matchmaking/rooms/join') {
+      return this.joinRoomListing(request, now);
+    }
     if (request.method === 'GET' && url.pathname === '/matchmaking/health') {
       return json({
         ok: true,
         schema: MATCHMAKING_SCHEMA,
         patch: MATCHMAKING_PATCH,
         queued: queuedCount(this.state.tickets),
+        openRooms: Object.values(this.state.rooms || {}).filter((listing) => roomDirectoryListingVisible(listing, { now })).length,
+        roomDirectory: { schema: ROOM_DIRECTORY_SCHEMA, patch: ROOM_DIRECTORY_PATCH },
         revision: this.state.revision
       });
     }
@@ -112,6 +136,189 @@ export class MatchmakingHub extends DurableObject {
       ok: false,
       error: 'MATCHMAKING_ENDPOINT_NOT_FOUND'
     }, { status: 404 });
+  }
+
+  async syncRoomListing(request, now) {
+    if (request.headers.get('x-ka-internal-room-directory') !== '1') {
+      return json({ ok: false, error: 'DIRECTORY_SYNC_FORBIDDEN' }, { status: 403 });
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ ok: false, error: 'INVALID_JSON' }, { status: 400 });
+    }
+    let normalized;
+    try {
+      normalized = normalizeRoomDirectorySync(body, { now });
+    } catch (error) {
+      return json({ ok: false, error: cleanText(error?.message || error, 120) }, { status: 400 });
+    }
+
+    const existing = Object.values(this.state.rooms || {}).find(
+      (listing) => listing?.roomCode === normalized.roomCode
+    ) || null;
+
+    if (normalized.listed !== true) {
+      if (existing?.listingId) {
+        delete this.state.rooms[existing.listingId];
+        await this.commit(now);
+      }
+      return json({ ok: true, listed: false, roomCode: normalized.roomCode });
+    }
+
+    const listingId = existing?.listingId || makeSecret('room-listing');
+    const joinToken = existing?.joinToken || makeSecret('room-join');
+    this.state.rooms[listingId] = {
+      ...normalized,
+      listingId,
+      joinToken,
+      firstListedAt: existing?.firstListedAt || now
+    };
+    await this.commit(now);
+    return json({ ok: true, listed: true, listingId, expiresAt: normalized.expiresAt });
+  }
+
+  listRooms(request, url, now) {
+    const protocol = Math.max(1, Math.trunc(Number(url.searchParams.get('protocol')) || 0));
+    const build = cleanText(url.searchParams.get('build'), 120);
+    if (!protocol || !build) {
+      return json({ ok: false, error: 'DIRECTORY_COMPATIBILITY_REQUIRED' }, { status: 400 });
+    }
+    const requestRegion = String(
+      request.headers.get('x-ka-region') || 'ZZ'
+    ).toUpperCase().slice(0, 16);
+    const rooms = Object.values(this.state.rooms || {})
+      .filter((listing) => (
+        roomDirectoryListingVisible(listing, { now })
+        && Number(listing.protocol) === protocol
+        && String(listing.build) === build
+      ))
+      .map((listing) => publicRoomDirectoryEntry(listing, { requestRegion, now }))
+      .sort((left, right) => {
+        const leftStatus = left.status === 'waiting' ? 0 : 1;
+        const rightStatus = right.status === 'waiting' ? 0 : 1;
+        if (leftStatus !== rightStatus) return leftStatus - rightStatus;
+        const leftScope = left.scope === 'regional' ? 0 : 1;
+        const rightScope = right.scope === 'regional' ? 0 : 1;
+        if (leftScope !== rightScope) return leftScope - rightScope;
+        return Number(right.updatedAt) - Number(left.updatedAt);
+      })
+      .slice(0, ROOM_DIRECTORY_MAX_RESULTS);
+
+    return json({
+      ok: true,
+      schema: ROOM_DIRECTORY_SCHEMA,
+      patch: ROOM_DIRECTORY_PATCH,
+      region: requestRegion,
+      rooms,
+      refreshedAt: now
+    });
+  }
+
+  async joinRoomListing(request, now) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ ok: false, error: 'INVALID_JSON' }, { status: 400 });
+    }
+    const listingId = cleanText(body?.listingId, 220);
+    const joinToken = cleanText(body?.joinToken, 280);
+    const playerId = cleanText(body?.playerId, 160);
+    const protocol = Math.max(1, Math.trunc(Number(body?.protocol) || 0));
+    const build = cleanText(body?.build, 120);
+    const listing = this.state.rooms?.[listingId] || null;
+
+    if (!listing || listing.joinToken !== joinToken) {
+      return json({ ok: false, error: 'ROOM_LISTING_NOT_FOUND', message: 'This public room is no longer available.' }, { status: 404 });
+    }
+    if (
+      !roomDirectoryListingVisible(listing, { now })
+      || Number(listing.protocol) !== protocol
+      || String(listing.build) !== build
+    ) {
+      return json({ ok: false, error: 'ROOM_LISTING_INCOMPATIBLE', message: 'This public room is no longer compatible or available.' }, { status: 409 });
+    }
+    if (!playerId) {
+      return json({ ok: false, error: 'PLAYER_ID_REQUIRED' }, { status: 400 });
+    }
+
+    const admission = await this.verifyRoomDirectoryAdmission(listing, playerId, listingId);
+    if (!admission.ok) {
+      if ([
+        'ROOM_NOT_PUBLIC',
+        'HOST_UNAVAILABLE',
+        'ROOM_LOCKED',
+        'LATE_JOIN_DISABLED',
+        'ROOM_UNAVAILABLE',
+        'ROOM_FULL'
+      ].includes(admission.error)) {
+        delete this.state.rooms[listingId];
+        await this.commit(now);
+      }
+      return json({
+        ok: false,
+        error: admission.error || 'ROOM_UNAVAILABLE',
+        message: 'This public room is no longer available. The list has been refreshed.'
+      }, { status: admission.status || 409 });
+    }
+
+    listing.reservedHumans = Math.max(0, Number(admission.reservedHumans) || 0);
+    listing.updatedAt = now;
+    listing.expiresAt = Math.max(Number(listing.expiresAt) || 0, now + 30_000);
+    await this.commit(now);
+    return json({
+      ok: true,
+      assignment: {
+        roomCode: admission.roomCode,
+        joinMode: 'join',
+        listingId,
+        status: admission.roomStatus,
+        admissionToken: admission.admissionToken,
+        admissionExpiresAt: admission.admissionExpiresAt
+      }
+    });
+  }
+
+  async verifyRoomDirectoryAdmission(listing, playerId, listingId) {
+    if (!this.env.ROOMS) {
+      return { ok: false, error: 'ROOM_BINDING_UNAVAILABLE', status: 503 };
+    }
+    try {
+      const id = this.env.ROOMS.idFromName(listing.roomCode);
+      const stub = this.env.ROOMS.get(id);
+      const response = await stub.fetch(new Request('https://room.internal/directory-admission', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-room-directory': '1'
+        },
+        body: JSON.stringify({ playerId, listingId })
+      }));
+      const payload = await response.json();
+      return response.ok && payload?.ok === true
+        ? {
+            ok: true,
+            roomCode: payload.roomCode,
+            roomStatus: payload.status || 'waiting',
+            admissionToken: payload.admissionToken,
+            admissionExpiresAt: payload.admissionExpiresAt,
+            reservedHumans: payload.reservedHumans
+          }
+        : {
+            ok: false,
+            error: payload?.error || 'ROOM_UNAVAILABLE',
+            status: response.status
+          };
+    } catch (error) {
+      return {
+        ok: false,
+        error: 'ROOM_DIRECTORY_VERIFICATION_FAILED',
+        status: 503,
+        detail: cleanText(error?.message || error, 180)
+      };
+    }
   }
 
   async enqueue(request, now) {
@@ -414,9 +621,11 @@ export class MatchmakingHub extends DurableObject {
   }
 
   async cleanup(now, { persist = false } = {}) {
-    const cleaned = cleanupMatchmakingTickets(this.state.tickets, { now });
-    if (cleaned.changed) {
-      this.state.tickets = cleaned.tickets;
+    const cleanedTickets = cleanupMatchmakingTickets(this.state.tickets, { now });
+    const cleanedRooms = cleanupRoomDirectory(this.state.rooms, { now });
+    if (cleanedTickets.changed || cleanedRooms.changed) {
+      this.state.tickets = cleanedTickets.tickets;
+      this.state.rooms = cleanedRooms.listings;
       await this.commit(now);
       return;
     }
@@ -432,10 +641,12 @@ export class MatchmakingHub extends DurableObject {
   }
 
   async scheduleAlarm(now = Date.now()) {
-    const active = Object.values(this.state.tickets).some((ticket) => (
+    const activeTickets = Object.values(this.state.tickets).some((ticket) => (
       ['queued', 'matched', 'completed', 'cancelled', 'expired']
         .includes(ticket?.status)
     ));
+    const activeRooms = Object.keys(this.state.rooms || {}).length > 0;
+    const active = activeTickets || activeRooms;
     if (!active) return;
     try {
       await this.ctx.storage.setAlarm(now + 15_000);

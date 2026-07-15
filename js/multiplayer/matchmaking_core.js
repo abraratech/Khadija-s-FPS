@@ -2,10 +2,11 @@
 // MATCH.1 R1 — public matchmaking request/state helpers.
 
 export const PUBLIC_MATCHMAKING_SCHEMA = 1;
-export const PUBLIC_MATCHMAKING_PATCH = 'match1-public-foundation-r1';
+export const PUBLIC_MATCHMAKING_PATCH = 'match2-public-room-admission-r1-1';
 export const PUBLIC_MATCHMAKING_QUEUE_TIMEOUT_MS = 95_000;
 export const PUBLIC_MATCHMAKING_POLL_MS = 1_500;
 export const PUBLIC_MATCHMAKING_LOCK_TTL_MS = 10_000;
+export const PUBLIC_MATCHMAKING_BOT_FILL_DELAY_MS = 25_000;
 
 function cleanText(value, fallback = '', limit = 240) {
   const text = String(value ?? fallback).trim();
@@ -159,11 +160,14 @@ export function matchmakingStatusPresentation(snapshot = {}, {
     return Object.freeze({
       tone: 'searching',
       title: 'SEARCHING FOR OPERATIVES',
-      detail: fallbackSeconds > 0
-        ? `REGIONAL SEARCH · GLOBAL IN ${fallbackSeconds}s`
-        : 'REGIONAL + GLOBAL SEARCH',
+      detail: snapshot.botAvailable === true
+        ? 'NO HUMAN MATCH YET · AI WINGMATE AVAILABLE'
+        : fallbackSeconds > 0
+          ? `REGIONAL SEARCH · GLOBAL IN ${fallbackSeconds}s`
+          : 'REGIONAL + GLOBAL SEARCH',
       elapsedText: `${elapsedSeconds}s`,
-      cancellable: true
+      cancellable: true,
+      botAvailable: snapshot.botAvailable === true
     });
   }
   if (status === 'matched') {

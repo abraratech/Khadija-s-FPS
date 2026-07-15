@@ -761,3 +761,229 @@
     width: 100%;
   }
 }
+
+/* BOT.1 R1 — bounded Quick Match bot-fill offer and AI room identity. */
+.ka-matchmaking-bot {
+  min-width: 176px;
+  border-color: rgba(99, 216, 255, 0.62);
+  background:
+    linear-gradient(135deg, rgba(14, 92, 122, 0.82), rgba(8, 49, 73, 0.92));
+  color: #c8f3ff;
+  box-shadow: inset 0 0 0 1px rgba(99, 216, 255, 0.12);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.ka-matchmaking-bot:hover:not(:disabled) {
+  border-color: rgba(126, 231, 255, 0.9);
+  box-shadow:
+    inset 0 0 0 1px rgba(99, 216, 255, 0.18),
+    0 0 18px rgba(64, 184, 255, 0.16);
+}
+
+.ka-coop-player[data-bot="true"] {
+  border-color: rgba(99, 216, 255, 0.38);
+  background:
+    linear-gradient(90deg, rgba(12, 73, 96, 0.28), rgba(8, 18, 29, 0.78));
+}
+
+.ka-coop-player[data-bot="true"] .ka-coop-player-role,
+.ka-coop-player[data-bot="true"] .ka-coop-player-state {
+  color: #8ee7ff;
+}
+
+@media (max-width: 560px) {
+  #ka-matchmaking-bot,
+  #ka-matchmaking-cancel {
+    width: 100%;
+  }
+}
+
+
+/* BOT.1 R2.7 — room recovery and companion-slot team options. */
+.ka-coop-team-options {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(112, 211, 255, 0.18);
+}
+.ka-coop-team-options[hidden] { display: none; }
+.ka-coop-team-options-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.ka-coop-team-options-copy strong {
+  color: #b9ecff;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.ka-coop-team-options-copy span {
+  color: #82a8bc;
+  font-size: 9px;
+  line-height: 1.35;
+}
+.ka-coop-team-options-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.ka-coop-team-options-actions button {
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.055em;
+}
+#ka-coop-find-public-ally {
+  border-color: rgba(126, 231, 255, 0.55);
+  color: #b9ecff;
+}
+#ka-coop-call-wingman {
+  border-color: rgba(99, 216, 255, 0.62);
+  background: linear-gradient(135deg, rgba(14, 92, 122, 0.74), rgba(8, 49, 73, 0.84));
+  color: #c8f3ff;
+}
+#ka-coop-dismiss-wingman {
+  border-color: rgba(255, 164, 92, 0.48);
+  color: #ffc08f;
+}
+@media (max-width: 720px) {
+  .ka-coop-team-options {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .ka-coop-team-options-actions,
+  .ka-coop-team-options-actions button {
+    width: 100%;
+  }
+}
+
+/* MATCH.2 R1 — host-approved open public-room browser. */
+.ka-public-room-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ka-public-room-actions button {
+  min-height: 40px;
+  border-color: rgba(112, 211, 255, 0.34);
+  background: rgba(5, 24, 38, 0.78);
+  color: #b9ecff;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+}
+.ka-room-browser {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid rgba(112, 211, 255, 0.28);
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(4, 20, 32, 0.94), rgba(3, 12, 21, 0.96));
+}
+.ka-room-browser[hidden] { display: none; }
+.ka-room-browser[data-tone="danger"] { border-color: rgba(255, 99, 99, 0.46); }
+.ka-room-browser[data-tone="warning"] { border-color: rgba(255, 190, 90, 0.42); }
+.ka-room-browser[data-tone="success"] { border-color: rgba(102, 231, 183, 0.36); }
+.ka-room-browser-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ka-room-browser-heading > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.ka-room-browser-heading strong {
+  color: #c7f1ff;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.ka-room-browser-heading span {
+  color: #7fa8bd;
+  font-size: 9px;
+  line-height: 1.35;
+}
+#ka-room-browser-refresh {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.ka-room-browser-list {
+  display: grid;
+  gap: 7px;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.ka-room-browser-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(112, 211, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(8, 25, 38, 0.82);
+}
+.ka-room-browser-card[data-status="in-run"] {
+  border-color: rgba(255, 190, 90, 0.28);
+}
+.ka-room-browser-card[data-scope="regional"] {
+  box-shadow: inset 3px 0 0 rgba(102, 231, 183, 0.42);
+}
+.ka-room-browser-card-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ka-room-browser-card-main strong {
+  color: #e2f7ff;
+  font-size: 11px;
+  letter-spacing: 0.045em;
+}
+.ka-room-browser-card-main span {
+  color: #8aafc1;
+  font-size: 9px;
+  line-height: 1.4;
+}
+.ka-room-browser-join {
+  flex: 0 0 auto;
+  min-width: 92px;
+  min-height: 34px;
+  border-color: rgba(102, 231, 183, 0.46);
+  color: #bff7df;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+.ka-room-browser-empty {
+  padding: 16px 10px;
+  border: 1px dashed rgba(112, 211, 255, 0.18);
+  border-radius: 7px;
+  color: #7fa8bd;
+  text-align: center;
+  font-size: 9px;
+  letter-spacing: 0.055em;
+}
+@media (max-width: 560px) {
+  .ka-public-room-actions { grid-template-columns: 1fr; }
+  .ka-room-browser-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .ka-room-browser-join { width: 100%; }
+}

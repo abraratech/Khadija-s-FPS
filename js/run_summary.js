@@ -27,6 +27,11 @@ const state = {
   weaponUpgrades: 0,
   objectivesCompleted: 0,
   challengesCompleted: 0,
+  botAssisted: false,
+  leaderboardEligible: true,
+  botProfile: null,
+  botActiveSeconds: 0,
+  botReplacementReason: null,
   lastEvent: 'IDLE'
 };
 
@@ -66,6 +71,11 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     weaponUpgrades: 0,
     objectivesCompleted: 0,
     challengesCompleted: 0,
+    botAssisted: false,
+    leaderboardEligible: true,
+    botProfile: null,
+    botActiveSeconds: 0,
+    botReplacementReason: null,
     lastEvent: 'RUN START'
   });
   return getRunSummarySnapshot();
@@ -143,6 +153,28 @@ export function recordRunChallenge() {
 export function recordRunWave(wave = 1) {
   if (!state.active) return;
   state.highestWave = Math.max(state.highestWave, Math.max(1, Math.round(finite(wave, 1))));
+}
+
+export function markRunBotAssisted({
+  botProfile = 'bot1-intelligent-coop-fill-r1',
+  activeSeconds = 0,
+  replacementReason = null
+} = {}) {
+  state.botAssisted = true;
+  state.leaderboardEligible = false;
+  state.botProfile = String(botProfile || 'bot1-intelligent-coop-fill-r1')
+    .slice(0, 80);
+  state.botActiveSeconds = Math.max(
+    state.botActiveSeconds,
+    Math.max(0, finite(activeSeconds))
+  );
+  state.botReplacementReason = replacementReason
+    ? String(replacementReason).slice(0, 80)
+    : state.botReplacementReason;
+  state.lastEvent = replacementReason
+    ? 'AI WINGMATE REPLACED'
+    : 'AI WINGMATE ACTIVE';
+  return getRunSummarySnapshot();
 }
 
 export function getRunSummarySnapshot() {

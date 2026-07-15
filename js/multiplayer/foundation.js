@@ -28,7 +28,13 @@ import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
+import { MultiplayerBotManager } from './bot.js';
 import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
+import {
+  HOST_VISIBILITY_HANDOFF_DELAY_MS,
+  chooseHostVisibilityHandoffTarget,
+  shouldScheduleHostVisibilityHandoff
+} from './host_continuity_core.js';
 import { MultiplayerTacticalAwareness } from './tactical_ping.js'; import { MultiplayerTextChat } from './text_chat.js';
 import { MultiplayerCoopStatsManager } from './coop_stats.js';
 import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
@@ -40,13 +46,102 @@ let pendingOnlineRun = null;
 let pendingResumeCheckpoint = null;
 let remotePlayerManager = null;
 let sharedWorldManager = null;
+let botManager = null;
 let economyManager = null;
 let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
 let recoveryCertification = null;
 let multiplayerReleaseGuard = null;
 let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let multiplayerReleaseSeal = null; let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
+let knownConnectedHumanIds = new Set();
+let lateJoinBurstSerial = 0;
+let hostVisibilityHandoffTimer = null;
+let lastHostVisibilityHandoffAt = -Infinity;
+let hostVisibilityLifecycleBound = false;
 const hostMigrationState = new HostMigrationState();
+
+function clearHostVisibilityHandoffTimer() {
+  if (hostVisibilityHandoffTimer !== null) {
+    clearTimeout(hostVisibilityHandoffTimer);
+    hostVisibilityHandoffTimer = null;
+  }
+}
+
+function scheduleHostVisibilityHandoff(reason = 'host-tab-hidden') {
+  clearHostVisibilityHandoffTimer();
+  const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+  const target = chooseHostVisibilityHandoffTarget(
+    room?.players || [],
+    multiplayerRuntime?.localPlayerId
+  );
+  const now = Date.now();
+  if (!shouldScheduleHostVisibilityHandoff({
+    visibilityState: typeof document !== 'undefined'
+      ? document.visibilityState
+      : 'visible',
+    runActive: multiplayerSession?.run?.active === true,
+    sessionMode: multiplayerSession?.mode,
+    roomStatus: room?.status,
+    localPlayerId: multiplayerRuntime?.localPlayerId,
+    hostPlayerId: room?.hostPlayerId,
+    targetPlayerId: target?.playerId,
+    now,
+    lastRequestedAt: lastHostVisibilityHandoffAt
+  })) return false;
+
+  hostVisibilityHandoffTimer = setTimeout(() => {
+    hostVisibilityHandoffTimer = null;
+    const currentRoom = multiplayerRuntime?.room?.getSnapshot?.() || null;
+    const currentTarget = chooseHostVisibilityHandoffTarget(
+      currentRoom?.players || [],
+      multiplayerRuntime?.localPlayerId
+    );
+    const requestedAt = Date.now();
+    if (!shouldScheduleHostVisibilityHandoff({
+      visibilityState: typeof document !== 'undefined'
+        ? document.visibilityState
+        : 'visible',
+      runActive: multiplayerSession?.run?.active === true,
+      sessionMode: multiplayerSession?.mode,
+      roomStatus: currentRoom?.status,
+      localPlayerId: multiplayerRuntime?.localPlayerId,
+      hostPlayerId: currentRoom?.hostPlayerId,
+      targetPlayerId: currentTarget?.playerId,
+      now: requestedAt,
+      lastRequestedAt: lastHostVisibilityHandoffAt
+    })) return;
+
+    const sent = lobbyController?.transferHost?.(
+      currentTarget.playerId,
+      { reason }
+    ) === true;
+    if (sent) {
+      lastHostVisibilityHandoffAt = requestedAt;
+      console.info(
+        `[MATCH.2 R1.2] Hidden host handed authority to ${currentTarget.playerId}.`
+      );
+    }
+  }, HOST_VISIBILITY_HANDOFF_DELAY_MS);
+  return true;
+}
+
+function bindHostVisibilityContinuity() {
+  if (hostVisibilityLifecycleBound || typeof document === 'undefined') return;
+  hostVisibilityLifecycleBound = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      scheduleHostVisibilityHandoff('host-tab-hidden');
+    } else {
+      clearHostVisibilityHandoffTimer();
+    }
+  });
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => {
+      scheduleHostVisibilityHandoff('host-page-hidden');
+    });
+  }
+}
+
 
 export const multiplayerEvents = new MultiplayerEventBus({
   sourceIdProvider: () => sessionRef?.clientId || 'bootstrap'
@@ -97,6 +192,31 @@ function syncCoopScalingFromRoom() {
 
 function localPlayerId() {
   return `player-${multiplayerSession.clientId}`;
+}
+
+function connectedHumanIds(room = multiplayerRuntime?.room?.getSnapshot?.()) {
+  return new Set((room?.players || [])
+    .filter((entry) => (
+      entry?.playerId
+      && entry.isBot !== true
+      && entry.connected !== false
+    ))
+    .map((entry) => entry.playerId));
+}
+
+function publishLateJoinIntegrityBurst(reason = 'late-join') {
+  if (
+    multiplayerSession?.run?.active !== true
+    || multiplayerSession?.mode !== 'host'
+  ) return false;
+  const burstNow = performance.now();
+  multiplayerPlayers?.syncLocalPlayer?.(null, burstNow, { force: true });
+  sharedWorldManager?.forceAuthoritativeSnapshot?.(reason);
+  economyManager?.sendSnapshot?.(true);
+  reviveManager?.publishSnapshot?.(burstNow, true);
+  coopStatsManager?.publishSnapshot?.(true, burstNow);
+  botManager?.publishSnapshot?.(burstNow, true);
+  return true;
 }
 
 export function registerMultiplayerRunLauncher(launcher) {
@@ -159,6 +279,14 @@ function applyHostMigration(details = {}) {
     checkpoint: details.checkpoint,
     becameHost
   });
+  botManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    hostPlayerId: details.hostPlayerId,
+    previousHostPlayerId: details.previousHostPlayerId,
+    becameHost,
+    reason: details.reason
+  });
 
   hostMigrationState.markResumed();
   console.info(
@@ -176,7 +304,8 @@ export function initializeMultiplayerFoundation(
     economyAdapter = null,
     reviveAdapter = null,
     tacticalAdapter = null,
-    statsAdapter = null
+    statsAdapter = null,
+    botAdapter = null
   } = {}
 ) {
   if (initialized) return getMultiplayerFoundationSnapshot();
@@ -249,6 +378,22 @@ export function initializeMultiplayerFoundation(
     revive: reviveManager
   });
 
+  botManager = new MultiplayerBotManager({
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    remotePlayers: remotePlayerManager,
+    sharedWorld: sharedWorldManager,
+    revive: reviveManager,
+    getActiveEnemies:
+      botAdapter?.getActiveEnemies || worldAdapter?.getActiveEnemies || (() => []),
+    damageEnemy: botAdapter?.damageEnemy || (() => ({ applied: false })),
+    getWorldTargets: botAdapter?.getWorldTargets || (() => []),
+    getWave: botAdapter?.getWave || worldAdapter?.getCurrentWave || (() => 1),
+    markRunBotAssisted: botAdapter?.markRunBotAssisted || (() => null),
+    showToast: botAdapter?.showToast || (() => {})
+  });
+
   networkHud = new MultiplayerNetworkHud({
       runtime: multiplayerRuntime,
       session: multiplayerSession,
@@ -309,8 +454,29 @@ textChat = new MultiplayerTextChat({
 });
 textChat.initialize();
 
-  multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, () => { syncCoopScalingFromRoom();
+  multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, (event) => {
+    syncCoopScalingFromRoom();
     coopScoreboard?.update?.(performance.now(), { force: true });
+
+    const room = event?.payload?.room || multiplayerRuntime?.room?.getSnapshot?.();
+    const nextHumans = connectedHumanIds(room);
+    if (
+      multiplayerSession?.run?.active === true
+      && multiplayerSession?.mode === 'host'
+      && room?.status === 'in-run'
+    ) {
+      const newRemoteHumans = [...nextHumans].filter((playerId) => (
+        playerId !== multiplayerRuntime.localPlayerId
+        && !knownConnectedHumanIds.has(playerId)
+      ));
+      if (newRemoteHumans.length > 0) {
+        lateJoinBurstSerial += 1;
+        const reason = `late-join-${lateJoinBurstSerial}`;
+        publishLateJoinIntegrityBurst(`${reason}-initial`);
+        setTimeout(() => publishLateJoinIntegrityBurst(`${reason}-follow-up`), 320);
+      }
+    }
+    knownConnectedHumanIds = nextHumans;
   });
 
   multiplayerEvents.on(
@@ -355,6 +521,7 @@ textChat.initialize();
               economyManager?.sendSnapshot?.(true);
               reviveManager?.publishSnapshot?.(burstNow, true);
               coopStatsManager?.publishSnapshot?.(true, burstNow);
+              botManager?.publishSnapshot?.(burstNow, true);
               return true;
             };
             publishRecoveryBurst('initial');
@@ -388,6 +555,7 @@ textChat.initialize();
       coopStatsManager?.finalizeRun?.(details.reason || 'ended');
       coopStatsManager?.endRun?.({ preserveFinal: true });
       coopScoreboard?.setHeld?.(false);
+      botManager?.endRun(details.reason || 'ended');
       sharedWorldManager?.endRun();
       reviveManager?.endRun();
       economyManager?.endRun();
@@ -410,10 +578,19 @@ textChat.initialize();
       runEndHandler?.(details);
       coopScoreboard?.update?.(performance.now(), { force: true });
     },
+    onBotFillRequested: (details = {}) => {
+      botManager?.requestFill?.(details);
+      syncCoopScalingFromRoom();
+    },
+    onBotDismissRequested: () => {
+      botManager?.clearReservation?.('host-dismissed');
+      syncCoopScalingFromRoom();
+    },
     onHostMigrated: (details = {}) => {
       applyHostMigration(details);
     },
     onLeftRoom: () => {
+      botManager?.clearReservation?.('left-room');
       cancelMultiplayerRefreshHydration({
         reason: 'multiplayer-room-left'
       });
@@ -421,12 +598,14 @@ textChat.initialize();
         reason: 'multiplayer-room-left'
       });
       setCoopScalingContext({ online: false, playerCount: 1 });
+      knownConnectedHumanIds = new Set();
       coopStatsManager?.endRun?.({ preserveFinal: false });
       coopStatsManager?.clearFinalSummary?.();
       coopScoreboard?.hideAll?.();
     }
   });
   lobbyController.initialize();
+  bindHostVisibilityContinuity();
   multiplayerReleaseCandidate = new MultiplayerReleaseCandidate({
     runtime: multiplayerRuntime,
     session: multiplayerSession,
@@ -473,12 +652,14 @@ export function beginMultiplayerRun({
   if (multiplayerSession.run) {
     multiplayerSession.run.resumed = pending?.resume === true;
   } syncCoopScalingFromRoom();
+  knownConnectedHumanIds = connectedHumanIds();
 
   multiplayerRuntime.beginRun(multiplayerSession.getSnapshot());
   remotePlayerManager?.beginRun();
   economyManager?.beginRun();
   reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
+  botManager?.beginRun();
   tacticalAwareness?.beginRun();
   coopStatsManager?.beginRun();
   coopScoreboard?.hideAll?.();
@@ -611,6 +792,7 @@ export function endMultiplayerRun({
   } else {
     coopScoreboard?.setHeld?.(false);
   }
+  botManager?.endRun(reason);
   sharedWorldManager?.endRun();
   reviveManager?.endRun();
   economyManager?.endRun();
@@ -844,6 +1026,7 @@ export function syncMultiplayerFrame(
     now
   });
 
+  botManager?.update(dt, now);
   remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
     recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); multiplayerLaunchObserver?.update(now); multiplayerSoakCertification?.update(now); multiplayerReleaseSeal?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
   return { state, input };
@@ -872,7 +1055,7 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, bot: botManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot(),
     coopScaling: getCoopScalingSnapshot(),
     faultSimulation: multiplayerRuntime.getFaultSimulationSnapshot(),

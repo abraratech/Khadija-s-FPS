@@ -34,6 +34,7 @@ import {
   subscribeMultiplayerProductionRelease
 } from './production_release.js';
 import { PublicMatchmakingClient } from './matchmaking.js';
+import { PublicRoomDirectoryClient } from './room_directory.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -148,7 +149,9 @@ export class MultiplayerLobbyController {
     onStartRun,
     onRunEnded,
     onHostMigrated,
-    onLeftRoom
+    onLeftRoom,
+    onBotFillRequested,
+    onBotDismissRequested
   } = {}) {
     this.eventBus = eventBus;
     this.transport = transport;
@@ -160,6 +163,16 @@ export class MultiplayerLobbyController {
     this.onRunEnded = onRunEnded;
     this.onHostMigrated = onHostMigrated;
     this.onLeftRoom = onLeftRoom;
+    this.onBotFillRequested = (
+      typeof onBotFillRequested === 'function'
+        ? onBotFillRequested
+        : null
+    );
+    this.onBotDismissRequested = (
+      typeof onBotDismissRequested === 'function'
+        ? onBotDismissRequested
+        : null
+    );
     this.lastAuthorityEpoch = 0;
     this.ui = null;
     this.unsubscribe = [];
@@ -170,6 +183,7 @@ export class MultiplayerLobbyController {
         this.lastRoom = loadLastRoom();
         this.pendingLeaveResolver = null;
         this.pendingQuickMatchAssignment = null;
+        this.pendingBotFill = null;
         this.quickMatchConnectInFlight = false;
         this.matchmaking = new PublicMatchmakingClient({
           onChange: (snapshot) => {
@@ -181,12 +195,29 @@ export class MultiplayerLobbyController {
           }
         });
         this.matchmakingState = this.matchmaking.getSnapshot();
+        this.pendingPublicListing = false;
+        this.pendingDirectoryJoin = null;
+        this.roomDirectory = new PublicRoomDirectoryClient({
+          onChange: (snapshot) => {
+            this.roomDirectoryState = snapshot;
+            this.render();
+          }
+        });
+        this.roomDirectoryState = this.roomDirectory.getSnapshot();
+        this.directoryHeartbeatTimer = null;
   }
 
   initialize() {
     this.ui = new MultiplayerLobbyUI({
       actions: {
         quickMatch: (options) => this.startQuickMatch(options),
+        browseOpenRooms: (options) => this.browseOpenRooms(options),
+        joinOpenRoom: (options) => this.joinOpenRoom(options),
+        createPublicRoom: (options) => this.createPublicRoom(options),
+        deployBotFill: (options) => this.deployBotFill(options),
+        findReplacementPublicAlly: (options) => this.findReplacementPublicAlly(options),
+        deployRoomBotFill: (options) => this.deployRoomBotFill(options),
+        dismissRoomBotFill: () => this.dismissRoomBotFill(),
         cancelQuickMatch: () => this.cancelQuickMatch(),
         createRoom: (options) => this.createRoom(options),
         joinRoom: (options) => this.joinRoom(options),
@@ -242,6 +273,18 @@ export class MultiplayerLobbyController {
     );
 
     this.render();
+    this.directoryHeartbeatTimer = setInterval(() => {
+      const local = this.room?.players?.find(
+        (entry) => entry.playerId === this.localPlayerId
+      );
+      if (
+        this.connected
+        && local?.isHost === true
+        && this.room?.settings?.publicListing === true
+      ) {
+        this.transport.sendControl('directory-heartbeat', {});
+      }
+    }, 30_000);
     const refreshResume = consumeMultiplayerRefreshResume({
       lastRoom: this.lastRoom || loadLastRoom(),
       connected: this.connected,
@@ -289,6 +332,107 @@ export class MultiplayerLobbyController {
       });
     }
     return this.getSnapshot();
+  }
+
+  async browseOpenRooms({ serverUrl } = {}) {
+    if (this.connected || this.quickMatchConnectInFlight) return false;
+    this.error = null;
+    this.render();
+    try {
+      await requireMultiplayerProductionReleaseReady(serverUrl);
+    } catch (error) {
+      this.error = String(
+        error?.message || 'Certified multiplayer server check failed.'
+      ).toUpperCase();
+      this.render();
+      return false;
+    }
+    const snapshot = await this.roomDirectory.list({
+      serverUrl,
+      playerId: this.localPlayerId,
+      protocol: MULTIPLAYER_PROTOCOL_VERSION,
+      build: MULTIPLAYER_BUILD_ID
+    });
+    this.roomDirectoryState = snapshot;
+    this.render();
+    return snapshot.status === 'ready';
+  }
+
+  async joinOpenRoom({
+    listingId,
+    joinToken,
+    displayName,
+    serverUrl
+  } = {}) {
+    if (this.connected || this.quickMatchConnectInFlight) return false;
+    this.quickMatchConnectInFlight = true;
+    this.error = null;
+    this.render();
+    try {
+      await requireMultiplayerProductionReleaseReady(serverUrl);
+      const assignment = await this.roomDirectory.requestJoin({
+        serverUrl,
+        playerId: this.localPlayerId,
+        protocol: MULTIPLAYER_PROTOCOL_VERSION,
+        build: MULTIPLAYER_BUILD_ID,
+        listingId,
+        joinToken
+      });
+      this.pendingDirectoryJoin = {
+        listingId: assignment.listingId,
+        serverUrl
+      };
+      const connected = await this.connect({
+        roomCode: assignment.roomCode,
+        displayName,
+        serverUrl,
+        joinMode: 'join',
+        admissionToken: assignment.admissionToken
+      });
+      if (!connected) {
+        this.quickMatchConnectInFlight = false;
+        this.pendingDirectoryJoin = null;
+        await this.roomDirectory.list({
+          serverUrl,
+          playerId: this.localPlayerId,
+          protocol: MULTIPLAYER_PROTOCOL_VERSION,
+          build: MULTIPLAYER_BUILD_ID
+        });
+        this.render();
+        return false;
+      }
+      return true;
+    } catch (error) {
+      this.quickMatchConnectInFlight = false;
+      this.pendingDirectoryJoin = null;
+      this.error = String(
+        error?.message || 'Unable to join the selected public room.'
+      ).toUpperCase();
+      await this.roomDirectory.list({
+        serverUrl,
+        playerId: this.localPlayerId,
+        protocol: MULTIPLAYER_PROTOCOL_VERSION,
+        build: MULTIPLAYER_BUILD_ID
+      });
+      this.render();
+      return false;
+    }
+  }
+
+  async createPublicRoom({ displayName, serverUrl } = {}) {
+    if (this.connected || this.quickMatchConnectInFlight) return false;
+    if (this.matchmaking?.isActive?.()) {
+      await this.matchmaking.cancel({ reason: 'public-room-create' });
+    }
+    this.pendingPublicListing = true;
+    const connected = await this.connect({
+      roomCode: makeRoomCode(),
+      displayName,
+      serverUrl,
+      joinMode: 'create'
+    });
+    if (!connected) this.pendingPublicListing = false;
+    return connected;
   }
 
   async createRoom({ displayName, serverUrl } = {}) {
@@ -360,6 +504,137 @@ export class MultiplayerLobbyController {
     this.matchmakingState = snapshot;
     this.render();
     return snapshot.status !== 'error';
+  }
+
+  async deployBotFill({
+    displayName,
+    serverUrl,
+    mapId = 'grid_bunker',
+    difficulty = 1
+  } = {}) {
+    if (
+      this.connected
+      || this.quickMatchConnectInFlight
+      || this.matchmakingState?.status !== 'searching'
+      || this.matchmakingState?.botAvailable !== true
+    ) {
+      return false;
+    }
+
+    const request = {
+      mapId: String(mapId || 'grid_bunker').slice(0, 80),
+      difficulty: Number(difficulty) || 1,
+      requestedAt: Date.now()
+    };
+    this.pendingQuickMatchAssignment = null;
+    this.pendingBotFill = request;
+    this.quickMatchConnectInFlight = true;
+    this.error = null;
+    this.render();
+
+    await this.matchmaking.cancel({ reason: 'bot-fill-selected' });
+
+    const connected = await this.connect({
+      roomCode: makeRoomCode(),
+      displayName: String(displayName || 'Player').trim().slice(0, 24),
+      serverUrl,
+      joinMode: 'create'
+    });
+
+    if (!connected) {
+      this.pendingBotFill = null;
+      this.quickMatchConnectInFlight = false;
+      this.error = this.error || 'UNABLE TO CREATE AI WINGMATE ROOM';
+      this.render();
+      return false;
+    }
+
+    return true;
+  }
+
+
+  async findReplacementPublicAlly({
+    displayName,
+    serverUrl,
+    mapId = 'grid_bunker',
+    difficulty = 1
+  } = {}) {
+    const local = this.room?.players?.find(
+      (player) => player.playerId === this.localPlayerId
+    );
+    if (
+      !this.connected
+      || local?.isHost !== true
+      || this.room?.status === 'in-run'
+    ) {
+      return false;
+    }
+
+    const search = {
+      displayName: String(displayName || local?.displayName || 'Player')
+        .trim().slice(0, 24),
+      serverUrl: String(serverUrl || this.transport?.serverUrl || '').trim(),
+      mapId: String(mapId || this.room?.settings?.mapId || 'grid_bunker')
+        .slice(0, 80),
+      difficulty: Number(difficulty || this.room?.settings?.difficulty) || 1
+    };
+
+    this.error = 'OPENING A FRESH PUBLIC SEARCH FOR A NEW ALLY';
+    this.render();
+    await this.leaveRoom();
+    this.ui?.open();
+    return this.startQuickMatch(search);
+  }
+
+  deployRoomBotFill({ mapId = 'grid_bunker', difficulty = 1 } = {}) {
+    const local = this.room?.players?.find(
+      (player) => player.playerId === this.localPlayerId
+    );
+    const connectedHumanCount = this.room?.players?.filter((player) => (
+      player.isBot !== true && player.connected !== false
+    )).length || 0;
+    const botPresent = this.room?.players?.some(
+      (player) => player.isBot === true && player.connected !== false
+    );
+    if (
+      !this.connected
+      || local?.isHost !== true
+      || this.room?.status === 'in-run'
+      || botPresent
+      || connectedHumanCount > 2
+    ) {
+      return false;
+    }
+
+    const request = {
+      roomCode: this.room?.roomCode || null,
+      mapId: String(mapId || this.room?.settings?.mapId || 'grid_bunker')
+        .slice(0, 80),
+      difficulty: Number(difficulty || this.room?.settings?.difficulty) || 1,
+      requestedAt: Date.now(),
+      requestedFromLobby: true
+    };
+    this.error = null;
+    void this.updateSettings({ maxPlayers: 2 });
+    this.onBotFillRequested?.(request);
+    this.render();
+    return true;
+  }
+
+  dismissRoomBotFill() {
+    const local = this.room?.players?.find(
+      (player) => player.playerId === this.localPlayerId
+    );
+    if (
+      !this.connected
+      || local?.isHost !== true
+      || this.room?.status === 'in-run'
+    ) {
+      return false;
+    }
+    this.onBotDismissRequested?.();
+    this.render();
+    return true;
   }
 
   async cancelQuickMatch() {
@@ -442,7 +717,8 @@ export class MultiplayerLobbyController {
     roomCode,
     displayName,
     serverUrl,
-    joinMode
+    joinMode,
+    admissionToken = null
   } = {}) {
     this.error = null;
     this.connected = false;
@@ -469,7 +745,8 @@ export class MultiplayerLobbyController {
         playerId: this.localPlayerId,
         displayName: String(displayName || 'Player').trim().slice(0, 24),
         joinMode,
-        reconnectToken: loadReconnectToken(roomCode)
+        reconnectToken: loadReconnectToken(roomCode),
+        admissionToken
       });
       this.render();
       return true;
@@ -510,6 +787,21 @@ export class MultiplayerLobbyController {
         this.pendingQuickMatchAssignment = null;
         this.matchmaking.fail(this.error, 'MATCHED_ROOM_REJECTED');
       }
+      if (this.pendingBotFill) {
+        this.quickMatchConnectInFlight = false;
+        this.pendingBotFill = null;
+      }
+      if (this.pendingDirectoryJoin) {
+        const pendingDirectoryJoin = this.pendingDirectoryJoin;
+        this.pendingDirectoryJoin = null;
+        this.quickMatchConnectInFlight = false;
+        void this.roomDirectory.list({
+          serverUrl: pendingDirectoryJoin.serverUrl,
+          playerId: this.localPlayerId,
+          protocol: MULTIPLAYER_PROTOCOL_VERSION,
+          build: MULTIPLAYER_BUILD_ID
+        });
+      }
       this.render();
       return;
     }
@@ -543,6 +835,8 @@ export class MultiplayerLobbyController {
       const localRunWasActive = this.session.run?.active === true;
 
       this.connected = true;
+      this.quickMatchConnectInFlight = false;
+      this.pendingDirectoryJoin = null;
       this.error = null;
       this.room = room;
       const refreshContinuity = completeMultiplayerRefreshResumeWatchdog({
@@ -588,6 +882,14 @@ export class MultiplayerLobbyController {
       const local = room.players.find(
         (player) => player.playerId === this.localPlayerId
       );
+      if (this.pendingPublicListing && local?.isHost === true) {
+        this.pendingPublicListing = false;
+        void this.updateSettings({
+          publicListing: true,
+          locked: false,
+          allowLateJoin: true
+        });
+      }
       const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
       const previousHostPlayerId = this.session.hostPlayerId;
       const preserveRun = localRunWasActive && room.status === 'in-run';
@@ -601,6 +903,28 @@ export class MultiplayerLobbyController {
       });
 
       this.runtime.room.replaceFromSnapshot(room, 'server-welcome');
+
+      if (this.pendingBotFill && local?.isHost === true) {
+        const botRequest = {
+          ...this.pendingBotFill,
+          roomCode: room.roomCode
+        };
+        this.pendingBotFill = null;
+        this.quickMatchConnectInFlight = false;
+        void this.updateSettings({
+          mapId: botRequest.mapId,
+          difficulty: botRequest.difficulty,
+          maxPlayers: 2
+        });
+        try {
+          this.onBotFillRequested?.(botRequest);
+        } catch (error) {
+          this.error = String(
+            error?.message || 'AI wingmate reservation failed.'
+          ).toUpperCase();
+        }
+      }
+
       this.runtime.handleHostMigration?.({
         authorityEpoch: room.authorityEpoch,
         hostPlayerId: room.hostPlayerId
@@ -619,7 +943,8 @@ export class MultiplayerLobbyController {
           roomCode: room.roomCode,
           resume: true,
           authorityEpoch: room.authorityEpoch,
-          checkpoint: payload.checkpoint || null
+          checkpoint: payload.checkpoint || null,
+          lateJoin: payload.lateJoin || null
         });
       } else if (room.status === 'in-run') {
         this.session.updateOnlineAuthority?.({
@@ -702,6 +1027,16 @@ export class MultiplayerLobbyController {
 
     if (action === 'room-state') {
       if (!payload.room) return;
+      const incomingAuthorityEpoch = Math.max(
+        0,
+        Number(payload.room.authorityEpoch) || 0
+      );
+      if (
+        this.session.run?.active === true
+        && incomingAuthorityEpoch < this.lastAuthorityEpoch
+      ) {
+        return;
+      }
       this.connected = true;
       this.room = payload.room;
 
@@ -784,6 +1119,23 @@ export class MultiplayerLobbyController {
 
     if (action === 'host-migrated') {
       const room = payload.room || this.room;
+      const incomingAuthorityEpoch = Math.max(
+        0,
+        Number(payload.authorityEpoch || room?.authorityEpoch) || 0
+      );
+      if (
+        this.session.run?.active === true
+        && incomingAuthorityEpoch < this.lastAuthorityEpoch
+      ) {
+        return;
+      }
+      if (
+        room?.hostPlayerId
+        && payload.hostPlayerId
+        && room.hostPlayerId !== payload.hostPlayerId
+      ) {
+        return;
+      }
       if (room) {
         this.connected = true;
         this.room = room;
@@ -903,10 +1255,11 @@ if (action === 'left-room') {
     });
   }
 
-  transferHost(playerId) {
+  transferHost(playerId, { reason = 'manual-host-transfer' } = {}) {
     if (!this.connected) return false;
     return this.transport.sendControl('transfer-host', {
-      playerId: String(playerId || '').slice(0, 160)
+      playerId: String(playerId || '').slice(0, 160),
+      reason: String(reason || 'manual-host-transfer').slice(0, 80)
     });
   }
 
@@ -946,6 +1299,8 @@ openLobby() {
     this.error = null;
     this.quickMatchConnectInFlight = false;
     this.pendingQuickMatchAssignment = null;
+    this.pendingPublicListing = false;
+    this.roomDirectory.clear();
     if (this.matchmaking?.isActive?.()) {
       void this.matchmaking.cancel({ reason: 'room-left' });
     }
@@ -976,6 +1331,7 @@ openLobby() {
       room: this.room,
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
       matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
+      roomDirectory: this.roomDirectoryState || this.roomDirectory.getSnapshot(),
             lastRoom: this.lastRoom || loadLastRoom(),
             localPlayerId: this.localPlayerId,
       error: this.error
@@ -990,12 +1346,18 @@ openLobby() {
             error: this.error,
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
       matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
+      roomDirectory: this.roomDirectoryState || this.roomDirectory.getSnapshot(),
       transport: this.transport.getConnectionSnapshot()
     };
   }
 
   destroy() {
     cancelMultiplayerRefreshRunProof({ reason: 'multiplayer-lobby-destroyed' });
+    if (this.directoryHeartbeatTimer) {
+      clearInterval(this.directoryHeartbeatTimer);
+      this.directoryHeartbeatTimer = null;
+    }
+    this.roomDirectory?.clear?.();
     this.matchmaking?.destroy?.();
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
     this.unsubscribe.length = 0;

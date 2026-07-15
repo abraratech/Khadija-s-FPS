@@ -65,6 +65,8 @@ export class MultiplayerRuntime {
     this.initialized = false;
     this.localPlayerId = null;
     this.snapshotSequence = 0;
+    this.virtualSnapshotSequences = new Map();
+    this.virtualActionSequences = new Map();
     this.roomSequence = 0;
     this.worldSequence = 0;
     this.hitSequence = 0;
@@ -197,6 +199,8 @@ export class MultiplayerRuntime {
     const run = sessionSnapshot?.run || null;
     this.commandStream.beginRun(run?.runId || null);
     this.snapshotSequence = 0;
+    this.virtualSnapshotSequences.clear();
+    this.virtualActionSequences.clear();
     this.worldSequence = 0;
     this.hitSequence = 0;
     this.damageSequence = 0;
@@ -301,6 +305,97 @@ export class MultiplayerRuntime {
       { state },
       this.snapshotSequence
     );
+  }
+
+  sendVirtualPlayerSnapshot(
+    playerId,
+    state,
+    sequence = null,
+    now = nowMs()
+  ) {
+    if (
+      !this.initialized
+      || !this.session?.run?.active
+      || !playerId
+      || !state
+    ) {
+      return null;
+    }
+
+    const current = this.virtualSnapshotSequences.get(playerId) || 0;
+    const nextSequence = Number.isInteger(sequence) && sequence > current
+      ? sequence
+      : current + 1;
+    this.virtualSnapshotSequences.set(playerId, nextSequence);
+
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.PLAYER_SNAPSHOT,
+      { state },
+      nextSequence,
+      { playerId }
+    );
+
+    this.remoteSnapshots.push(playerId, {
+      sequence: nextSequence,
+      sentAt: now,
+      receivedAt: now,
+      state
+    });
+    this.eventBus?.emit(
+      MULTIPLAYER_RUNTIME_EVENTS.REMOTE_SNAPSHOT_RECEIVED,
+      { envelope, virtual: true }
+    );
+    return envelope;
+  }
+
+  sendVirtualGameplayAction(playerId, payload, sequence = null) {
+    if (
+      !this.initialized
+      || !this.session?.run?.active
+      || !playerId
+      || !payload
+    ) {
+      return null;
+    }
+
+    const current = this.virtualActionSequences.get(playerId) || 0;
+    const nextSequence = Number.isInteger(sequence) && sequence > current
+      ? sequence
+      : current + 1;
+    this.virtualActionSequences.set(playerId, nextSequence);
+
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.GAMEPLAY_ACTION,
+      payload,
+      nextSequence,
+      { playerId }
+    );
+    this.eventBus?.emit(
+      MULTIPLAYER_RUNTIME_EVENTS.REMOTE_ACTION_RECEIVED,
+      { envelope, virtual: true }
+    );
+    return envelope;
+  }
+
+  setVirtualCompanionPresence({
+    active = true,
+    playerId = 'bot-wingmate-r1',
+    displayName = 'ARENA WINGMATE',
+    botProfile = 'bot1-late-join-companion-integrity-r2-8'
+  } = {}) {
+    if (
+      !this.initialized
+      || this.session?.mode !== 'host'
+      || !this.transport?.sendControl
+    ) {
+      return false;
+    }
+    return this.transport.sendControl('set-virtual-companion', {
+      active: active === true,
+      playerId: String(playerId || 'bot-wingmate-r1').slice(0, 160),
+      displayName: String(displayName || 'ARENA WINGMATE').slice(0, 24),
+      botProfile: String(botProfile || '').slice(0, 80)
+    }) === true;
   }
 
   sendWorldSnapshot(snapshot) {

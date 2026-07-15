@@ -3388,6 +3388,54 @@ export function killEnemy(e, context = {}) {
   }
 }
 
+
+export function damageEnemyForBot(enemy, damage, {
+  botId = 'bot-wingmate-r1'
+} = {}) {
+  if (
+    !enemy
+    || enemy.alive === false
+    || Number(enemy.dyingT) >= 0
+    || Number(enemy.health || 0) <= 0
+  ) {
+    return {
+      applied: false,
+      killed: false,
+      health: Math.max(0, Number(enemy?.health) || 0)
+    };
+  }
+
+  const amount = Math.max(0, Number(damage) || 0);
+  if (amount <= 0) {
+    return {
+      applied: false,
+      killed: false,
+      health: Math.max(0, Number(enemy.health) || 0)
+    };
+  }
+
+  const previousHealth = Math.max(0, Number(enemy.health) || 0);
+  enemy.health = Math.max(0, previousHealth - amount);
+  enemy.hitReactT = Math.max(Number(enemy.hitReactT) || 0, 0.12);
+  const killed = previousHealth > 0 && enemy.health <= 0;
+
+  if (killed) {
+    killEnemy(enemy, {
+      source: 'BOT',
+      creditPlayerId: String(botId || 'bot-wingmate-r1').slice(0, 160),
+      creditLocal: false,
+      headshot: false,
+      damage: amount
+    });
+  }
+
+  return {
+    applied: true,
+    killed,
+    health: Math.max(0, Number(enemy.health) || 0)
+  };
+}
+
 export function getActiveEnemies() {
   return activeEnemies;
 }

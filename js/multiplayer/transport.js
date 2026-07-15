@@ -135,7 +135,8 @@ export class MultiplayerTransport {
       playerId,
       displayName: displayName || 'Player',
       joinMode,
-      reconnectToken: options.reconnectToken || null
+      reconnectToken: options.reconnectToken || null,
+      admissionToken: options.admissionToken || null
     };
 
     return this.openSocket({ reconnecting: false });
@@ -154,6 +155,9 @@ export class MultiplayerTransport {
     url.searchParams.set('mode', options.joinMode);
     if (options.reconnectToken) {
       url.searchParams.set('reconnectToken', options.reconnectToken);
+    }
+    if (options.admissionToken) {
+      url.searchParams.set('admissionToken', options.admissionToken);
     }
 
     this.setState(
@@ -241,6 +245,7 @@ export class MultiplayerTransport {
   setReconnectToken(token) {
     if (!this.connectionOptions) return;
     this.connectionOptions.reconnectToken = token || null;
+    this.connectionOptions.admissionToken = null;
     this.connectionOptions.joinMode = 'join';
   }
 

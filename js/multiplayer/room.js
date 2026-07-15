@@ -22,7 +22,19 @@ function serializePlayer(player) {
     displayName: player.displayName || 'Player',
     ready: player.ready === true,
     connected: player.connected !== false,
-    isHost: player.isHost === true, joinedAt: Math.max(0, Number(player.joinedAt) || 0), joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)), lateJoin: player.lateJoin === true, lateJoinProtectionUntil: Math.max(0, Number(player.lateJoinProtectionUntil) || 0), catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
+    isHost: player.isHost === true,
+    isBot: player.isBot === true,
+    botProfile: player.botProfile
+      ? String(player.botProfile).slice(0, 80)
+      : null,
+    joinedAt: Math.max(0, Number(player.joinedAt) || 0),
+    joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)),
+    lateJoin: player.lateJoin === true,
+    lateJoinProtectionUntil: Math.max(
+      0,
+      Number(player.lateJoinProtectionUntil) || 0
+    ),
+    catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
   };
 }
 
@@ -34,6 +46,7 @@ export class MultiplayerRoomState {
     this.status = ROOM_STATUS.CLOSED;
     this.hostPlayerId = null;
     this.players = new Map();
+    this.virtualPlayers = new Map();
     this.settings = {
       maxPlayers: 4,
       mapId: 'grid_bunker',
@@ -64,6 +77,7 @@ export class MultiplayerRoomState {
     this.authorityEpoch = 0;
     this.finalSummary = null;
     this.players.clear();
+    this.virtualPlayers.clear();
     this.settings = {
       ...this.settings,
       mapId,
@@ -112,6 +126,30 @@ export class MultiplayerRoomState {
     }
 
     this.commit('player-removed');
+    return true;
+  }
+
+  upsertVirtualPlayer(player) {
+    if (!player?.playerId) return null;
+    const virtualId = String(player.playerId);
+    if (this.players.has(virtualId)) return null;
+    const normalized = {
+      ...player,
+      playerId: virtualId,
+      displayName: String(player.displayName || 'AI Wingmate').slice(0, 24),
+      ready: player.ready !== false,
+      connected: player.connected !== false,
+      isHost: false,
+      isBot: true
+    };
+    this.virtualPlayers.set(normalized.playerId, normalized);
+    return this.commit('virtual-player-upserted');
+  }
+
+  removeVirtualPlayer(playerId) {
+    if (!this.virtualPlayers.has(playerId)) return false;
+    this.virtualPlayers.delete(playerId);
+    this.commit('virtual-player-removed');
     return true;
   }
 
@@ -189,9 +227,21 @@ export class MultiplayerRoomState {
     );
     this.revision = Math.max(this.revision, Number(snapshot.revision) || 0);
     this.players.clear();
+    if (snapshot.virtualPlayersAuthoritative === true) {
+      this.virtualPlayers.clear();
+    }
 
     snapshot.players.forEach((player) => {
-      if (player?.playerId) this.players.set(player.playerId, { ...player });
+      if (!player?.playerId) return;
+      const playerId = String(player.playerId);
+      if (player.isBot === true) {
+        if (!this.players.has(playerId)) {
+          this.virtualPlayers.set(playerId, { ...player, isBot: true });
+        }
+        return;
+      }
+      this.virtualPlayers.delete(playerId);
+      this.players.set(playerId, { ...player, isBot: false });
     });
 
     this.emitChange(reason);
@@ -219,7 +269,10 @@ export class MultiplayerRoomState {
       status: this.status,
       hostPlayerId: this.hostPlayerId,
       settings: { ...this.settings },
-      players: Array.from(this.players.values(), serializePlayer),
+      players: [
+        ...Array.from(this.players.values(), serializePlayer),
+        ...Array.from(this.virtualPlayers.values(), serializePlayer)
+      ],
       runId: this.runId,
       authorityEpoch: this.authorityEpoch,
       revision: this.revision,

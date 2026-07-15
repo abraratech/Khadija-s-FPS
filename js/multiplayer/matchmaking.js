@@ -2,6 +2,7 @@
 // MATCH.1 R1 — browser-side public matchmaking lifecycle.
 
 import {
+  PUBLIC_MATCHMAKING_BOT_FILL_DELAY_MS,
   PUBLIC_MATCHMAKING_LOCK_TTL_MS,
   PUBLIC_MATCHMAKING_PATCH,
   PUBLIC_MATCHMAKING_POLL_MS,
@@ -112,12 +113,17 @@ async function readJsonResponse(response) {
 
 export class PublicMatchmakingClient {
   constructor({
-    fetchImpl = globalThis.fetch,
+    fetchImpl = null,
     onChange = null,
     onMatch = null,
     now = () => Date.now()
   } = {}) {
-    this.fetchImpl = fetchImpl;
+    const providedFetch = typeof fetchImpl === 'function' ? fetchImpl : null;
+    this.fetchImpl = providedFetch
+      ? (...args) => Reflect.apply(providedFetch, globalThis, args)
+      : typeof globalThis.fetch === 'function'
+        ? (...args) => globalThis.fetch(...args)
+        : null;
     this.onChange = typeof onChange === 'function' ? onChange : null;
     this.onMatch = typeof onMatch === 'function' ? onMatch : null;
     this.now = now;
@@ -133,7 +139,8 @@ export class PublicMatchmakingClient {
       region: 'ZZ',
       queueDepth: 0,
       assignment: null,
-      ticketId: null
+      ticketId: null,
+      botAvailable: false
     });
     this.serverUrl = null;
     this.playerId = null;
@@ -164,16 +171,20 @@ export class PublicMatchmakingClient {
     const queuedAt = Number(
       patch.queuedAt ?? this.state.queuedAt ?? this.ticket?.queuedAt ?? 0
     );
+    const status = String(patch.status ?? this.state.status);
+    const elapsedMs = queuedAt > 0
+      ? Math.max(0, this.now() - queuedAt)
+      : Math.max(0, Number(patch.elapsedMs ?? this.state.elapsedMs) || 0);
     this.state = Object.freeze({
       ...this.state,
       ...patch,
-      active: ['searching', 'matched', 'connecting'].includes(
-        String(patch.status ?? this.state.status)
-      ),
+      active: ['searching', 'matched', 'connecting'].includes(status),
       queuedAt,
-      elapsedMs: queuedAt > 0
-        ? Math.max(0, this.now() - queuedAt)
-        : Math.max(0, Number(patch.elapsedMs ?? this.state.elapsedMs) || 0)
+      elapsedMs,
+      botAvailable: (
+        status === 'searching'
+        && elapsedMs >= PUBLIC_MATCHMAKING_BOT_FILL_DELAY_MS
+      )
     });
     try {
       this.onChange?.(this.state);
@@ -292,7 +303,8 @@ export class PublicMatchmakingClient {
         elapsedMs: 0,
         fallbackAt: this.now() + 12_000,
         assignment: null,
-        ticketId: resume?.ticketId || null
+        ticketId: resume?.ticketId || null,
+        botAvailable: false
       });
       this.startClock();
 
@@ -513,7 +525,8 @@ export class PublicMatchmakingClient {
       message: null,
       error: null,
       assignment: null,
-      ticketId: null
+      ticketId: null,
+      botAvailable: false
     });
     this.finishLifecycle({ clearTicket: true });
     return true;
@@ -529,7 +542,8 @@ export class PublicMatchmakingClient {
       status: 'error',
       message: cleanMessage(message),
       error: code || null,
-      assignment: null
+      assignment: null,
+      botAvailable: false
     });
     this.finishLifecycle({ clearTicket: true });
     return this.getSnapshot();

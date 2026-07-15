@@ -15,11 +15,19 @@ for (const token of [
   'remote-weapon-model-rifle',
   'remote-weapon-model-shotgun',
   'remote-weapon-model-sniper',
-  'remote-boot-shell',
-  'post1b-r1-1-remote-presentation'
+  'remote-boot-shell'
 ]) {
   assert.equal(remote.includes(token), true, `Missing remote presentation token: ${token}`);
 }
+
+// POST.2A superseded the original POST.1B visual-patch marker while
+// preserving and improving the same remote presentation feature set.
+assert.equal(
+  remote.includes('post1b-r1-1-remote-presentation')
+    || remote.includes("visualPatch: 'post2a-r1-remote-locomotion-foot-geometry'"),
+  true,
+  'Missing current or superseded remote presentation patch marker'
+);
 
 for (const token of [
   "measurementKind: 'PEER_RELAY_RTT'",
@@ -37,4 +45,4 @@ assert.equal(hud.includes('not the speed between devices on the same LAN'), true
 assert.equal(chat.includes("event.code === 'KeyT'"), true);
 assert.equal(chat.includes("toggleLabel.textContent = 'CHAT [T]'"), true);
 
-console.log('POST.1B R1.1 remote presentation contract tests: PASS');
+console.log('POST.1B/POST.2 remote presentation contract tests: PASS');

@@ -42,6 +42,7 @@ function playerStatus(player = {}) {
   if (state === 'DOWNED') return 'DOWNED';
   if (state === 'SPECTATING') return 'SPECTATING';
   if (state === 'ELIMINATED') return 'ELIMINATED';
+  if (player.isBot === true || player.role === 'COMPANION') return 'WINGMAN';
   return player.role === 'HOST' ? 'HOST' : 'ALLY';
 }
 
@@ -245,7 +246,9 @@ export class MultiplayerCoopScoreboard {
     (summary.players || []).forEach((player) => {
       [
         player.displayName || 'Player',
-        player.role === 'HOST' ? 'HOST' : 'ALLY',
+        player.isBot === true || player.role === 'COMPANION'
+          ? 'WINGMAN'
+          : player.role === 'HOST' ? 'HOST' : 'ALLY',
         whole(player.kills),
         whole(player.headshotKills),
         pct(player.accuracyPct),

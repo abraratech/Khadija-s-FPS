@@ -9,11 +9,65 @@ import {
   addWeaponPresentationDetails
 } from './procedural_helpers.js';
 
+function removeSniperAdsObstruction(group) {
+  // MATCH.2 R1 visual hotfix: VIS.8 presentation details add a small central
+  // turret above the scope. It reads well in third person, but intersects the
+  // first-person ADS sight line. Remove only compact meshes whose world-space
+  // center occupies that narrow clearance envelope; all authored scope tube,
+  // lens, mount and weapon-body parts are explicitly protected by name.
+  const protectedNames = new Set([
+    'sniper_scope_tube',
+    'sniper_scope_front_lens',
+    'sniper_scope_rear_lens',
+    'sniper_scope_mount_front',
+    'sniper_scope_mount_rear',
+    'sniper_receiver',
+    'sniper_cheek_rest'
+  ]);
+  const candidates = [];
+  const worldCenter = new THREE.Vector3();
+  const localCenter = new THREE.Vector3();
+  const bounds = new THREE.Box3();
+  const size = new THREE.Vector3();
+
+  group.updateMatrixWorld(true);
+  group.traverse((part) => {
+    if (!part?.isMesh || protectedNames.has(part.name)) return;
+    bounds.setFromObject(part);
+    if (bounds.isEmpty()) return;
+    bounds.getCenter(worldCenter);
+    bounds.getSize(size);
+    localCenter.copy(worldCenter);
+    group.worldToLocal(localCenter);
+
+    const occupiesAdsClearance = (
+      Math.abs(localCenter.x) <= 0.070
+      && localCenter.y >= 0.165
+      && localCenter.y <= 0.285
+      && localCenter.z >= -0.205
+      && localCenter.z <= 0.070
+      && size.x <= 0.125
+      && size.y <= 0.150
+      && size.z <= 0.150
+    );
+    if (occupiesAdsClearance) candidates.push(part);
+  });
+
+  const removedNames = [];
+  candidates.forEach((part) => {
+    if (!part.parent) return;
+    removedNames.push(part.name || 'unnamed_scope_detail');
+    part.parent.remove(part);
+  });
+  group.userData.adsClearancePatch = 'match2-r1-sniper-ads-clearance';
+  group.userData.adsClearanceRemovedParts = Object.freeze(removedNames);
+}
+
 export function createProceduralSniperMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SNIPER';
-  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.visualPatch = 'match2-r1-sniper-ads-clearance';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -1.040 });
   group.userData.thirdPersonMuzzleSize = 0.260;
@@ -286,6 +340,7 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   );
 
   addWeaponPresentationDetails(group, 'SNIPER', { upgraded, accentColor });
+  removeSniperAdsObstruction(group);
 
   const muzzleFlashMat = new THREE.MeshBasicMaterial({
     color: upgraded ? 0x66ccff : 0xffaa00,

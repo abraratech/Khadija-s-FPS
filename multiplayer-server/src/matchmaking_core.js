@@ -2,7 +2,7 @@
 // MATCH.1 R1 — deterministic public matchmaking normalization and pairing.
 
 export const MATCHMAKING_SCHEMA = 1;
-export const MATCHMAKING_PATCH = 'match1-public-foundation-r1';
+export const MATCHMAKING_PATCH = 'match2-public-room-admission-r1-1';
 export const MATCHMAKING_QUEUE_TTL_MS = 90_000;
 export const MATCHMAKING_MATCH_TTL_MS = 180_000;
 export const MATCHMAKING_GLOBAL_FALLBACK_MS = 12_000;

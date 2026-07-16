@@ -1,0 +1,273 @@
+/* SOCIAL.1 — friends, parties and player-safety interface. */
+
+.ka-social-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, .9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.ka-social-column {
+  display: grid;
+  gap: 14px;
+}
+
+.ka-social-panel {
+  border: 1px solid rgba(85, 229, 255, .22);
+  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(145deg, rgba(3, 15, 24, .92), rgba(8, 12, 20, .84));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .03);
+}
+
+.ka-social-panel h3 {
+  margin: 0;
+  color: #e9fbff;
+  font-size: 15px;
+  letter-spacing: .09em;
+}
+
+.ka-social-panel > p,
+.ka-social-panel > small {
+  color: #8fa6b2;
+  line-height: 1.45;
+}
+
+.ka-social-panel-heading,
+.ka-social-party-summary,
+.ka-social-party-room {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.ka-social-panel-heading small,
+.ka-social-party-summary small,
+.ka-social-party-room small {
+  display: block;
+  color: #79929f;
+  margin-top: 3px;
+}
+
+.ka-social-status {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: #a9c2ce;
+  background: rgba(0,0,0,.24);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-align: center;
+}
+
+.ka-social-status[data-tone="good"] {
+  color: #81ffc0;
+  border-color: rgba(80,255,160,.38);
+}
+
+.ka-social-status[data-tone="warning"] {
+  color: #ffd177;
+  border-color: rgba(255,170,0,.42);
+}
+
+.ka-social-status[data-tone="error"] {
+  color: #ff9aa8;
+  border-color: rgba(255,75,95,.42);
+}
+
+.ka-social-code {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.ka-social-code strong {
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(0,0,0,.34);
+  border: 1px solid rgba(255,170,0,.32);
+  color: #ffbd45;
+  text-align: center;
+  font: 900 18px/1 monospace;
+  letter-spacing: .18em;
+}
+
+.ka-social-form-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ka-social-form-row input,
+.ka-social-form-row select,
+.ka-social-panel textarea,
+.ka-social-privacy-row select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #f1fcff;
+  background: #061018;
+  border: 1px solid rgba(100,190,210,.45);
+  font: inherit;
+}
+
+.ka-social-panel textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.ka-social-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 265px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.ka-social-player-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  justify-content: space-between;
+  padding: 9px;
+  border-radius: 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.08);
+}
+
+.ka-social-player-card[data-online="true"] {
+  border-color: rgba(52,255,154,.28);
+}
+
+.ka-social-player-copy {
+  min-width: 0;
+}
+
+.ka-social-player-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #eefcff;
+  font-size: 13px;
+}
+
+.ka-social-player-copy small {
+  display: block;
+  color: #77919e;
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: .05em;
+}
+
+.ka-social-card-actions {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ka-social-btn {
+  border: 1px solid rgba(85,229,255,.45);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(6,45,61,.82);
+  color: #eafcff;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  cursor: pointer;
+}
+
+.ka-social-btn:hover,
+.ka-social-btn:focus-visible {
+  border-color: #73ecff;
+  transform: translateY(-1px);
+}
+
+.ka-social-btn-danger {
+  border-color: rgba(255,92,111,.42);
+  background: rgba(75,12,24,.7);
+  color: #ffb4bf;
+}
+
+.ka-social-empty {
+  display: block;
+  padding: 12px;
+  color: #718995;
+  text-align: center;
+  border: 1px dashed rgba(255,255,255,.1);
+  border-radius: 9px;
+}
+
+.ka-social-party-room {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255,170,0,.28);
+  border-radius: 10px;
+  background: rgba(70,44,0,.18);
+}
+
+.ka-social-privacy-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ka-social-privacy-row {
+  display: grid;
+  grid-template-columns: minmax(130px,1fr) minmax(150px,1fr);
+  gap: 10px;
+  align-items: center;
+  color: #b5cad4;
+  font-size: 12px;
+}
+
+.ka-social-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #b5cad4;
+  font-size: 12px;
+}
+
+.ka-social-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: #00d4ff;
+}
+
+@media (max-width: 950px) {
+  .ka-social-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .ka-social-panel {
+    padding: 11px;
+  }
+  .ka-social-player-card,
+  .ka-social-panel-heading,
+  .ka-social-party-summary,
+  .ka-social-party-room {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .ka-social-card-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .ka-social-form-row,
+  .ka-social-privacy-row {
+    grid-template-columns: 1fr;
+  }
+}

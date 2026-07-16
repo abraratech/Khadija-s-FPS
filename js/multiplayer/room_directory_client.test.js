@@ -18,7 +18,7 @@ const client = new PublicRoomDirectoryClient({
       return fakeJsonResponse({
         ok: true,
         schema: 1,
-        patch: 'match2-public-room-admission-r1-1',
+        patch: 'match3-r1-party-quality-room-discovery',
         region: 'AS',
         rooms: [{
           listingId: 'listing-1',

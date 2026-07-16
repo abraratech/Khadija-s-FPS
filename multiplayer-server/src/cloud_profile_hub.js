@@ -53,6 +53,10 @@ import {
   verifyPasskeyAuthentication,
   verifyPasskeyRegistration
 } from './cloud_profile_auth_core.js';
+import {
+  PROGRESSION_AUTHORITY_PATCH,
+  applyAuthoritativeProgressionReceipt
+} from './progression_authority_core.js';
 
 const MAX_BODY_BYTES = 2_800_000;
 const MAX_PROFILE_BYTES = 2_600_000;
@@ -62,6 +66,8 @@ const OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
 const RECOVERY_CODE_LENGTH = 16;
 const INCOMPLETE_UPLOAD_TTL_MS = 60 * 60 * 1000;
 const MAX_CLOCK_SKEW_CAPTURE_MS = 7 * 24 * 60 * 60 * 1000;
+const PROGRESSION_RECEIPT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const PROGRESSION_RECEIPT_RATE_LIMIT = 24;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -194,6 +200,10 @@ function ensureMeta(meta) {
   output.passkeys = normalizePasskeys(output.passkeys);
   output.authVersion = Math.max(0, Math.floor(Number(output.authVersion) || 0));
   output.lastAuthenticatedAt = Math.max(0, Number(output.lastAuthenticatedAt) || 0);
+  output.progressionReceiptCount = Math.max(0, Math.floor(Number(output.progressionReceiptCount) || 0));
+  output.lastProgressionAt = Math.max(0, Number(output.lastProgressionAt) || 0);
+  output.lastProgressionReceiptId = String(output.lastProgressionReceiptId || '').slice(0, 120);
+  output.lastProgressionReceiptProof = String(output.lastProgressionReceiptProof || '').slice(0, 128);
   return output;
 }
 
@@ -220,7 +230,12 @@ function publicAccount(meta) {
     accountLabel: safe.accountLabel,
     passkeys: safe.passkeys.length,
     authVersion: safe.authVersion,
-    lastAuthenticatedAt: safe.lastAuthenticatedAt
+    lastAuthenticatedAt: safe.lastAuthenticatedAt,
+    progressionProtected: safe.accountType === 'passkey',
+    progressionAuthorityPatch: PROGRESSION_AUTHORITY_PATCH,
+    progressionReceiptCount: safe.progressionReceiptCount,
+    lastProgressionAt: safe.lastProgressionAt,
+    lastProgressionReceiptId: safe.lastProgressionReceiptId
   };
 }
 
@@ -345,6 +360,7 @@ export class CloudProfileHub extends DurableObject {
       if (request.method === 'POST' && url.pathname === '/profiles/register') return this.register(request, rateKey);
       if (request.method === 'GET' && url.pathname === '/profiles/profile') return this.getProfile(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/sync') return this.sync(request, rateKey);
+      if (request.method === 'POST' && url.pathname === '/profiles/progression/commit') return this.commitProgression(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/link/create') return this.createLink(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/link/consume') return this.consumeLink(request, rateKey);
       if (request.method === 'GET' && url.pathname === '/profiles/export') return this.exportProfile(request, rateKey);
@@ -717,12 +733,17 @@ export class CloudProfileHub extends DurableObject {
     const remote = await this.loadProfile(auth.meta);
     const expected = Math.max(0, Math.floor(Number(payload.expectedCloudRevision) || 0));
     const conflict = expected !== Number(auth.meta.cloudRevision || 0);
+    const progressionProtected = auth.meta.accountType === 'passkey';
+    const incomingProfile = progressionProtected
+      ? { ...validated.profile, progression: remote.progression }
+      : validated.profile;
+    const protectedDigest = profileChecksum(incomingProfile);
     let profile = remote;
-    const changed = remote.legacyFingerprint !== validated.profile.legacyFingerprint
-      || profileChecksum(remote) !== incomingDigest;
+    const changed = remote.legacyFingerprint !== incomingProfile.legacyFingerprint
+      || profileChecksum(remote) !== protectedDigest;
     if (changed) {
       await this.saveHistory(auth.meta, remote, auth.meta.cloudRevision, conflict ? 'before-conflict-merge' : 'before-sync');
-      profile = mergeCloudProfiles(remote, validated.profile, { now: Date.now() });
+      profile = mergeCloudProfiles(remote, incomingProfile, { now: Date.now() });
       auth.meta.cloudRevision = Number(auth.meta.cloudRevision || 0) + 1;
       auth.meta.lastSyncAt = Date.now();
       this.addActivity(auth.meta, auth, conflict ? 'SYNC_CONFLICT' : 'SYNC', conflict ? 'Conflicting revisions merged' : 'Profile synchronized');
@@ -734,6 +755,7 @@ export class CloudProfileHub extends DurableObject {
     const operationResult = {
       conflict,
       changed,
+      progressionProtected,
       cloudRevision: Number(auth.meta.cloudRevision || 0)
     };
     auth.meta.lastOperationId = operationId;
@@ -747,6 +769,7 @@ export class CloudProfileHub extends DurableObject {
       schema: 1,
       conflict,
       changed,
+      progressionProtected,
       account: publicAccount(auth.meta),
       profile,
       profileChecksum: auth.meta.profileChecksum,
@@ -754,6 +777,111 @@ export class CloudProfileHub extends DurableObject {
       reliability: reliabilityForRequest(request, { uploadComplete: true, checksumVerified: true })
     };
     await this.ctx.storage.put(operationKey, { response, expiresAt: Date.now() + OPERATION_TTL_MS });
+    await this.scheduleCleanup();
+    return responseJson(response);
+  }
+
+  async commitProgression(request, rateKey) {
+    if (!await this.consumeRateLimit('progression-commit', rateKey, PROGRESSION_RECEIPT_RATE_LIMIT)) {
+      return responseJson({
+        ok: false,
+        error: 'PROGRESSION_COMMIT_RATE_LIMITED',
+        authorityPatch: PROGRESSION_AUTHORITY_PATCH,
+        reliability: reliabilityForRequest(request)
+      }, { status: 429 });
+    }
+
+    const auth = await this.authenticate(request);
+    if (!auth.ok) return auth.response;
+    const payload = await requestJson(request);
+    const result = applyAuthoritativeProgressionReceipt(
+      (await this.loadProfile(auth.meta)).progression,
+      payload.receipt,
+      Date.now()
+    );
+    if (!result.valid) {
+      return responseJson({
+        ok: false,
+        error: 'PROGRESSION_RECEIPT_INVALID',
+        details: result.errors,
+        authorityPatch: PROGRESSION_AUTHORITY_PATCH,
+        reliability: reliabilityForRequest(request)
+      }, { status: 400 });
+    }
+
+    const receiptId = result.receipt.runId;
+    const receiptKey = `progression:${await sha256(`${auth.accountId}|${receiptId}`)}`;
+    const previous = await this.ctx.storage.get(receiptKey);
+    if (previous?.response && Number(previous.expiresAt || 0) > Date.now()) {
+      return responseJson({
+        ...previous.response,
+        idempotent: true,
+        reliability: reliabilityForRequest(request, {
+          checksumVerified: true,
+          idempotentRecovered: true
+        })
+      });
+    }
+
+    const remote = await this.loadProfile(auth.meta);
+    await this.saveHistory(
+      auth.meta,
+      remote,
+      auth.meta.cloudRevision,
+      'before-progression-commit'
+    );
+    const profile = {
+      ...remote,
+      progression: result.profile,
+      updatedAt: Date.now(),
+      revision: Math.max(1, Number(remote.revision || 1) + 1)
+    };
+    auth.meta.cloudRevision = Number(auth.meta.cloudRevision || 0) + 1;
+    auth.meta.progressionReceiptCount = Number(auth.meta.progressionReceiptCount || 0) + 1;
+    auth.meta.lastProgressionAt = Date.now();
+    auth.meta.lastProgressionReceiptId = receiptId;
+    const proofSource = `${auth.accountId}|${receiptId}|${auth.meta.cloudRevision}|${profileChecksum(result.profile)}|${auth.meta.lastProgressionAt}`;
+    auth.meta.lastProgressionReceiptProof = await sha256(proofSource);
+    auth.meta.updatedAt = Date.now();
+    this.addActivity(
+      auth.meta,
+      auth,
+      'PROGRESSION_COMMIT',
+      `${receiptId} · +${result.award.total} XP`
+    );
+
+    const savedProfile = await this.saveProfile(auth.meta, profile);
+    await this.ctx.storage.put(accountKey(auth.meta.accountId), auth.meta);
+
+    const response = {
+      ok: true,
+      schema: 1,
+      authorityPatch: PROGRESSION_AUTHORITY_PATCH,
+      progressionProtected: auth.meta.accountType === 'passkey',
+      account: publicAccount(auth.meta),
+      profile: savedProfile,
+      profileChecksum: auth.meta.profileChecksum,
+      checksumVerified: true,
+      receipt: {
+        runId: receiptId,
+        proof: auth.meta.lastProgressionReceiptProof,
+        proofMode: 'server-sha256',
+        committedAt: auth.meta.lastProgressionAt,
+        cloudRevision: auth.meta.cloudRevision,
+        award: result.award,
+        completedOperations: result.completedOperations,
+        newlyUnlocked: result.newlyUnlocked,
+        live: result.live
+      },
+      reliability: reliabilityForRequest(request, {
+        uploadComplete: true,
+        checksumVerified: true
+      })
+    };
+    await this.ctx.storage.put(receiptKey, {
+      response,
+      expiresAt: Date.now() + PROGRESSION_RECEIPT_TTL_MS
+    });
     await this.scheduleCleanup();
     return responseJson(response);
   }
@@ -1368,5 +1496,8 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   passkeyLimit: CLOUD_PASSKEY_LIMIT,
   authChallengeTtlMs: CLOUD_AUTH_CHALLENGE_TTL_MS,
   authentication: 'passkey',
-  authAlgorithms: Object.freeze(['ES256', 'RS256'])
+  authAlgorithms: Object.freeze(['ES256', 'RS256']),
+  progressionAuthorityPatch: PROGRESSION_AUTHORITY_PATCH,
+  progressionCommitRateLimit: PROGRESSION_RECEIPT_RATE_LIMIT,
+  progressionProtection: 'passkey-canonical-receipts'
 });

@@ -122,7 +122,10 @@ export class MultiplayerTacticalAwareness {
     camera,
     getActiveEnemies = () => [],
     getWorldTargets = () => [],
-    getReviveSnapshot = () => null
+    getReviveSnapshot = () => null,
+    getRoleForPlayer = () => 'VANGUARD',
+    getPingLifetimeMultiplier = null,
+    onTeamAction = () => {}
   } = {}) {
     this.eventBus = eventBus;
     this.runtime = runtime;
@@ -133,6 +136,9 @@ export class MultiplayerTacticalAwareness {
     this.getActiveEnemies = getActiveEnemies;
     this.getWorldTargets = getWorldTargets;
     this.getReviveSnapshot = getReviveSnapshot;
+    this.getRoleForPlayer = getRoleForPlayer;
+    this.getPingLifetimeMultiplier = getPingLifetimeMultiplier;
+    this.onTeamAction = onTeamAction;
     this.store = new TacticalPingStore();
     this.active = false;
     this.root = null;
@@ -234,6 +240,12 @@ export class MultiplayerTacticalAwareness {
       ownerName: this.localOwnerName(),
       position: vectorPayload(position),
       targetId: aimedEnemy?.networkId || aimedEnemy?.mesh?.uuid || null,
+      lifetimeMultiplier: (
+        this.getPingLifetimeMultiplier?.(ownerPlayerId)
+        || (this.getRoleForPlayer?.(ownerPlayerId) === 'RECON' ? 1.35 : (
+          this.getRoleForPlayer?.(ownerPlayerId) === 'SUPPORT' ? 1.12 : 1
+        ))
+      ),
       createdAt: now
     };
 
@@ -251,6 +263,11 @@ export class MultiplayerTacticalAwareness {
 
     this.metrics.localAccepted += 1;
     this.runtime?.sendTacticalPing?.(result.ping);
+    this.onTeamAction?.('TACTICAL_PING', {
+      actorId: ownerPlayerId,
+      eventId: result.ping?.pingId,
+      at: now
+    });
     return result;
   }
   placeQuickMessage(type, now = nowMs()) {
@@ -298,6 +315,12 @@ export class MultiplayerTacticalAwareness {
       ownerName: this.localOwnerName(),
       position: vectorPayload(position),
       targetId: aimedEnemy?.networkId || aimedEnemy?.mesh?.uuid || null,
+      lifetimeMultiplier: (
+        this.getPingLifetimeMultiplier?.(ownerPlayerId)
+        || (this.getRoleForPlayer?.(ownerPlayerId) === 'RECON' ? 1.35 : (
+          this.getRoleForPlayer?.(ownerPlayerId) === 'SUPPORT' ? 1.12 : 1
+        ))
+      ),
       createdAt: now
     };
     const result = this.store.addPing(candidate, {
@@ -312,6 +335,11 @@ export class MultiplayerTacticalAwareness {
     }
     this.metrics.localAccepted += 1;
     this.runtime?.sendTacticalPing?.(result.ping);
+    this.onTeamAction?.('TACTICAL_PING', {
+      actorId: ownerPlayerId,
+      eventId: result.ping?.pingId,
+      at: now
+    });
     return result;
   }
 

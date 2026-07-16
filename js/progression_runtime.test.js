@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict';
+
+class StorageMock {
+  constructor(initial = {}) {
+    this.map = new Map(Object.entries(initial));
+  }
+  getItem(key) {
+    return this.map.has(key) ? this.map.get(key) : null;
+  }
+  setItem(key, value) {
+    this.map.set(String(key), String(value));
+  }
+  removeItem(key) {
+    this.map.delete(String(key));
+  }
+  clear() {
+    this.map.clear();
+  }
+}
+
+globalThis.localStorage = new StorageMock({
+  ka_progression_v1: JSON.stringify({
+    version: 1,
+    xp: 700,
+    totalRuns: 2,
+    totalKills: 15,
+    bestWave: 4,
+    bestScore: 900
+  })
+});
+globalThis.window = {
+  dispatchEvent() {}
+};
+globalThis.CustomEvent = class CustomEvent {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.detail = options.detail;
+  }
+};
+
+const progression = await import(`./progression.js?prog1-runtime=${Date.now()}`);
+
+let snapshot = progression.getProgressionSnapshot();
+assert.equal(snapshot.version, 2);
+assert.equal(snapshot.profile.totalRuns, 2);
+assert.ok(localStorage.getItem('ka_progression_backup_v1'));
+
+progression.resetProgressionRun({
+  mapId: 'grid_bunker',
+  difficulty: 1.5,
+  mode: 'multiplayer'
+});
+progression.recordProgressionKill({ headshot: true });
+progression.recordProgressionWaveClear(2);
+progression.recordProgressionDamageDealt(500);
+progression.recordProgressionDamageTaken(30);
+progression.recordProgressionPointsEarned(250);
+progression.recordProgressionObjective();
+progression.recordProgressionChallenge();
+progression.recordProgressionRevive({ revivedSelf: false });
+progression.recordProgressionRevive({ revivedSelf: true });
+progression.markProgressionBotAssisted(true);
+
+snapshot = progression.finalizeProgressionRun({
+  score: 1800,
+  wave: 3,
+  reason: 'DEATH',
+  mode: 'multiplayer',
+  botAssisted: true,
+  summary: {
+    kills: 1,
+    headshotKills: 1,
+    highestWave: 3,
+    damageDealt: 500,
+    damageTaken: 30,
+    pointsEarned: 250,
+    pointsSpent: 0,
+    objectivesCompleted: 1,
+    challengesCompleted: 1,
+    weaponUpgrades: 0,
+    perksPurchased: 0,
+    durationSeconds: 120,
+    accuracy: 42.5,
+    botAssisted: true
+  }
+});
+assert.equal(snapshot.run.finalized, true);
+assert.equal(snapshot.profile.totalRuns, 3);
+assert.equal(snapshot.profile.multiplayerRuns, 1);
+assert.equal(snapshot.profile.botAssistedRuns, 1);
+assert.equal(snapshot.profile.totalKills, 16);
+assert.equal(snapshot.profile.totalHeadshots, 1);
+assert.equal(snapshot.profile.totalRevives, 1);
+assert.equal(snapshot.profile.timesRevived, 1);
+assert.equal(snapshot.profile.objectivesCompleted, 1);
+assert.equal(snapshot.profile.challengesCompleted, 1);
+assert.ok(snapshot.run.xpEarned > 0);
+assert.ok(Object.keys(snapshot.run.xpBreakdown).length > 0);
+assert.equal(snapshot.profile.recentRuns[0].mapId, 'grid_bunker');
+
+const equip = progression.equipProgressionCosmetic('TITLE_SURVIVOR');
+assert.equal(equip.ok, true);
+assert.equal(progression.getProgressionSnapshot().equipped.title, 'TITLE_SURVIVOR');
+
+console.log('PROG.1 progression runtime tests: PASS');

@@ -1,0 +1,67 @@
+/* OPS.1 R1 — production operations and privacy controls. */
+
+#ops1-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(138, 160, 184, .35);
+  border-radius: 8px;
+  color: #b8c8d8;
+  background: rgba(8, 18, 28, .7);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .75px;
+  text-transform: uppercase;
+}
+
+#ops1-status[data-tone="good"] {
+  border-color: rgba(34, 255, 136, .42);
+  color: #22ff88;
+}
+
+#ops1-status[data-tone="warning"] {
+  border-color: rgba(255, 170, 0, .5);
+  color: #ffaa00;
+}
+
+.ka-ops1-controls {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 280px);
+}
+
+.ka-ops1-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #c5d2df;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ka-ops1-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #22ff88;
+}
+
+.ka-ops1-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+#ops1-health-details,
+#ops1-privacy-summary {
+  display: block;
+  margin-top: 6px;
+  color: #8194a8;
+  line-height: 1.45;
+}
+
+@media (max-width: 620px) {
+  .ka-ops1-actions {
+    grid-template-columns: 1fr;
+  }
+}

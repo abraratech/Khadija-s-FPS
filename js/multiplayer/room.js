@@ -24,6 +24,9 @@ function serializePlayer(player) {
     connected: player.connected !== false,
     isHost: player.isHost === true,
     isBot: player.isBot === true,
+    socialId: player.isBot === true
+      ? ''
+      : String(player.socialId || '').slice(0, 40),
     botProfile: player.botProfile
       ? String(player.botProfile).slice(0, 80)
       : null,

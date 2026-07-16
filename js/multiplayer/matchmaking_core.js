@@ -1,8 +1,14 @@
 // js/multiplayer/matchmaking_core.js
-// MATCH.1 R1 — public matchmaking request/state helpers.
+// MATCH.3 R1 — public matchmaking request/state helpers.
 
-export const PUBLIC_MATCHMAKING_SCHEMA = 1;
-export const PUBLIC_MATCHMAKING_PATCH = 'match2-public-room-admission-r1-1';
+import {
+  MATCH3_PATCH,
+  MATCH3_SCHEMA,
+  normalizeMatch3SearchPreferences
+} from './match3_core.js';
+
+export const PUBLIC_MATCHMAKING_SCHEMA = MATCH3_SCHEMA;
+export const PUBLIC_MATCHMAKING_PATCH = MATCH3_PATCH;
 export const PUBLIC_MATCHMAKING_QUEUE_TIMEOUT_MS = 95_000;
 export const PUBLIC_MATCHMAKING_POLL_MS = 1_500;
 export const PUBLIC_MATCHMAKING_LOCK_TTL_MS = 10_000;
@@ -52,6 +58,11 @@ export function matchmakingEndpoint(serverUrl, path, params = null) {
 }
 
 export function normalizeQuickMatchPreferences(value = {}) {
+  const search = normalizeMatch3SearchPreferences(value);
+  const partySize = Math.max(
+    1,
+    Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))
+  );
   return Object.freeze({
     mode: 'coop',
     mapId: cleanText(value.mapId, 'grid_bunker', 80),
@@ -62,10 +73,18 @@ export function normalizeQuickMatchPreferences(value = {}) {
     maxPlayers: Math.max(
       2,
       Math.min(4, Math.trunc(finiteNumber(value.maxPlayers, 2)))
-    )
+    ),
+    partySize,
+    partyId: cleanText(value.partyId, '', 120),
+    partyTicket: cleanText(value.partyTicket, '', 240),
+    searchPriority: search.searchPriority,
+    regionPolicy: search.regionPolicy,
+    preferredRegion: search.preferredRegion,
+    globalExpansionMs: search.globalExpansionMs,
+    allowBackfill: search.allowBackfill,
+    joinInProgress: search.joinInProgress
   });
 }
-
 export function createQuickMatchRequest({
   playerId,
   displayName,
@@ -117,7 +136,18 @@ export function normalizeMatchmakingResponse(value = {}) {
           ))
         ),
         scope: cleanText(value.assignment.scope, 'regional', 24),
-        region: cleanText(value.assignment.region, 'ZZ', 16)
+        region: cleanText(value.assignment.region, 'ZZ', 16),
+        admissionToken: cleanText(value.assignment.admissionToken, '', 280),
+        admissionExpiresAt: Math.max(
+          0,
+          finiteNumber(value.assignment.admissionExpiresAt, 0)
+        ),
+        backfill: value.assignment.backfill === true,
+        partySize: Math.max(
+          1,
+          Math.min(2, Math.trunc(finiteNumber(value.assignment.partySize, 1)))
+        ),
+        quality: cleanText(value.assignment.quality, 'compatible', 40)
       })
     : null;
 
@@ -134,6 +164,9 @@ export function normalizeMatchmakingResponse(value = {}) {
     fallbackAt: Math.max(0, finiteNumber(value.fallbackAt, 0)),
     region: cleanText(value.region, 'ZZ', 16),
     queueDepth: Math.max(0, Math.trunc(finiteNumber(value.queueDepth, 0))),
+    estimatedWaitMs: Math.max(0, Math.trunc(finiteNumber(value.estimatedWaitMs, 0))),
+    searchScope: cleanText(value.searchScope, 'regional', 24),
+    partySize: Math.max(1, Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))),
     assignment,
     reason: cleanText(value.reason, '', 120) || null,
     error: cleanText(value.error, '', 120) || null,
@@ -162,9 +195,13 @@ export function matchmakingStatusPresentation(snapshot = {}, {
       title: 'SEARCHING FOR OPERATIVES',
       detail: snapshot.botAvailable === true
         ? 'NO HUMAN MATCH YET · AI WINGMATE AVAILABLE'
-        : fallbackSeconds > 0
-          ? `REGIONAL SEARCH · GLOBAL IN ${fallbackSeconds}s`
-          : 'REGIONAL + GLOBAL SEARCH',
+        : snapshot.partySize > 1
+          ? 'PARTY ROOM RESERVATION · KEEP PARTY TOGETHER'
+          : snapshot.searchScope === 'regional-only'
+            ? 'REGIONAL-ONLY SEARCH'
+            : fallbackSeconds > 0
+              ? `REGIONAL SEARCH · GLOBAL IN ${fallbackSeconds}s`
+              : 'REGIONAL + GLOBAL SEARCH',
       elapsedText: `${elapsedSeconds}s`,
       cancellable: true,
       botAvailable: snapshot.botAvailable === true

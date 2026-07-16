@@ -20,6 +20,14 @@
       {
         "name": "MATCHMAKING",
         "class_name": "MatchmakingHub"
+      },
+      {
+        "name": "SOCIAL",
+        "class_name": "SocialHub"
+      },
+      {
+        "name": "OPS",
+        "class_name": "OpsHub"
       }
     ]
   },
@@ -46,6 +54,18 @@
       "tag": "v4",
       "new_sqlite_classes": [
         "MatchmakingHub"
+      ]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": [
+        "SocialHub"
+      ]
+    },
+    {
+      "tag": "v6",
+      "new_sqlite_classes": [
+        "OpsHub"
       ]
     }
   ],

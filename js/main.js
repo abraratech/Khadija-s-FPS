@@ -26,12 +26,23 @@ import {
 import {
   resetProgressionRun,
   finalizeProgressionRun,
-  getProgressionSnapshot
+  getProgressionSnapshot,
+  recordProgressionRevive,
+  markProgressionBotAssisted,
+  equipProgressionCosmetic
 } from './progression.js';
+import {
+  initializeLoadoutSystems,
+  freezeActiveLoadoutForRun,
+  clearFrozenLoadoutForRun,
+} from './loadout.js';
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
 import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted } from './run_summary.js';
 import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
+import { initSocialSystems } from './social.js';
+import { initLive1Systems, beginLive1Run, endLive1Run } from './live1.js';
+import { initOps1Systems, recordOps1Performance } from './ops1.js';
 import {
   CONTROL_ACTIONS,
   initControlsUI,
@@ -68,23 +79,18 @@ import {
   consumeTutorialEvents,
   recordTutorialAction
 } from './tutorial.js';
-import { runReleaseValidation } from './release_validation.js';
-import { getMapValidationSnapshot } from './map_validation.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, getMultiplayerCoopStatsSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession } from './multiplayer/foundation.js';
 
 import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js';
 // POST.1A: live voice was removed from the player-facing build. Text chat remains.
 import './multiplayer/suspend_resume.js';
 import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
-import './multiplayer/certification_session.js';
-import './multiplayer/certification_pairing.js';
-import './multiplayer/final_certification.js';
 import './multiplayer/production_release.js';
 
 const canvas = document.getElementById('c');
 export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-// Public playable-demo build. Development cheats and AI debug hotkeys stay disabled.
+// Production build. Development cheats, preview tools, and debug hotkeys are removed.
 export const DEV_MODE = false;
 
 function purgePublicDebugSurfaces() {
@@ -98,13 +104,8 @@ function purgePublicDebugSurfaces() {
     document.getElementById(id)?.remove();
   });
 
-  try {
-    delete window.devConsole;
-    delete window.KASetAIDirectorDebug;
-  } catch {
-    window.devConsole = undefined;
-    window.KASetAIDirectorDebug = undefined;
-  }
+  Reflect.deleteProperty(window, 'devConsole');
+  Reflect.deleteProperty(window, 'KASetAIDirectorDebug');
 }
 
 purgePublicDebugSurfaces();
@@ -127,6 +128,17 @@ initializeMultiplayerFoundation(player, {
   },
   reviveAdapter: {
     getWave: () => currentWave,
+    onReviveEvent: (event) => {
+      if (event?.type !== 'REVIVED') return;
+      const localPlayerId = getLocalMultiplayerPlayerId();
+      if (!localPlayerId) return;
+      if (event.reviverId === localPlayerId) {
+        recordProgressionRevive({ revivedSelf: false });
+      }
+      if (event.playerId === localPlayerId) {
+        recordProgressionRevive({ revivedSelf: true });
+      }
+    },
     clearInput: clearInputState,
     syncHud: syncHudFromPlayer,
     showToast: showStatusToast,
@@ -181,7 +193,10 @@ initializeMultiplayerFoundation(player, {
     damageEnemy: damageEnemyForBot,
     getWorldTargets: () => mapMeshes,
     getWave: () => currentWave,
-    markRunBotAssisted,
+    markRunBotAssisted: (details = {}) => {
+      markRunBotAssisted(details);
+      markProgressionBotAssisted(true);
+    },
     showToast: showStatusToast
   }
 });
@@ -201,13 +216,10 @@ configureMultiplayerEconomy({
   awardCombat: awardMultiplayerCombat,
   refundPlayer: refundMultiplayerPoints
 });
-window.KHADIJA_MULTIPLAYER_BUILD = 'm5-coop-turn-fallback-r1';
-window.KHADIJA_MULTIPLAYER_PATCH = 'm5-coop-turn-fallback-r1';
-console.info('[Multiplayer Build] m5-coop-turn-fallback-r1 | protocol 6');
-console.info('[Multiplayer Patch] m5-coop-turn-fallback-r1');
-if (new URLSearchParams(window.location.search).get('mpDebug') === '1') {
-  console.info('[Multiplayer Debug] Loopback-only · Final Certification F5 · Evidence Pairing F6 · Session Ledger F7 · Recovery Lab F8 · Certification F9 · Release Candidate F10 · Launch Observer F11 · Burn-In Soak F12 · Release Seal Shift+F12');
-}
+window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
+window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
+console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
+console.info('[Multiplayer Patch] final2-r1-full-product-certification');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -246,6 +258,8 @@ const PERF1_IDLE_RENDER_INTERVAL_MS = 1000 / 30;
 const PERF1_STATS_INTERVAL_SECONDS = 0.25;
 let lastIdleRenderAt = -Infinity;
 let performanceStatsSampleT = 0;
+const OPS1_PERFORMANCE_INTERVAL_SECONDS = 60;
+let ops1PerformanceSampleT = 0;
 
 function setLockHintVisible(visible) {
   const lockHint = document.getElementById('lock-hint');
@@ -588,9 +602,21 @@ initLocalLeaderboards();
 initOnlineLeaderboards();
 initCareerAchievements({
   getProgressionSnapshot,
-  getChallengesSnapshot
+  getChallengesSnapshot,
+  equipProgressionCosmetic
+});
+initializeLoadoutSystems({
+  showToast: showStatusToast,
+  getProgressionSnapshot,
+  equipProgressionCosmetic
 });
 initCloudProfile({ showToast: showStatusToast });
+initSocialSystems({ showToast: showStatusToast });
+initLive1Systems({
+  getProgressionSnapshot,
+  showToast: showStatusToast
+});
+initOps1Systems();
 initCameraPresentation({
   isMobile,
   camera,
@@ -615,8 +641,7 @@ initGameplayReliability({
   getReviveSnapshot: getMultiplayerReviveSnapshot,
   showToast: showStatusToast
 });
-runReleaseValidation({ phase: 'BOOT', isMobile, devMode: DEV_MODE });
-console.log(`Khadija's Arena public demo loaded. Graphics quality: ${getGraphicsQualityLabel()} | Press F6 to cycle quality.`);
+console.info(`Khadija's Arena production runtime ready. Graphics quality: ${getGraphicsQualityLabel()}.`);
 
 function renderGameFrame() {
   renderer.info.reset();
@@ -956,6 +981,7 @@ let worstFrameMs = 0;
 function resetFrameStats() {
   smoothFps = 60;
   worstFrameMs = 0;
+  ops1PerformanceSampleT = 0;
   prev = 0;
 }
 let highScore = localStorage.getItem('fps_hi_score') || 0;
@@ -1002,6 +1028,13 @@ function updateMenuBestStats() {
   if (profileLevel) profileLevel.textContent = progression.profile.level;
   const achievementCount = document.getElementById('profile-achievements');
   if (achievementCount) achievementCount.textContent = challenges.totalUnlocked;
+  const profileTitle = document.getElementById('profile-title');
+  if (profileTitle) {
+    const equippedTitle = progression.unlocks?.find((entry) => (
+      entry.id === progression.equipped?.title
+    ));
+    profileTitle.textContent = equippedTitle?.label || 'Survivor';
+  }
 }
 
 function finalizeCurrentRun(reason = 'ENDED') {
@@ -1017,11 +1050,28 @@ function finalizeCurrentRun(reason = 'ENDED') {
     || 'grid_bunker';
 
   finalizeRunSummary(payload);
-  finalizeProgressionRun(payload);
+  const summary = getRunSummarySnapshot();
+  const coopStats = getMultiplayerCoopStatsSnapshot();
+  const localPlayerId = getLocalMultiplayerPlayerId();
+  const localCoopStats = coopStats?.snapshot?.players?.find((entry) => (
+    entry?.playerId === localPlayerId
+  ))?.counters || null;
+  const progressionSummary = localCoopStats
+    ? {
+        ...summary,
+        revives: Number(localCoopStats.revives || 0),
+        timesDowned: Number(localCoopStats.timesDowned || 0)
+      }
+    : summary;
+  finalizeProgressionRun({
+    ...payload,
+    summary: progressionSummary,
+    mode,
+    botAssisted: summary.botAssisted === true
+  });
+  endLive1Run();
   endObjectivesRun();
   endChallengesRun();
-
-  const summary = getRunSummarySnapshot();
   const localResult = submitLocalLeaderboardRun({
     mapId,
     difficulty: difficultyMultiplier,
@@ -1257,6 +1307,15 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
         : 'single'
     });
 
+    const frozenLoadout = freezeActiveLoadoutForRun({
+      reuseExisting: fromRespawn || isOnlineMultiplayerRun(),
+      runId: `run-${Date.now().toString(36)}`,
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+    });
+    player.loadoutPreferences = frozenLoadout;
+
     beginMultiplayerRun({
       mapId: chosenMap,
       difficulty: difficultyMultiplier,
@@ -1267,7 +1326,17 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
       mapId: chosenMap,
       difficulty: difficultyMultiplier
     });
-    resetProgressionRun({ mapId: chosenMap, difficulty: difficultyMultiplier });
+    const progressionRun = resetProgressionRun({
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+    });
+    beginLive1Run({
+      runId: progressionRun?.run?.runId,
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+    });
     resetObjectivesRun({ mapId: chosenMap });
     resetMapGameplay({ mapId: chosenMap, scene });
     resetChallengesRun();
@@ -1278,8 +1347,6 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
       mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
     });
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
-    runReleaseValidation({ phase: 'RUN_START', mapId: chosenMap, isMobile, devMode: DEV_MODE, mapValidation: getMapValidationSnapshot() });
-
     placePlayerAtRandomSpawn();
     resetTutorialRun({ mapId: chosenMap, isMobile, player });
     resetVisualTutorial();
@@ -1300,7 +1367,11 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
 
     gs = 'playing';
     const economyTier = getEconomyBalanceSnapshot().tier;
-    showStatusToast(`SURVIVE · ${getBindingLabel(CONTROL_ACTIONS.INTERACT)} INTERACT · ${getBindingLabel(CONTROL_ACTIONS.RELOAD)} RELOAD · ${getBindingLabel(CONTROL_ACTIONS.SWITCH_WEAPON)} SWITCH · ${economyTier} ECONOMY`, '#00d4ff', 3400);
+    showStatusToast(
+      `SURVIVE · ${frozenLoadout.loadoutName.toUpperCase()} · ${frozenLoadout.primary}/${frozenLoadout.secondary} PRIORITY · ${economyTier} ECONOMY`,
+      '#00d4ff',
+      3600
+    );
     await enterGameplayPresentation({ requestPointerLock: !deferPointerLock });
     ensureGameLoopStarted();
 
@@ -1319,6 +1390,7 @@ function handleOnlineRunEnded(details = {}) {
   coOpMenuOpen = false;
 
   const leavingRoom = details.reason === 'left-room';
+  if (leavingRoom) clearFrozenLoadoutForRun();
   if (!leavingRoom) {
     finalizeCurrentRun(`CO-OP ${details.reason || 'ENDED'}`);
     saveRunRecords();
@@ -1464,6 +1536,7 @@ function returnToMenu(source = 'pause') {
     return;
   }
 
+  clearFrozenLoadoutForRun();
   endMultiplayerRun({ reason: source, player });
   finalizeCurrentRun(source);
   saveRunRecords();
@@ -1537,6 +1610,15 @@ smoothFps = smoothFps * 0.9 + (rawDt > 0 ? 1 / rawDt : 60) * 0.1;
 const rawFrameMs = rawDt * 1000;
 
 if (gs === 'playing') {
+  ops1PerformanceSampleT += dt;
+  if (ops1PerformanceSampleT >= OPS1_PERFORMANCE_INTERVAL_SECONDS) {
+    ops1PerformanceSampleT = 0;
+    recordOps1Performance({
+      fps: smoothFps,
+      mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single'
+    });
+  }
+
   if (autoTuneGraphicsFromFps(smoothFps, dt)) {
     syncGraphicsQualityControls();
   }

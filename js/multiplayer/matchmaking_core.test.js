@@ -13,8 +13,8 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(PUBLIC_MATCHMAKING_SCHEMA === 1, 'schema mismatch');
-assert(PUBLIC_MATCHMAKING_PATCH === 'match2-public-room-admission-r1-1', 'patch mismatch');
+assert(PUBLIC_MATCHMAKING_SCHEMA === 2, 'schema mismatch');
+assert(PUBLIC_MATCHMAKING_PATCH === 'match3-r1-party-quality-room-discovery', 'patch mismatch');
 assert(
   normalizeMatchmakingHttpBase('wss://example.workers.dev/ws')
     === 'https://example.workers.dev',
@@ -48,7 +48,7 @@ assert(request.mode === 'coop', 'mode should be co-op');
 
 const response = normalizeMatchmakingResponse({
   ok: true,
-  schema: 1,
+  schema: 2,
   patch: PUBLIC_MATCHMAKING_PATCH,
   ticketId: 'ticket-1',
   token: 'queue-token',

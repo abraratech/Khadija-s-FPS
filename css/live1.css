@@ -1,0 +1,223 @@
+/* LIVE.1 R1 — seasonal operations and rotating event presentation. */
+
+.ka-live1-status {
+  margin-bottom: 14px;
+  padding: 10px 13px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  background: rgba(255,255,255,.04);
+  color: #b8c4ce;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+}
+.ka-live1-status[data-tone="good"] {
+  color: #7dffc0;
+  border-color: rgba(34,255,136,.35);
+  background: rgba(34,255,136,.07);
+}
+.ka-live1-status[data-tone="warning"] {
+  color: #ffd06a;
+  border-color: rgba(255,170,0,.35);
+  background: rgba(255,170,0,.07);
+}
+.ka-live1-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid rgba(255,95,210,.42);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(255,95,210,.19), transparent 35%),
+    linear-gradient(135deg, rgba(17,10,30,.94), rgba(4,14,23,.94));
+  box-shadow: inset 0 0 32px rgba(255,95,210,.05);
+}
+.ka-live1-hero span,
+.ka-live1-feature-grid span,
+.ka-live1-section-title span,
+.ka-live1-points span,
+.ka-live1-contract-top span,
+.ka-live1-reward span {
+  color: #ff91dd;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 1.5px;
+}
+.ka-live1-hero > div:first-child strong {
+  display: block;
+  margin: 4px 0;
+  color: #fff;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: .95;
+}
+.ka-live1-hero small {
+  color: #b8c4ce;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.ka-live1-points {
+  min-width: 160px;
+  padding: 15px;
+  text-align: center;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: rgba(0,0,0,.24);
+}
+.ka-live1-points strong {
+  display: block;
+  margin-top: 5px;
+  color: #fff;
+  font-size: 27px;
+}
+.ka-live1-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.ka-live1-feature-grid article,
+.ka-live1-contract,
+.ka-live1-reward {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+.ka-live1-feature-grid strong,
+.ka-live1-contract strong,
+.ka-live1-reward strong {
+  display: block;
+  margin: 5px 0;
+  color: #fff;
+  font-size: 15px;
+}
+.ka-live1-feature-grid small,
+.ka-live1-contract small,
+.ka-live1-reward small {
+  display: block;
+  color: #92a4b1;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.ka-live1-section-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 2px 8px;
+}
+.ka-live1-section-title strong {
+  color: #fff;
+  font-size: 15px;
+  letter-spacing: 1px;
+}
+.ka-live1-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0,1fr));
+  gap: 9px;
+}
+.ka-live1-contract.complete {
+  border-color: rgba(34,255,136,.4);
+  background: rgba(34,255,136,.06);
+}
+.ka-live1-contract-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ka-live1-contract-top b {
+  color: #ffd06a;
+  font-size: 10px;
+}
+.ka-live1-contract.complete .ka-live1-contract-top b {
+  color: #75ffba;
+}
+.ka-live1-meter {
+  height: 5px;
+  margin: 10px 0 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255,255,255,.09);
+}
+.ka-live1-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff5fd2, #7b6cff);
+}
+.ka-live1-contract em {
+  color: #ffd06a;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+.ka-live1-reward-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+}
+.ka-live1-reward b {
+  display: block;
+  margin-top: 9px;
+  color: #ffd06a;
+  font-size: 11px;
+}
+.ka-live1-reward.unlocked {
+  border-color: rgba(34,255,136,.4);
+  box-shadow: inset 0 0 20px rgba(34,255,136,.05);
+}
+.ka-live1-reward.unlocked b {
+  color: #75ffba;
+}
+.ka-live1-hud {
+  --ka-live1-accent: #ff5fd2;
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 48;
+  min-width: 250px;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+  border: 1px solid color-mix(in srgb, var(--ka-live1-accent) 58%, transparent);
+  border-radius: 10px;
+  background: rgba(6,8,15,.86);
+  box-shadow: 0 0 20px rgba(255,95,210,.14);
+  backdrop-filter: blur(7px);
+}
+.ka-live1-hud span {
+  display: block;
+  color: var(--ka-live1-accent);
+  font-size: 8px;
+  font-weight: 1000;
+  letter-spacing: 1.7px;
+}
+.ka-live1-hud strong {
+  display: block;
+  color: #fff;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.ka-live1-hud small {
+  display: block;
+  color: #c8d0d7;
+  font-size: 9px;
+  letter-spacing: .7px;
+}
+@media (max-width: 900px) {
+  .ka-live1-feature-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .ka-live1-contract-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 620px) {
+  .ka-live1-hero { align-items: stretch; flex-direction: column; padding: 14px; }
+  .ka-live1-points { min-width: 0; }
+  .ka-live1-feature-grid,
+  .ka-live1-contract-grid,
+  .ka-live1-reward-grid { grid-template-columns: 1fr; }
+  .ka-live1-hud { top: max(8px, env(safe-area-inset-top)); min-width: 210px; }
+}

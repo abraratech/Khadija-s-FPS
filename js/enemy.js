@@ -1379,6 +1379,11 @@ function startWave(waveNumber) {
   }
 
   announceWaveStart(waveNumber);
+  try {
+    globalThis.KAContent1WaveStarted?.(waveNumber);
+  } catch {
+    // CONTENT.1 is optional during bootstrap and test isolation.
+  }
   updateRoundHUD(waveNumber);
 }
 
@@ -1394,6 +1399,15 @@ function completeCurrentWave() {
   recordProgressionWaveClear(clearedWave);
   recordChallengeWaveClear(clearedWave);
   recordObjectiveWaveClear({ health: player.health, maxHealth: player.maxHealth });
+  try {
+    globalThis.KAContent1WaveCleared?.({
+      wave: clearedWave,
+      health: player.health,
+      maxHealth: player.maxHealth
+    });
+  } catch {
+    // CONTENT.1 is optional during bootstrap and test isolation.
+  }
   announceC11Events();
 
   currentWave++;
@@ -1534,10 +1548,30 @@ function applyMapSpawnPressure(mix, wave = currentWave) {
   });
 }
 
+function applyContent1SpawnPressure(mix) {
+  let directive = null;
+  try {
+    directive = globalThis.KAGetContent1EncounterDirective?.() || null;
+  } catch {
+    directive = null;
+  }
+  const multipliers = directive?.weightMultipliers || {};
+  if (!multipliers || typeof multipliers !== 'object') return mix;
+  return mix.map(([config, weight]) => {
+    const multiplier = Math.max(
+      0.35,
+      Math.min(2.4, Number(multipliers[config?.name]) || 1)
+    );
+    return [config, Math.max(0, Number(weight) || 0) * multiplier];
+  });
+}
+
 function getSpawnMixForWave(wave = currentWave) {
-  return adaptEnemySpawnMix(
-    applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
-    { wave, isSpecialRound }
+  return applyContent1SpawnPressure(
+    adaptEnemySpawnMix(
+      applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
+      { wave, isSpecialRound }
+    )
   );
 }
 
@@ -1812,6 +1846,13 @@ function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
     recycled.headshotReward = config.headshotScore || 100;
     recycled.bossBounty = config.bossBounty || 0;
     recycled.role = config.role || 'standard';
+    recycled.isContent1Elite = false;
+    recycled.content1Id = null;
+    try {
+      globalThis.KAContent1EnemySpawned?.(recycled);
+    } catch {
+      // CONTENT.1 is optional during bootstrap and test isolation.
+    }
 
     if (recycled.mixer && ASSETS.enemies.zombie && ASSETS.enemies.zombie.animations.length > 0) {
       recycled.mixer.stopAllAction();
@@ -3312,6 +3353,19 @@ export function killEnemy(e, context = {}) {
       position: e.mesh.position
     });
     announceC11Events();
+  }
+
+  if (!e.isNetworkProxy) {
+    try {
+      globalThis.KAContent1EnemyKilled?.({
+        enemyId: e.content1Id || e.networkId || `enemy-${e.type}-${Math.round(performance.now())}`,
+        elite: e.isContent1Elite === true,
+        headshot,
+        actorId: creditPlayerId || localPlayerId || 'local'
+      });
+    } catch {
+      // CONTENT.1 is optional during bootstrap and test isolation.
+    }
   }
 
   cancelEnemyAttack(e, 'ENEMY REMOVED');

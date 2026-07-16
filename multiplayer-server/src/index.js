@@ -2,8 +2,12 @@
 
 import { DurableObject } from 'cloudflare:workers';
 import { LeaderboardHub } from './leaderboard_hub.js';
-import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js'; import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js'; import { buildVoiceSignalRelay, validateVoiceSignalRequest } from './voice_signal_core.js'; import { VOICE_ICE_CONFIG_ACTION, VOICE_ICE_CONFIG_REQUEST_ACTION, consumeVoiceIceRequestRate, generateVoiceIceConfig, voiceIceConfigFresh } from './voice_turn_core.js';
+import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.js';
+import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js';
 import { MatchmakingHub } from './matchmaking_hub.js';
+import { SocialHub, SOCIAL1_SERVER_INFO } from './social_hub.js';
+import { OpsHub, OPS1_SERVER_INFO } from './ops_hub.js';
+import { LIVE1_PATCH, LIVE1_SCHEMA, resolveLive1Manifest } from './live1_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 import {
   BOT1_VIRTUAL_PLAYER_ID,
@@ -25,7 +29,7 @@ import {
   roomKickActive
 } from './room_directory_core.js';
 
-export { LeaderboardHub, CloudProfileHub, MatchmakingHub };
+export { LeaderboardHub, CloudProfileHub, MatchmakingHub, OpsHub };
 
 const ROOM_CODE_PATTERN = /^[A-Z2-9]{6}$/;
 const MAX_PLAYERS = 4;
@@ -33,12 +37,68 @@ const MAX_MESSAGE_BYTES = 64 * 1024;
 const RATE_LIMIT_PER_SECOND = 180;
 const DISCONNECT_GRACE_MS = 45_000;
 const CHECKPOINT_WRITE_INTERVAL_MS = 750;
+export { SocialHub };
+
 const SERVER_PROTOCOL = 6;
-const SERVER_BUILD = 'm5-coop-turn-fallback-r1';
-const SERVER_PATCH = 'm5-coop-turn-fallback-r1';
-const CERTIFIED_FRONTEND_SHA = '0fb4d8abc89c064e1bac60bd0573793037334999';
+const SERVER_BUILD = 'final2-consolidated-production-r1';
+const SERVER_PATCH = 'final2-r1-full-product-certification';
+const CERTIFIED_FRONTEND_SHA = 'cfc5a0e3c5e11fac0bc7c6f1f84e372ca8fda91d';
+const CERTIFIED_SOURCE_SEAL = 'dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
+
+const FINAL2_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: SERVER_PATCH,
+  status: 'CERTIFIED',
+  sourceSeal: CERTIFIED_SOURCE_SEAL,
+  deterministicTests: 140,
+  javascriptSyntaxChecks: 339,
+  productionRuntimeFiles: 236,
+  mapHeroChecks: 6,
+  systems: Object.freeze(['PROG.1','PROG.2','SOCIAL.1','MATCH.3','LOADOUT.1','COOP.2','CONTENT.1','LIVE.1','OPS.1']),
+  voiceRuntimeRemoved: true,
+  developmentArtifactsExcluded: true,
+  workerSourceExcludedFromPages: true,
+  administratorToolsExcludedFromPages: true,
+  secretsExcludedFromPages: true,
+  crawlerLowProfilePreserved: true,
+  baseModesPreserved: true,
+  rollbackReady: true
+});
+
+const PRODUCTION_HARDENING = Object.freeze({
+  patch: 'prog2-r1-production-hardening-cloud-integrity',
+  voiceRuntimeRemoved: true,
+  microphonePermissionRequested: false,
+  textChatOnly: true,
+  developmentRuntimeRemoved: true,
+  progressionReceipts: 'server-validated-idempotent'
+});
+
+const CONTENT1_SERVER_INFO = Object.freeze({
+  patch: 'content1-r1-objective-operations-encounter-variety',
+  schema: 1,
+  arenaCount: 6,
+  objectiveOperations: true,
+  dynamicEncounters: true,
+  eliteTargets: true,
+  hostAuthoritativeSnapshots: true,
+  protectedProgressionReceipts: true
+});
+
+const LIVE1_SERVER_INFO = Object.freeze({
+  patch: LIVE1_PATCH,
+  schema: LIVE1_SCHEMA,
+  manifestEndpoint: '/live/manifest',
+  serverTimeAuthority: true,
+  rollingSeasonLengthDays: 84,
+  dailyRotation: true,
+  weeklyRotation: true,
+  longFormContracts: true,
+  automaticProtectedClaims: true,
+  clientClockTrusted: false
+});
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -160,6 +220,37 @@ async function proxyCloudProfileRequest(request, env) {
 }
 
 
+async function proxySocialRequest(request, env) {
+  if (!env.SOCIAL) {
+    return json({ ok: false, error: 'SOCIAL_BINDING_UNAVAILABLE' }, { status: 503 });
+  }
+  try {
+    const sourceUrl = new URL(request.url);
+    const headers = new Headers(request.headers);
+    headers.set('x-ka-region', String(request.cf?.country || 'ZZ').toUpperCase());
+    headers.set('x-ka-origin', String(request.headers.get('origin') || '').trim());
+    headers.delete('cf-connecting-ip');
+    const internal = new Request(
+      `https://social.internal${sourceUrl.pathname}${sourceUrl.search}`,
+      {
+        method: request.method,
+        headers,
+        body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+        redirect: 'manual'
+      }
+    );
+    const id = env.SOCIAL.idFromName('global-v1');
+    const response = await env.SOCIAL.get(id).fetch(internal);
+    return corsify(response);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: 'SOCIAL_UPSTREAM_UNAVAILABLE',
+      detail: String(error?.message || error || 'UNKNOWN').slice(0, 160)
+    }, { status: 502 });
+  }
+}
+
 async function proxyMatchmakingRequest(request, env) {
   if (!env.MATCHMAKING) {
     return json({
@@ -204,6 +295,118 @@ async function proxyMatchmakingRequest(request, env) {
   }
 }
 
+
+async function proxyOpsRequest(request, env) {
+  if (!env.OPS) {
+    return json({ ok: false, error: 'OPS_BINDING_UNAVAILABLE' }, {
+      status: 503
+    });
+  }
+  try {
+    const sourceUrl = new URL(request.url);
+    const headers = new Headers(request.headers);
+    headers.set(
+      'x-ka-region',
+      String(request.cf?.country || 'ZZ').toUpperCase()
+    );
+    headers.set('x-ka-ops-key', await shortRequestHash(request));
+    headers.delete('cf-connecting-ip');
+    const internal = new Request(
+      `https://ops.internal${sourceUrl.pathname}${sourceUrl.search}`,
+      {
+        method: request.method,
+        headers,
+        body: ['GET', 'HEAD'].includes(request.method)
+          ? undefined
+          : request.body,
+        redirect: 'manual'
+      }
+    );
+    const id = env.OPS.idFromName('global-v1');
+    const response = await env.OPS.get(id).fetch(internal);
+    return corsify(response);
+  } catch {
+    return json({
+      ok: false,
+      error: 'OPS_UPSTREAM_UNAVAILABLE'
+    }, { status: 502 });
+  }
+}
+
+function opsDurationBucket(milliseconds) {
+  const value = Math.max(0, Number(milliseconds) || 0);
+  if (value <= 120) return 'fast';
+  if (value <= 500) return 'normal';
+  if (value <= 1500) return 'slow';
+  return 'very-slow';
+}
+
+async function recordOpsRouteMetric(request, env, {
+  routeGroup,
+  status,
+  startedAt,
+  reason = ''
+} = {}) {
+  if (!env.OPS) return false;
+  try {
+    const sourceHash = await shortRequestHash(request);
+    const id = env.OPS.idFromName('global-v1');
+    const response = await env.OPS.get(id).fetch(
+      new Request('https://ops.internal/internal/ops/route', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-ops': '1'
+        },
+        body: JSON.stringify({
+          eventId: `route-${crypto.randomUUID()}`,
+          sourceHash,
+          routeGroup: String(routeGroup || 'other').slice(0, 80),
+          status: Math.max(0, Math.floor(Number(status) || 0)),
+          method: String(request.method || 'GET').slice(0, 12),
+          durationBucket: opsDurationBucket(Date.now() - startedAt),
+          reason: String(reason || '').slice(0, 120),
+          region: String(request.cf?.country || 'ZZ').slice(0, 16),
+          releasePatch: SERVER_PATCH,
+          timestamp: Date.now()
+        })
+      })
+    );
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function observeOpsResponse(
+  responsePromise,
+  request,
+  env,
+  ctx,
+  routeGroup
+) {
+  const startedAt = Date.now();
+  try {
+    const response = await responsePromise;
+    const record = recordOpsRouteMetric(request, env, {
+      routeGroup,
+      status: response.status,
+      startedAt
+    });
+    if (ctx?.waitUntil) ctx.waitUntil(record);
+    return response;
+  } catch (error) {
+    const record = recordOpsRouteMetric(request, env, {
+      routeGroup,
+      status: 599,
+      startedAt,
+      reason: 'UPSTREAM_EXCEPTION'
+    });
+    if (ctx?.waitUntil) ctx.waitUntil(record);
+    throw error;
+  }
+}
+
 function publicPlayer(player) {
   return {
     playerId: player.playerId,
@@ -212,6 +415,9 @@ function publicPlayer(player) {
     connected: player.connected === true,
     isHost: player.isHost === true,
     isBot: player.isBot === true,
+    socialId: player.isBot === true
+      ? ''
+      : String(player.socialId || '').slice(0, 40),
     botProfile: player.botProfile ? String(player.botProfile).slice(0, 80) : null,
     joinedAt: Math.max(0, Number(player.joinedAt) || 0),
     joinedWave: Math.max(1, Math.floor(Number(player.joinedWave) || 1)),
@@ -259,7 +465,6 @@ export class ArenaRoom extends DurableObject {
     this.env = env;
     this.room = null;
     this.lastCheckpointWriteAt = 0;
-    this.voiceIceConfigCache = null;
     this.directoryFingerprintValue = null;
 
     this.ctx.setWebSocketAutoResponse(
@@ -305,6 +510,71 @@ export class ArenaRoom extends DurableObject {
     Object.values(this.room.players || {}).forEach((player) => {
       player.connected = connected.has(player.playerId);
     });
+  }
+
+  async resolveSocialIdentity({
+    ticket,
+    roomCode,
+    playerId,
+    displayName
+  } = {}) {
+    const cleanTicket = String(ticket || '').slice(0, 220);
+    if (!cleanTicket) return null;
+    if (!this.env.SOCIAL) throw new Error('SOCIAL_BINDING_UNAVAILABLE');
+    const otherAccountIds = Object.values(this.room?.players || {})
+      .map((entry) => String(entry?.socialAccountId || ''))
+      .filter(Boolean);
+    const id = this.env.SOCIAL.idFromName('global-v1');
+    const response = await this.env.SOCIAL.get(id).fetch(
+      new Request('https://social.internal/internal/social/tickets/consume', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-room-social': '1'
+        },
+        body: JSON.stringify({
+          ticket: cleanTicket,
+          roomCode,
+          playerId,
+          displayName,
+          otherAccountIds,
+          context: `room:${String(this.room?.roomId || roomCode || '').slice(0, 100)}`
+        })
+      })
+    );
+    const value = await response.json().catch(() => ({}));
+    if (!response.ok || value.ok !== true) {
+      throw new Error(String(value.error || 'SOCIAL_IDENTITY_REJECTED'));
+    }
+    return {
+      accountId: String(value.identity?.accountId || '').slice(0, 120),
+      socialId: String(value.identity?.socialId || '').slice(0, 40),
+      displayName: safeName(value.identity?.displayName || displayName)
+    };
+  }
+
+  async checkExistingSocialAdmission(accountId) {
+    const cleanId = String(accountId || '').slice(0, 120);
+    if (!cleanId || !this.env.SOCIAL) return true;
+    const otherAccountIds = Object.values(this.room?.players || {})
+      .map((entry) => String(entry?.socialAccountId || ''))
+      .filter((entry) => entry && entry !== cleanId);
+    const id = this.env.SOCIAL.idFromName('global-v1');
+    const response = await this.env.SOCIAL.get(id).fetch(
+      new Request('https://social.internal/internal/social/admission/check', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-room-social': '1'
+        },
+        body: JSON.stringify({
+          accountId: cleanId,
+          otherAccountIds
+        })
+      })
+    );
+    const value = await response.json().catch(() => ({}));
+    return response.ok && value.ok === true && value.allowed !== false;
   }
 
   async fetch(request) {
@@ -439,12 +709,54 @@ export class ArenaRoom extends DurableObject {
     const admissionToken = String(
       url.searchParams.get('admissionToken') || ''
     ).slice(0, 280);
+    const socialTicket = String(
+      url.searchParams.get('socialTicket') || ''
+    ).slice(0, 220);
 
     if (!ROOM_CODE_PATTERN.test(roomCode) || !playerId) {
       return json(
         { error: 'Invalid room code or player ID.' },
         { status: 400 }
       );
+    }
+
+    const priorSocial = this.room?.players?.[playerId] || null;
+    let socialIdentity = priorSocial?.socialAccountId
+      ? {
+          accountId: priorSocial.socialAccountId,
+          socialId: priorSocial.socialId || '',
+          displayName: priorSocial.displayName || displayName
+        }
+      : null;
+    try {
+      if (socialTicket) {
+        const resolved = await this.resolveSocialIdentity({
+          ticket: socialTicket,
+          roomCode,
+          playerId,
+          displayName
+        });
+        if (
+          priorSocial?.socialAccountId
+          && resolved?.accountId
+          && resolved.accountId !== priorSocial.socialAccountId
+        ) {
+          return json(
+            { error: 'Social identity does not match reconnecting player.' },
+            { status: 403 }
+          );
+        }
+        socialIdentity = resolved;
+      } else if (
+        priorSocial?.socialAccountId
+        && !await this.checkExistingSocialAdmission(priorSocial.socialAccountId)
+      ) {
+        return json({ error: 'Blocked-player admission denied.' }, { status: 403 });
+      }
+    } catch (error) {
+      return json({
+        error: String(error?.message || error || 'Social identity rejected.').slice(0, 120)
+      }, { status: 403 });
     }
 
     const pair = new WebSocketPair();
@@ -557,6 +869,8 @@ export class ArenaRoom extends DurableObject {
       disconnectedAt: null,
       disconnectExpiresAt: null,
       joinedAt: existing?.joinedAt || Date.now(), joinedWave: isLateJoin ? joinedWave : Math.max(1, Math.floor(Number(existing?.joinedWave) || 1)), lateJoin: isLateJoin || existing?.lateJoin === true, lateJoinProtectionUntil, catchUpScore,
+      socialAccountId: socialIdentity?.accountId || existing?.socialAccountId || '',
+      socialId: socialIdentity?.socialId || existing?.socialId || '',
       lastSeenAt: Date.now()
     };
 
@@ -855,6 +1169,24 @@ export class ArenaRoom extends DurableObject {
       }
 
       if (
+        envelope.type === 'coop2-state'
+        && envelope.payload?.kind === 'snapshot'
+        && player.playerId !== this.room.hostPlayerId
+      ) {
+        this.sendError(socket, 'Only the current host can publish COOP.2 snapshots.');
+        return;
+      }
+
+      if (
+        envelope.type === 'content1-state'
+        && envelope.payload?.kind === 'snapshot'
+        && player.playerId !== this.room.hostPlayerId
+      ) {
+        this.sendError(socket, 'Only the current host can publish CONTENT.1 snapshots.');
+        return;
+      }
+
+      if (
         envelope.type === 'run-stats'
         && (
           envelope.payload?.kind === 'snapshot'
@@ -929,6 +1261,14 @@ isAuthorityCheckpointEnvelope(envelope) {
     if (envelope.type === 'world-snapshot') return true;
     if (envelope.type === 'economy-snapshot') return true;
     if (
+      envelope.type === 'coop2-state'
+      && envelope.payload?.kind === 'snapshot'
+    ) return true;
+    if (
+      envelope.type === 'content1-state'
+      && envelope.payload?.kind === 'snapshot'
+    ) return true;
+    if (
       envelope.type === 'run-stats'
       && (
         envelope.payload?.kind === 'snapshot'
@@ -950,6 +1290,8 @@ isAuthorityCheckpointEnvelope(envelope) {
       world: null,
       economy: null,
       revive: null,
+      coop2: null,
+      content1: null,
       stats: null,
       finalSummary: this.room.finalSummary || null
     };
@@ -967,6 +1309,10 @@ isAuthorityCheckpointEnvelope(envelope) {
       checkpoint.economy = envelope.payload;
     } else if (envelope.type === 'revive-state') {
       checkpoint.revive = envelope.payload?.snapshot || null;
+    } else if (envelope.type === 'coop2-state') {
+      checkpoint.coop2 = envelope.payload?.snapshot || null;
+    } else if (envelope.type === 'content1-state') {
+      checkpoint.content1 = envelope.payload?.snapshot || null;
     } else if (envelope.type === 'run-stats') {
       if (
         envelope.payload?.kind === 'snapshot'
@@ -1128,60 +1474,8 @@ isAuthorityCheckpointEnvelope(envelope) {
   });
   this.broadcast({ kind: 'control', action: 'chat-message', payload: { message } });
   return;
-} if (action === VOICE_ICE_CONFIG_REQUEST_ACTION) {
-      const attachment = this.readAttachment(socket) || {};
-      const rate = consumeVoiceIceRequestRate(attachment, Date.now());
-      socket.serializeAttachment({ ...attachment, ...rate.state });
-      const now = Date.now();
-      if (!rate.allowed && !voiceIceConfigFresh(this.voiceIceConfigCache, now)) {
-        socket.send(JSON.stringify({ kind: 'control', action: 'voice-ice-config-rejected', payload: { reason: 'cooldown', retryAfterMs: rate.retryAfterMs } }));
-        return;
-      }
-      if (!voiceIceConfigFresh(this.voiceIceConfigCache, now)) {
-        this.voiceIceConfigCache = await generateVoiceIceConfig(this.env, { now });
-      }
-      socket.send(JSON.stringify({ kind: 'control', action: VOICE_ICE_CONFIG_ACTION, payload: { config: this.voiceIceConfigCache } }));
-      return;
-    } if (action === 'voice-signal') {
-      const connectedIds = this.connectedPlayers().map((entry) => entry.playerId);
-      const validation = validateVoiceSignalRequest(payload, {
-        senderPlayerId: player.playerId,
-        connectedPlayerIds: connectedIds,
-      });
-      if (!validation.ok) {
-        socket.send(JSON.stringify({
-          kind: 'control',
-          action: 'voice-signal-rejected',
-          payload: { reason: validation.reason },
-        }));
-        return;
-      }
-      const relay = buildVoiceSignalRelay({
-        signal: validation.signal,
-        fromPlayerId: player.playerId,
-        fromDisplayName: player.displayName,
-        sentAt: Date.now(),
-      });
-      const targetSockets = this.ctx.getWebSockets(`player:${relay.targetPlayerId}`);
-      if (!targetSockets.length) {
-        socket.send(JSON.stringify({
-          kind: 'control',
-          action: 'voice-signal-rejected',
-          payload: { reason: 'target-unavailable' },
-        }));
-        return;
-      }
-      const serialized = JSON.stringify({
-        kind: 'control',
-        action: 'voice-signal',
-        payload: { signal: relay },
-      });
-      targetSockets.forEach((targetSocket) => {
-        try { targetSocket.send(serialized); } catch {}
-      });
-      return;
-    }
-    if (action === 'directory-heartbeat') {
+}
+        if (action === 'directory-heartbeat') {
       if (player.isHost && this.room.settings?.publicListing === true) {
         await this.syncDirectoryListing({ force: true });
       }
@@ -1772,7 +2066,7 @@ if (action === 'start-run') {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: {
         'access-control-allow-origin': '*',
@@ -1788,15 +2082,57 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/leaderboards' || url.pathname === '/leaderboards/challenge' || url.pathname === '/leaderboards/submit') {
-      return proxyLeaderboardRequest(request, env);
+      return observeOpsResponse(
+        proxyLeaderboardRequest(request, env),
+        request,
+        env,
+        ctx,
+        'leaderboards'
+      );
+    }
+
+    if (request.method === 'GET' && url.pathname === '/live/manifest') {
+      return observeOpsResponse(
+        Promise.resolve(json(resolveLive1Manifest(Date.now()))),
+        request,
+        env,
+        ctx,
+        'live-manifest'
+      );
     }
 
     if (url.pathname.startsWith('/profiles/')) {
-      return proxyCloudProfileRequest(request, env);
+      return observeOpsResponse(
+        proxyCloudProfileRequest(request, env),
+        request,
+        env,
+        ctx,
+        'profiles'
+      );
     }
 
     if (url.pathname.startsWith('/matchmaking/')) {
-      return proxyMatchmakingRequest(request, env);
+      return observeOpsResponse(
+        proxyMatchmakingRequest(request, env),
+        request,
+        env,
+        ctx,
+        'matchmaking'
+      );
+    }
+
+    if (url.pathname.startsWith('/social/')) {
+      return observeOpsResponse(
+        proxySocialRequest(request, env),
+        request,
+        env,
+        ctx,
+        'social'
+      );
+    }
+
+    if (url.pathname.startsWith('/ops/')) {
+      return proxyOpsRequest(request, env);
     }
 
     if (url.pathname === '/health') {
@@ -1807,6 +2143,7 @@ export default {
         build: SERVER_BUILD,
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
+        certifiedSourceSeal: CERTIFIED_SOURCE_SEAL,
         releaseStatus: RELEASE_STATUS,
         matchmaking: {
           schema: MATCHMAKING_SCHEMA,
@@ -1822,7 +2159,13 @@ export default {
           ]
         },
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
-        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] }
+        productionHardening: PRODUCTION_HARDENING,
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] },
+        social: SOCIAL1_SERVER_INFO,
+        content: CONTENT1_SERVER_INFO,
+        live: LIVE1_SERVER_INFO,
+        operations: OPS1_SERVER_INFO,
+        fullProductCertification: FINAL2_SERVER_INFO
       });
     }
 
@@ -1834,6 +2177,7 @@ export default {
         build: SERVER_BUILD,
         patch: SERVER_PATCH,
         certifiedFrontendSha: CERTIFIED_FRONTEND_SHA,
+        certifiedSourceSeal: CERTIFIED_SOURCE_SEAL,
         releaseStatus: RELEASE_STATUS,
         matchmaking: {
           schema: MATCHMAKING_SCHEMA,
@@ -1849,7 +2193,13 @@ export default {
           ]
         },
         leaderboards: { schema: 1, patch: 'm4-online-leaderboards-r1', endpoints: ['/leaderboards', '/leaderboards/challenge', '/leaderboards/submit'] },
-        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] },
+        productionHardening: PRODUCTION_HARDENING,
+        cloudProfiles: { ...CLOUD_PROFILE_SERVER_INFO, endpoints: ['/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity'] },
+        social: SOCIAL1_SERVER_INFO,
+        content: CONTENT1_SERVER_INFO,
+        live: LIVE1_SERVER_INFO,
+        operations: OPS1_SERVER_INFO,
+        fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });
     }
@@ -1857,7 +2207,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/join', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', '/ws']
+        endpoints: ['/health', '/release', '/ops/health', '/ops/privacy', '/ops/events', '/live/manifest', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/join', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', ...SOCIAL1_SERVER_INFO.endpoints, '/ws']
       });
     }
 
@@ -1872,6 +2222,12 @@ export default {
 
     const id = env.ROOMS.idFromName(roomCode);
     const stub = env.ROOMS.get(id);
-    return stub.fetch(request);
+    return observeOpsResponse(
+      stub.fetch(request),
+      request,
+      env,
+      ctx,
+      'websocket'
+    );
   }
 };

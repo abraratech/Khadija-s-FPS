@@ -5,10 +5,7 @@ import { MultiplayerSession } from './session.js';
 import { MultiplayerPlayerRegistry } from './player_registry.js';
 import { MultiplayerTransport } from './transport.js';
 import { MultiplayerRuntime, MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
-import { MultiplayerRecoveryDiagnostics } from './recovery_diagnostics.js';
-import { MultiplayerRecoveryCertification } from './recovery_certification.js';
 import { MultiplayerReleaseGuard } from './release_guard.js';
-import { MultiplayerReleaseCandidate } from './release_candidate.js'; import { MultiplayerLaunchObserver } from './launch_observer.js'; import { MultiplayerSoakCertification } from './soak_certification.js'; import { MultiplayerReleaseSeal } from './release_seal.js';
 import {
   cancelMultiplayerRefreshHydration,
   completeMultiplayerRefreshHydration,
@@ -22,13 +19,14 @@ import {
   isMultiplayerRefreshReadinessBlocking,
   startMultiplayerRefreshReadiness
 } from './refresh_readiness.js';
-import './release_runtime_audit.js';
 import { MultiplayerLobbyController } from './lobby.js';
 import { RemotePlayerManager } from './remote_players.js';
 import { SharedWorldManager } from './shared_world.js';
 import { MultiplayerEconomyManager } from './economy.js';
 import { MultiplayerReviveManager } from './revive.js';
 import { MultiplayerBotManager } from './bot.js';
+import { MultiplayerCoop2Manager } from './coop2.js';
+import { Content1Manager } from '../content1.js';
 import { HostMigrationState } from './migration_core.js'; import { MultiplayerNetworkHud } from './network_hud.js';
 import {
   HOST_VISIBILITY_HANDOFF_DELAY_MS,
@@ -48,10 +46,9 @@ let remotePlayerManager = null;
 let sharedWorldManager = null;
 let botManager = null;
 let economyManager = null;
-let reviveManager = null; let networkHud = null; let recoveryDiagnostics = null;
-let recoveryCertification = null;
+let reviveManager = null; let coop2Manager = null; let content1Manager = null; let networkHud = null;
 let multiplayerReleaseGuard = null;
-let multiplayerReleaseCandidate = null; let multiplayerLaunchObserver = null; let multiplayerSoakCertification = null; let multiplayerReleaseSeal = null; let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null;
+let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 let knownConnectedHumanIds = new Set();
 let lateJoinBurstSerial = 0;
@@ -215,6 +212,8 @@ function publishLateJoinIntegrityBurst(reason = 'late-join') {
   economyManager?.sendSnapshot?.(true);
   reviveManager?.publishSnapshot?.(burstNow, true);
   coopStatsManager?.publishSnapshot?.(true, burstNow);
+  coop2Manager?.publishSnapshot?.(true);
+  content1Manager?.publishSnapshot?.(true);
   botManager?.publishSnapshot?.(burstNow, true);
   return true;
 }
@@ -270,6 +269,16 @@ function applyHostMigration(details = {}) {
     becameHost
   });
   coopStatsManager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
+  coop2Manager?.handleHostMigration?.({
+    authorityEpoch,
+    checkpoint: details.checkpoint,
+    becameHost
+  });
+  content1Manager?.handleHostMigration?.({
     authorityEpoch,
     checkpoint: details.checkpoint,
     becameHost
@@ -363,6 +372,14 @@ export function initializeMultiplayerFoundation(
       onReviveEvent: (event) => {
         reviveAdapter?.onReviveEvent?.(event);
         coopStatsManager?.recordReviveEvent?.(event);
+        if (event?.type === 'REVIVED' && event.reviverId) {
+          coop2Manager?.recordAuthorityAction?.('REVIVE', {
+            actorId: event.reviverId,
+            eventId: event.eventId || `${event.reviverId}:${event.playerId}:${event.at || performance.now()}`,
+            at: event.at || performance.now(),
+            isBot: event.reviverId === 'bot-wingmate-r1'
+          });
+        }
       }
     }
   });
@@ -391,7 +408,34 @@ export function initializeMultiplayerFoundation(
     getWorldTargets: botAdapter?.getWorldTargets || (() => []),
     getWave: botAdapter?.getWave || worldAdapter?.getCurrentWave || (() => 1),
     markRunBotAssisted: botAdapter?.markRunBotAssisted || (() => null),
-    showToast: botAdapter?.showToast || (() => {})
+    showToast: botAdapter?.showToast || (() => {}),
+    onTeamAction: (kind, details) => {
+      coop2Manager?.recordAuthorityAction?.(kind, details);
+    }
+  });
+
+  coop2Manager = new MultiplayerCoop2Manager({
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    revive: reviveManager,
+    bot: botManager,
+    showToast: (
+      botAdapter?.showToast
+      || reviveAdapter?.showToast
+      || (() => {})
+    )
+  });
+
+  content1Manager = new Content1Manager({
+    eventBus: multiplayerEvents,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    showToast: (
+      botAdapter?.showToast
+      || reviveAdapter?.showToast
+      || (() => {})
+    )
   });
 
   networkHud = new MultiplayerNetworkHud({
@@ -406,26 +450,12 @@ export function initializeMultiplayerFoundation(
         () => hostMigrationState.getSnapshot()
     });
 
-  recoveryDiagnostics = new MultiplayerRecoveryDiagnostics({
-    eventBus: multiplayerEvents,
-    runtime: multiplayerRuntime,
-    session: multiplayerSession,
-    transport: multiplayerTransport
-  });
-  recoveryDiagnostics.initialize();
-    recoveryCertification = new MultiplayerRecoveryCertification({
-        runtime: multiplayerRuntime,
-        session: multiplayerSession,
-        transport: multiplayerTransport,
-        diagnostics: recoveryDiagnostics
-    });
-    recoveryCertification.initialize();
   multiplayerReleaseGuard = new MultiplayerReleaseGuard({
     runtime: multiplayerRuntime,
     session: multiplayerSession,
     transport: multiplayerTransport,
-    diagnostics: recoveryDiagnostics,
-    certification: recoveryCertification
+    diagnostics: null,
+    certification: null
   });
   multiplayerReleaseGuard.initialize(performance.now());
 
@@ -439,7 +469,14 @@ export function initializeMultiplayerFoundation(
     getActiveEnemies: tacticalAdapter?.getActiveEnemies || (() => []),
     getWorldTargets: tacticalAdapter?.getWorldTargets || (() => []),
     getReviveSnapshot:
-      () => reviveManager?.getSnapshot?.() || null
+      () => reviveManager?.getSnapshot?.() || null,
+    getRoleForPlayer:
+      (playerId) => coop2Manager?.getRoleForPlayer?.(playerId) || 'VANGUARD',
+    getPingLifetimeMultiplier:
+      (playerId) => coop2Manager?.getTacticalPingMultiplier?.(playerId) || 1,
+    onTeamAction: (kind, details) => {
+      coop2Manager?.recordAction?.(kind, details);
+    }
   });
 
   coopScoreboard = new MultiplayerCoopScoreboard({
@@ -521,6 +558,8 @@ textChat.initialize();
               economyManager?.sendSnapshot?.(true);
               reviveManager?.publishSnapshot?.(burstNow, true);
               coopStatsManager?.publishSnapshot?.(true, burstNow);
+              coop2Manager?.publishSnapshot?.(true);
+              content1Manager?.publishSnapshot?.(true);
               botManager?.publishSnapshot?.(burstNow, true);
               return true;
             };
@@ -554,6 +593,8 @@ textChat.initialize();
       });
       coopStatsManager?.finalizeRun?.(details.reason || 'ended');
       coopStatsManager?.endRun?.({ preserveFinal: true });
+      coop2Manager?.endRun?.();
+  content1Manager?.endRun?.();
       coopScoreboard?.setHeld?.(false);
       botManager?.endRun(details.reason || 'ended');
       sharedWorldManager?.endRun();
@@ -561,7 +602,6 @@ textChat.initialize();
       economyManager?.endRun();
       multiplayerRuntime.endRun();
       remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
-      recoveryCertification?.handleRunEnded?.();
             hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
@@ -600,27 +640,20 @@ textChat.initialize();
       setCoopScalingContext({ online: false, playerCount: 1 });
       knownConnectedHumanIds = new Set();
       coopStatsManager?.endRun?.({ preserveFinal: false });
+      coop2Manager?.endRun?.();
+      content1Manager?.endRun?.();
       coopStatsManager?.clearFinalSummary?.();
       coopScoreboard?.hideAll?.();
     }
   });
   lobbyController.initialize();
   bindHostVisibilityContinuity();
-  multiplayerReleaseCandidate = new MultiplayerReleaseCandidate({
-    runtime: multiplayerRuntime,
-    session: multiplayerSession,
-    transport: multiplayerTransport,
-    lobby: lobbyController,
-    releaseGuard: multiplayerReleaseGuard,
-    recoveryCertification,
-    hostMigration: hostMigrationState
-  });
-  multiplayerReleaseCandidate.initialize(performance.now()); multiplayerLaunchObserver = new MultiplayerLaunchObserver({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, hostMigration: hostMigrationState }); multiplayerLaunchObserver.initialize(performance.now()); multiplayerSoakCertification = new MultiplayerSoakCertification({ runtime: multiplayerRuntime, session: multiplayerSession, transport: multiplayerTransport, lobby: lobbyController, releaseGuard: multiplayerReleaseGuard, releaseCandidate: multiplayerReleaseCandidate, recoveryCertification, launchObserver: multiplayerLaunchObserver }); multiplayerSoakCertification.initialize(performance.now()); multiplayerReleaseSeal = new MultiplayerReleaseSeal({ releaseGuard: multiplayerReleaseGuard, recoveryCertification, releaseCandidate: multiplayerReleaseCandidate, launchObserver: multiplayerLaunchObserver, soakCertification: multiplayerSoakCertification }); multiplayerReleaseSeal.initialize(performance.now());
+
 
   initialized = true;
 
   console.info(
-    '[M3.37-M3.38] Multiplayer release seal and deployment acceptance ready.'
+    '[PROG.2] Production multiplayer runtime initialized.'
   );
 
   return getMultiplayerFoundationSnapshot();
@@ -660,6 +693,12 @@ export function beginMultiplayerRun({
   reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
   botManager?.beginRun();
+  coop2Manager?.beginRun();
+  content1Manager?.beginRun({
+    runId: multiplayerSession.run?.runId,
+    mapId: multiplayerSession.run?.mapId || mapId,
+    difficulty: multiplayerSession.run?.difficulty ?? difficulty
+  });
   tacticalAwareness?.beginRun();
   coopStatsManager?.beginRun();
   coopScoreboard?.hideAll?.();
@@ -786,6 +825,7 @@ export function endMultiplayerRun({
     coopStatsManager?.finalizeRun?.(reason);
   }
   coopStatsManager?.endRun?.({ preserveFinal: preserveFinalSummary });
+  coop2Manager?.endRun?.();
   if (!preserveFinalSummary) {
     coopStatsManager?.clearFinalSummary?.();
     coopScoreboard?.hideAll?.();
@@ -798,7 +838,6 @@ export function endMultiplayerRun({
   economyManager?.endRun();
   multiplayerRuntime.endRun();
   remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
-  recoveryCertification?.handleRunEnded?.();
             hostMigrationState.reset();
 
   if (notifyServer) {
@@ -824,6 +863,44 @@ export async function leaveMultiplayerRoom() {
 
 export function openMultiplayerLobby() {
   lobbyController?.openLobby?.();
+}
+
+export function getMultiplayerSocialContext() {
+  const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+  const identity = lobbyController?.ui?.getConnectionIdentity?.() || {};
+  return Object.freeze({
+    connected: multiplayerTransport?.getState?.() === 'connected',
+    online: multiplayerTransport?.getMode?.() === 'online',
+    runActive: multiplayerSession?.run?.active === true,
+    roomId: room?.roomId || '',
+    roomCode: room?.roomCode || '',
+    roomStatus: room?.status || '',
+    hostPlayerId: room?.hostPlayerId || '',
+    localPlayerId: multiplayerRuntime?.localPlayerId || '',
+    isHost: room?.hostPlayerId === multiplayerRuntime?.localPlayerId,
+    players: Array.isArray(room?.players)
+      ? room.players.map((entry) => ({ ...entry }))
+      : [],
+    displayName: identity.displayName || 'Player',
+    serverUrl: identity.serverUrl || ''
+  });
+}
+
+export async function joinMultiplayerSocialRoom({
+  roomCode,
+  displayName = '',
+  serverUrl = ''
+} = {}) {
+  if (!lobbyController) return false;
+  const identity = lobbyController.ui?.getConnectionIdentity?.() || {};
+  const targetRoomCode = String(roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  if (targetRoomCode.length !== 6) return false;
+  lobbyController.openLobby?.();
+  return lobbyController.joinRoom({
+    roomCode: targetRoomCode,
+    displayName: String(displayName || identity.displayName || 'Player').trim().slice(0, 24),
+    serverUrl: String(serverUrl || identity.serverUrl || '').trim()
+  });
 }
 
 export function isOnlineMultiplayerRun() {
@@ -910,6 +987,32 @@ export function getMultiplayerReviveSnapshot() {
   return reviveManager?.getSnapshot?.() || null;
 }
 
+export function getMultiplayerCoopStatsSnapshot() {
+  if (!initialized) return null;
+  return coopStatsManager?.getSnapshot?.() || null;
+}
+
+export function beginContent1Run(details = {}) {
+  if (!initialized) return null;
+  return content1Manager?.beginRun?.(details) || null;
+}
+
+export function endContent1Run() {
+  if (!initialized) return false;
+  content1Manager?.endRun?.();
+  return true;
+}
+
+export function updateContent1Run(dt, details = {}) {
+  if (!initialized) return null;
+  return content1Manager?.update?.(dt, details) || null;
+}
+
+export function getContent1Snapshot() {
+  if (!initialized) return null;
+  return content1Manager?.getSnapshot?.() || null;
+}
+
 export function isSharedMultiplayerWorldAuthority() {
   if (!initialized) return true;
   return sharedWorldManager?.isAuthority?.() !== false;
@@ -937,60 +1040,9 @@ export function sendMultiplayerTextChat(text) {
   if (!initialized) return { accepted: false, reason: 'not-initialized' };
   return textChat?.send?.(text) || { accepted: false, reason: 'not-ready' };
 }
-export function toggleMultiplayerRecoveryDiagnostics(force = null) {
-  if (!initialized) return false;
-  return recoveryDiagnostics?.toggle?.(force) === true;
-}
-
-export function toggleMultiplayerRecoveryCertification(force = null) {
-    if (!initialized) return false;
-    return recoveryCertification?.toggle?.(force) === true;
-}
-
-export function startMultiplayerRecoveryCertification() {
-    if (!initialized) return false;
-    return recoveryCertification?.start?.() === true;
-}
-
-export function abortMultiplayerRecoveryCertification(reason = 'manual-abort') {
-    if (!initialized) return false;
-    return recoveryCertification?.abort?.(reason) === true;
-}
-
-export function getMultiplayerRecoveryCertificationSnapshot() {
-    if (!initialized) return null;
-    return recoveryCertification?.getSnapshot?.() || null;
-}
-
 export function getMultiplayerReleaseGuardSnapshot() {
   if (!initialized) return null;
   return multiplayerReleaseGuard?.getSnapshot?.() || null;
-}
-
-export function getMultiplayerReleaseCandidateSnapshot() {
-  if (!initialized) return null;
-  return multiplayerReleaseCandidate?.getSnapshot?.() || null;
-}
-
-export function getMultiplayerLaunchObserverSnapshot() { if (!initialized) return null; return multiplayerLaunchObserver?.getSnapshot?.() || null; }
-
-export function getMultiplayerSoakCertificationSnapshot() { if (!initialized) return null; return multiplayerSoakCertification?.getSnapshot?.() || null; }
-
-export function getMultiplayerReleaseSealSnapshot() { if (!initialized) return null; return multiplayerReleaseSeal?.getSnapshot?.() || null; }
-
-export function configureMultiplayerFaultSimulation(config = {}) {
-  if (!initialized) return null;
-  return multiplayerRuntime.configureFaultSimulation(config);
-}
-
-export function getMultiplayerFaultSimulationSnapshot() {
-  if (!initialized) return null;
-  return multiplayerRuntime.getFaultSimulationSnapshot();
-}
-
-export function triggerMultiplayerSimulatedDisconnect() {
-  if (!initialized) return false;
-  return multiplayerRuntime.triggerSimulatedDisconnect();
 }
 
 export function setMultiplayerScoreboardHeld(held) {
@@ -1027,8 +1079,8 @@ export function syncMultiplayerFrame(
   });
 
   botManager?.update(dt, now);
-  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now); recoveryDiagnostics?.update(now);
-    recoveryCertification?.update(now); multiplayerReleaseGuard?.update(now); multiplayerReleaseCandidate?.update(now); multiplayerLaunchObserver?.update(now); multiplayerSoakCertification?.update(now); multiplayerReleaseSeal?.update(now); coopStatsManager?.update(now); coopScoreboard?.update(now);
+  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now);
+  multiplayerReleaseGuard?.update(now); coopStatsManager?.update(now); coop2Manager?.update(now); content1Manager?.update(dt, { player, wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1 }); coopScoreboard?.update(now);
   return { state, input };
 }
 
@@ -1044,6 +1096,21 @@ export function isMultiplayerRefreshGameplayBlocked() {
   return isMultiplayerRefreshReadinessBlocking();
 }
 
+export function setMultiplayerCoopRole(roleId) {
+  if (!initialized) return null;
+  return coop2Manager?.setPreferredRole?.(roleId) || null;
+}
+
+export function recordMultiplayerCoopAction(kind, details = {}) {
+  if (!initialized) return false;
+  return coop2Manager?.recordAction?.(kind, details) === true;
+}
+
+export function getMultiplayerCoop2Snapshot() {
+  if (!initialized) return null;
+  return coop2Manager?.getSnapshot?.() || null;
+}
+
 export function getMultiplayerFoundationSnapshot() {
   return {
     initialized,
@@ -1055,14 +1122,10 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null, bot: botManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, coop2: coop2Manager?.getSnapshot?.() || null, bot: botManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot(),
     coopScaling: getCoopScalingSnapshot(),
-    faultSimulation: multiplayerRuntime.getFaultSimulationSnapshot(),
-    recoveryDiagnostics: recoveryDiagnostics?.getSnapshot?.() || null,
-        recoveryCertification: recoveryCertification?.getSnapshot?.() || null,
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,
-    releaseCandidate: multiplayerReleaseCandidate?.getSnapshot?.() || null, launchObserver: multiplayerLaunchObserver?.getSnapshot?.() || null, soakCertification: multiplayerSoakCertification?.getSnapshot?.() || null, releaseSeal: multiplayerReleaseSeal?.getSnapshot?.() || null,
     refreshHydration: getMultiplayerRefreshHydrationSnapshot(),
     refreshReadiness: getMultiplayerRefreshReadinessSnapshot()
   };

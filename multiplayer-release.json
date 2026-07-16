@@ -2,9 +2,9 @@
   "ok": true,
   "service": "khadijas-arena-frontend",
   "protocol": 6,
-  "build": "m5-coop-turn-fallback-r1",
-  "patch": "m5-coop-turn-fallback-r1",
-  "certifiedBaselineSha": "0fb4d8abc89c064e1bac60bd0573793037334999",
+  "build": "final2-consolidated-production-r1",
+  "patch": "final2-r1-full-product-certification",
+  "certifiedBaselineSha": "cfc5a0e3c5e11fac0bc7c6f1f84e372ca8fda91d",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -64,6 +64,13 @@
         "ES256",
         "RS256"
       ]
+    },
+    "progressionIntegrity": {
+      "authorityPatch": "prog2-r1-production-hardening-cloud-integrity",
+      "commitEndpoint": "/profiles/progression/commit",
+      "passkeyCanonicalProgression": true,
+      "idempotentRunReceipts": true,
+      "boundedServerValidation": true
     }
   },
   "playerFacingPolish": {
@@ -111,53 +118,251 @@
       "senderIsNotNotified": true,
       "htmlRendered": false
     },
-    "voiceReadiness": {
-      "liveAudioTransport": true,
-      "secureContextDiagnostics": true,
-      "microphonePermissionCheck": true,
-      "microphoneDeviceSelection": true,
-      "microphoneLevelTest": true,
-      "pushToTalkInput": "KeyT",
-      "muteAllVoicePreference": true,
-      "persistentPreferences": true,
-      "serverRecordsAudio": false
-    },
-    "liveVoice": {
-      "transport": "WebRTC peer-to-peer mesh",
-      "signaling": "targeted authenticated Worker control messages",
-      "pushToTalkInput": "KeyT",
-      "lobby": true,
-      "inGame": true,
-      "muteAllVoice": true,
-      "perPlayerMute": true,
-      "stun": "stun.cloudflare.com:3478",
-      "turnRelay": false,
-      "serverRecordsAudio": false,
-      "reliability": {
-        "boundedAutomaticRepair": true,
-        "iceRestart": true,
-        "peerRebuildFallback": true,
-        "disconnectGraceMs": 4000,
-        "maxAutomaticRepairAttempts": 4,
-        "rollingRepairWindowMs": 60000,
-        "connectionStats": [
-          "rtt",
-          "jitter",
-          "packetLoss"
-        ],
-        "manualRetry": true,
-        "onlineVisibilityRecovery": true,
-        "restrictiveNetworkDiagnosis": true,
-        "turnRelayConfigured": "runtime-worker-secrets"
-      },
-      "turnFallback": {
-        "credentialBroker": "authenticated-room-websocket",
-        "provider": "cloudflare-realtime-turn",
-        "shortLivedCredentials": true,
-        "stunOnlyFallback": true,
-        "refreshBeforeExpiry": true,
-        "longTermSecretsClientVisible": false
-      }
+    "textChatOnly": {
+      "enabled": true,
+      "voiceRemoved": true,
+      "microphonePermissionRequested": false,
+      "transport": "authenticated Worker control messages"
     }
+  },
+  "productionHardening": {
+    "patch": "prog2-r1-production-hardening-cloud-integrity",
+    "voiceRuntimeRemoved": true,
+    "developmentPreviewPagesRemoved": true,
+    "runtimeCertificationHarnessesRemoved": true,
+    "publicDebugControlsRemoved": true,
+    "textChatPreserved": true
+  },
+  "social": {
+    "schema": 1,
+    "patch": "social1-r1-friends-parties-player-safety",
+    "authentication": "passkey-required",
+    "friends": true,
+    "recentPlayers": true,
+    "parties": true,
+    "presence": true,
+    "blocking": true,
+    "reporting": true,
+    "privacyControls": true,
+    "partyLimit": 4,
+    "voiceChat": false,
+    "textChat": true,
+    "endpoints": [
+      "/social/bootstrap",
+      "/social/identity/ticket",
+      "/social/presence",
+      "/social/privacy",
+      "/social/friends/request",
+      "/social/friends/respond",
+      "/social/friends/remove",
+      "/social/blocks/add",
+      "/social/blocks/remove",
+      "/social/reports/create",
+      "/social/party/create",
+      "/social/party/invite",
+      "/social/party/respond",
+      "/social/party/leave",
+      "/social/party/kick",
+      "/social/party/transfer",
+      "/social/party/matchmaking-ticket"
+    ],
+    "matchmakingIntegration": {
+      "partyTicketEndpoint": "/social/party/matchmaking-ticket",
+      "leaderOwned": true,
+      "ticketTtlMs": 120000,
+      "maxGameplayPartyHumans": 2
+    }
+  },
+  "matchmaking": {
+    "schema": 2,
+    "patch": "match3-r1-party-quality-room-discovery",
+    "partyAwareQuickMatch": true,
+    "gameplayHumanLimit": 2,
+    "partyLeaderQueueAuthority": true,
+    "partySplitAllowed": false,
+    "partyRoomReservation": true,
+    "regionalPreferences": [
+      "auto",
+      "regional-only",
+      "global"
+    ],
+    "searchPriorities": [
+      "quality",
+      "balanced",
+      "fast"
+    ],
+    "smartBackfill": true,
+    "joinInProgressPreference": true,
+    "roomFilters": [
+      "arena",
+      "difficulty",
+      "status",
+      "region",
+      "ai",
+      "required-slots"
+    ],
+    "endpoints": [
+      "/matchmaking/enqueue",
+      "/matchmaking/status",
+      "/matchmaking/cancel",
+      "/matchmaking/ack",
+      "/matchmaking/health",
+      "/matchmaking/rooms/list",
+      "/matchmaking/rooms/join"
+    ]
+  },
+  "loadouts": {
+    "schema": 1,
+    "patch": "loadout1-r1-saved-presets-avatar-cosmetic-collections",
+    "savedWeaponPriorities": true,
+    "avatarPresets": true,
+    "cosmeticCollections": true,
+    "maximumLoadoutPresets": 6,
+    "maximumAvatarPresets": 6,
+    "cloudSync": true,
+    "passkeyOwned": true,
+    "guestLocalFallback": true,
+    "matchStartFreeze": true,
+    "reconnectRestoration": true,
+    "balancePolicy": {
+      "startingWeapon": "PISTOL",
+      "grantsCombatPower": false,
+      "weaponSelectionsArePreferences": true
+    },
+    "storageKey": "ka_loadout_profile_v1"
+  },
+  "cooperative": {
+    "schema": 1,
+    "patch": "coop2-r1-roles-shared-contracts-teamplay",
+    "roles": [
+      "VANGUARD",
+      "FIELD_MEDIC",
+      "RECON",
+      "SUPPORT"
+    ],
+    "sharedContracts": true,
+    "contractXp": 180,
+    "hostAuthoritative": true,
+    "lateJoinSnapshot": true,
+    "hostMigrationCheckpoint": true,
+    "teamCohesion": true,
+    "reviveProgressGraceMs": 650,
+    "reviveProtection": true,
+    "fieldMedicReviveSpecialization": true,
+    "reconPingDurationMultiplier": 1.35,
+    "supportCohesionMultiplier": 1.15,
+    "botComplementaryRole": true,
+    "combatBalancePolicy": {
+      "weaponDamageChanged": false,
+      "enemyHealthChanged": false,
+      "movementChanged": false,
+      "permanentPowerCreep": false
+    },
+    "textChat": true,
+    "voiceChat": false,
+    "cohesionTiers": {
+      "linkedAt": 25,
+      "steadyAt": 50,
+      "rallyAt": 75,
+      "maximumPingDurationMultiplier": 1.5,
+      "maximumReviveProgressGraceBonusMs": 300,
+      "maximumReviveProtectionBonusMs": 400
+    },
+    "clientActionAmountBoundedToOne": true
+  },
+  "content": {
+    "patch": "content1-r1-objective-operations-encounter-variety",
+    "schema": 1,
+    "objectiveOperations": true,
+    "arenaCount": 6,
+    "dynamicEncounters": true,
+    "eliteTargets": true,
+    "hostAuthoritative": true,
+    "lateJoinSnapshots": true,
+    "protectedProgressionReceipts": true,
+    "survivalModePreserved": true,
+    "crawlerScalePreserved": true
+  },
+  "live": {
+    "schema": 1,
+    "patch": "live1-r1-seasonal-operations-rotating-events",
+    "manifestEndpoint": "/live/manifest",
+    "serverTimeAuthority": true,
+    "clientClockTrusted": false,
+    "rollingSeasonLengthDays": 84,
+    "dailyFeaturedArena": true,
+    "dailyFeaturedEncounter": true,
+    "weeklyFeaturedOperation": true,
+    "longFormContracts": true,
+    "cosmeticRewardTrack": true,
+    "automaticProtectedClaims": true,
+    "idempotentRunReceipts": true,
+    "offlineReconciliation": true,
+    "baseModesPreserved": true,
+    "payToWin": false
+  },
+  "operations": {
+    "schema": 1,
+    "patch": "ops1-r1-production-operations-privacy-telemetry",
+    "publicEndpoints": [
+      "/ops/health",
+      "/ops/privacy",
+      "/ops/events"
+    ],
+    "protectedEndpoints": [
+      "/ops/admin/summary",
+      "/ops/admin/reports",
+      "/ops/admin/reports/action",
+      "/ops/admin/audit"
+    ],
+    "privacyAwareCrashReporting": true,
+    "pseudonymousOperationalTelemetry": true,
+    "routeHealthMetrics": true,
+    "moderationReportQueue": true,
+    "abuseRateEscalation": true,
+    "liveServiceMonitoring": true,
+    "adminRoutesProtected": true,
+    "rawIpStored": false,
+    "rawEmailStored": false,
+    "preciseLocationStored": false,
+    "passkeyDetailsStored": false,
+    "chatTranscriptCollectedByDefault": false,
+    "eventRetentionDays": 14,
+    "reportRetentionDays": 180,
+    "telemetryFailureBlocksGameplay": false,
+    "voiceChat": false,
+    "textChat": true
+  },
+  "releaseLabel": "FINAL.2 Consolidated Production Release",
+  "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
+  "fullProductCertification": {
+    "schema": 1,
+    "patch": "final2-r1-full-product-certification",
+    "status": "CERTIFIED",
+    "protocol": 6,
+    "sourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
+    "deterministicTests": 140,
+    "javascriptSyntaxChecks": 339,
+    "productionRuntimeFiles": 236,
+    "mapHeroChecks": 6,
+    "systems": [
+      "PROG.1",
+      "PROG.2",
+      "SOCIAL.1",
+      "MATCH.3",
+      "LOADOUT.1",
+      "COOP.2",
+      "CONTENT.1",
+      "LIVE.1",
+      "OPS.1"
+    ],
+    "voiceRuntimeRemoved": true,
+    "developmentArtifactsExcluded": true,
+    "workerSourceExcludedFromPages": true,
+    "administratorToolsExcludedFromPages": true,
+    "secretsExcludedFromPages": true,
+    "crawlerLowProfilePreserved": true,
+    "baseModesPreserved": true,
+    "rollbackReady": true
   }
 }

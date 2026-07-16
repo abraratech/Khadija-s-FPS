@@ -1,82 +1,71 @@
-KHADIJA'S ARENA MULTIPLAYER + CLOUD PROFILE WORKER
+KHADIJA'S ARENA — FINAL.2 MULTIPLAYER + PLATFORM WORKER
 
-The Worker source lives inside the main repository:
+Repository
+----------
+Worker source:
 C:\wamp64\www\multiplayer-server
 
-It is not a nested Git repository or submodule. Commit only from:
-C:\wamp64\www
+The Worker is part of the main Khadija's Arena Git repository. It is not a
+nested repository or submodule. Commit from C:\wamp64\www only.
 
-DEPLOY WORKER
-1. Open Command Prompt.
-2. Run: cd /d C:\wamp64\www\multiplayer-server
-3. Run: npm ci
-4. Run: npm run check
-5. Run: npx wrangler login   (only when login is required)
-6. Run: npm run deploy
-
-The Cloudflare Pages frontend still deploys from the main GitHub repository.
-The Worker must be deployed separately whenever multiplayer-server changes.
-
-CURRENT RELEASE
+Certified release
+-----------------
 Protocol: 6
-Build: m4-final-player-polish-r1
-Patch: m4-final-player-polish-r1
+Build: final2-consolidated-production-r1
+Patch: final2-r1-full-product-certification
+Source seal: dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e
+Status: CERTIFIED
 
-CLOUD PROFILE SECURITY
-CloudProfileHub stores guest profiles, linked-device records, one-time recovery
-codes, profile revision history, and security activity. Recovery codes and device
-tokens are stored only as SHA-256 hashes. Never copy device tokens into source
-files, screenshots, support messages, or Git commits.
+Systems certified together
+--------------------------
+PROG.1, PROG.2, SOCIAL.1, MATCH.3, LOADOUT.1, COOP.2, CONTENT.1, LIVE.1,
+and OPS.1.
 
-SECURITY
-ALLOWED_ORIGINS is currently "*". Before public launch, set it to the exact
-Cloudflare Pages origin in wrangler.jsonc.
+Worker deployment
+-----------------
+1. cd /d C:\wamp64\www\multiplayer-server
+2. npm ci
+3. npm run check
+4. npx wrangler login     (only when required)
+5. npx wrangler deploy
 
-HEALTH CHECK
-curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/health
+OPS.1 administrator secret
+--------------------------
+OPS_ADMIN_TOKEN must remain a Cloudflare Worker secret. The local copy is
+stored outside the web root at:
+C:\wamp64\MInstall\OPS1_ADMIN_TOKEN.txt
 
-Expected fields:
-{"ok":true,"service":"khadijas-arena-multiplayer","protocol":6,"build":"m4-final-player-polish-r1","patch":"m4-final-player-polish-r1"}
+Never place the token in source, wrangler.jsonc, screenshots, logs, release
+packages, or the Pages build.
 
-RELEASE CHECK
-curl -s https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/release
+Public verification
+-------------------
+/release
+/health
+/ops/health
+/ops/privacy
+/live/manifest
 
 The Worker and frontend multiplayer-release.json must report matching protocol,
-build, patch, certified baseline, leaderboard capability, and cloud-profile patch.
+build, patch, certified baseline, and certified source seal.
 
-M4.51-M4.54 CLOUD RELIABILITY
-Persistent client retry queue, multi-tab lease, staged profile chunks, checksum verification, deletion tombstones, and history-integrity checks are active.
-Expected build: m4-cloud-sync-reliability-r1; protocol remains 6.
+Production frontend
+-------------------
+Cloudflare Pages deploys from the main repository or from the certified
+FINAL2_PRODUCTION_BUILD output. Tests, Worker source, scripts, source maps,
+preview pages, voice runtime, administrator tools, and secrets must remain
+excluded.
 
+Voice status
+------------
+Voice runtime, microphone access, signaling, and TURN fallback are removed.
+Text chat and authored quick messages remain supported.
 
-M4.55-M4.58 PASSKEY ACCOUNT UPGRADE
-Existing cloud guest accounts can be upgraded in place with WebAuthn passkeys.
-The Worker stores only public passkey material, counters, labels, and activity;
-private keys remain inside the player’s authenticator. Passkey sign-in issues a
-new per-device cloud token and preserves the same profile, devices, history,
-recovery code, and leaderboard identity.
-
-Passkey registration and sign-in must be initiated from the HTTPS Pages origin.
-The Worker derives and verifies the WebAuthn RP ID from the trusted Origin header.
-Expected build: m4-final-player-polish-r1; protocol remains 6.
-
-
-M4.59-M4.62 FINAL PLAYER-FACING POLISH
-Release identity: m4-final-player-polish-r1
-Certified frontend baseline: d4024500eaf52ef1660e09a96a3bbec792a1ec48
-Passkey registration and verification support ES256 and RS256.
-Local/online leaderboard feedback, Career & Achievements, and simplified Cloud Save are included.
-Protocol remains 6.
-
-M5.25-M5.28 SECURE TURN FALLBACK
-Release identity: m5-coop-turn-fallback-r1
-Certified frontend baseline: 0fb4d8abc89c064e1bac60bd0573793037334999
-Protocol remains 6.
-
-Cloudflare Realtime TURN long-term credentials must be stored only as Worker secrets:
-  npx wrangler secret put TURN_KEY_ID
-  npx wrangler secret put TURN_KEY_API_TOKEN
-
-Never place either value in source, wrangler.jsonc, screenshots, logs, or commits.
-Without these secrets, live voice continues in direct P2P / STUN-only mode.
-After setting or rotating either secret, redeploy the Worker.
+Privacy and operations
+----------------------
+- No raw IP, email, precise location, passkey detail, microphone data, or
+  default private-chat transcript storage.
+- Telemetry failure never blocks gameplay.
+- Operational events expire after 14 days.
+- Reports expire after 180 days.
+- Moderation audit records expire after 365 days.

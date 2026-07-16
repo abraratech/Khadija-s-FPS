@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {
   MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+  MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
   MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
   MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
   MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL,
@@ -16,12 +17,13 @@ import {
   normalizeMultiplayerReleaseEndpoint
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'm5-coop-turn-fallback-r1');
+assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'final2-r1-full-product-certification');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
 assert.equal(normalizeMultiplayerReleaseEndpoint('wss://example.workers.dev/ws?room=ABCDEF'), 'https://example.workers.dev/release');
 assert.equal(normalizeMultiplayerReleaseEndpoint('example.workers.dev'), 'https://example.workers.dev/release');
 const frontend = createMultiplayerFrontendReleaseManifest();
 assert.equal(frontend.build, MULTIPLAYER_PRODUCTION_RELEASE_BUILD);
+assert.equal(frontend.certifiedSourceSeal, MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL);
 assert.equal(frontend.leaderboards.patch, MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH);
 assert.equal(frontend.cloudProfiles.patch, MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH);
 assert.equal(frontend.cloudProfiles.auth.patch, MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH);
@@ -36,6 +38,7 @@ const passing = evaluateMultiplayerProductionRelease({
     build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
     patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
@@ -53,6 +56,7 @@ const missingLeaderboard = evaluateMultiplayerProductionRelease({
     build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
     patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     deployedAt: '2026-07-10T00:00:00.000Z'
   }
@@ -68,6 +72,7 @@ const missingCloudProfiles = evaluateMultiplayerProductionRelease({
     build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
     patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -84,6 +89,7 @@ const missingPasskeyAuth = evaluateMultiplayerProductionRelease({
     build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
     patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH },

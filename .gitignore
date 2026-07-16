@@ -1,12 +1,8 @@
-# Local development and packaging artifacts
-*.zip
+# Khadija's Arena repository hygiene
+node_modules/
+.wrangler/
+__pycache__/
+*.py[cod]
 *.log
 .DS_Store
 Thumbs.db
-node_modules/
-.wrangler/
-.dev.vars
-.env
-.env.*
-!/.env.example
-game/

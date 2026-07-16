@@ -27,7 +27,10 @@ const PROFILE_STORAGE_KEYS = new Set([
   'ka_cloud_profile_sync_lease_v1',
   'ka_cloud_profile_clock_v1',
   'ka_cloud_profile_tombstone_v1',
-  'ka_cloud_profile_last_success_v1'
+  'ka_cloud_profile_last_success_v1',
+  'ka_cloud_progression_receipts_v1',
+  'ka_loadout_backup_v1',
+  'ka_loadout_corrupt_v1'
 ]);
 
 const PROGRESSION_KEY = 'ka_progression_v1';
@@ -37,6 +40,9 @@ const HIGH_WAVE_KEY = 'fps_hi_wave';
 const ONLINE_PLAYER_KEY = 'ka_online_leaderboard_player_v1';
 const ONLINE_NAME_KEY = 'ka_online_leaderboard_name_v1';
 const ONLINE_PENDING_KEY = 'ka_online_leaderboard_pending_v1';
+const LOADOUT_KEY = 'ka_loadout_profile_v1';
+const LOADOUT_MAX_PRESETS = 6;
+const LOADOUT_MAX_AVATAR_PRESETS = 6;
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -138,13 +144,32 @@ function normalizeUnlocked(value) {
   }, {});
 }
 
+function normalizeProgressionValue(value, depth = 0) {
+  if (depth > 6) return null;
+  if (typeof value === 'number') return Math.max(0, finite(value));
+  if (typeof value === 'string') return cleanString(value, '', 400);
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    return value.slice(0, 96)
+      .map((entry) => normalizeProgressionValue(entry, depth + 1))
+      .filter((entry) => entry !== null && entry !== undefined);
+  }
+  if (isPlainObject(value)) {
+    return Object.keys(value).sort().slice(0, 192).reduce((output, key) => {
+      const cleanKey = cleanString(key, '', 96);
+      if (!cleanKey) return output;
+      const normalized = normalizeProgressionValue(value[key], depth + 1);
+      if (normalized !== null && normalized !== undefined) output[cleanKey] = normalized;
+      return output;
+    }, {});
+  }
+  return null;
+}
+
 function normalizeProgression(value) {
   const source = isPlainObject(value) ? value : {};
-  const output = {};
-  for (const [key, entry] of Object.entries(source)) {
-    if (typeof entry === 'number') output[key] = Math.max(0, finite(entry));
-    else if (typeof entry === 'string' || typeof entry === 'boolean') output[key] = entry;
-  }
+  const normalized = normalizeProgressionValue(source, 0);
+  const output = isPlainObject(normalized) ? normalized : {};
   output.version = integer(source.version, 1, 1, 999);
   return output;
 }
@@ -309,18 +334,56 @@ function identityProfile(left, right) {
   return String(left?.profileId || '').localeCompare(String(right?.profileId || '')) <= 0 ? left : right;
 }
 
+function mergeProgressionValue(left, right, path = '') {
+  if (path === 'equipped' && (isPlainObject(left) || isPlainObject(right))) {
+    const a = isPlainObject(left) ? left : {};
+    const b = isPlainObject(right) ? right : {};
+    const aUpdated = integer(a.updatedAt, 0);
+    const bUpdated = integer(b.updatedAt, 0);
+    if (aUpdated !== bUpdated) return deepClone(aUpdated > bUpdated ? a : b);
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return mergeArrays(
+      Array.isArray(left) ? left : [],
+      Array.isArray(right) ? right : []
+    );
+  }
+
+  if (isPlainObject(left) || isPlainObject(right)) {
+    const a = isPlainObject(left) ? left : {};
+    const b = isPlainObject(right) ? right : {};
+    const output = {};
+    Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort().forEach((key) => {
+      output[key] = mergeProgressionValue(
+        a[key],
+        b[key],
+        path ? `${path}.${key}` : key
+      );
+    });
+    return output;
+  }
+
+  if (typeof left === 'boolean' || typeof right === 'boolean') {
+    return left === true || right === true;
+  }
+
+  if (typeof left === 'number' || typeof right === 'number') {
+    const a = finite(left, 0);
+    const b = finite(right, 0);
+    if (path.startsWith('unlocks.') && a > 0 && b > 0) return Math.min(a, b);
+    return Math.max(a, b);
+  }
+
+  if (left === undefined || left === null) return deepClone(right);
+  if (right === undefined || right === null) return deepClone(left);
+  return deepClone(right);
+}
+
 function mergeProgression(left, right) {
   const a = normalizeProgression(left);
   const b = normalizeProgression(right);
-  const output = {};
-  const keys = Array.from(new Set([...Object.keys(a), ...Object.keys(b)])).sort();
-  keys.forEach((key) => {
-    if (typeof a[key] === 'number' || typeof b[key] === 'number') {
-      output[key] = Math.max(finite(a[key], 0), finite(b[key], 0));
-    } else {
-      output[key] = b[key] ?? a[key];
-    }
-  });
+  const output = mergeProgressionValue(a, b, '');
   output.version = Math.max(integer(a.version, 1), integer(b.version, 1));
   return output;
 }
@@ -386,6 +449,121 @@ function writeStorageJson(storage, key, value) {
   storage[key] = JSON.stringify(value);
 }
 
+
+function normalizeLoadoutCollection(value, maximum, prefix) {
+  if (!Array.isArray(value)) return [];
+  const byId = new Map();
+  value.slice(0, maximum * 2).forEach((entry, index) => {
+    if (!isPlainObject(entry)) return;
+    const id = cleanString(entry.id || `${prefix}-${index + 1}`, `${prefix}-${index + 1}`, 72)
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-');
+    const record = {
+      ...deepClone(entry),
+      id,
+      name: cleanString(entry.name, `${prefix} ${index + 1}`, 28),
+      createdAt: integer(entry.createdAt, 0),
+      updatedAt: integer(entry.updatedAt, 0)
+    };
+    const previous = byId.get(id);
+    if (
+      !previous
+      || record.updatedAt > previous.updatedAt
+      || (
+        record.updatedAt === previous.updatedAt
+        && stableStringify(record) > stableStringify(previous)
+      )
+    ) {
+      byId.set(id, record);
+    }
+  });
+  return Array.from(byId.values())
+    .sort((left, right) => (
+      integer(right.updatedAt, 0) - integer(left.updatedAt, 0)
+      || String(left.id).localeCompare(String(right.id))
+    ))
+    .slice(0, maximum);
+}
+
+function normalizeLoadoutStorage(value) {
+  const source = isPlainObject(value) ? value : {};
+  const avatarPresets = normalizeLoadoutCollection(
+    source.avatarPresets,
+    LOADOUT_MAX_AVATAR_PRESETS,
+    'avatar'
+  );
+  const avatarIds = new Set(avatarPresets.map((entry) => entry.id));
+  const presets = normalizeLoadoutCollection(
+    source.presets,
+    LOADOUT_MAX_PRESETS,
+    'loadout'
+  ).map((entry) => ({
+    ...entry,
+    avatarPresetId: avatarIds.has(entry.avatarPresetId)
+      ? entry.avatarPresetId
+      : avatarPresets[0]?.id || ''
+  }));
+  const presetIds = new Set(presets.map((entry) => entry.id));
+  return {
+    version: Math.max(1, integer(source.version, 1, 1, 999)),
+    patch: cleanString(
+      source.patch,
+      'loadout1-r1-saved-presets-avatar-cosmetic-collections',
+      100
+    ),
+    activeLoadoutId: presetIds.has(source.activeLoadoutId)
+      ? source.activeLoadoutId
+      : presets[0]?.id || '',
+    activeAvatarPresetId: avatarIds.has(source.activeAvatarPresetId)
+      ? source.activeAvatarPresetId
+      : avatarPresets[0]?.id || '',
+    presets,
+    avatarPresets,
+    createdAt: integer(source.createdAt, 0),
+    updatedAt: integer(source.updatedAt, 0)
+  };
+}
+
+function mergeLoadoutStorage(leftValue, rightValue) {
+  const left = normalizeLoadoutStorage(leftValue);
+  const right = normalizeLoadoutStorage(rightValue);
+  const preferred = left.updatedAt >= right.updatedAt ? left : right;
+  const avatarPresets = normalizeLoadoutCollection(
+    [...left.avatarPresets, ...right.avatarPresets],
+    LOADOUT_MAX_AVATAR_PRESETS,
+    'avatar'
+  );
+  const avatarIds = new Set(avatarPresets.map((entry) => entry.id));
+  const presets = normalizeLoadoutCollection(
+    [...left.presets, ...right.presets],
+    LOADOUT_MAX_PRESETS,
+    'loadout'
+  ).map((entry) => ({
+    ...entry,
+    avatarPresetId: avatarIds.has(entry.avatarPresetId)
+      ? entry.avatarPresetId
+      : avatarPresets[0]?.id || ''
+  }));
+  const presetIds = new Set(presets.map((entry) => entry.id));
+  return {
+    version: Math.max(left.version, right.version),
+    patch: 'loadout1-r1-saved-presets-avatar-cosmetic-collections',
+    activeLoadoutId: presetIds.has(preferred.activeLoadoutId)
+      ? preferred.activeLoadoutId
+      : presets[0]?.id || '',
+    activeAvatarPresetId: avatarIds.has(preferred.activeAvatarPresetId)
+      ? preferred.activeAvatarPresetId
+      : avatarPresets[0]?.id || '',
+    presets,
+    avatarPresets,
+    createdAt: Math.min(
+      integer(left.createdAt, Date.now(), 1),
+      integer(right.createdAt, Date.now(), 1)
+    ),
+    updatedAt: Math.max(left.updatedAt, right.updatedAt)
+  };
+}
+
 function mergeSpecialStorage(baseStorage, left, right, preferred, identitySource) {
   const output = { ...baseStorage };
   const leftStorage = left.legacyStorage;
@@ -419,6 +597,11 @@ function mergeSpecialStorage(baseStorage, left, right, preferred, identitySource
     );
     output[key] = typeof merged === 'string' ? merged : JSON.stringify(merged);
   });
+
+  writeStorageJson(output, LOADOUT_KEY, mergeLoadoutStorage(
+    parseStorageJson(leftStorage, LOADOUT_KEY, {}),
+    parseStorageJson(rightStorage, LOADOUT_KEY, {})
+  ));
 
   const identityStorage = identitySource.legacyStorage || {};
   const preferredStorage = preferred.legacyStorage || {};
@@ -509,6 +692,7 @@ export function getCloudProfileMergePolicy() {
     localLeaderboards: 'deduplicate by run identity and merge records',
     onlinePending: 'union by run identity',
     settings: 'newer profile wins per stored setting key',
+    loadouts: 'union by preset id; newest preset update and active selection win',
     revision: 'max revision plus one'
   });
 }

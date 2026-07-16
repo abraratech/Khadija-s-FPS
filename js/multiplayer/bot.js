@@ -72,7 +72,8 @@ export class MultiplayerBotManager {
     getWorldTargets = () => [],
     getWave = () => 1,
     markRunBotAssisted = () => null,
-    showToast = () => {}
+    showToast = () => {},
+    onTeamAction = () => {}
   } = {}) {
     this.runtime = runtime;
     this.session = session;
@@ -86,6 +87,7 @@ export class MultiplayerBotManager {
     this.getWave = getWave;
     this.markRunBotAssisted = markRunBotAssisted;
     this.showToast = showToast;
+    this.onTeamAction = onTeamAction;
 
     this.requested = false;
     this.active = false;
@@ -852,7 +854,16 @@ export class MultiplayerBotManager {
         source: 'BOT',
         headshot: false
       });
-      if (result?.killed) this.state.kills += 1;
+      if (result?.killed) {
+        this.state.kills += 1;
+        this.onTeamAction?.('KILL', {
+          actorId: BOT1_PLAYER_ID,
+          displayName: BOT1_DISPLAY_NAME,
+          isBot: true,
+          eventId: `${this.state.runId || 'run'}:${BOT1_PLAYER_ID}:kill:${this.state.kills}`,
+          at: now
+        });
+      }
     }
 
     this.burstShots += 1;

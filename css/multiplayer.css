@@ -987,3 +987,148 @@
   }
   .ka-room-browser-join { width: 100%; }
 }
+
+
+/* MATCH.3 — advanced search preferences and room discovery filters. */
+.ka-matchmaking-preferences {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ka-room-browser-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.7rem 0;
+}
+
+.ka-room-browser-filters label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.ka-room-browser-filters label > span {
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.74;
+}
+
+.ka-room-browser-filters select {
+  width: 100%;
+  min-width: 0;
+}
+
+.ka-room-filter-toggle {
+  grid-column: 1 / -1;
+  grid-template-columns: auto 1fr !important;
+  align-items: center;
+  justify-content: start;
+}
+
+.ka-room-filter-toggle input {
+  margin: 0;
+}
+
+.ka-room-browser-card [data-quality="excellent"] {
+  color: #b9ffd4;
+}
+
+@media (max-width: 700px) {
+  .ka-matchmaking-preferences,
+  .ka-room-browser-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .ka-room-filter-toggle {
+    grid-column: auto;
+  }
+}
+
+
+/* COOP.2 R1 — role selector and shared-contract HUD */
+#ka-coop2-hud {
+  position: fixed;
+  top: max(72px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+  z-index: 42;
+  width: min(310px, calc(100vw - 36px));
+  padding: 12px 14px;
+  border: 1px solid rgba(71, 200, 255, 0.45);
+  border-left: 4px solid #3df29b;
+  background:
+    linear-gradient(135deg, rgba(3, 12, 20, 0.94), rgba(5, 25, 31, 0.88));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
+  color: #eefaff;
+  font-family: system-ui, sans-serif;
+  pointer-events: none;
+  backdrop-filter: blur(7px);
+}
+#ka-coop2-hud[hidden] { display: none !important; }
+.ka-coop2-hud-head,
+.ka-coop2-contract {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ka-coop2-hud-head span,
+.ka-coop2-contract span,
+.ka-coop2-cohesion {
+  color: #8ca8b4;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.1px;
+}
+.ka-coop2-hud-head strong {
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+.ka-coop2-contract {
+  margin-top: 10px;
+}
+.ka-coop2-contract strong {
+  color: #fff;
+  font-size: 11px;
+}
+.ka-coop2-meter {
+  height: 5px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.ka-coop2-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #47c8ff, #3df29b);
+  box-shadow: 0 0 12px rgba(61, 242, 155, 0.55);
+  transition: width 180ms ease;
+}
+.ka-coop2-cohesion {
+  margin-top: 6px;
+  color: #b6e9d4;
+}
+.ka-coop2-team {
+  margin-top: 8px;
+  color: #c8d8df;
+  font-size: 9px;
+  line-height: 1.35;
+}
+#ka-coop2-role {
+  border-color: rgba(61, 242, 155, 0.45);
+}
+
+@media (max-width: 720px) {
+  #ka-coop2-hud {
+    top: auto;
+    right: 10px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    width: min(280px, calc(100vw - 20px));
+    padding: 9px 11px;
+  }
+  .ka-coop2-team {
+    display: none;
+  }
+}

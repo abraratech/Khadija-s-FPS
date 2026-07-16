@@ -39,8 +39,8 @@ const peer = normalizeMatchmakingRequest({
   tabId: 'tab-b'
 }, { region: 'AS', now: 1200 });
 
-assert(MATCHMAKING_SCHEMA === 1, 'schema should be 1');
-assert(MATCHMAKING_PATCH === 'match2-public-room-admission-r1-1', 'patch mismatch');
+assert(MATCHMAKING_SCHEMA === 2, 'schema should be 2');
+assert(MATCHMAKING_PATCH === 'match3-r1-party-quality-room-discovery', 'patch mismatch');
 assert(matchmakingCompatibilityKey(base) === matchmakingCompatibilityKey(peer), 'compatible key mismatch');
 assert(matchmakingTicketsCompatible(base, peer), 'same build/protocol/mode/map should be compatible');
 
@@ -54,15 +54,15 @@ assert(regional.scope === 'regional', 'same region should be regional');
 
 const remotePeer = { ...peer, playerId: 'player-c', region: 'EU', queuedAt: 2000 };
 const beforeFallback = chooseMatchmakingCandidate(
-  [{ ...base, status: 'queued', queuedAt: 1000 }],
-  { ...remotePeer, status: 'queued' },
+  [{ ...base, status: 'queued', queuedAt: 1000, fallbackAt: 1000 + MATCHMAKING_GLOBAL_FALLBACK_MS }],
+  { ...remotePeer, status: 'queued', fallbackAt: 2000 + MATCHMAKING_GLOBAL_FALLBACK_MS },
   { now: 1000 + MATCHMAKING_GLOBAL_FALLBACK_MS - 1 }
 );
 assert(beforeFallback === null, 'cross-region match must wait for fallback');
 
 const afterFallback = chooseMatchmakingCandidate(
-  [{ ...base, status: 'queued', queuedAt: 1000 }],
-  { ...remotePeer, status: 'queued' },
+  [{ ...base, status: 'queued', queuedAt: 1000, fallbackAt: 1000 + MATCHMAKING_GLOBAL_FALLBACK_MS }],
+  { ...remotePeer, status: 'queued', fallbackAt: 2000 + MATCHMAKING_GLOBAL_FALLBACK_MS },
   { now: 1000 + MATCHMAKING_GLOBAL_FALLBACK_MS }
 );
 assert(afterFallback?.scope === 'global', 'cross-region fallback should match');

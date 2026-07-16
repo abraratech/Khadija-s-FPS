@@ -9,7 +9,6 @@ import {
 import { MultiplayerCommandStream } from './command_stream.js';
 import { RemoteSnapshotBuffer } from './snapshot_buffer.js'; import { NetworkQualityTracker } from './network_quality.js';
 import { MultiplayerReconciliationTracker } from './reconciliation.js';
-import { MultiplayerFaultSimulator } from './fault_simulator.js';
 import { MultiplayerRoomState } from './room.js';
 import { TRANSPORT_MODES, TRANSPORT_STATES } from './transport.js';
 
@@ -29,6 +28,8 @@ export const MULTIPLAYER_RUNTIME_EVENTS = Object.freeze({
   REMOTE_REVIVE_STATE_RECEIVED: 'multiplayer:remote-revive-state-received',
   REMOTE_TACTICAL_PING_RECEIVED: 'multiplayer:remote-tactical-ping-received',
   REMOTE_RUN_STATS_RECEIVED: 'multiplayer:remote-run-stats-received',
+  REMOTE_COOP2_STATE_RECEIVED: 'multiplayer:remote-coop2-state-received',
+  REMOTE_CONTENT1_STATE_RECEIVED: 'multiplayer:remote-content1-state-received',
   AUTHORITY_EPOCH_CHANGED: 'multiplayer:authority-epoch-changed', NETWORK_QUALITY_CHANGED: 'multiplayer:network-quality-changed',
   REMOTE_STATE_RESYNC_REQUEST_RECEIVED: 'multiplayer:remote-state-resync-request-received'
 });
@@ -59,7 +60,6 @@ export class MultiplayerRuntime {
       interpolationDelayMs: snapshotInterpolationDelayMs
     }); this.networkQuality = new NetworkQualityTracker();
     this.reconciliation = new MultiplayerReconciliationTracker();
-    this.faultSimulator = new MultiplayerFaultSimulator();
     this.lastNetworkQualityLevel = 'WAITING';
     this.room = new MultiplayerRoomState({ eventBus });
     this.initialized = false;
@@ -77,6 +77,8 @@ export class MultiplayerRuntime {
     this.reviveStateSequence = 0;
     this.tacticalPingSequence = 0;
     this.runStatsSequence = 0;
+    this.coop2StateSequence = 0;
+    this.content1StateSequence = 0;
     this.resyncSequence = 0;
     this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.authorityEpoch = 0;
     this.runRecovery = {
@@ -115,6 +117,10 @@ export class MultiplayerRuntime {
       tacticalPingsReceived: 0,
       runStatsSent: 0,
       runStatsReceived: 0,
+      coop2StatesSent: 0,
+      coop2StatesReceived: 0,
+      content1StatesSent: 0,
+      content1StatesReceived: 0,
       staleAuthorityEnvelopesRejected: 0,
       duplicateEnvelopesRejected: 0,
       staleOrderedEnvelopesRejected: 0,
@@ -210,6 +216,8 @@ export class MultiplayerRuntime {
     this.reviveStateSequence = 0;
     this.tacticalPingSequence = 0;
     this.runStatsSequence = 0;
+    this.coop2StateSequence = 0;
+    this.content1StateSequence = 0;
     this.resyncSequence = 0; this.heartbeatSequence = 0; this.lastHeartbeatSentAt = 0; this.networkQuality.reset(Date.now());
     this.authorityEpoch = Math.max(
       0,
@@ -223,7 +231,6 @@ export class MultiplayerRuntime {
       now: Date.now(),
       authorityEpoch: this.authorityEpoch
     });
-    this.faultSimulator.beginRun(run?.runId || null);
     this.remoteSnapshots.clear();
     this.lastRemoteCommands.clear();
     this.remoteActions.length = 0;
@@ -244,7 +251,6 @@ export class MultiplayerRuntime {
   }
 
   endRun() { this.resetRunRecovery('run-ended'); this.networkQuality.reset(Date.now());
-    this.faultSimulator.endRun();
     this.reconciliation.endRun(Date.now());
     this.commandStream.endRun();
     this.room.endRun();
@@ -537,6 +543,36 @@ export class MultiplayerRuntime {
     return envelope;
   }
 
+  sendCoop2State(payload) {
+    if (!this.initialized || !this.session?.run?.active || !payload) {
+      return null;
+    }
+
+    this.coop2StateSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.COOP2_STATE,
+      payload,
+      this.coop2StateSequence
+    );
+    this.metrics.coop2StatesSent += 1;
+    return envelope;
+  }
+
+  sendContent1State(payload) {
+    if (!this.initialized || !this.session?.run?.active || !payload) {
+      return null;
+    }
+
+    this.content1StateSequence += 1;
+    const envelope = this.sendEnvelope(
+      MULTIPLAYER_MESSAGE_TYPES.CONTENT1_STATE,
+      payload,
+      this.content1StateSequence
+    );
+    this.metrics.content1StatesSent += 1;
+    return envelope;
+  }
+
 
   updateNetworkQuality(now = Date.now()) {
     if (!this.initialized || !this.session?.run?.active) {
@@ -790,32 +826,12 @@ sendRoomState() {
       sentAt: nowMs()
     });
 
-    this.faultSimulator.dispatchOutbound(
-      type,
-      envelope,
-      (outboundType, outboundEnvelope) => {
-        const sent = this.transport?.send(outboundType, outboundEnvelope) === true;
-        if (sent) this.metrics.envelopesSent += 1;
-        return sent;
-      }
-    );
-
+    const sent = this.transport?.send(type, envelope) === true;
+    if (sent) this.metrics.envelopesSent += 1;
     return envelope;
   }
 
-  handleTransportMessage(message, { bypassFaultSimulation = false } = {}) {
-    if (
-      !bypassFaultSimulation
-      && this.faultSimulator.interceptInbound(
-        message,
-        () => this.handleTransportMessage(message, {
-          bypassFaultSimulation: true
-        })
-      )
-    ) {
-      return;
-    }
-
+  handleTransportMessage(message) {
     const envelope = message?.payload;
     if (!envelope) return;
 
@@ -986,6 +1002,24 @@ sendRoomState() {
       return { accepted: true };
     }
 
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.COOP2_STATE) {
+      this.metrics.coop2StatesReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_COOP2_STATE_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
+    if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.CONTENT1_STATE) {
+      this.metrics.content1StatesReceived += 1;
+      this.eventBus?.emit(
+        MULTIPLAYER_RUNTIME_EVENTS.REMOTE_CONTENT1_STATE_RECEIVED,
+        { envelope }
+      );
+      return { accepted: true };
+    }
+
     if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.HEARTBEAT) { return this.handleHeartbeatEnvelope(envelope); } if (envelope.type === MULTIPLAYER_MESSAGE_TYPES.INPUT_COMMAND) {
       this.lastRemoteCommands.set(envelope.playerId, envelope.payload);
       this.eventBus?.emit(MULTIPLAYER_RUNTIME_EVENTS.REMOTE_COMMAND_RECEIVED, {
@@ -1028,27 +1062,6 @@ sendRoomState() {
     return { accepted: true };
   }
 
-
-  configureFaultSimulation(config = {}) {
-    return this.faultSimulator.configure(config);
-  }
-
-  applyFaultSimulationPreset(name = 'clean') {
-    return this.faultSimulator.applyPreset(name);
-  }
-
-  getFaultSimulationSnapshot() {
-    return this.faultSimulator.getSnapshot();
-  }
-
-  clearFaultSimulationMetrics() {
-    this.faultSimulator.clearMetrics();
-    return this.faultSimulator.getSnapshot();
-  }
-
-  triggerSimulatedDisconnect() {
-    return this.faultSimulator.triggerDisconnect(this.transport);
-  }
 
   setAuthorityEpoch(authorityEpoch, {
     hostPlayerId = null,
@@ -1112,7 +1125,6 @@ sendRoomState() {
       authorityEpoch: this.authorityEpoch,
       reconciliation: this.getReconciliationSnapshot(Date.now()),
       networkQuality: this.getNetworkQualitySnapshot(Date.now()),
-      faultSimulation: this.getFaultSimulationSnapshot(),
       metrics: { ...this.metrics }
     };
   }
@@ -1120,7 +1132,6 @@ sendRoomState() {
   destroy() {
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
     this.unsubscribe.length = 0;
-    this.faultSimulator.flush('runtime-destroy');
     this.remoteSnapshots.clear();
     this.initialized = false;
   }

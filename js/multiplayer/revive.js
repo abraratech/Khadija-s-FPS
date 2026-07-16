@@ -96,6 +96,7 @@ export class MultiplayerReviveManager {
     this.lastLifeTransitionAt = -Infinity;
         this.activeHealthInitialized = false;
     this.currentReviveTarget = null;
+    this.coop2Roles = new Map();
     this.hudRoot = null;
     this.hudStatus = null;
     this.hudTeam = null;
@@ -215,6 +216,21 @@ export class MultiplayerReviveManager {
     });
   }
 
+  applyCoop2Roles(players = [], cohesion = 0) {
+    const next = new Map();
+    (Array.isArray(players) ? players : []).forEach((entry) => {
+      if (!entry?.playerId) return;
+      next.set(String(entry.playerId), String(entry.roleId || 'VANGUARD'));
+      this.core.updatePlayer(entry.playerId, {
+        roleId: entry.roleId || 'VANGUARD',
+        now: nowMs()
+      });
+    });
+    this.coop2Roles = next;
+    this.core.setCoop2Cohesion?.(cohesion);
+    return true;
+  }
+
   localDisplayName() {
     const room = this.runtime?.room?.getSnapshot?.() || this.room;
     const localId = this.runtime?.localPlayerId;
@@ -237,6 +253,7 @@ export class MultiplayerReviveManager {
       this.core.ensurePlayer(entry.playerId, {
         displayName: entry.displayName,
         connected: entry.connected !== false,
+        roleId: this.coop2Roles.get(entry.playerId) || 'VANGUARD',
         now
       });
       this.core.setConnected(
@@ -262,6 +279,7 @@ export class MultiplayerReviveManager {
         position: this.player?.pos,
         health: this.player?.health,
         maxHealth: this.player?.maxHealth,
+        roleId: this.coop2Roles.get(localId) || 'VANGUARD',
         now
       });
     }
@@ -281,6 +299,7 @@ export class MultiplayerReviveManager {
         ...(Number.isFinite(Number(state?.maxHealth))
           ? { maxHealth: state.maxHealth }
           : {}),
+        roleId: this.coop2Roles.get(entry.playerId) || 'VANGUARD',
         now
       });
     });
@@ -315,6 +334,14 @@ export class MultiplayerReviveManager {
     const state = this.core.players.get(String(playerId));
     if (!state || state.lifeState !== MULTIPLAYER_LIFE_STATES.ACTIVE) {
       return { applied: false, reason: 'not-active' };
+    }
+    if (Number(state.reviveProtectionEndsAt || 0) > Number(now || 0)) {
+      return {
+        applied: false,
+        reason: 'revive-protection',
+        health: Math.max(1, Number(state.health) || 1),
+        lifeState: state.lifeState
+      };
     }
     const amount = Math.max(0, Number(damage) || 0);
     if (amount <= 0) return { applied: false, reason: 'invalid-damage' };
@@ -1094,7 +1121,14 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
       const progress = Math.round(
         100
         * Number(this.currentReviveTarget.reviveProgressMs || 0)
-        / Math.max(1, Number(this.latestSnapshot.reviveHoldMs || 3000))
+        / Math.max(
+          1,
+          Number(
+            this.currentReviveTarget.reviveRequiredMs
+            || this.latestSnapshot.reviveHoldMs
+            || 3000
+          )
+        )
       );
       status = (
         `HOLD ${this.adapter.getInteractLabel?.() || 'INTERACT'} TO REVIVE `

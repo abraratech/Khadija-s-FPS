@@ -967,33 +967,6 @@ body.ka-reduced-motion #minimap-wrap > div {
   margin-top: 14px;
 }
 
-.release-readiness-card {
-  margin-top: 18px;
-  padding: 12px;
-  border: 1px solid rgba(0,212,255,0.26);
-  border-radius: 10px;
-  background: rgba(0,0,0,0.22);
-}
-
-.release-readiness-card > span {
-  display: block;
-  color: #8ca0ad;
-  font-size: 9px;
-  font-weight: 950;
-  letter-spacing: 1.5px;
-}
-
-#release-validation-status {
-  display: block;
-  margin-top: 5px;
-  color: #00d4ff;
-  font-size: 13px;
-  letter-spacing: 0.8px;
-}
-
-#release-validation-status[data-state='ready'] { color: #22ff88; }
-#release-validation-status[data-state='warning'] { color: #ffaa00; }
-#release-validation-status[data-state='error'] { color: #ff4433; }
 
 #controller-status.connected,
 #pause-controller-status.connected {
@@ -1323,5 +1296,87 @@ body.ka-mobile-device #btn-switch.is-held {
 @media (orientation: landscape) {
   body.ka-mobile-device #btn-ads {
     font-size: 9px !important;
+  }
+}
+
+
+/* CONTENT.1 R1 — arena operation and encounter HUD */
+.ka-content1-hud {
+  --ka-content1-accent: #00d4ff;
+  position: fixed;
+  top: clamp(84px, 11vh, 128px);
+  left: clamp(14px, 2vw, 30px);
+  z-index: 36;
+  width: min(320px, calc(100vw - 28px));
+  padding: 12px 14px 11px;
+  border: 1px solid color-mix(in srgb, var(--ka-content1-accent) 58%, transparent);
+  border-left: 3px solid var(--ka-content1-accent);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(4, 10, 16, 0.92), rgba(7, 18, 25, 0.82)),
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--ka-content1-accent) 18%, transparent), transparent 68%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+  color: #effbff;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.ka-content1-hud[hidden] {
+  display: none !important;
+}
+
+.ka-content1-hud-pulse {
+  transform: translateX(4px);
+  border-color: var(--ka-content1-accent);
+}
+
+.ka-content1-kicker {
+  color: var(--ka-content1-accent);
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.ka-content1-operation {
+  margin-top: 4px;
+  font-size: 0.92rem;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.ka-content1-progress {
+  margin-top: 3px;
+  color: #c8e8f4;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.ka-content1-encounter {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.11);
+  color: #ffca72;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 760px) {
+  .ka-content1-hud {
+    top: 72px;
+    left: 10px;
+    width: min(270px, calc(100vw - 20px));
+    padding: 9px 11px;
+  }
+
+  .ka-content1-operation {
+    font-size: 0.78rem;
+  }
+
+  .ka-content1-progress,
+  .ka-content1-encounter {
+    font-size: 0.62rem;
   }
 }

@@ -1,8 +1,17 @@
 // multiplayer-server/src/matchmaking_core.js
-// MATCH.1 R1 — deterministic public matchmaking normalization and pairing.
+// MATCH.3 R1 — deterministic party matchmaking, region policy and pairing.
 
-export const MATCHMAKING_SCHEMA = 1;
-export const MATCHMAKING_PATCH = 'match2-public-room-admission-r1-1';
+import {
+  MATCH3_SERVER_PATCH,
+  MATCH3_SERVER_SCHEMA,
+  chooseMatch3Candidate,
+  estimatedMatch3WaitMs,
+  match3TicketsCapacityCompatible,
+  normalizeMatch3ServerPreferences
+} from './match3_core.js';
+
+export const MATCHMAKING_SCHEMA = MATCH3_SERVER_SCHEMA;
+export const MATCHMAKING_PATCH = MATCH3_SERVER_PATCH;
 export const MATCHMAKING_QUEUE_TTL_MS = 90_000;
 export const MATCHMAKING_MATCH_TTL_MS = 180_000;
 export const MATCHMAKING_GLOBAL_FALLBACK_MS = 12_000;
@@ -48,6 +57,10 @@ export function normalizeMatchmakingRequest(value = {}, {
   );
   const tabId = cleanText(value.tabId, '', 160);
   const resumeToken = cleanText(value.resumeToken, '', 240);
+  const search = normalizeMatch3ServerPreferences(value);
+  const partySize = Math.max(1, Math.min(2, finiteInteger(value.partySize, 1)));
+  const partyId = cleanText(value.partyId, '', 120);
+  const partyTicket = cleanText(value.partyTicket, '', 240);
 
   if (!playerId) throw new TypeError('PLAYER_ID_REQUIRED');
   if (!protocol) throw new TypeError('PROTOCOL_REQUIRED');
@@ -68,6 +81,15 @@ export function normalizeMatchmakingRequest(value = {}, {
     region: normalizeMatchmakingRegion(region),
     tabId,
     resumeToken,
+    partySize,
+    partyId,
+    partyTicket,
+    searchPriority: search.searchPriority,
+    regionPolicy: search.regionPolicy,
+    preferredRegion: search.preferredRegion,
+    globalExpansionMs: search.globalExpansionMs,
+    allowBackfill: search.allowBackfill,
+    joinInProgress: search.joinInProgress,
     requestedAt: Math.max(0, finiteInteger(now, Date.now()))
   });
 }
@@ -89,6 +111,7 @@ export function matchmakingCompatibilityKey(ticket = {}) {
 export function matchmakingTicketsCompatible(a, b) {
   if (!a || !b) return false;
   if (a.playerId === b.playerId) return false;
+  if (!match3TicketsCapacityCompatible(a, b)) return false;
   return matchmakingCompatibilityKey(a) === matchmakingCompatibilityKey(b);
 }
 
@@ -96,38 +119,14 @@ export function chooseMatchmakingCandidate(
   queuedTickets,
   incoming,
   {
-    now = Date.now(),
-    globalFallbackMs = MATCHMAKING_GLOBAL_FALLBACK_MS
+    now = Date.now()
   } = {}
 ) {
-  const compatible = (Array.isArray(queuedTickets) ? queuedTickets : [])
-    .filter((ticket) => (
-      ticket?.status === 'queued'
-      && matchmakingTicketsCompatible(ticket, incoming)
-    ))
-    .sort((a, b) => (
-      Number(a.queuedAt || 0) - Number(b.queuedAt || 0)
-    ));
-
-  const sameRegion = compatible.find(
-    (ticket) => normalizeMatchmakingRegion(ticket.region)
-      === normalizeMatchmakingRegion(incoming.region)
-  );
-  if (sameRegion) {
-    return Object.freeze({ ticket: sameRegion, scope: 'regional' });
-  }
-
-  const fallback = compatible.find((ticket) => (
-    Math.max(
-      Number(now) - Number(ticket.queuedAt || now),
-      Number(now) - Number(incoming.queuedAt || now)
-    ) >= Math.max(0, Number(globalFallbackMs) || 0)
-  ));
-  return fallback
-    ? Object.freeze({ ticket: fallback, scope: 'global' })
-    : null;
+  return chooseMatch3Candidate(queuedTickets, incoming, {
+    now,
+    compatibility: matchmakingTicketsCompatible
+  });
 }
-
 export function makeMatchmakingRoomCode(randomBytes = null) {
   const bytes = randomBytes instanceof Uint8Array
     ? randomBytes
@@ -167,7 +166,18 @@ export function publicMatchmakingTicket(ticket, {
         ),
         scope: ticket.assignment.scope || 'regional',
         region: ticket.assignment.region
-          || normalizeMatchmakingRegion(ticket.region)
+          || normalizeMatchmakingRegion(ticket.region),
+        admissionToken: cleanText(ticket.assignment.admissionToken, '', 280),
+        admissionExpiresAt: Math.max(
+          0,
+          finiteInteger(ticket.assignment.admissionExpiresAt, 0)
+        ),
+        backfill: ticket.assignment.backfill === true,
+        partySize: Math.max(1, Math.min(2, finiteInteger(
+          ticket.assignment.partySize,
+          ticket.partySize || 1
+        ))),
+        quality: cleanText(ticket.assignment.quality, 'compatible', 40)
       })
     : null;
 
@@ -183,6 +193,13 @@ export function publicMatchmakingTicket(ticket, {
     fallbackAt: Math.max(0, finiteInteger(ticket.fallbackAt, 0)),
     region: normalizeMatchmakingRegion(ticket.region),
     queueDepth: Math.max(0, finiteInteger(queueDepth, 0)),
+    estimatedWaitMs: estimatedMatch3WaitMs({
+      queueDepth,
+      searchPriority: ticket.searchPriority,
+      partySize: ticket.partySize
+    }),
+    searchScope: ticket.regionPolicy || 'auto',
+    partySize: Math.max(1, Math.min(2, finiteInteger(ticket.partySize, 1))),
     assignment,
     reason: cleanText(ticket.reason, '', 120) || null
   });

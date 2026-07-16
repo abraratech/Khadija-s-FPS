@@ -9,6 +9,7 @@ const DEFAULT_BLEEDOUT_MS = 30_000;
 const DEFAULT_REVIVE_HOLD_MS = 3_000;
 const DEFAULT_REVIVE_RANGE = 3.2;
 const DEFAULT_HOLD_STALE_MS = 420;
+const DEFAULT_REVIVE_PROGRESS_GRACE_MS = 650;
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -31,10 +32,33 @@ function distanceSquared(a, b) {
   return dx * dx + dy * dy + dz * dz;
 }
 
+function cohesionPolicy(value) {
+  const cohesion = Math.max(0, Math.min(100, finite(value)));
+  if (cohesion >= 75) return { graceBonusMs: 300, protectionBonusMs: 400 };
+  if (cohesion >= 50) return { graceBonusMs: 200, protectionBonusMs: 200 };
+  if (cohesion >= 25) return { graceBonusMs: 100, protectionBonusMs: 0 };
+  return { graceBonusMs: 0, protectionBonusMs: 0 };
+}
+
+function rolePolicy(roleId) {
+  switch (String(roleId || '').toUpperCase()) {
+    case 'FIELD_MEDIC':
+      return { holdMultiplier: 0.80, healthRatio: 0.52, protectionMs: 3200 };
+    case 'SUPPORT':
+      return { holdMultiplier: 0.92, healthRatio: 0.46, protectionMs: 2500 };
+    case 'VANGUARD':
+      return { holdMultiplier: 1, healthRatio: 0.44, protectionMs: 2200 };
+    case 'RECON':
+    default:
+      return { holdMultiplier: 1, healthRatio: 0.44, protectionMs: 2200 };
+  }
+}
+
 function clonePlayer(player) {
   return {
     playerId: player.playerId,
     displayName: player.displayName,
+    roleId: String(player.roleId || 'VANGUARD'),
     connected: player.connected === true,
     lifeState: player.lifeState,
     health: finite(player.health),
@@ -43,6 +67,9 @@ function clonePlayer(player) {
     downedAt: finite(player.downedAt),
     bleedoutEndsAt: finite(player.bleedoutEndsAt),
     reviveProgressMs: Math.max(0, finite(player.reviveProgressMs)),
+    reviveRequiredMs: Math.max(500, finite(player.reviveRequiredMs, DEFAULT_REVIVE_HOLD_MS)),
+    lastReviveActiveAt: Math.max(0, finite(player.lastReviveActiveAt)),
+    reviveProtectionEndsAt: Math.max(0, finite(player.reviveProtectionEndsAt)),
     eliminatedWave: Math.max(0, Math.floor(finite(player.eliminatedWave))),
     respawnNonce: Math.max(0, Math.floor(finite(player.respawnNonce))),
     updatedAt: finite(player.updatedAt)
@@ -54,18 +81,27 @@ export class ReviveAuthority {
     bleedoutMs = DEFAULT_BLEEDOUT_MS,
     reviveHoldMs = DEFAULT_REVIVE_HOLD_MS,
     reviveRange = DEFAULT_REVIVE_RANGE,
-    holdStaleMs = DEFAULT_HOLD_STALE_MS
+    holdStaleMs = DEFAULT_HOLD_STALE_MS,
+    reviveProgressGraceMs = DEFAULT_REVIVE_PROGRESS_GRACE_MS
   } = {}) {
     this.bleedoutMs = Math.max(5_000, finite(bleedoutMs, DEFAULT_BLEEDOUT_MS));
     this.reviveHoldMs = Math.max(500, finite(reviveHoldMs, DEFAULT_REVIVE_HOLD_MS));
     this.reviveRange = Math.max(1, finite(reviveRange, DEFAULT_REVIVE_RANGE));
     this.holdStaleMs = Math.max(100, finite(holdStaleMs, DEFAULT_HOLD_STALE_MS));
+    this.reviveProgressGraceMs = Math.max(0, finite(reviveProgressGraceMs, DEFAULT_REVIVE_PROGRESS_GRACE_MS));
+    this.coop2Cohesion = 0;
     this.players = new Map();
     this.holds = new Map();
     this.events = [];
     this.runId = null;
     this.wave = 1;
     this.teamEliminated = false;
+  }
+
+
+  setCoop2Cohesion(value) {
+    this.coop2Cohesion = Math.max(0, Math.min(100, finite(value)));
+    return this.coop2Cohesion;
   }
 
   reset({ runId = null, wave = 1 } = {}) {
@@ -84,6 +120,7 @@ export class ReviveAuthority {
       player = {
         playerId: String(playerId),
         displayName: String(details.displayName || 'Player').slice(0, 24),
+        roleId: String(details.roleId || 'VANGUARD').slice(0, 40),
         connected: details.connected !== false,
         lifeState: MULTIPLAYER_LIFE_STATES.ACTIVE,
         health: Math.max(1, finite(details.health, 100)),
@@ -92,6 +129,9 @@ export class ReviveAuthority {
         downedAt: 0,
         bleedoutEndsAt: 0,
         reviveProgressMs: 0,
+        reviveRequiredMs: this.reviveHoldMs,
+        lastReviveActiveAt: 0,
+        reviveProtectionEndsAt: 0,
         eliminatedWave: 0,
         respawnNonce: 0,
         updatedAt: finite(details.now)
@@ -100,6 +140,9 @@ export class ReviveAuthority {
     } else {
       if (details.displayName) {
         player.displayName = String(details.displayName).slice(0, 24);
+      }
+      if (details.roleId) {
+        player.roleId = String(details.roleId).slice(0, 40);
       }
       if (details.connected !== undefined) {
         player.connected = details.connected === true;
@@ -156,6 +199,9 @@ export class ReviveAuthority {
     player.downedAt = finite(now);
     player.bleedoutEndsAt = finite(now) + this.bleedoutMs;
     player.reviveProgressMs = 0;
+    player.reviveRequiredMs = this.reviveHoldMs;
+    player.lastReviveActiveAt = 0;
+    player.reviveProtectionEndsAt = 0;
     player.eliminatedWave = Math.max(1, Math.floor(finite(wave, this.wave)));
     player.updatedAt = finite(now);
     this.events.push({ type: 'DOWNED', playerId: player.playerId });
@@ -187,6 +233,7 @@ export class ReviveAuthority {
     this.runId = snapshot.runId || this.runId;
     this.wave = Math.max(1, Math.floor(finite(snapshot.wave, this.wave)));
     this.teamEliminated = snapshot.teamEliminated === true;
+    this.setCoop2Cohesion(snapshot.coop2Cohesion);
     const next = new Map();
     snapshot.players.forEach((entry) => {
       if (!entry?.playerId) return;
@@ -196,6 +243,7 @@ export class ReviveAuthority {
       next.set(String(entry.playerId), {
         playerId: String(entry.playerId),
         displayName: String(entry.displayName || 'Player').slice(0, 24),
+        roleId: String(entry.roleId || 'VANGUARD').slice(0, 40),
         connected: entry.connected !== false,
         lifeState,
         health: Math.max(0, finite(entry.health)),
@@ -204,6 +252,9 @@ export class ReviveAuthority {
         downedAt: finite(entry.downedAt),
         bleedoutEndsAt: finite(entry.bleedoutEndsAt),
         reviveProgressMs: Math.max(0, finite(entry.reviveProgressMs)),
+        reviveRequiredMs: Math.max(500, finite(entry.reviveRequiredMs, this.reviveHoldMs)),
+        lastReviveActiveAt: Math.max(0, finite(entry.lastReviveActiveAt)),
+        reviveProtectionEndsAt: Math.max(0, finite(entry.reviveProtectionEndsAt)),
         eliminatedWave: Math.max(0, Math.floor(finite(entry.eliminatedWave))),
         respawnNonce: Math.max(0, Math.floor(finite(entry.respawnNonce))),
         updatedAt: finite(entry.updatedAt)
@@ -254,6 +305,9 @@ export class ReviveAuthority {
           player.lifeState = MULTIPLAYER_LIFE_STATES.ACTIVE;
           player.health = player.maxHealth;
           player.reviveProgressMs = 0;
+          player.reviveRequiredMs = this.reviveHoldMs;
+          player.lastReviveActiveAt = 0;
+          player.reviveProtectionEndsAt = currentNow + 1500;
           player.downedAt = 0;
           player.bleedoutEndsAt = 0;
           player.respawnNonce += 1;
@@ -287,28 +341,51 @@ export class ReviveAuthority {
         continue;
       }
       if (!validTargets.has(target.playerId)) {
-        validTargets.set(target.playerId, reviverId);
+        const policy = rolePolicy(reviver.roleId);
+        validTargets.set(target.playerId, {
+          reviverId,
+          policy
+        });
       }
     }
 
     this.players.forEach((target) => {
       if (target.lifeState !== MULTIPLAYER_LIFE_STATES.DOWNED) return;
       if (validTargets.has(target.playerId)) {
+        const revival = validTargets.get(target.playerId);
+        const requiredMs = Math.max(
+          500,
+          Math.round(this.reviveHoldMs * revival.policy.holdMultiplier)
+        );
+        target.reviveRequiredMs = requiredMs;
+        target.lastReviveActiveAt = currentNow;
         target.reviveProgressMs = Math.min(
-          this.reviveHoldMs,
+          requiredMs,
           target.reviveProgressMs + stepMs
         );
-        if (target.reviveProgressMs >= this.reviveHoldMs) {
+        if (target.reviveProgressMs >= requiredMs) {
           target.lifeState = MULTIPLAYER_LIFE_STATES.ACTIVE;
-          target.health = Math.max(1, Math.round(target.maxHealth * 0.4));
+          target.health = Math.max(
+            1,
+            Math.round(target.maxHealth * revival.policy.healthRatio)
+          );
           target.reviveProgressMs = 0;
+          target.reviveRequiredMs = this.reviveHoldMs;
+          target.lastReviveActiveAt = 0;
+          target.reviveProtectionEndsAt = (
+            currentNow
+            + revival.policy.protectionMs
+            + cohesionPolicy(this.coop2Cohesion).protectionBonusMs
+          );
           target.downedAt = 0;
           target.bleedoutEndsAt = 0;
           target.updatedAt = currentNow;
           this.events.push({
             type: 'REVIVED',
             playerId: target.playerId,
-            reviverId: validTargets.get(target.playerId) || null
+            reviverId: revival.reviverId || null,
+            health: target.health,
+            protectionEndsAt: target.reviveProtectionEndsAt
           });
           for (const [reviverId, hold] of this.holds) {
             if (hold.targetPlayerId === target.playerId) {
@@ -316,8 +393,16 @@ export class ReviveAuthority {
             }
           }
         }
-      } else if (target.reviveProgressMs > 0) {
+      } else if (
+        target.reviveProgressMs > 0
+        && currentNow - target.lastReviveActiveAt > (
+          this.reviveProgressGraceMs
+          + cohesionPolicy(this.coop2Cohesion).graceBonusMs
+        )
+      ) {
         target.reviveProgressMs = 0;
+        target.reviveRequiredMs = this.reviveHoldMs;
+        target.lastReviveActiveAt = 0;
       }
     });
 
@@ -351,6 +436,12 @@ export class ReviveAuthority {
       bleedoutMs: this.bleedoutMs,
       reviveHoldMs: this.reviveHoldMs,
       reviveRange: this.reviveRange,
+      reviveProgressGraceMs: (
+        this.reviveProgressGraceMs
+        + cohesionPolicy(this.coop2Cohesion).graceBonusMs
+      ),
+      baseReviveProgressGraceMs: this.reviveProgressGraceMs,
+      coop2Cohesion: this.coop2Cohesion,
       teamEliminated: this.teamEliminated,
       players: Array.from(this.players.values(), clonePlayer)
     };

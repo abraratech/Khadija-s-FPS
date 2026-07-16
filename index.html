@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0, viewport-fit=cover" name="viewport"/>
-<meta content="Khadija's Arena is a cross-platform browser survival shooter with solo and 2–4 player co-op." name="description"/>
+<meta content="Khadija's Arena is a cross-platform browser survival shooter with solo and two-player co-op." name="description"/>
 <meta content="#03070c" name="theme-color"/>
 <title>Khadija's Arena</title>
 <link crossorigin="" href="https://cdn.jsdelivr.net" rel="preconnect"/>
@@ -26,6 +26,9 @@
 <link href="css/hud.css" rel="stylesheet"/>
 <link href="css/menu.css" rel="stylesheet"/>
 <link href="css/multiplayer.css" rel="stylesheet"/>
+<link href="css/social.css" rel="stylesheet"/>
+<link href="css/live1.css" rel="stylesheet"/>
+<link href="css/ops1.css" rel="stylesheet"/>
 <style>
     /* ── KHADIJA'S ARENA MULTI-STAGE MENU OVERHAUL ── */
     .ka-menu-shell {
@@ -939,6 +942,7 @@
     .ka-rail-nav-btn[data-rail-screen="map"]::after { content: "ARENA"; }
     .ka-rail-nav-btn[data-rail-screen="difficulty"]::after { content: "LOADOUT"; }
     .ka-rail-nav-btn[data-rail-screen="avatar"]::after { content: "AVATAR"; }
+    .ka-rail-nav-btn[data-rail-screen="live"]::after { content: "LIVE"; }
     .ka-rail-nav-btn[data-rail-screen="settings"]::after { content: "SETTINGS"; }
     .ka-platform-strip { display: none; }
     .ka-topline { display: none; }
@@ -1513,13 +1517,15 @@
 </div>
 <div aria-label="Available modes" class="ka-rail-mode-row">
 <div class="ka-rail-mode solo"><span>◉</span><b>SOLO</b><small>Single player</small></div>
-<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>2–4 players</small></div>
+<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>2 players</small></div>
 </div>
 <nav class="ka-rail-nav">
 <button class="ka-rail-nav-btn active" data-next-screen="home" data-rail-screen="home" type="button"><span>▶</span> Quick Play</button>
 <button class="ka-rail-nav-btn" data-next-screen="map" data-rail-screen="map" type="button"><span>▰</span> Select Arena</button>
 <button class="ka-rail-nav-btn" data-next-screen="difficulty" data-rail-screen="difficulty" type="button"><span>⌁</span> Loadout</button>
 <button class="ka-rail-nav-btn" data-next-screen="avatar" data-rail-screen="avatar" type="button"><span>◈</span> Avatar Studio</button>
+<button class="ka-rail-nav-btn" data-next-screen="social" data-rail-screen="social" type="button"><span>◎</span> Social</button>
+<button class="ka-rail-nav-btn" data-next-screen="live" data-rail-screen="live" type="button"><span>✦</span> Live</button>
 <button class="ka-rail-nav-btn" data-next-screen="settings" data-rail-screen="settings" type="button"><span>⚙</span> Settings</button>
 </nav>
 <div class="ka-rail-footer">
@@ -1566,13 +1572,13 @@
 <div id="menu-title">KHADIJA'S<br/>ARENA</div>
 <div id="menu-sub">Survive the outbreak. Master every arena. Fight together.</div>
 <div class="ka-home-support-row" aria-label="Game support summary">
-<span>6 UNIQUE ARENAS</span><span>SOLO + 2–4 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
+<span>6 UNIQUE ARENAS</span><span>SOLO + 2 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
 </div>
 <div class="ka-stats-row">
 <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
 <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
-<div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-achievements">0</span> achievements</small></div>
-<div class="ka-stat-card ka-stat-muted"><span>Build</span><b>RELEASE CANDIDATE</b></div>
+<div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-title">Survivor</span> · <span id="profile-achievements">0</span> achievements</small></div>
+<div class="ka-stat-card ka-stat-muted"><span>Build</span><b>LIVE SERVICE</b></div>
 </div>
 </div>
 <div class="ka-home-live-card">
@@ -1592,7 +1598,7 @@
 <button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" type="button">
 <span class="ka-card-kicker">Online co-op</span>
 <strong>Co-op Survival</strong>
-<small>Team up with 2–4 players. Share zombie pressure while keeping individual points, perks, weapons, and purchases.</small>
+<small>Team up with another survivor. Share zombie pressure while keeping individual points, perks, weapons, and purchases.</small>
 <span class="ka-mode-arrow">CREATE OR JOIN ROOM →</span>
 </button>
 <div class="ka-home-actions">
@@ -1730,6 +1736,7 @@
 </div>
 <button id="start-btn" style="display:none;">▶ DEPLOY TO ARENA</button>
 </div>
+<div id="ka-loadout-command" class="ka-loadout-command-host" aria-live="polite"></div>
 </div>
 <div class="ka-nav-row">
 <button class="ka-link-btn" data-next-screen="map" type="button">← Back to Arena</button>
@@ -1777,11 +1784,141 @@
 <button class="ka-link-btn" id="ka-avatar-reset" type="button">Reset Defaults</button>
 <button class="ka-nav-btn primary" id="ka-avatar-save" type="button">Apply &amp; Save Avatar</button>
 </div>
+<div id="ka-avatar-presets" class="ka-avatar-presets-host" aria-live="polite"></div>
 <div id="ka-avatar-status" data-state="saved" aria-live="polite">SAVED LOCALLY · INCLUDED IN CLOUD PROFILE SYNC</div>
 </section>
 </div>
 <div class="ka-nav-row"><button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button><button class="ka-nav-btn" data-next-screen="map" type="button">Select Arena →</button></div>
 </section>
+
+<section class="ka-menu-screen" data-menu-screen="social" id="social-screen">
+<div class="ka-section-heading">
+  <div><span>Connected operatives</span><strong>SOCIAL COMMAND</strong></div>
+  <small id="social-auth-note">PASSKEY ACCOUNT REQUIRED FOR DURABLE SOCIAL FEATURES</small>
+</div>
+<div id="social-status" class="ka-social-status" data-tone="neutral">SOCIAL INITIALIZING</div>
+<div class="ka-social-layout" style="margin-top:14px;">
+  <div class="ka-social-column">
+    <section class="ka-social-panel">
+      <div class="ka-social-panel-heading">
+        <div><h3>FRIENDS</h3><small>Share your code or add another operative.</small></div>
+        <button class="ka-social-btn" data-action="refresh" type="button">REFRESH</button>
+      </div>
+      <div class="ka-social-code">
+        <strong id="social-friend-code">SIGN IN REQUIRED</strong>
+        <button class="ka-social-btn" data-action="copy-code" type="button">COPY</button>
+      </div>
+      <div class="ka-social-form-row">
+        <input id="social-friend-code-input" maxlength="8" placeholder="8-character Friend Code" autocomplete="off"/>
+        <button class="ka-social-btn" data-action="friend-request" type="button">SEND REQUEST</button>
+      </div>
+      <div id="social-friends-list" class="ka-social-list"></div>
+    </section>
+
+    <section class="ka-social-panel">
+      <h3>INCOMING REQUESTS</h3>
+      <div id="social-incoming-list" class="ka-social-list"></div>
+    </section>
+
+    <section class="ka-social-panel">
+      <h3>RECENT PLAYERS</h3>
+      <p>Authenticated players from completed or active co-op rooms appear here.</p>
+      <div id="social-recent-list" class="ka-social-list"></div>
+    </section>
+  </div>
+
+  <div class="ka-social-column">
+    <section class="ka-social-panel">
+      <h3>PARTY</h3>
+      <p>Parties preserve the group while the leader creates, joins, or enters a co-op room.</p>
+      <div id="social-party-state"></div>
+      <div id="social-party-members" class="ka-social-list"></div>
+      <div id="social-party-invites" class="ka-social-list"></div>
+    </section>
+
+    <section class="ka-social-panel">
+      <h3>PRIVACY</h3>
+      <div class="ka-social-privacy-grid">
+        <label class="ka-social-privacy-row"><span>Presence visibility</span>
+          <select id="social-privacy-presence"><option value="friends">Friends</option><option value="party">Party only</option><option value="private">Private</option></select>
+        </label>
+        <label class="ka-social-privacy-row"><span>Friend requests</span>
+          <select id="social-privacy-requests"><option value="everyone">Everyone</option><option value="friends-of-friends">Friends of friends</option><option value="nobody">Nobody</option></select>
+        </label>
+        <label class="ka-social-privacy-row"><span>Party invitations</span>
+          <select id="social-privacy-invites"><option value="friends">Friends</option><option value="nobody">Nobody</option></select>
+        </label>
+        <label class="ka-social-check"><input id="social-privacy-friend-join" type="checkbox"/> Allow friends to see joinable lobby status</label>
+        <label class="ka-social-check"><input id="social-privacy-recent" type="checkbox" checked/> Keep authenticated recent-player history</label>
+        <button class="ka-social-btn" data-action="privacy-save" type="button">SAVE PRIVACY</button>
+      </div>
+    </section>
+
+    <section class="ka-social-panel">
+      <h3>BLOCKED PLAYERS</h3>
+      <div id="social-blocked-list" class="ka-social-list"></div>
+    </section>
+
+    <section class="ka-social-panel">
+      <h3>REPORT PLAYER</h3>
+      <p>Reports are private. The reported player is never told who submitted them.</p>
+      <div class="ka-social-privacy-grid">
+        <select id="social-report-target" aria-label="Player to report"></select>
+        <select id="social-report-category" aria-label="Report category">
+          <option value="harassment">Harassment</option>
+          <option value="hate">Hate or abusive language</option>
+          <option value="cheating">Cheating</option>
+          <option value="griefing">Griefing</option>
+          <option value="inappropriate-name">Inappropriate name</option>
+          <option value="spam">Spam</option>
+          <option value="other">Other</option>
+        </select>
+        <textarea id="social-report-note" maxlength="240" placeholder="Optional short description"></textarea>
+        <button class="ka-social-btn ka-social-btn-danger" data-action="report-submit" type="button">SUBMIT REPORT</button>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="ka-nav-row">
+  <button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
+  <button class="ka-nav-btn" data-next-screen="settings" type="button">Account Settings →</button>
+</div>
+</section>
+
+
+<section class="ka-menu-screen" data-menu-screen="live" id="live1-screen">
+<div class="ka-section-heading">
+  <div><span>Server-timed operations</span><strong>LIVE COMMAND</strong></div>
+  <small>ROTATIONS USE VERIFIED WORKER TIME. CLIENT CLOCKS DO NOT CONTROL AVAILABILITY OR REWARDS.</small>
+</div>
+<div id="live1-status" class="ka-live1-status" data-tone="neutral">CONNECTING TO LIVE SERVICE</div>
+<div class="ka-live1-hero">
+  <div>
+    <span>ACTIVE SEASON</span>
+    <strong id="live1-season-label">OUTBREAK CYCLE</strong>
+    <small id="live1-season-time">SCHEDULE VERIFYING</small>
+  </div>
+  <div class="ka-live1-points">
+    <span>SEASON POINTS</span>
+    <strong id="live1-season-points">0 SP</strong>
+  </div>
+</div>
+<div class="ka-live1-feature-grid">
+  <article><span>DAILY ARENA</span><strong id="live1-featured-arena">VERIFYING</strong><small>Complete a deployment here for bonus seasonal points.</small></article>
+  <article><span>WEEKLY OPERATION</span><strong id="live1-featured-operation">VERIFYING</strong><small>Complete the featured arena operation for an additional bonus.</small></article>
+  <article><span>ROTATING ENCOUNTER</span><strong id="live1-featured-encounter">VERIFYING</strong><small>Appears as a featured pressure wave during live deployments.</small></article>
+  <article><span>NEXT ROTATION</span><strong id="live1-next-rotation">—</strong><small>Daily content rotates at 00:00 UTC.</small></article>
+</div>
+<div class="ka-live1-section-title"><span>SEASON CONTRACT</span><strong>LONG-FORM STAGES</strong></div>
+<div id="live1-contract-list" class="ka-live1-contract-grid"></div>
+<div class="ka-live1-section-title"><span>COSMETIC TRACK</span><strong>AUTOMATIC PROTECTED CLAIMS</strong></div>
+<div id="live1-reward-list" class="ka-live1-reward-grid"></div>
+<div class="ka-nav-row">
+  <button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
+  <button class="ka-nav-btn" data-next-screen="map" type="button">Deploy →</button>
+</div>
+</section>
+
 <section class="ka-menu-screen" data-menu-screen="settings">
 <div class="ka-section-title">Settings</div>
 <div class="ka-settings-layout">
@@ -1799,11 +1936,6 @@
 </div>
 </div>
 
-<div class="release-readiness-card">
-<span>BUILD READINESS</span>
-<b data-state="checking" id="release-validation-status">CHECKING…</b>
-<small>Use <code>KAValidateRelease()</code> for the full browser report.</small>
-</div>
 </div>
 <div class="ka-settings-grid">
 <div class="ka-setting-row">
@@ -1964,6 +2096,33 @@
 <div><button class="ka-link-btn" id="reset-player-preferences-btn" style="width:100%;text-align:center;" type="button">Reset Player Preferences</button></div>
 </div>
 
+
+<div class="ka-setting-row" id="ops1-settings-row">
+<div>
+<strong>Privacy &amp; Operations</strong>
+<small>Choose whether the game may send redacted crash and service-health events. Raw email addresses, exact IP addresses, passkey details, precise location, and private chat transcripts are not collected.</small>
+<small id="ops1-privacy-summary">Sends only redacted crashes and critical service failures.</small>
+<small id="ops1-health-details">Service health has not been checked yet.</small>
+</div>
+<div class="ka-ops1-controls">
+<select class="ka-setting-control" id="ops1-telemetry-level">
+<option value="essential">Essential only</option>
+<option value="standard">Standard operational metrics</option>
+<option value="off">Off</option>
+</select>
+<label class="ka-ops1-toggle" for="ops1-crash-reporting">
+<input id="ops1-crash-reporting" type="checkbox" checked/>
+<span>Send redacted crash reports</span>
+</label>
+<span id="ops1-status" data-tone="neutral">OPERATIONS INITIALIZING</span>
+<small>Local queued events: <b id="ops1-queue-count">0</b></small>
+<div class="ka-ops1-actions">
+<button class="ka-link-btn" id="ops1-health-refresh" type="button">Check Service Health</button>
+<button class="ka-link-btn" id="ops1-clear-local" type="button">Clear Local Queue</button>
+</div>
+</div>
+</div>
+
 <div class="ka-setting-row" id="cloud-profile-settings-row">
 <div>
 <strong>Cloud Save</strong>
@@ -1992,7 +2151,6 @@
 <button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-server-export-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Export Cloud Backup</button>
 <button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-export-btn" style="width:100%;text-align:center;" type="button">Export Local Backup</button>
 <button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-import-btn" style="width:100%;text-align:center;" type="button">Import &amp; Merge Backup</button>
-<button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-copy-btn" style="width:100%;text-align:center;" type="button">Copy Profile Diagnostics</button>
 <button class="ka-link-btn ka-cloud-advanced-control" hidden id="cloud-profile-delete-btn" style="width:100%;text-align:center;border-color:rgba(255,70,70,.48);color:#ffaaaa;" type="button">Delete Cloud Account</button>
 <input accept="application/json,.json" class="ka-cloud-advanced-control" hidden id="cloud-profile-import-file" style="display:none;" type="file"/>
 </div>
@@ -2074,7 +2232,6 @@
 </div>
 <div style="display:grid;gap:8px;">
 <button class="ka-nav-btn" id="cloud-profile-retry-queue-btn" style="width:100%;text-align:center;" type="button">Retry Pending Sync Now</button>
-<button class="ka-link-btn" id="cloud-profile-reliability-copy-btn" style="width:100%;text-align:center;border-color:rgba(0,212,255,.42);" type="button">Copy Reliability Diagnostics</button>
 </div>
 </div>
 <div class="ka-setting-row">
@@ -2106,7 +2263,7 @@
 </section>
 <script>
       (() => {
-        const screenNames = ['home', 'map', 'difficulty', 'avatar', 'settings'];
+        const screenNames = ['home', 'map', 'difficulty', 'avatar', 'social', 'settings'];
         const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
         const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
         const mapSelect = document.getElementById('map-select');
@@ -2407,6 +2564,21 @@
 <div><span>BEST SCORE</span><b id="final-best-score">0</b></div>
 <div><span>BEST WAVE</span><b id="final-best-wave">1</b></div>
 </div>
+<div class="prog1-postmatch-panel" id="prog1-postmatch-panel">
+  <div class="prog1-postmatch-head">
+    <span>CAREER PROGRESSION</span>
+    <b id="final-level-progress">LEVEL 1</b>
+  </div>
+  <div class="prog1-postmatch-meter" aria-label="Profile experience progress">
+    <div id="final-level-progress-fill" style="width:0%"></div>
+  </div>
+  <div class="prog1-postmatch-breakdown" id="final-xp-breakdown"></div>
+  <div class="prog1-postmatch-events">
+    <div><span>OPERATIONS</span><div id="final-operation-progress">No operation completed this run.</div></div>
+    <div><span>LIVE OPERATIONS</span><div id="final-live-progress">No seasonal progress this run.</div></div>
+    <div><span>UNLOCKS</span><div id="final-unlocks">No new unlocks this run.</div></div>
+  </div>
+</div>
 </div>
 <div id="death-flow-note">Restart keeps your selected arena and difficulty. Quit returns to the main menu without a page reload.</div>
 <div style="display: flex; gap: 20px; justify-content: center; margin-top: 26px; flex-wrap: wrap;">
@@ -2415,7 +2587,7 @@
 </div>
 </div>
 <div id="lock-hint">Click to resume mouse look</div>
-<!-- Static ES-module deployment: index.html is the public entry; no package.json or Wrangler config is required for the current Cloudflare Pages demo. -->
+<!-- Static ES-module deployment: index.html is the production public entry. -->
 <script type="importmap">
     {
       "imports": {

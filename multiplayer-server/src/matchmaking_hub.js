@@ -1,5 +1,5 @@
 // multiplayer-server/src/matchmaking_hub.js
-// MATCH.1 R1 — global public matchmaking queue Durable Object.
+// MATCH.3 R1 — party-aware quality matchmaking and room discovery Durable Object.
 
 import { DurableObject } from 'cloudflare:workers';
 import {
@@ -21,6 +21,7 @@ import {
   ROOM_DIRECTORY_PATCH,
   ROOM_DIRECTORY_SCHEMA,
   cleanupRoomDirectory,
+  filterAndSortPublicRoomDirectory,
   normalizeRoomDirectorySync,
   publicRoomDirectoryEntry,
   roomDirectoryListingVisible
@@ -188,29 +189,37 @@ export class MatchmakingHub extends DurableObject {
     const requestRegion = String(
       request.headers.get('x-ka-region') || 'ZZ'
     ).toUpperCase().slice(0, 16);
-    const rooms = Object.values(this.state.rooms || {})
-      .filter((listing) => (
-        roomDirectoryListingVisible(listing, { now })
-        && Number(listing.protocol) === protocol
-        && String(listing.build) === build
-      ))
-      .map((listing) => publicRoomDirectoryEntry(listing, { requestRegion, now }))
-      .sort((left, right) => {
-        const leftStatus = left.status === 'waiting' ? 0 : 1;
-        const rightStatus = right.status === 'waiting' ? 0 : 1;
-        if (leftStatus !== rightStatus) return leftStatus - rightStatus;
-        const leftScope = left.scope === 'regional' ? 0 : 1;
-        const rightScope = right.scope === 'regional' ? 0 : 1;
-        if (leftScope !== rightScope) return leftScope - rightScope;
-        return Number(right.updatedAt) - Number(left.updatedAt);
-      })
-      .slice(0, ROOM_DIRECTORY_MAX_RESULTS);
+    const filters = {
+      mapId: url.searchParams.get('mapId') || '',
+      difficulty: url.searchParams.get('difficulty') || '',
+      status: url.searchParams.get('status') || 'any',
+      regionScope: url.searchParams.get('regionScope') || 'any',
+      bot: url.searchParams.get('bot') || 'any',
+      joinInProgress: url.searchParams.get('joinInProgress') !== '0',
+      requiredSlots: Math.max(
+        1,
+        Math.min(2, Math.trunc(Number(url.searchParams.get('requiredSlots')) || 1))
+      ),
+      searchPriority: url.searchParams.get('searchPriority') || 'balanced'
+    };
+    const rooms = filterAndSortPublicRoomDirectory(
+      Object.values(this.state.rooms || {})
+        .filter((listing) => (
+          roomDirectoryListingVisible(listing, { now })
+          && Number(listing.protocol) === protocol
+          && String(listing.build) === build
+        ))
+        .map((listing) => publicRoomDirectoryEntry(listing, { requestRegion, now })),
+      filters,
+      { now }
+    );
 
     return json({
       ok: true,
       schema: ROOM_DIRECTORY_SCHEMA,
       patch: ROOM_DIRECTORY_PATCH,
       region: requestRegion,
+      filters,
       rooms,
       refreshedAt: now
     });
@@ -228,7 +237,15 @@ export class MatchmakingHub extends DurableObject {
     const playerId = cleanText(body?.playerId, 160);
     const protocol = Math.max(1, Math.trunc(Number(body?.protocol) || 0));
     const build = cleanText(body?.build, 120);
+    const partySize = Math.max(1, Math.min(2, Math.trunc(Number(body?.partySize) || 1)));
     const listing = this.state.rooms?.[listingId] || null;
+    if (partySize > 1) {
+      return json({
+        ok: false,
+        error: 'PARTY_OPEN_ROOM_RESERVATION_UNSUPPORTED',
+        message: 'Use Party Quick Match or create a party room to keep the party together.'
+      }, { status: 409 });
+    }
 
     if (!listing || listing.joinToken !== joinToken) {
       return json({ ok: false, error: 'ROOM_LISTING_NOT_FOUND', message: 'This public room is no longer available.' }, { status: 404 });
@@ -276,7 +293,11 @@ export class MatchmakingHub extends DurableObject {
         listingId,
         status: admission.roomStatus,
         admissionToken: admission.admissionToken,
-        admissionExpiresAt: admission.admissionExpiresAt
+        admissionExpiresAt: admission.admissionExpiresAt,
+        partySize: 1,
+        quality: listing.region === String(request.headers.get('x-ka-region') || 'ZZ').toUpperCase().slice(0, 16)
+          ? 'excellent'
+          : 'compatible'
       }
     });
   }
@@ -321,6 +342,163 @@ export class MatchmakingHub extends DurableObject {
     }
   }
 
+  async resolvePartyClaim(normalized) {
+    if (!normalized?.partyTicket) {
+      return {
+        partyId: '',
+        partySize: 1,
+        leaderSocialId: '',
+        memberSocialIds: []
+      };
+    }
+    if (!this.env.SOCIAL) {
+      throw new Error('PARTY_SOCIAL_BINDING_UNAVAILABLE');
+    }
+    const id = this.env.SOCIAL.idFromName('global-v1');
+    const response = await this.env.SOCIAL.get(id).fetch(
+      new Request('https://social.internal/internal/social/party/matchmaking/consume', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-matchmaking-social': '1'
+        },
+        body: JSON.stringify({
+          ticket: normalized.partyTicket,
+          playerId: normalized.playerId,
+          tabId: normalized.tabId,
+          protocol: normalized.protocol,
+          build: normalized.build
+        })
+      })
+    );
+    const value = await response.json().catch(() => ({}));
+    if (!response.ok || value.ok !== true) {
+      throw new Error(String(value.error || 'PARTY_TICKET_REJECTED'));
+    }
+    const claim = value.claim || {};
+    const partySize = Math.max(1, Math.min(2, Math.trunc(Number(claim.memberCount) || 1)));
+    if (!claim.partyId || partySize < 1) {
+      throw new Error('PARTY_TICKET_INCOMPLETE');
+    }
+    return {
+      partyId: String(claim.partyId).slice(0, 120),
+      partySize,
+      leaderSocialId: String(claim.leaderSocialId || '').slice(0, 48),
+      memberSocialIds: Array.isArray(claim.memberSocialIds)
+        ? claim.memberSocialIds.map((entry) => String(entry || '').slice(0, 48)).filter(Boolean).slice(0, 2)
+        : []
+    };
+  }
+
+  async tryBackfill(ticket, now) {
+    if (
+      ticket.partySize !== 1
+      || ticket.allowBackfill !== true
+    ) return false;
+
+    const candidates = filterAndSortPublicRoomDirectory(
+      Object.values(this.state.rooms || {})
+        .filter((listing) => (
+          roomDirectoryListingVisible(listing, { now })
+          && Number(listing.protocol) === Number(ticket.protocol)
+          && String(listing.build) === String(ticket.build)
+        ))
+        .map((listing) => publicRoomDirectoryEntry(listing, {
+          requestRegion: ticket.region,
+          now
+        })),
+      {
+        mapId: ticket.mapId,
+        difficulty: ticket.difficulty,
+        status: ticket.joinInProgress === true ? 'any' : 'waiting',
+        regionScope: ticket.regionPolicy === 'regional-only'
+          ? 'regional'
+          : 'any',
+        bot: 'any',
+        joinInProgress: ticket.joinInProgress === true,
+        requiredSlots: 1,
+        searchPriority: ticket.searchPriority
+      },
+      { now }
+    );
+
+    for (const entry of candidates) {
+      const listing = this.state.rooms?.[entry.listingId] || null;
+      if (!listing) continue;
+      const admission = await this.verifyRoomDirectoryAdmission(
+        listing,
+        ticket.playerId,
+        entry.listingId
+      );
+      if (!admission.ok) {
+        if (['ROOM_NOT_PUBLIC', 'HOST_UNAVAILABLE', 'ROOM_LOCKED', 'LATE_JOIN_DISABLED', 'ROOM_UNAVAILABLE', 'ROOM_FULL'].includes(admission.error)) {
+          delete this.state.rooms[entry.listingId];
+        }
+        continue;
+      }
+      listing.reservedHumans = Math.max(0, Number(admission.reservedHumans) || 0);
+      listing.updatedAt = now;
+      listing.expiresAt = Math.max(Number(listing.expiresAt) || 0, now + 30_000);
+      ticket.status = 'matched';
+      ticket.matchExpiresAt = now + MATCHMAKING_MATCH_TTL_MS;
+      ticket.assignment = {
+        matchId: makeSecret('backfill'),
+        roomCode: admission.roomCode,
+        joinMode: 'join',
+        connectAfterMs: 0,
+        mapId: listing.mapId,
+        difficulty: listing.difficulty,
+        maxPlayers: listing.maxPlayers,
+        scope: entry.scope,
+        region: listing.region || ticket.region,
+        admissionToken: admission.admissionToken,
+        admissionExpiresAt: admission.admissionExpiresAt,
+        backfill: true,
+        partySize: 1,
+        quality: entry.quality || 'compatible'
+      };
+      ticket.updatedAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  async createPartyMatch(ticket, now) {
+    const matchId = makeSecret('party-match');
+    const roomCode = makeMatchmakingRoomCode();
+    const region = ticket.regionPolicy === 'global'
+      ? 'GLOBAL'
+      : normalizeMatchmakingRegion(ticket.region);
+    const reservation = await this.reserveRoom({
+      roomCode,
+      matchId,
+      mapId: ticket.mapId,
+      difficulty: ticket.difficulty,
+      maxPlayers: 2,
+      region,
+      now
+    });
+    if (!reservation.ok) return reservation;
+    ticket.status = 'matched';
+    ticket.matchExpiresAt = now + MATCHMAKING_MATCH_TTL_MS;
+    ticket.assignment = {
+      matchId,
+      roomCode,
+      joinMode: 'join',
+      connectAfterMs: 0,
+      mapId: ticket.mapId,
+      difficulty: ticket.difficulty,
+      maxPlayers: 2,
+      scope: ticket.regionPolicy === 'global' ? 'global' : 'party',
+      region,
+      backfill: false,
+      partySize: ticket.partySize,
+      quality: 'party-ready'
+    };
+    ticket.updatedAt = now;
+    return { ok: true };
+  }
+
   async enqueue(request, now) {
     let body;
     try {
@@ -340,6 +518,23 @@ export class MatchmakingHub extends DurableObject {
         ok: false,
         error: cleanText(error?.message || error, 120) || 'INVALID_REQUEST'
       }, { status: 400 });
+    }
+
+    try {
+      const partyClaim = await this.resolvePartyClaim(normalized);
+      normalized = Object.freeze({
+        ...normalized,
+        partyId: partyClaim.partyId,
+        partySize: partyClaim.partySize,
+        leaderSocialId: partyClaim.leaderSocialId,
+        memberSocialIds: partyClaim.memberSocialIds
+      });
+    } catch (error) {
+      return json({
+        ok: false,
+        error: cleanText(error?.message || error, 120) || 'PARTY_TICKET_REJECTED',
+        message: 'The party changed or its matchmaking ticket expired.'
+      }, { status: 409 });
     }
 
     const existing = activeTicketForPlayer(
@@ -376,27 +571,37 @@ export class MatchmakingHub extends DurableObject {
       status: 'queued',
       queuedAt: now,
       expiresAt: now + MATCHMAKING_QUEUE_TTL_MS,
-      fallbackAt: now + MATCHMAKING_GLOBAL_FALLBACK_MS,
+      fallbackAt: normalized.regionPolicy === 'regional-only'
+        ? 0
+        : normalized.regionPolicy === 'global'
+          ? now
+          : now + normalized.globalExpansionMs,
       assignment: null,
       reason: null,
       updatedAt: now
     };
 
-    const candidate = chooseMatchmakingCandidate(
-      Object.values(this.state.tickets),
-      ticket,
-      { now }
-    );
-
-    if (candidate?.ticket) {
-      const result = await this.createMatch(
-        candidate.ticket,
-        ticket,
-        candidate.scope,
-        now
-      );
-      if (!result.ok) {
-        return json(result, { status: 503 });
+    if (ticket.partySize > 1) {
+      const result = await this.createPartyMatch(ticket, now);
+      if (!result.ok) return json(result, { status: 503 });
+    } else {
+      const backfilled = await this.tryBackfill(ticket, now);
+      if (!backfilled) {
+        const candidate = chooseMatchmakingCandidate(
+          Object.values(this.state.tickets),
+          ticket,
+          { now }
+        );
+        if (candidate?.ticket) {
+          const result = await this.createMatch(
+            candidate.ticket,
+            ticket,
+            candidate.scope,
+            now,
+            candidate.qualityScore
+          );
+          if (!result.ok) return json(result, { status: 503 });
+        }
       }
     }
 
@@ -414,7 +619,7 @@ export class MatchmakingHub extends DurableObject {
     }, { status: stored.status === 'matched' ? 201 : 202 });
   }
 
-  async createMatch(existing, incoming, scope, now) {
+  async createMatch(existing, incoming, scope, now, qualityScore = 0) {
     const matchId = makeSecret('match');
     const roomCode = makeMatchmakingRoomCode();
     const region = scope === 'regional'
@@ -428,7 +633,12 @@ export class MatchmakingHub extends DurableObject {
       difficulty: incoming.difficulty,
       maxPlayers: Math.min(existing.maxPlayers, incoming.maxPlayers),
       scope,
-      region
+      region,
+      backfill: false,
+      partySize: 1,
+      quality: scope === 'regional'
+        ? qualityScore >= 100 ? 'excellent' : 'good'
+        : 'expanded'
     };
 
     const reservation = await this.reserveRoom({
@@ -568,7 +778,14 @@ export class MatchmakingHub extends DurableObject {
           peer.matchExpiresAt = null;
           peer.queuedAt = now;
           peer.expiresAt = now + MATCHMAKING_QUEUE_TTL_MS;
-          peer.fallbackAt = now + MATCHMAKING_GLOBAL_FALLBACK_MS;
+          peer.fallbackAt = peer.regionPolicy === 'regional-only'
+            ? 0
+            : peer.regionPolicy === 'global'
+              ? now
+              : now + Math.max(
+                  0,
+                  Number(peer.globalExpansionMs) || MATCHMAKING_GLOBAL_FALLBACK_MS
+                );
           peer.reason = 'peer-cancelled';
           peer.updatedAt = now;
         }

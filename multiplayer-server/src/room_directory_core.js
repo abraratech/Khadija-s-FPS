@@ -1,8 +1,15 @@
 // multiplayer-server/src/room_directory_core.js
-// MATCH.2 R1.1 — deterministic public-room admission, reservation and rejoin policy.
+// MATCH.3 R1 — deterministic public-room admission, filters and quality.
 
-export const ROOM_DIRECTORY_SCHEMA = 1;
-export const ROOM_DIRECTORY_PATCH = 'match2-public-room-admission-r1-1';
+import {
+  MATCH3_SERVER_PATCH,
+  MATCH3_SERVER_SCHEMA,
+  normalizeMatch3RoomFilters,
+  sortMatch3RoomEntries
+} from './match3_core.js';
+
+export const ROOM_DIRECTORY_SCHEMA = MATCH3_SERVER_SCHEMA;
+export const ROOM_DIRECTORY_PATCH = MATCH3_SERVER_PATCH;
 export const ROOM_DIRECTORY_TTL_MS = 90_000;
 export const ROOM_DIRECTORY_MAX_RESULTS = 24;
 export const ROOM_DIRECTORY_ADMISSION_TTL_MS = 15_000;
@@ -85,6 +92,17 @@ export function publicRoomDirectoryEntry(listing, {
     updatedAt: listing.updatedAt,
     ageMs: Math.max(0, now - Number(listing.createdAt || now))
   });
+}
+
+
+export function filterAndSortPublicRoomDirectory(entries, filters = {}, {
+  now = Date.now()
+} = {}) {
+  return Object.freeze(
+    sortMatch3RoomEntries(entries, normalizeMatch3RoomFilters(filters), { now })
+      .slice(0, ROOM_DIRECTORY_MAX_RESULTS)
+      .map((entry) => Object.freeze(entry))
+  );
 }
 
 export function cleanupRoomDirectory(listings = {}, { now = Date.now() } = {}) {

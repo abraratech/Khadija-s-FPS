@@ -1065,10 +1065,6 @@ export function setAIDirectorDebugEnabled() {
 }
 
 export function bindAIDirectorDebugHotkey() {
-  // Compatibility no-op for older imports. No F7 listener is bound.
-  if (typeof window !== 'undefined') {
-    window.__KA_AI_DIRECTOR_DEBUG_BOUND__ = true;
-  }
   removeDirectorDebugSurface();
 }
 
@@ -1082,14 +1078,13 @@ if (typeof window !== 'undefined') {
     removeDirectorDebugSurface();
   });
 
-  try {
-    delete window.KASetAIDirectorDebug;
-  } catch {
-    window.KASetAIDirectorDebug = undefined;
+  for (const key of [
+    'KASetAIDirectorDebug',
+    'KAGetAIDirector',
+    'KAGetAIFinalDiagnostics',
+    'KAExportAIDiagnostics',
+    '__KA_AI_DIRECTOR_DEBUG_BOUND__'
+  ]) {
+    try { delete window[key]; } catch { window[key] = undefined; }
   }
-
-  // Read-only diagnostics remain available for support without exposing a UI.
-  window.KAGetAIDirector = getAIDirectorSnapshot;
-  window.KAGetAIFinalDiagnostics = getAIFinalDiagnostics;
-  window.KAExportAIDiagnostics = () => JSON.stringify(getAIFinalDiagnostics(), null, 2);
 }

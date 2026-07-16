@@ -35,6 +35,14 @@ import {
 } from './production_release.js';
 import { PublicMatchmakingClient } from './matchmaking.js';
 import { PublicRoomDirectoryClient } from './room_directory.js';
+import {
+  match3PartyErrorMessage,
+  normalizeMatch3PartyContext
+} from './match3_core.js';
+import {
+  getSocialMatchmakingPartyContext,
+  getSocialPartyMatchmakingTicket
+} from '../social_bridge.js';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -334,7 +342,7 @@ export class MultiplayerLobbyController {
     return this.getSnapshot();
   }
 
-  async browseOpenRooms({ serverUrl } = {}) {
+  async browseOpenRooms({ serverUrl, filters = {}, searchPriority = 'balanced' } = {}) {
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.error = null;
     this.render();
@@ -347,11 +355,31 @@ export class MultiplayerLobbyController {
       this.render();
       return false;
     }
+    const party = normalizeMatch3PartyContext(
+      getSocialMatchmakingPartyContext()
+    );
+    if (!party.eligible) {
+      this.error = match3PartyErrorMessage(party.reason).toUpperCase();
+      this.render();
+      return false;
+    }
+    if (party.active) {
+      this.error = match3PartyErrorMessage(
+        'PARTY_OPEN_ROOM_RESERVATION_UNSUPPORTED'
+      ).toUpperCase();
+      this.render();
+      return false;
+    }
     const snapshot = await this.roomDirectory.list({
       serverUrl,
       playerId: this.localPlayerId,
       protocol: MULTIPLAYER_PROTOCOL_VERSION,
-      build: MULTIPLAYER_BUILD_ID
+      build: MULTIPLAYER_BUILD_ID,
+      searchPriority,
+      filters: {
+        ...filters,
+        requiredSlots: party.memberCount
+      }
     });
     this.roomDirectoryState = snapshot;
     this.render();
@@ -362,7 +390,8 @@ export class MultiplayerLobbyController {
     listingId,
     joinToken,
     displayName,
-    serverUrl
+    serverUrl,
+    partySize = 1
   } = {}) {
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.quickMatchConnectInFlight = true;
@@ -376,7 +405,8 @@ export class MultiplayerLobbyController {
         protocol: MULTIPLAYER_PROTOCOL_VERSION,
         build: MULTIPLAYER_BUILD_ID,
         listingId,
-        joinToken
+        joinToken,
+        partySize
       });
       this.pendingDirectoryJoin = {
         listingId: assignment.listingId,
@@ -396,7 +426,9 @@ export class MultiplayerLobbyController {
           serverUrl,
           playerId: this.localPlayerId,
           protocol: MULTIPLAYER_PROTOCOL_VERSION,
-          build: MULTIPLAYER_BUILD_ID
+          build: MULTIPLAYER_BUILD_ID,
+          filters: this.roomDirectoryState?.filters || {},
+          searchPriority: this.roomDirectoryState?.searchPriority || 'balanced'
         });
         this.render();
         return false;
@@ -412,7 +444,9 @@ export class MultiplayerLobbyController {
         serverUrl,
         playerId: this.localPlayerId,
         protocol: MULTIPLAYER_PROTOCOL_VERSION,
-        build: MULTIPLAYER_BUILD_ID
+        build: MULTIPLAYER_BUILD_ID,
+        filters: this.roomDirectoryState?.filters || {},
+        searchPriority: this.roomDirectoryState?.searchPriority || 'balanced'
       });
       this.render();
       return false;
@@ -471,7 +505,12 @@ export class MultiplayerLobbyController {
     displayName,
     serverUrl,
     mapId = 'grid_bunker',
-    difficulty = 1
+    difficulty = 1,
+    searchPriority = 'balanced',
+    regionPolicy = 'auto',
+    preferredRegion = 'AUTO',
+    allowBackfill = true,
+    joinInProgress = true
   } = {}) {
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.error = null;
@@ -487,6 +526,35 @@ export class MultiplayerLobbyController {
       return false;
     }
 
+    const party = normalizeMatch3PartyContext(
+      getSocialMatchmakingPartyContext()
+    );
+    if (!party.eligible) {
+      this.error = match3PartyErrorMessage(party.reason).toUpperCase();
+      this.render();
+      return false;
+    }
+
+    let partyTicket = '';
+    if (party.active) {
+      try {
+        const ticket = await getSocialPartyMatchmakingTicket({
+          playerId: this.localPlayerId,
+          tabId: this.matchmaking.tabId,
+          protocol: MULTIPLAYER_PROTOCOL_VERSION,
+          build: MULTIPLAYER_BUILD_ID
+        });
+        partyTicket = String(ticket?.ticket || '');
+        if (!partyTicket) throw new Error('PARTY_TICKET_REQUIRED');
+      } catch (error) {
+        this.error = match3PartyErrorMessage(
+          String(error?.message || 'PARTY_TICKET_REQUIRED')
+        ).toUpperCase();
+        this.render();
+        return false;
+      }
+    }
+
     this.pendingQuickMatchAssignment = null;
     const snapshot = await this.matchmaking.start({
       serverUrl,
@@ -498,7 +566,15 @@ export class MultiplayerLobbyController {
         mode: 'coop',
         mapId: String(mapId || 'grid_bunker').slice(0, 80),
         difficulty: Number(difficulty) || 1,
-        maxPlayers: 2
+        maxPlayers: 2,
+        partySize: party.memberCount,
+        partyId: party.partyId,
+        partyTicket,
+        searchPriority,
+        regionPolicy,
+        preferredRegion,
+        allowBackfill,
+        joinInProgress
       }
     });
     this.matchmakingState = snapshot;
@@ -671,7 +747,8 @@ export class MultiplayerLobbyController {
       roomCode: assignment.roomCode,
       displayName: identity.displayName || 'Player',
       serverUrl: identity.serverUrl,
-      joinMode: assignment.joinMode || 'join'
+      joinMode: assignment.joinMode || 'join',
+      admissionToken: assignment.admissionToken || ''
     });
 
     if (!connected) {

@@ -1,10 +1,11 @@
 // js/multiplayer/production_release_core.js
 // M4.55-M4.58 — deterministic frontend/Worker release, cloud-profile, and passkey-authentication capability gate.
 
-export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'm5-coop-turn-fallback-r1';
+export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'final2-r1-full-product-certification';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
-export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'm5-coop-turn-fallback-r1';
-export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = '0fb4d8abc89c064e1bac60bd0573793037334999';
+export const MULTIPLAYER_PRODUCTION_RELEASE_BUILD = 'final2-consolidated-production-r1';
+export const MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE = 'cfc5a0e3c5e11fac0bc7c6f1f84e372ca8fda91d';
+export const MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL = 'dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e';
 export const MULTIPLAYER_PRODUCTION_RELEASE_STATUS = 'CERTIFIED';
 export const MULTIPLAYER_PRODUCTION_WORKER_URL = 'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev';
 export const MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA = 1;
@@ -47,6 +48,7 @@ export function createMultiplayerFrontendReleaseManifest() {
     build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
     patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
     certifiedBaselineSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: MULTIPLAYER_PRODUCTION_RELEASE_STATUS,
     workerUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
     leaderboards: Object.freeze({ schema: MULTIPLAYER_PRODUCTION_LEADERBOARD_SCHEMA, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH }),
@@ -73,6 +75,7 @@ export function evaluateMultiplayerProductionRelease({ workerManifest = null, fr
     ['BUILD_MISMATCH','build',cleanText(frontend.build),cleanText(worker.build,'missing')],
     ['PATCH_MISMATCH','patch',cleanText(frontend.patch),cleanText(worker.patch,'missing')],
     ['CERTIFIED_BASELINE_MISMATCH','certified frontend baseline',cleanText(frontend.certifiedBaselineSha),cleanText(worker.certifiedFrontendSha,'missing')],
+    ['CERTIFIED_SOURCE_SEAL_MISMATCH','certified source seal',cleanText(frontend.certifiedSourceSeal),cleanText(worker.certifiedSourceSeal,'missing')],
     ['RELEASE_STATUS_MISMATCH','release status',cleanText(frontend.releaseStatus).toUpperCase(),cleanText(worker.releaseStatus,'missing').toUpperCase()],
     ['LEADERBOARD_SCHEMA_MISMATCH','leaderboard schema',finiteInteger(frontend.leaderboards?.schema),finiteInteger(worker.leaderboards?.schema,-1)],
     ['LEADERBOARD_PATCH_MISMATCH','leaderboard patch',cleanText(frontend.leaderboards?.patch),cleanText(worker.leaderboards?.patch,'missing')],

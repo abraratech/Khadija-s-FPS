@@ -1,10 +1,16 @@
 // js/multiplayer/room_directory_core.js
-// MATCH.2 R1.1 — deterministic public-room directory and admission helpers.
+// MATCH.3 R1 — deterministic public-room discovery, filters and admission helpers.
 
+import {
+  MATCH3_PATCH,
+  MATCH3_SCHEMA,
+  normalizeMatch3RoomFilters,
+  sortMatch3Rooms
+} from './match3_core.js';
 import { matchmakingEndpoint } from './matchmaking_core.js';
 
-export const PUBLIC_ROOM_DIRECTORY_SCHEMA = 1;
-export const PUBLIC_ROOM_DIRECTORY_PATCH = 'match2-public-room-admission-r1-1';
+export const PUBLIC_ROOM_DIRECTORY_SCHEMA = MATCH3_SCHEMA;
+export const PUBLIC_ROOM_DIRECTORY_PATCH = MATCH3_PATCH;
 export const PUBLIC_ROOM_DIRECTORY_MAX_RESULTS = 24;
 
 function cleanText(value, fallback = '', limit = 240) {
@@ -44,11 +50,19 @@ export function normalizePublicRoomEntry(value = {}) {
     region: cleanText(value.region, 'ZZ', 16).toUpperCase(),
     scope: cleanText(value.scope, 'global', 16).toLowerCase(),
     createdAt: Math.max(0, finiteNumber(value.createdAt, 0)),
-    updatedAt: Math.max(0, finiteNumber(value.updatedAt, 0))
+    updatedAt: Math.max(0, finiteNumber(value.updatedAt, 0)),
+    ageMs: Math.max(0, finiteNumber(value.ageMs, 0)),
+    quality: cleanText(value.quality, 'compatible', 40),
+    qualityScore: finiteNumber(value.qualityScore, 0)
   });
 }
 
-export function normalizeRoomDirectoryResponse(value = {}) {
+export function normalizeRoomDirectoryResponse(value = {}, {
+  filters = {},
+  searchPriority = 'balanced',
+  now = Date.now()
+} = {}) {
+  const normalizedFilters = normalizeMatch3RoomFilters(filters);
   const rooms = Array.isArray(value.rooms)
     ? value.rooms.map(normalizePublicRoomEntry).filter((entry) => (
       entry.listingId && entry.joinToken && entry.openHumanSlots > 0
@@ -59,11 +73,16 @@ export function normalizeRoomDirectoryResponse(value = {}) {
     schema: Math.max(0, Math.trunc(finiteNumber(value.schema, 0))),
     patch: cleanText(value.patch, '', 120),
     region: cleanText(value.region, 'ZZ', 16).toUpperCase(),
-    rooms: Object.freeze(rooms.slice(0, PUBLIC_ROOM_DIRECTORY_MAX_RESULTS)),
-    refreshedAt: Math.max(0, finiteNumber(value.refreshedAt, Date.now()))
+    rooms: sortMatch3Rooms(rooms, {
+      filters: normalizedFilters,
+      searchPriority,
+      now
+    }).slice(0, PUBLIC_ROOM_DIRECTORY_MAX_RESULTS),
+    filters: normalizedFilters,
+    searchPriority,
+    refreshedAt: Math.max(0, finiteNumber(value.refreshedAt, now))
   });
 }
-
 export function normalizeRoomAdmissionAssignment(value = {}) {
   const roomCode = cleanText(value.roomCode, '', 12).toUpperCase();
   const admissionToken = cleanText(value.admissionToken, '', 280);
@@ -75,7 +94,9 @@ export function normalizeRoomAdmissionAssignment(value = {}) {
     joinMode: 'join',
     admissionToken,
     admissionExpiresAt: Math.max(0, finiteNumber(value.admissionExpiresAt, 0)),
-    listingId: cleanText(value.listingId, '', 220)
+    listingId: cleanText(value.listingId, '', 220),
+    partySize: Math.max(1, Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))),
+    quality: cleanText(value.quality, 'compatible', 40)
   });
 }
 

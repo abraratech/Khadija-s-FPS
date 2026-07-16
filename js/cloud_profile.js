@@ -62,6 +62,9 @@ const REMOTE_LEASE_KEY = 'ka_cloud_profile_sync_lease_v1';
 const REMOTE_CLOCK_KEY = 'ka_cloud_profile_clock_v1';
 const REMOTE_TOMBSTONE_KEY = 'ka_cloud_profile_tombstone_v1';
 const REMOTE_LAST_SUCCESS_KEY = 'ka_cloud_profile_last_success_v1';
+const PROGRESSION_RECEIPT_QUEUE_KEY = 'ka_cloud_progression_receipts_v1';
+const PROGRESSION_RECEIPT_QUEUE_LIMIT = 32;
+const PROGRESSION_AUTHORITY_PATCH = 'prog2-r1-production-hardening-cloud-integrity';
 const CLOUD_AUTH_PATCH = 'm4-final-player-polish-r1';
 
 let currentProfile = null;
@@ -112,6 +115,11 @@ let remoteState = {
   passkeys: [],
   authVersion: 0,
   lastAuthenticatedAt: 0,
+  progressionProtected: false,
+  progressionReceiptCount: 0,
+  lastProgressionAt: 0,
+  lastProgressionReceiptId: '',
+  lastProgressionReceiptProof: '',
   webAuthnSupported: typeof PublicKeyCredential !== 'undefined' && typeof navigator !== 'undefined' && Boolean(navigator.credentials)
 };
 
@@ -189,6 +197,24 @@ function getRemoteCredentials() {
   const token = readRaw(REMOTE_TOKEN_KEY, '');
   const valid = /^cloud-[a-f0-9]{32}$/i.test(accountId) && token.length >= 32;
   return { valid, accountId: valid ? accountId : '', token: valid ? token : '' };
+}
+
+export function getCloudProfileAuthContext() {
+  const credentials = getRemoteCredentials();
+  const profile = currentProfile || recoverOrCreateProfile();
+  return Object.freeze({
+    valid: credentials.valid,
+    accountId: credentials.accountId,
+    token: credentials.token,
+    accountType: credentials.valid ? remoteState.accountType : profile.accountType,
+    displayName: String(
+      profile?.identity?.displayName
+      || remoteState.accountLabel
+      || 'Player'
+    ).replace(/[<>\u0000-\u001f\u007f]/g, '').trim().slice(0, 24) || 'Player',
+    deviceId: getOrCreateDeviceId(),
+    connected: remoteState.connected === true
+  });
 }
 
 function saveRemoteCredentials(account, token) {
@@ -447,6 +473,8 @@ export function getCloudProfileErrorMessage(error, context = 'request') {
     PROFILE_AUTH_REQUIRED: CLOUD_SESSION_EXPIRED_MESSAGE,
     CLOUD_SESSION_EXPIRED: CLOUD_SESSION_EXPIRED_MESSAGE,
     CLOUD_REQUEST_TIMEOUT: 'CLOUD REQUEST TIMED OUT · TRY AGAIN',
+    PROGRESSION_RECEIPT_INVALID: 'RUN PROGRESSION RECEIPT WAS REJECTED',
+    PROGRESSION_COMMIT_RATE_LIMITED: 'PROGRESSION SYNC IS BUSY · TRY AGAIN LATER',
     NotAllowedError: context === 'register' ? 'PASSKEY SETUP CANCELLED' : 'PASSKEY SIGN-IN CANCELLED',
     InvalidStateError: 'THIS PASSKEY IS ALREADY REGISTERED',
     SecurityError: 'PASSKEYS REQUIRE THE SECURE HTTPS GAME SITE'
@@ -508,6 +536,132 @@ async function remoteRequest(path, { method = 'GET', body = null, authenticated 
   } finally {
     clearTimeout(timeout);
   }
+}
+
+
+function normalizeProgressionReceiptQueue(value) {
+  if (!Array.isArray(value)) return [];
+  const byId = new Map();
+  for (const entry of value) {
+    const receipt = entry?.receipt;
+    const runId = String(receipt?.runId || '').slice(0, 120);
+    if (!/^[a-zA-Z0-9:_-]{8,120}$/.test(runId)) continue;
+    byId.set(runId, {
+      receipt: { ...receipt, runId },
+      queuedAt: Math.max(0, Number(entry.queuedAt) || nowMs()),
+      attempts: Math.max(0, Math.floor(Number(entry.attempts) || 0)),
+      lastError: String(entry.lastError || '').slice(0, 120)
+    });
+  }
+  return [...byId.values()]
+    .sort((left, right) => left.queuedAt - right.queuedAt)
+    .slice(-PROGRESSION_RECEIPT_QUEUE_LIMIT);
+}
+
+function readProgressionReceiptQueue() {
+  try {
+    return normalizeProgressionReceiptQueue(
+      JSON.parse(readRaw(PROGRESSION_RECEIPT_QUEUE_KEY, '[]'))
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeProgressionReceiptQueue(value) {
+  const normalized = normalizeProgressionReceiptQueue(value);
+  writeRaw(PROGRESSION_RECEIPT_QUEUE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
+
+function queueProgressionReceipt(receipt) {
+  const queue = readProgressionReceiptQueue();
+  const runId = String(receipt?.runId || '').slice(0, 120);
+  if (!/^[a-zA-Z0-9:_-]{8,120}$/.test(runId)) return queue;
+  if (queue.some((entry) => entry.receipt.runId === runId)) return queue;
+  return writeProgressionReceiptQueue([
+    ...queue,
+    { receipt: { ...receipt, runId }, queuedAt: nowMs(), attempts: 0, lastError: '' }
+  ]);
+}
+
+function applyAuthoritativeRemoteProgression(profile) {
+  const validation = validateCloudProfile(profile);
+  if (!validation.valid) {
+    throw new Error(`REMOTE_PROFILE_INVALID:${validation.errors.join(',')}`);
+  }
+  if (!currentProfile) currentProfile = recoverOrCreateProfile();
+  const incoming = validation.profile;
+  const merged = mergeCloudProfiles(currentProfile, incoming, { now: nowMs() });
+  merged.progression = JSON.parse(JSON.stringify(incoming.progression || {}));
+  merged.updatedAt = Math.max(Number(merged.updatedAt || 0), nowMs());
+  writeProfile(merged);
+  applyProfileToLegacy(merged, { forceHydrate: true });
+  currentProfile = merged;
+  remoteLastFingerprint = merged.legacyFingerprint;
+  return true;
+}
+
+async function drainProgressionReceiptQueue() {
+  if (!getRemoteCredentials().valid) {
+    return Object.freeze({ accepted: false, reason: 'CLOUD_NOT_CONNECTED' });
+  }
+  const queue = readProgressionReceiptQueue();
+  if (!queue.length) {
+    return Object.freeze({ accepted: true, unchanged: true });
+  }
+  const entry = queue[0];
+  const operationId = `progression-${entry.receipt.runId}`.slice(0, 160);
+  try {
+    const value = await remoteRequest('/profiles/progression/commit', {
+      method: 'POST',
+      operationId,
+      body: { receipt: entry.receipt }
+    });
+    verifyRemoteProfileResponse(value);
+    applyAuthoritativeRemoteProgression(value.profile);
+    updateRemoteAccountState(value);
+    remoteState.progressionProtected = value.progressionProtected === true;
+    remoteState.lastProgressionReceiptProof = String(value.receipt?.proof || '').slice(0, 128);
+    remoteState.lastProgressionReceiptId = String(value.receipt?.runId || '').slice(0, 120);
+    remoteState.lastProgressionAt = Number(value.receipt?.committedAt || nowMs());
+    writeProgressionReceiptQueue(queue.slice(1));
+    const liveSeasonPoints = Math.max(0, Number(value.receipt?.live?.seasonPointsAward || 0));
+    statusMessage = value.idempotent
+      ? 'PROGRESSION RECEIPT RECOVERED'
+      : `PROGRESSION VERIFIED · +${Number(value.receipt?.award?.total || 0)} XP${liveSeasonPoints > 0 ? ` · +${liveSeasonPoints} SP` : ''}`;
+    refreshProfileUi();
+    if (readProgressionReceiptQueue().length) queueMicrotask(() => {
+      void drainProgressionReceiptQueue();
+    });
+    return Object.freeze({
+      accepted: true,
+      idempotent: value.idempotent === true,
+      receipt: value.receipt || null
+    });
+  } catch (error) {
+    const next = {
+      ...entry,
+      attempts: entry.attempts + 1,
+      lastError: String(error?.code || error?.message || error).slice(0, 120)
+    };
+    writeProgressionReceiptQueue([next, ...queue.slice(1)]);
+    statusMessage = `PROGRESSION PENDING · ${next.lastError}`;
+    refreshProfileUi();
+    return Object.freeze({ accepted: false, queued: true, reason: next.lastError });
+  }
+}
+
+export function commitCloudProgressionReceipt(receipt) {
+  const queue = queueProgressionReceipt(receipt);
+  if (!getRemoteCredentials().valid) {
+    return Promise.resolve(Object.freeze({
+      accepted: false,
+      queued: queue.length > 0,
+      reason: 'CLOUD_NOT_CONNECTED'
+    }));
+  }
+  return drainProgressionReceiptQueue();
 }
 
 function remoteOperationId(reason = 'sync') {
@@ -590,6 +744,10 @@ function updateRemoteAccountState(value = {}) {
   if (account.accountLabel) remoteState.accountLabel = String(account.accountLabel).slice(0, 48);
   if (Number.isFinite(Number(account.authVersion))) remoteState.authVersion = Math.max(0, Number(account.authVersion));
   if (Number.isFinite(Number(account.lastAuthenticatedAt))) remoteState.lastAuthenticatedAt = Math.max(0, Number(account.lastAuthenticatedAt));
+  if (typeof account.progressionProtected === 'boolean') remoteState.progressionProtected = account.progressionProtected;
+  if (Number.isFinite(Number(account.progressionReceiptCount))) remoteState.progressionReceiptCount = Math.max(0, Number(account.progressionReceiptCount));
+  if (Number.isFinite(Number(account.lastProgressionAt))) remoteState.lastProgressionAt = Math.max(0, Number(account.lastProgressionAt));
+  if (account.lastProgressionReceiptId) remoteState.lastProgressionReceiptId = String(account.lastProgressionReceiptId).slice(0, 120);
   if (Array.isArray(value.passkeys)) remoteState.passkeys = value.passkeys.map((entry) => ({ ...entry }));
   if (Array.isArray(value.devices)) remoteState.devices = value.devices.map((entry) => ({ ...entry }));
   if (Array.isArray(value.history)) remoteState.history = value.history.map((entry) => ({ ...entry }));
@@ -988,7 +1146,10 @@ async function drainRemoteSyncQueue(reason = 'queue') {
     if (value.checksumVerified !== true || !integrity.valid) {
       throw new CloudRemoteError('CLOUD_CHECKSUM_VERIFICATION_FAILED', 409, { integrity, value });
     }
-    const remoteChangedLocal = applyRemoteProfile(value.profile, { forceHydrate: false });
+    const remoteChangedLocal = value.progressionProtected === true
+      ? applyAuthoritativeRemoteProgression(value.profile)
+      : applyRemoteProfile(value.profile, { forceHydrate: false });
+    remoteState.progressionProtected = value.progressionProtected === true;
     remoteState.connected = true;
     remoteState.accountId = value.account?.accountId || credentials.accountId;
     remoteState.cloudRevision = Math.max(0, Number(value.account?.cloudRevision) || 0);
@@ -1622,7 +1783,7 @@ function renderCloudSecurityUi() {
 
   setText('cloud-profile-current-device-id', currentDeviceId);
   const authStatus = remoteState.accountType === 'passkey'
-    ? `PASSKEY ACCOUNT · ${remoteState.passkeys.length} CREDENTIAL${remoteState.passkeys.length === 1 ? '' : 'S'}`
+    ? `PASSKEY ACCOUNT · PROTECTED PROGRESSION · ${remoteState.passkeys.length} CREDENTIAL${remoteState.passkeys.length === 1 ? '' : 'S'}`
     : getRemoteCredentials().valid
       ? 'CLOUD GUEST · UPGRADE AVAILABLE'
       : 'SIGNED OUT';
@@ -1815,17 +1976,6 @@ export function importCloudProfileText(text, { merge = true, reload = false } = 
   return Object.freeze({ accepted: true, merged: merge, profile: getCloudProfileDiagnostics() });
 }
 
-async function copyDiagnostics() {
-  const text = JSON.stringify(getCloudProfileDiagnostics(), null, 2);
-  try {
-    await navigator.clipboard.writeText(text);
-    statusMessage = 'DIAGNOSTICS COPIED';
-  } catch {
-    statusMessage = 'COPY BLOCKED · USE KAGETCLOUDPROFILEDIAGNOSTICS()';
-  }
-  refreshProfileUi();
-}
-
 function bindProfileUi() {
   document.getElementById('cloud-profile-manage-btn')?.addEventListener('click', () => {
     setCloudAdvancedOpen(!cloudAdvancedOpen);
@@ -1838,9 +1988,6 @@ function bindProfileUi() {
   });
   document.getElementById('cloud-profile-import-btn')?.addEventListener('click', () => {
     document.getElementById('cloud-profile-import-file')?.click();
-  });
-  document.getElementById('cloud-profile-copy-btn')?.addEventListener('click', () => {
-    void copyDiagnostics();
   });
   document.getElementById('cloud-profile-enable-btn')?.addEventListener('click', () => {
     void registerCloudGuestAccount();
@@ -1928,16 +2075,6 @@ function bindProfileUi() {
   });
   document.getElementById('cloud-profile-retry-queue-btn')?.addEventListener('click', () => {
     void retryCloudSyncQueue();
-  });
-  document.getElementById('cloud-profile-reliability-copy-btn')?.addEventListener('click', async () => {
-    const diagnostics = getCloudProfileDiagnostics().remote.reliability;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
-      statusMessage = 'RELIABILITY DIAGNOSTICS COPIED';
-    } catch {
-      statusMessage = 'COPY BLOCKED · USE KAGETCLOUDPROFILEDIAGNOSTICS()';
-    }
-    refreshProfileUi();
   });
   document.getElementById('cloud-profile-import-file')?.addEventListener('change', async (event) => {
     const input = event.currentTarget;
@@ -2027,6 +2164,14 @@ export function getCloudProfileDiagnostics() {
       serverRoundTripMs: remoteState.serverRoundTripMs,
       clockSkewWarning: remoteState.clockSkewWarning,
       lastOperationId: remoteState.lastOperationId,
+      progressionIntegrity: {
+        patch: PROGRESSION_AUTHORITY_PATCH,
+        protected: remoteState.progressionProtected,
+        pendingReceipts: readProgressionReceiptQueue().length,
+        receiptCount: remoteState.progressionReceiptCount,
+        lastCommittedAt: remoteState.lastProgressionAt,
+        lastReceiptId: remoteState.lastProgressionReceiptId
+      },
       tombstonedAccountId: remoteState.tombstonedAccountId,
       queue: readRemoteQueue().map((entry) => ({
         operationId: entry.operationId,
@@ -2077,7 +2222,15 @@ export function initCloudProfile({ showToast = null } = {}) {
     }
   });
   window.addEventListener('online', () => {
-    if (getRemoteCredentials().valid) void retryCloudSyncQueue();
+    if (getRemoteCredentials().valid) {
+      void retryCloudSyncQueue();
+      void drainProgressionReceiptQueue();
+    }
+  });
+  window.addEventListener('ka:progression-run-finalized', (event) => {
+    const receipt = event?.detail?.receipt;
+    if (!receipt) return;
+    void commitCloudProgressionReceipt(receipt);
   });
   window.addEventListener('pagehide', () => syncCloudProfile('pagehide'));
   window.addEventListener('beforeunload', () => syncCloudProfile('beforeunload'));
@@ -2091,6 +2244,7 @@ export function initCloudProfile({ showToast = null } = {}) {
   remoteTimer = setInterval(() => {
     if (document.visibilityState !== 'hidden' && getRemoteCredentials().valid) {
       void syncCloudProfileRemote('periodic');
+      if (readProgressionReceiptQueue().length) void drainProgressionReceiptQueue();
     }
   }, REMOTE_SYNC_MS);
   window.addEventListener('unload', () => {
@@ -2105,6 +2259,7 @@ export function initCloudProfile({ showToast = null } = {}) {
     if (getRemoteCredentials().valid) {
       if (readRemoteQueue().length) await retryCloudSyncQueue();
       else await syncCloudProfileRemote('boot', { force: true });
+      if (readProgressionReceiptQueue().length) await drainProgressionReceiptQueue();
       await refreshCloudAccountSecurity({ silent: true });
     }
   });
@@ -2113,15 +2268,9 @@ export function initCloudProfile({ showToast = null } = {}) {
 
 if (typeof window !== 'undefined') {
   window.KAGetCloudProfile = () => getCloudProfileSnapshot({ includeStorage: true });
-  window.KAGetCloudProfileDiagnostics = getCloudProfileDiagnostics;
-  window.KASyncCloudProfile = syncCloudProfile;
   window.KAExportCloudProfile = exportCloudProfile;
   window.KAImportCloudProfileText = importCloudProfileText;
-  window.KAValidateCloudProfile = validateCloudProfile;
-  window.KAMergeCloudProfiles = mergeCloudProfiles;
-  window.KAGetCloudProfileMergePolicy = getCloudProfileMergePolicy;
   window.KARegisterCloudGuestAccount = registerCloudGuestAccount;
-  window.KASyncCloudProfileRemote = syncCloudProfileRemote;
   window.KACreateCloudDeviceLink = createCloudDeviceLink;
   window.KAConsumeCloudDeviceLink = consumeCloudDeviceLink;
   window.KAExportCloudProfileFromServer = exportCloudProfileFromServer;
@@ -2141,8 +2290,4 @@ if (typeof window !== 'undefined') {
   window.KARefreshCloudPasskeys = refreshCloudPasskeys;
   window.KARenameCloudPasskey = renameCloudPasskey;
   window.KARevokeCloudPasskey = revokeCloudPasskey;
-  window.KARetryCloudSyncQueue = retryCloudSyncQueue;
-  window.KAGetCloudSyncQueue = () => readRemoteQueue().map((entry) => ({ ...entry, profile: undefined }));
-  window.KAGetCloudSyncLease = () => ({ ...readRemoteLease() });
-  window.KAVerifyCloudProfileChecksum = () => verifyProfileIntegrity(currentProfile, profileChecksum(currentProfile), profileChecksum);
 }

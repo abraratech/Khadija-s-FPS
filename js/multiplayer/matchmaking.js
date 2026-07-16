@@ -140,7 +140,10 @@ export class PublicMatchmakingClient {
       queueDepth: 0,
       assignment: null,
       ticketId: null,
-      botAvailable: false
+      botAvailable: false,
+      partySize: 1,
+      searchScope: 'regional',
+      estimatedWaitMs: 0
     });
     this.serverUrl = null;
     this.playerId = null;
@@ -295,16 +298,22 @@ export class PublicMatchmakingClient {
         preferences
       });
 
+      const startedAt = this.now();
       this.publish({
         status: 'searching',
         message: null,
         error: null,
-        queuedAt: this.now(),
+        queuedAt: startedAt,
         elapsedMs: 0,
-        fallbackAt: this.now() + 12_000,
+        fallbackAt: request.regionPolicy === 'regional-only'
+          ? 0
+          : startedAt + Math.max(0, Number(request.globalExpansionMs) || 0),
         assignment: null,
         ticketId: resume?.ticketId || null,
-        botAvailable: false
+        botAvailable: false,
+        partySize: request.partySize || 1,
+        searchScope: request.regionPolicy || 'auto',
+        estimatedWaitMs: 0
       });
       this.startClock();
 
@@ -357,6 +366,9 @@ export class PublicMatchmakingClient {
         fallbackAt: payload.fallbackAt,
         region: payload.region,
         queueDepth: payload.queueDepth,
+        estimatedWaitMs: payload.estimatedWaitMs,
+        searchScope: payload.searchScope,
+        partySize: payload.partySize,
         ticketId: payload.ticketId,
         assignment: null
       });
@@ -373,6 +385,9 @@ export class PublicMatchmakingClient {
         fallbackAt: payload.fallbackAt,
         region: payload.region,
         queueDepth: payload.queueDepth,
+        estimatedWaitMs: payload.estimatedWaitMs,
+        searchScope: payload.searchScope,
+        partySize: payload.partySize,
         ticketId: payload.ticketId,
         assignment: payload.assignment
       });

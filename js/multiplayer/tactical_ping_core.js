@@ -156,7 +156,11 @@ export function validateTacticalPingPayload(candidate, {
   }
 
   const createdAt = Math.max(0, finiteNumber(candidate.createdAt) ?? now);
-  const lifetimeMs = tacticalPingLifetime(type);
+  const lifetimeMultiplier = Math.max(
+    0.75,
+    Math.min(1.5, finiteNumber(candidate.lifetimeMultiplier) ?? 1)
+  );
+  const lifetimeMs = Math.round(tacticalPingLifetime(type) * lifetimeMultiplier);
 
   return {
     ok: true,
@@ -172,7 +176,8 @@ export function validateTacticalPingPayload(candidate, {
       color: TACTICAL_PING_COLORS[type],
       createdAt,
       expiresAt: createdAt + lifetimeMs,
-      lifetimeMs
+      lifetimeMs,
+      lifetimeMultiplier
     })
   };
 }

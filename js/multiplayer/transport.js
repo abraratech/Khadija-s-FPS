@@ -1,4 +1,5 @@
 // js/multiplayer/transport.js
+import { getSocialIdentityTicket } from '../social_bridge.js';
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 
@@ -129,6 +130,18 @@ export class MultiplayerTransport {
     this.closeSocket('replace-connection');
     this.mode = TRANSPORT_MODES.ONLINE;
     this.manualDisconnect = false;
+    let socialTicket = null;
+    try {
+      socialTicket = await getSocialIdentityTicket({
+        roomCode,
+        playerId,
+        displayName: displayName || 'Player',
+        joinMode
+      });
+    } catch {
+      socialTicket = null;
+    }
+
     this.connectionOptions = {
       serverUrl: normalizedUrl,
       roomCode,
@@ -136,7 +149,10 @@ export class MultiplayerTransport {
       displayName: displayName || 'Player',
       joinMode,
       reconnectToken: options.reconnectToken || null,
-      admissionToken: options.admissionToken || null
+      admissionToken: options.admissionToken || null,
+      socialTicket: typeof socialTicket === 'string'
+        ? socialTicket.slice(0, 220)
+        : null
     };
 
     return this.openSocket({ reconnecting: false });
@@ -158,6 +174,9 @@ export class MultiplayerTransport {
     }
     if (options.admissionToken) {
       url.searchParams.set('admissionToken', options.admissionToken);
+    }
+    if (options.socialTicket) {
+      url.searchParams.set('socialTicket', options.socialTicket);
     }
 
     this.setState(

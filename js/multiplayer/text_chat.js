@@ -1,6 +1,7 @@
 // js/multiplayer/text_chat.js
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { TRANSPORT_MODES, TRANSPORT_STATES } from './transport.js';
+import { isSocialPlayerBlocked } from '../social_bridge.js';
 import {
   TEXT_CHAT_MAX_LENGTH,
   TEXT_CHAT_PATCH,
@@ -418,7 +419,8 @@ export class MultiplayerTextChat {
   receive(candidate) {
     const result = this.store.add(candidate, { now: Date.now() });
     if (!result.accepted) return result;
-    const hidden = this.safety.shouldHideText(result.message.playerId);
+    const hidden = this.safety.shouldHideText(result.message.playerId)
+      || isSocialPlayerBlocked(result.message.playerId, this.currentRoom());
     const localPlayerId = String(this.runtime?.localPlayerId || '');
     const localMessage = Boolean(localPlayerId && result.message.playerId === localPlayerId);
     const lobbyVisible = this.isLobbyChatVisible();
@@ -449,7 +451,10 @@ export class MultiplayerTextChat {
     const messages = this.store.getSnapshot().messages;
     let visibleCount = 0;
     messages.forEach((message) => {
-      if (this.safety.shouldHideText(message.playerId)) return;
+      if (
+        this.safety.shouldHideText(message.playerId)
+        || isSocialPlayerBlocked(message.playerId, this.currentRoom())
+      ) return;
       visibleCount += 1;
       const row = document.createElement('div');
       row.style.marginBottom = '5px';

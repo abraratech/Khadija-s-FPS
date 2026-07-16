@@ -48,7 +48,9 @@ export class PublicRoomDirectoryClient {
       region: 'ZZ',
       error: null,
       refreshedAt: 0,
-      joiningListingId: null
+      joiningListingId: null,
+      filters: Object.freeze({}),
+      searchPriority: 'balanced'
     });
   }
 
@@ -68,7 +70,7 @@ export class PublicRoomDirectoryClient {
     return this.state;
   }
 
-  async list({ serverUrl, playerId, protocol, build } = {}) {
+  async list({ serverUrl, playerId, protocol, build, filters = {}, searchPriority = 'balanced' } = {}) {
     if (!this.fetchImpl) {
       return this.publish({ status: 'error', error: 'This browser cannot load public rooms.' });
     }
@@ -78,19 +80,36 @@ export class PublicRoomDirectoryClient {
       const response = await this.fetchImpl(roomDirectoryEndpoint(
         serverUrl,
         '/matchmaking/rooms/list',
-        { playerId, protocol, build }
+        {
+          playerId,
+          protocol,
+          build,
+          mapId: filters.mapId || '',
+          difficulty: filters.difficulty ?? '',
+          status: filters.status || 'any',
+          regionScope: filters.regionScope || 'any',
+          bot: filters.bot || 'any',
+          joinInProgress: filters.joinInProgress === false ? '0' : '1',
+          requiredSlots: filters.requiredSlots || 1,
+          searchPriority
+        }
       ), {
         method: 'GET',
         cache: 'no-store',
         credentials: 'omit'
       });
-      const payload = normalizeRoomDirectoryResponse(await readJsonResponse(response));
+      const payload = normalizeRoomDirectoryResponse(
+        await readJsonResponse(response),
+        { filters, searchPriority }
+      );
       if (sequence !== this.listSequence) return this.state;
       return this.publish({
         status: 'ready',
         rooms: payload.rooms,
         region: payload.region,
         refreshedAt: payload.refreshedAt,
+        filters: payload.filters,
+        searchPriority: payload.searchPriority,
         error: null,
         joiningListingId: null
       });
@@ -119,7 +138,8 @@ export class PublicRoomDirectoryClient {
     protocol,
     build,
     listingId,
-    joinToken
+    joinToken,
+    partySize = 1
   } = {}) {
     if (!this.fetchImpl) throw new Error('This browser cannot join public rooms.');
     const selectedListingId = String(listingId || '');
@@ -133,7 +153,7 @@ export class PublicRoomDirectoryClient {
         cache: 'no-store',
         credentials: 'omit',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ playerId, protocol, build, listingId, joinToken })
+        body: JSON.stringify({ playerId, protocol, build, listingId, joinToken, partySize })
       });
       const payload = await readJsonResponse(response);
       const assignment = normalizeRoomAdmissionAssignment({
@@ -165,7 +185,9 @@ export class PublicRoomDirectoryClient {
       region: 'ZZ',
       error: null,
       refreshedAt: 0,
-      joiningListingId: null
+      joiningListingId: null,
+      filters: Object.freeze({}),
+      searchPriority: 'balanced'
     });
   }
 }

@@ -13,7 +13,7 @@ import {
   roomKickActive
 } from './room_directory_core.js';
 
-assert.equal(ROOM_DIRECTORY_PATCH, 'match2-public-room-admission-r1-1');
+assert.equal(ROOM_DIRECTORY_PATCH, 'match3-r1-party-quality-room-discovery');
 assert.equal(ROOM_DIRECTORY_ADMISSION_TTL_MS, 15_000);
 const now = 100000;
 const listing = {

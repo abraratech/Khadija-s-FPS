@@ -645,3 +645,257 @@
 @media (max-width: 680px) {
   .ka-cloud-simple-summary { grid-template-columns: 1fr; }
 }
+
+
+/* LOADOUT.1 R1 — saved loadouts, Avatar Studio presets, and cosmetic collections. */
+.ka-loadout-command-host {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.ka-loadout-command-card,
+.ka-avatar-preset-manager {
+  border: 1px solid rgba(16,216,255,.22);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(8,25,37,.96), rgba(3,12,20,.94)),
+    radial-gradient(circle at 85% 10%, rgba(16,216,255,.10), transparent 34%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 14px 38px rgba(0,0,0,.22);
+}
+.ka-loadout-command-card {
+  margin-top: 14px;
+  padding: 15px;
+}
+.ka-loadout-command-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+.ka-loadout-command-head strong,
+.ka-avatar-preset-manager header strong {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(18px,2vw,25px);
+  letter-spacing: .04em;
+}
+.ka-loadout-command-head small,
+.ka-avatar-preset-manager header small {
+  display: block;
+  margin-top: 6px;
+  max-width: 760px;
+  color: #95aabd;
+  line-height: 1.45;
+}
+.ka-loadout-active-chip {
+  min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid rgba(34,255,136,.28);
+  border-radius: 11px;
+  background: rgba(34,255,136,.055);
+  text-align: right;
+}
+.ka-loadout-active-chip span,
+.ka-loadout-preset-card span,
+.ka-avatar-preset-card span {
+  display: block;
+  color: #22ff88;
+  font-size: 9px;
+  font-weight: 1000;
+  letter-spacing: .12em;
+}
+.ka-loadout-active-chip b {
+  display: block;
+  margin: 3px 0;
+  color: #f3fbff;
+}
+.ka-loadout-active-chip small { margin: 0; }
+.ka-loadout-preset-strip,
+.ka-avatar-preset-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+  margin-top: 13px;
+}
+.ka-loadout-preset-card,
+.ka-avatar-preset-card {
+  min-height: 70px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 11px;
+  background: rgba(255,255,255,.025);
+  color: #dceef8;
+  text-align: left;
+  cursor: pointer;
+}
+.ka-loadout-preset-card:hover,
+.ka-avatar-preset-card:hover {
+  border-color: rgba(16,216,255,.42);
+  transform: translateY(-1px);
+}
+.ka-loadout-preset-card.selected,
+.ka-avatar-preset-card.selected {
+  border-color: rgba(16,216,255,.72);
+  background: rgba(16,216,255,.075);
+}
+.ka-loadout-preset-card.active,
+.ka-avatar-preset-card.active {
+  box-shadow: inset 0 0 0 1px rgba(34,255,136,.28);
+}
+.ka-loadout-preset-card b,
+.ka-avatar-preset-card b {
+  display: block;
+  margin: 4px 0;
+  font-size: 13px;
+}
+.ka-loadout-preset-card small {
+  display: block;
+  color: #8499aa;
+  font-size: 10px;
+}
+.ka-loadout-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+}
+.ka-loadout-editor-grid label,
+.ka-avatar-preset-name {
+  display: grid;
+  gap: 5px;
+}
+.ka-loadout-editor-grid label span,
+.ka-avatar-preset-name span {
+  color: #8ea5b7;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ka-loadout-editor-grid input,
+.ka-loadout-editor-grid select,
+.ka-avatar-preset-name input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 9px;
+  border: 1px solid rgba(16,216,255,.24);
+  border-radius: 8px;
+  background: #06131d;
+  color: #e9f8ff;
+  font: inherit;
+}
+.ka-loadout-actions,
+.ka-avatar-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ka-loadout-actions button,
+.ka-avatar-preset-actions button {
+  min-width: 115px;
+  flex: 1 1 115px;
+}
+.ka-link-btn.danger {
+  border-color: rgba(255,92,77,.45);
+  color: #ff8d82;
+}
+.ka-loadout-balance-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255,170,0,.22);
+  border-radius: 10px;
+  background: rgba(255,170,0,.045);
+}
+.ka-loadout-balance-note b {
+  color: #ffaa00;
+  font-size: 10px;
+  letter-spacing: .09em;
+}
+.ka-loadout-balance-note span {
+  color: #9caebc;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.ka-loadout-collection {
+  margin-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  padding-top: 10px;
+}
+.ka-loadout-collection summary {
+  cursor: pointer;
+  color: #bdefff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+.ka-loadout-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(130px,1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.ka-loadout-collection-grid article {
+  padding: 9px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+}
+.ka-loadout-collection-grid article.locked { opacity: .48; }
+.ka-loadout-collection-grid article.unlocked {
+  border-color: rgba(34,255,136,.24);
+}
+.ka-loadout-collection-grid article.equipped {
+  box-shadow: inset 0 0 0 1px rgba(16,216,255,.36);
+}
+.ka-loadout-collection-grid span {
+  color: #ffaa00;
+  font-size: 8px;
+  font-weight: 1000;
+  letter-spacing: .1em;
+}
+.ka-loadout-collection-grid b {
+  display: block;
+  margin: 3px 0;
+  font-size: 11px;
+}
+.ka-loadout-collection-grid small {
+  color: #8499aa;
+  line-height: 1.35;
+}
+.ka-avatar-presets-host {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+}
+.ka-avatar-preset-manager {
+  padding: 12px;
+}
+.ka-avatar-preset-manager header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ka-avatar-preset-name {
+  margin-top: 10px;
+}
+.ka-avatar-preset-actions button {
+  font-size: 10px;
+  padding: 9px 8px;
+}
+@media (max-width: 960px) {
+  .ka-loadout-editor-grid { grid-template-columns: repeat(2,minmax(145px,1fr)); }
+  .ka-loadout-collection-grid { grid-template-columns: repeat(2,minmax(130px,1fr)); }
+}
+@media (max-width: 620px) {
+  .ka-loadout-command-head { display: grid; }
+  .ka-loadout-active-chip { min-width: 0; text-align: left; }
+  .ka-loadout-editor-grid { grid-template-columns: 1fr; }
+  .ka-loadout-collection-grid { grid-template-columns: 1fr; }
+  .ka-loadout-balance-note { grid-template-columns: 1fr; }
+  .ka-loadout-preset-strip,
+  .ka-avatar-preset-row { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}

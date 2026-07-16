@@ -1,4 +1,9 @@
 import { getEconomyBalanceSnapshot } from './economy_balance.js';
+import {
+  recordProgressionDamageDealt,
+  recordProgressionDamageTaken,
+  recordProgressionPointsEarned
+} from './progression.js';
 
 // js/run_summary.js
 // C11 — Per-run combat/economy telemetry and final summary.
@@ -106,7 +111,9 @@ export function recordRunHit({ headshot = false } = {}) {
 
 export function recordRunDamageDealt(damage = 0) {
   if (!state.active) return;
-  state.damageDealt += Math.max(0, finite(damage));
+  const value = Math.max(0, finite(damage));
+  state.damageDealt += value;
+  recordProgressionDamageDealt(value);
 }
 
 export function recordRunKill({ headshot = false } = {}) {
@@ -117,12 +124,16 @@ export function recordRunKill({ headshot = false } = {}) {
 
 export function recordRunDamageTaken(amount = 0) {
   if (!state.active) return;
-  state.damageTaken += Math.max(0, finite(amount));
+  const value = Math.max(0, finite(amount));
+  state.damageTaken += value;
+  recordProgressionDamageTaken(value);
 }
 
 export function recordRunPointsEarned(amount = 0) {
   if (!state.active) return;
-  state.pointsEarned += Math.max(0, Math.round(finite(amount)));
+  const value = Math.max(0, Math.round(finite(amount)));
+  state.pointsEarned += value;
+  recordProgressionPointsEarned(value);
 }
 
 export function recordRunPointsSpent(amount = 0) {

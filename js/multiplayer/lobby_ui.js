@@ -6,6 +6,12 @@ import { roomDirectoryStatusPresentation } from './room_directory_core.js';
 
 const NAME_STORAGE_KEY = 'ka_multiplayer_display_name';
 const SERVER_STORAGE_KEY = 'ka_multiplayer_server_url';
+const MATCH3_PRIORITY_STORAGE_KEY = 'ka_match3_search_priority';
+const MATCH3_REGION_POLICY_STORAGE_KEY = 'ka_match3_region_policy';
+const MATCH3_ROOM_STATUS_STORAGE_KEY = 'ka_match3_room_status';
+const MATCH3_ROOM_SCOPE_STORAGE_KEY = 'ka_match3_room_scope';
+const MATCH3_ROOM_BOT_STORAGE_KEY = 'ka_match3_room_bot';
+const COOP2_ROLE_STORAGE_KEY = 'ka_coop2_role_v1';
 
 function escapeForId(value) {
   return String(value || '').replace(/[^a-z0-9_-]/gi, '_');
@@ -88,7 +94,7 @@ export class MultiplayerLobbyUI {
     const openButton = document.createElement('button');
     openButton.id = 'ka-coop-open';
     openButton.type = 'button';
-    openButton.textContent = 'CO-OP ALPHA';
+    openButton.textContent = 'CO-OP';
     openButton.addEventListener('click', () => this.open());
     menu.appendChild(openButton);
 
@@ -106,7 +112,7 @@ export class MultiplayerLobbyUI {
         <header class="ka-coop-header">
           <div>
             <span class="ka-coop-kicker">KHADIJA PROTOCOL</span>
-            <h2 id="ka-coop-title">CO-OP MULTIPLAYER ALPHA</h2>
+            <h2 id="ka-coop-title">CO-OP MULTIPLAYER</h2>
           </div>
           <button id="ka-coop-close" class="ka-coop-icon-btn" type="button" aria-label="Close">×</button>
         </header>
@@ -115,14 +121,24 @@ export class MultiplayerLobbyUI {
 
         <div id="ka-coop-connect-view">
           <p class="ka-coop-note">
-            This alpha synchronizes rooms, match launch, players, shared enemies,
-            enemy damage, waves, and coordinated run endings. Shops and economy remain
-            local while the remaining co-op authority systems are completed.
+            Create private rooms, browse public operations, or use Quick Match.
+            Rooms synchronize players, shared enemies, damage, waves, progression,
+            reconnect recovery, and coordinated run endings.
           </p>
 
           <label class="ka-coop-field">
             <span>Player name</span>
             <input id="ka-coop-name" maxlength="24" autocomplete="nickname">
+          </label>
+
+          <label class="ka-coop-field">
+            <span>Co-op role</span>
+            <select id="ka-coop2-role">
+              <option value="VANGUARD">Vanguard · frontline rescue cover</option>
+              <option value="FIELD_MEDIC">Field Medic · faster safer revives</option>
+              <option value="RECON">Recon · longer tactical marks</option>
+              <option value="SUPPORT">Support · team cohesion utility</option>
+            </select>
           </label>
 
           <label class="ka-coop-field">
@@ -154,6 +170,22 @@ export class MultiplayerLobbyUI {
                 <span>Difficulty</span>
                 <select id="ka-matchmaking-difficulty"></select>
               </label>
+              <label class="ka-coop-field">
+                <span>Search priority</span>
+                <select id="ka-match3-search-priority">
+                  <option value="balanced">Balanced</option>
+                  <option value="quality">Best connection</option>
+                  <option value="fast">Fastest match</option>
+                </select>
+              </label>
+              <label class="ka-coop-field">
+                <span>Region policy</span>
+                <select id="ka-match3-region-policy">
+                  <option value="auto">Region first, then global</option>
+                  <option value="regional-only">Regional only</option>
+                  <option value="global">Global immediately</option>
+                </select>
+              </label>
             </div>
             <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
               FIND PUBLIC MATCH
@@ -169,6 +201,36 @@ export class MultiplayerLobbyUI {
                   <span id="ka-room-browser-detail">HOST-APPROVED ROOMS ONLY</span>
                 </div>
                 <button id="ka-room-browser-refresh" type="button">REFRESH</button>
+              </div>
+              <div class="ka-room-browser-filters">
+                <label>
+                  <span>Status</span>
+                  <select id="ka-room-filter-status">
+                    <option value="any">Any status</option>
+                    <option value="waiting">Waiting only</option>
+                    <option value="in-run">In progress</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Region</span>
+                  <select id="ka-room-filter-scope">
+                    <option value="any">Any region</option>
+                    <option value="regional">My region</option>
+                    <option value="global">Global</option>
+                  </select>
+                </label>
+                <label>
+                  <span>AI</span>
+                  <select id="ka-room-filter-bot">
+                    <option value="any">Any team</option>
+                    <option value="without-bot">Human slot only</option>
+                    <option value="with-bot">AI present</option>
+                  </select>
+                </label>
+                <label class="ka-room-filter-toggle">
+                  <input id="ka-room-filter-in-progress" type="checkbox" checked>
+                  <span>Allow join-in-progress</span>
+                </label>
               </div>
               <div id="ka-room-browser-list" class="ka-room-browser-list"></div>
             </section>
@@ -237,6 +299,7 @@ export class MultiplayerLobbyUI {
       connectView: modal.querySelector('#ka-coop-connect-view'),
       roomView: modal.querySelector('#ka-coop-room-view'),
       name: modal.querySelector('#ka-coop-name'),
+      coop2Role: modal.querySelector('#ka-coop2-role'),
       server: modal.querySelector('#ka-coop-server'),
       releaseRetry: modal.querySelector('#ka-coop-release-retry'),
       quickMatch: modal.querySelector('#ka-coop-quick-match'),
@@ -249,6 +312,12 @@ export class MultiplayerLobbyUI {
       roomBrowserList: modal.querySelector('#ka-room-browser-list'),
       matchmakingMap: modal.querySelector('#ka-matchmaking-map'),
       matchmakingDifficulty: modal.querySelector('#ka-matchmaking-difficulty'),
+      match3SearchPriority: modal.querySelector('#ka-match3-search-priority'),
+      match3RegionPolicy: modal.querySelector('#ka-match3-region-policy'),
+      roomFilterStatus: modal.querySelector('#ka-room-filter-status'),
+      roomFilterScope: modal.querySelector('#ka-room-filter-scope'),
+      roomFilterBot: modal.querySelector('#ka-room-filter-bot'),
+      roomFilterInProgress: modal.querySelector('#ka-room-filter-in-progress'),
       matchmakingStatus: modal.querySelector('#ka-matchmaking-status'),
       matchmakingStatusTitle: modal.querySelector('#ka-matchmaking-status-title'),
       matchmakingStatusDetail: modal.querySelector('#ka-matchmaking-status-detail'),
@@ -278,6 +347,7 @@ export class MultiplayerLobbyUI {
         this.elements.rejoin = rejoin;
 
         this.installHostControls(); this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
+    this.elements.coop2Role.value = readStored(COOP2_ROLE_STORAGE_KEY, 'VANGUARD');
     this.elements.server.value = readStored(
       SERVER_STORAGE_KEY,
       'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
@@ -317,6 +387,26 @@ export class MultiplayerLobbyUI {
       this.elements.matchmakingDifficulty,
       document.getElementById('diff-select')?.value || 1,
       1
+    );
+    this.elements.match3SearchPriority.value = readStored(
+      MATCH3_PRIORITY_STORAGE_KEY,
+      'balanced'
+    );
+    this.elements.match3RegionPolicy.value = readStored(
+      MATCH3_REGION_POLICY_STORAGE_KEY,
+      'auto'
+    );
+    this.elements.roomFilterStatus.value = readStored(
+      MATCH3_ROOM_STATUS_STORAGE_KEY,
+      'any'
+    );
+    this.elements.roomFilterScope.value = readStored(
+      MATCH3_ROOM_SCOPE_STORAGE_KEY,
+      'any'
+    );
+    this.elements.roomFilterBot.value = readStored(
+      MATCH3_ROOM_BOT_STORAGE_KEY,
+      'any'
     );
 
     this.bindEvents();
@@ -473,20 +563,41 @@ bindEvents() {
       this.actions.retryRelease?.({ serverUrl: this.elements.server.value });
     });
 
+    this.elements.coop2Role.addEventListener('change', () => {
+      const roleId = this.elements.coop2Role.value || 'VANGUARD';
+      writeStored(COOP2_ROLE_STORAGE_KEY, roleId);
+      window.dispatchEvent(new CustomEvent('ka:coop2-role-selected', {
+        detail: { roleId }
+      }));
+    });
+
     this.elements.quickMatch.addEventListener('click', () => {
       this.saveIdentity();
       this.actions.quickMatch?.({
         displayName: this.elements.name.value,
         serverUrl: this.elements.server.value,
         mapId: this.elements.matchmakingMap.value || 'grid_bunker',
-        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
+        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1,
+        searchPriority: this.elements.match3SearchPriority.value || 'balanced',
+        regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
+        allowBackfill: true,
+        joinInProgress: this.elements.roomFilterInProgress.checked !== false
       });
     });
 
     const browseRooms = () => {
       this.saveIdentity();
       this.actions.browseOpenRooms?.({
-        serverUrl: this.elements.server.value
+        serverUrl: this.elements.server.value,
+        searchPriority: this.elements.match3SearchPriority.value || 'balanced',
+        filters: {
+          mapId: this.elements.matchmakingMap.value || '',
+          difficulty: Number(this.elements.matchmakingDifficulty.value) || null,
+          status: this.elements.roomFilterStatus.value || 'any',
+          regionScope: this.elements.roomFilterScope.value || 'any',
+          bot: this.elements.roomFilterBot.value || 'any',
+          joinInProgress: this.elements.roomFilterInProgress.checked !== false
+        }
       });
     };
     this.elements.browseRooms.addEventListener('click', browseRooms);
@@ -511,6 +622,22 @@ bindEvents() {
 
     this.elements.matchmakingCancel.addEventListener('click', () => {
       this.actions.cancelQuickMatch?.();
+    });
+
+    this.elements.match3SearchPriority.addEventListener('change', () => {
+      writeStored(MATCH3_PRIORITY_STORAGE_KEY, this.elements.match3SearchPriority.value);
+    });
+    this.elements.match3RegionPolicy.addEventListener('change', () => {
+      writeStored(MATCH3_REGION_POLICY_STORAGE_KEY, this.elements.match3RegionPolicy.value);
+    });
+    this.elements.roomFilterStatus.addEventListener('change', () => {
+      writeStored(MATCH3_ROOM_STATUS_STORAGE_KEY, this.elements.roomFilterStatus.value);
+    });
+    this.elements.roomFilterScope.addEventListener('change', () => {
+      writeStored(MATCH3_ROOM_SCOPE_STORAGE_KEY, this.elements.roomFilterScope.value);
+    });
+    this.elements.roomFilterBot.addEventListener('change', () => {
+      writeStored(MATCH3_ROOM_BOT_STORAGE_KEY, this.elements.roomFilterBot.value);
     });
 
     this.elements.create.addEventListener('click', () => {
@@ -548,7 +675,13 @@ bindEvents() {
       this.elements.server,
       this.elements.codeInput,
       this.elements.matchmakingMap,
-      this.elements.matchmakingDifficulty
+      this.elements.matchmakingDifficulty,
+      this.elements.match3SearchPriority,
+      this.elements.match3RegionPolicy,
+      this.elements.roomFilterStatus,
+      this.elements.roomFilterScope,
+      this.elements.roomFilterBot,
+      this.elements.roomFilterInProgress
     ].forEach((input) => {
       input?.addEventListener('keydown', (event) => {
         event.stopPropagation();
@@ -666,7 +799,7 @@ bindEvents() {
     this.elements.openButton.dataset.online = online ? 'true' : 'false';
     this.elements.openButton.textContent = online
       ? `CO-OP · ${room.roomCode || 'ONLINE'}`
-      : 'CO-OP ALPHA';
+      : 'CO-OP';
 
     const matchmaking = nextState.matchmaking || { status: 'idle' };
     const matchmakingUi = matchmakingStatusPresentation(matchmaking);
@@ -677,6 +810,8 @@ bindEvents() {
     this.elements.quickMatch.disabled = disabled || online || matchmakingActive;
     this.elements.matchmakingMap.disabled = disabled || matchmakingActive;
     this.elements.matchmakingDifficulty.disabled = disabled || matchmakingActive;
+    this.elements.match3SearchPriority.disabled = disabled || matchmakingActive;
+    this.elements.match3RegionPolicy.disabled = disabled || matchmakingActive;
     this.elements.matchmakingStatus.hidden = (
       !matchmakingActive
       && !['error', 'cancelled', 'expired'].includes(matchmaking.status)
@@ -701,6 +836,10 @@ bindEvents() {
     this.elements.browseRooms.disabled = disabled || online || matchmakingActive || directoryActive;
     this.elements.createPublic.disabled = disabled || online || matchmakingActive || directoryActive;
     this.elements.roomBrowserRefresh.disabled = disabled || online || directoryActive;
+    this.elements.roomFilterStatus.disabled = disabled || online || directoryActive;
+    this.elements.roomFilterScope.disabled = disabled || online || directoryActive;
+    this.elements.roomFilterBot.disabled = disabled || online || directoryActive;
+    this.elements.roomFilterInProgress.disabled = disabled || online || directoryActive;
     this.elements.roomBrowser.hidden = roomDirectory.status === 'idle' || online;
     this.elements.roomBrowser.dataset.tone = roomDirectoryUi.tone;
     this.elements.roomBrowserTitle.textContent = roomDirectoryUi.title;
@@ -746,7 +885,8 @@ bindEvents() {
             listingId: entry.listingId,
             joinToken: entry.joinToken,
             displayName: this.elements.name.value,
-            serverUrl: this.elements.server.value
+            serverUrl: this.elements.server.value,
+            partySize: roomDirectory.filters?.requiredSlots || 1
           });
         });
         card.append(identity, join);

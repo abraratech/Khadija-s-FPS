@@ -1,11 +1,27 @@
 import { scaleEconomyPrice } from './economy_balance.js';
+import {
+  PROGRESSION_PATCH,
+  PROGRESSION_VERSION,
+  PROGRESSION_MAX_LEVEL,
+  PROGRESSION_UNLOCK_CATALOG,
+  normalizeProgressionProfile,
+  deriveProgressionLevel,
+  evaluateProgressionUnlocks,
+  applyProgressionOperationEvent,
+  calculateProgressionRunReward,
+  getProgressionUnlockPresentation,
+  getProgressionOperationExpiry
+} from './progression_core.js';
+
+import { applyLive1RunReceipt } from './live1_core.js';
+import { getLive1ManifestSnapshot } from './live1_state.js';
 
 // js/progression.js
-// C11 — Persistent progression and run perks.
+// PROG.1 R1 — unified persistent progression and run perks.
 
 const STORAGE_KEY = 'ka_progression_v1';
-const VERSION = 1;
-const MAX_LEVEL = 50;
+const BACKUP_KEY = 'ka_progression_backup_v1';
+const CORRUPT_KEY = 'ka_progression_corrupt_v1';
 
 export const PERK_DEFS = Object.freeze({
   JUGGERNOG: Object.freeze({
@@ -33,195 +49,669 @@ const SHOP_TO_PERK = Object.freeze(
   }, {})
 );
 
-function defaultProfile() {
-  return {
-    version: VERSION,
-    xp: 0,
-    level: 1,
-    totalRuns: 0,
-    totalKills: 0,
-    totalHeadshots: 0,
-    totalWaves: 0,
-    objectivesCompleted: 0,
-    challengesCompleted: 0,
-    weaponUpgrades: 0,
-    pointsSpent: 0,
-    bestWave: 1,
-    bestScore: 0,
-    lastRunAt: 0
-  };
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
-function safeNumber(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+function integer(value, fallback = 0, minimum = 0) {
+  return Math.max(minimum, Math.floor(safeNumber(value, fallback)));
 }
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, safeNumber(value, min)));
 }
 
-function readProfile() {
+function storageGet(key) {
   try {
-    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (!parsed || parsed.version !== VERSION) return defaultProfile();
-    return { ...defaultProfile(), ...parsed, version: VERSION };
+    return globalThis.localStorage?.getItem?.(key) ?? null;
   } catch {
-    return defaultProfile();
+    return null;
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    globalThis.localStorage?.setItem?.(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function backupStorage(key, raw, reason) {
+  if (!raw) return;
+  storageSet(key, JSON.stringify({
+    reason: String(reason || 'backup').slice(0, 80),
+    savedAt: Date.now(),
+    raw: String(raw).slice(0, 600000)
+  }));
+}
+
+function readProfile() {
+  const raw = storageGet(STORAGE_KEY);
+  if (!raw) return normalizeProgressionProfile({}, Date.now());
+  try {
+    const parsed = JSON.parse(raw);
+    const previousVersion = integer(parsed?.version, 1, 1);
+    const normalized = normalizeProgressionProfile(parsed, Date.now());
+    if (previousVersion < PROGRESSION_VERSION) {
+      backupStorage(BACKUP_KEY, raw, `migration-v${previousVersion}-to-v${PROGRESSION_VERSION}`);
+      storageSet(STORAGE_KEY, JSON.stringify(normalized));
+    }
+    return normalized;
+  } catch {
+    backupStorage(CORRUPT_KEY, raw, 'invalid-json');
+    return normalizeProgressionProfile({}, Date.now());
   }
 }
 
 let profile = readProfile();
 let lastProfileSaveAt = 0;
+let coop2ActionSerial = 0;
 
 const run = {
   active: false,
+  finalized: false,
+  runId: null,
   mapId: 'unknown',
+  mode: 'single',
   difficulty: 1,
   startedAt: 0,
+  endedAt: 0,
   xpEarned: 0,
+  xpBreakdown: {},
   kills: 0,
   headshots: 0,
+  assists: 0,
+  revives: 0,
+  timesRevived: 0,
   wavesCleared: 0,
+  damageDealt: 0,
+  damageTaken: 0,
+  pointsEarned: 0,
   pointsSpent: 0,
   objectivesCompleted: 0,
   challengesCompleted: 0,
+  coopContractsCompleted: 0,
+  contentOperationsCompleted: 0,
+  liveSeasonPoints: 0,
+  liveContractsCompleted: 0,
+  liveRewardUnlockIds: [],
+  liveSeasonId: '',
+  liveManifestRevision: '',
+  operationsCompleted: [],
   weaponUpgrades: 0,
+  perksPurchased: 0,
   perks: new Set(),
+  lastRecordedWave: 0,
   lastEvent: 'IDLE',
-  levelUps: []
+  levelUps: [],
+  newlyUnlocked: [],
+  finalReward: null,
+  finalScore: 0,
+  finalWave: 1,
+  endReason: 'NONE',
+  botAssisted: false
 };
 
-function saveProfile(force = false) {
-  const now = Date.now();
-  if (!force && run.active && now - lastProfileSaveAt < 1500) return;
+function dispatchCoop2Action(kind, details = {}) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+    return false;
+  }
+  coop2ActionSerial += 1;
+  const normalizedKind = String(kind || '').toUpperCase().slice(0, 40);
+  const eventId = details.eventId || [
+    run.runId || 'run',
+    'local',
+    normalizedKind || 'ACTION',
+    coop2ActionSerial
+  ].join(':');
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-    lastProfileSaveAt = now;
+    window.dispatchEvent(new CustomEvent('ka:coop2-action', {
+      detail: {
+        ...details,
+        kind: normalizedKind,
+        eventId,
+        at: Number(details.at) || Date.now()
+      }
+    }));
+    return true;
   } catch {
-    // Storage may be unavailable in private/restricted browsing modes.
+    return false;
   }
 }
 
-function xpForNextLevel(level) {
-  return 400 + Math.max(1, level) * 175;
+function dispatchProgressionUpdate(reason = 'updated') {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try {
+    window.dispatchEvent(new CustomEvent('ka:progression-updated', {
+      detail: { reason, patch: PROGRESSION_PATCH }
+    }));
+  } catch {
+    // Older/restricted browsers can still read the snapshot directly.
+  }
+}
+
+
+function dispatchProgressionRunFinalized(receipt) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+  try {
+    window.dispatchEvent(new CustomEvent('ka:progression-run-finalized', {
+      detail: {
+        patch: 'prog2-r1-production-hardening-cloud-integrity',
+        receipt: { ...receipt }
+      }
+    }));
+  } catch {
+    // Local progression remains authoritative while cloud delivery retries.
+  }
+}
+
+function saveProfile(force = false, reason = 'save') {
+  const now = Date.now();
+  if (!force && run.active && now - lastProfileSaveAt < 900) return false;
+  profile.updatedAt = Math.max(integer(profile.updatedAt, 0), now);
+  const saved = storageSet(STORAGE_KEY, JSON.stringify(profile));
+  if (saved) {
+    lastProfileSaveAt = now;
+    dispatchProgressionUpdate(reason);
+  }
+  return saved;
+}
+
+function addBreakdown(category, amount) {
+  const key = String(category || 'OTHER').toUpperCase().replace(/[^A-Z0-9_ -]/g, '').slice(0, 40) || 'OTHER';
+  run.xpBreakdown[key] = integer(run.xpBreakdown[key], 0) + integer(amount, 0);
+}
+
+function evaluateUnlocks(now = Date.now()) {
+  const result = evaluateProgressionUnlocks(profile, now);
+  profile.unlocks = { ...result.unlocks };
+  if (result.newlyUnlocked.length) {
+    run.newlyUnlocked.push(...result.newlyUnlocked);
+    run.lastEvent = `${result.newlyUnlocked[0].label.toUpperCase()} UNLOCKED`;
+  }
+  return result.newlyUnlocked;
 }
 
 function recalculateLevel() {
-  let remaining = Math.max(0, Math.floor(profile.xp));
-  let level = 1;
-
-  while (level < MAX_LEVEL) {
-    const need = xpForNextLevel(level);
-    if (remaining < need) break;
-    remaining -= need;
-    level++;
+  const levelInfo = deriveProgressionLevel(profile.xp);
+  const previous = integer(profile.level, 1, 1);
+  profile.level = levelInfo.level;
+  if (run.active && levelInfo.level > previous) {
+    for (let value = previous + 1; value <= levelInfo.level; value += 1) {
+      run.levelUps.push(value);
+    }
+    run.lastEvent = `LEVEL ${levelInfo.level}`;
   }
+  return levelInfo;
+}
 
-  const previous = profile.level;
-  profile.level = level;
-
-  if (run.active && level > previous) {
-    for (let value = previous + 1; value <= level; value++) run.levelUps.push(value);
-    run.lastEvent = `LEVEL ${level}`;
+function grantXP(amount, reason = 'PROGRESS', category = reason) {
+  const value = integer(amount, 0);
+  if (value <= 0) return 0;
+  profile.xp = integer(profile.xp, 0) + value;
+  if (run.active || run.finalized) {
+    run.xpEarned += value;
+    addBreakdown(category, value);
   }
+  run.lastEvent = `${String(reason || 'PROGRESS').toUpperCase()} +${value} XP`;
+  recalculateLevel();
+  evaluateUnlocks();
+  saveProfile(false, 'xp');
+  return value;
+}
 
-  return { level, xpIntoLevel: remaining, xpToNext: level >= MAX_LEVEL ? 0 : xpForNextLevel(level) };
+function applyOperationEvent(event, now = Date.now()) {
+  const result = applyProgressionOperationEvent(profile.operations, event, now);
+  profile.operations = result.operations;
+  if (!result.completed.length) return [];
+  for (const operation of result.completed) {
+    profile.operationsCompleted = integer(profile.operationsCompleted, 0) + 1;
+    if (operation.scope === 'DAILY') {
+      profile.dailyOperationsCompleted = integer(profile.dailyOperationsCompleted, 0) + 1;
+    } else {
+      profile.weeklyOperationsCompleted = integer(profile.weeklyOperationsCompleted, 0) + 1;
+    }
+    run.operationsCompleted.push({ ...operation });
+    grantXP(operation.xp, `${operation.scope} OPERATION`, `${operation.scope} OPERATION`);
+  }
+  evaluateUnlocks(now);
+  saveProfile(true, 'operation-completed');
+  return result.completed;
+}
+
+function makeRunId() {
+  const random = Math.random().toString(36).slice(2, 9);
+  return `run-${Date.now().toString(36)}-${random}`;
 }
 
 export function awardProgressionXP(amount, reason = 'PROGRESS') {
-  const value = Math.max(0, Math.round(safeNumber(amount)));
-  if (value <= 0) return getProgressionSnapshot();
-
-  profile.xp += value;
-  if (run.active) run.xpEarned += value;
-  run.lastEvent = `${reason} +${value} XP`;
-  recalculateLevel();
-  saveProfile();
+  grantXP(amount, reason, reason);
   return getProgressionSnapshot();
 }
 
-export function resetProgressionRun({ mapId = 'unknown', difficulty = 1 } = {}) {
-  run.active = true;
-  run.mapId = String(mapId || 'unknown');
-  run.difficulty = clamp(difficulty, 0.5, 2.0);
-  run.startedAt = Date.now();
-  run.xpEarned = 0;
-  run.kills = 0;
-  run.headshots = 0;
-  run.wavesCleared = 0;
-  run.pointsSpent = 0;
-  run.objectivesCompleted = 0;
-  run.challengesCompleted = 0;
-  run.weaponUpgrades = 0;
-  run.perks.clear();
-  run.levelUps = [];
-  run.lastEvent = 'RUN START';
+export function resetProgressionRun({
+  mapId = 'unknown',
+  difficulty = 1,
+  mode = 'single'
+} = {}) {
+  profile = normalizeProgressionProfile(profile, Date.now());
+  Object.assign(run, {
+    active: true,
+    finalized: false,
+    runId: makeRunId(),
+    mapId: String(mapId || 'unknown'),
+    mode: String(mode || 'single') === 'multiplayer' ? 'multiplayer' : 'single',
+    difficulty: clamp(difficulty, 0.5, 2),
+    startedAt: Date.now(),
+    endedAt: 0,
+    xpEarned: 0,
+    xpBreakdown: {},
+    kills: 0,
+    headshots: 0,
+    assists: 0,
+    revives: 0,
+    timesRevived: 0,
+    wavesCleared: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    pointsEarned: 0,
+    pointsSpent: 0,
+    objectivesCompleted: 0,
+    challengesCompleted: 0,
+    coopContractsCompleted: 0,
+    contentOperationsCompleted: 0,
+    operationsCompleted: [],
+    weaponUpgrades: 0,
+    perksPurchased: 0,
+    perks: new Set(),
+    lastRecordedWave: 0,
+    lastEvent: 'RUN START',
+    levelUps: [],
+    newlyUnlocked: [],
+    finalReward: null,
+    finalScore: 0,
+    finalWave: 1,
+    endReason: 'NONE',
+    botAssisted: false
+  });
   recalculateLevel();
+  saveProfile(false, 'run-start');
+  return getProgressionSnapshot();
 }
 
-export function finalizeProgressionRun({ score = 0, wave = 1, reason = 'ENDED' } = {}) {
-  if (!run.active) return getProgressionSnapshot();
+export function finalizeProgressionRun({
+  score = 0,
+  wave = 1,
+  reason = 'ENDED',
+  summary = null,
+  mode = run.mode,
+  botAssisted = false
+} = {}) {
+  if (!run.active || run.finalized) return getProgressionSnapshot();
 
-  const completionXP = Math.max(0, Math.round(
-    run.kills * 2 + run.headshots * 2 + run.wavesCleared * 20 + Math.max(0, wave - 1) * 5
-  ));
-  if (completionXP > 0) awardProgressionXP(completionXP, 'RUN COMPLETE');
+  const details = summary && typeof summary === 'object' ? summary : {};
+  run.kills = Math.max(run.kills, integer(details.kills, 0));
+  run.headshots = Math.max(run.headshots, integer(details.headshotKills, 0));
+  const authoritativeRevives = integer(details.revives, run.revives);
+  const missingRevives = Math.max(0, authoritativeRevives - run.revives);
+  for (let index = 0; index < missingRevives; index += 1) {
+    recordProgressionRevive({ revivedSelf: false });
+  }
+  run.timesRevived = Math.max(run.timesRevived, integer(details.timesDowned, run.timesRevived));
+  run.wavesCleared = Math.max(run.wavesCleared, Math.max(0, integer(details.highestWave, wave, 1) - 1));
+  run.damageDealt = Math.max(run.damageDealt, safeNumber(details.damageDealt, 0));
+  run.damageTaken = Math.max(run.damageTaken, safeNumber(details.damageTaken, 0));
+  run.pointsEarned = Math.max(run.pointsEarned, integer(details.pointsEarned, 0));
+  run.pointsSpent = Math.max(run.pointsSpent, integer(details.pointsSpent, 0));
+  run.objectivesCompleted = Math.max(run.objectivesCompleted, integer(details.objectivesCompleted, 0));
+  run.challengesCompleted = Math.max(run.challengesCompleted, integer(details.challengesCompleted, 0));
+  run.coopContractsCompleted = Math.max(
+    run.coopContractsCompleted,
+    integer(details.coopContractsCompleted, 0)
+  );
+  run.contentOperationsCompleted = Math.max(
+    run.contentOperationsCompleted,
+    integer(details.contentOperationsCompleted, 0)
+  );
+  run.weaponUpgrades = Math.max(run.weaponUpgrades, integer(details.weaponUpgrades, 0));
+  run.perksPurchased = Math.max(run.perksPurchased, integer(details.perksPurchased, 0));
+  run.botAssisted = botAssisted === true || details.botAssisted === true;
+  run.mode = String(mode || run.mode) === 'multiplayer' ? 'multiplayer' : 'single';
+  run.finalScore = integer(score ?? details.finalScore, 0);
+  run.finalWave = integer(wave ?? details.highestWave, 1, 1);
+  run.endReason = String(reason || 'ENDED').toUpperCase().slice(0, 80);
+  run.endedAt = Date.now();
 
-  profile.totalRuns++;
+  const reward = calculateProgressionRunReward({
+    summary: details,
+    score: run.finalScore,
+    wave: run.finalWave,
+    reason: run.endReason,
+    difficulty: run.difficulty,
+    mode: run.mode
+  });
+  run.finalReward = reward;
+  Object.entries(reward.breakdown).forEach(([category, value]) => {
+    if (value > 0) grantXP(value, category, category);
+  });
+
+  const completed = !reward.abandoned;
+  profile.totalRuns += 1;
+  if (completed) profile.completedRuns += 1;
+  else profile.abandonedRuns += 1;
+  if (run.mode === 'multiplayer') profile.multiplayerRuns += 1;
+  else profile.soloRuns += 1;
+  if (run.botAssisted) profile.botAssistedRuns += 1;
+
   profile.totalKills += run.kills;
   profile.totalHeadshots += run.headshots;
+  profile.totalAssists += run.assists;
+  profile.totalRevives += run.revives;
+  profile.timesRevived += run.timesRevived;
   profile.totalWaves += run.wavesCleared;
+  profile.totalDamageDealt += Math.round(run.damageDealt);
+  profile.totalDamageTaken += Math.round(run.damageTaken);
+  profile.totalPlaySeconds += Math.max(0, Math.round(
+    safeNumber(details.durationSeconds, (run.endedAt - run.startedAt) / 1000)
+  ));
   profile.objectivesCompleted += run.objectivesCompleted;
   profile.challengesCompleted += run.challengesCompleted;
+  profile.coopContractsCompleted += run.coopContractsCompleted;
+  profile.contentOperationsCompleted = integer(profile.contentOperationsCompleted, 0) + run.contentOperationsCompleted;
   profile.weaponUpgrades += run.weaponUpgrades;
+  profile.perksPurchased += run.perksPurchased;
+  profile.pointsEarned += run.pointsEarned;
   profile.pointsSpent += run.pointsSpent;
-  profile.bestWave = Math.max(profile.bestWave, Math.max(1, Math.round(safeNumber(wave, 1))));
-  profile.bestScore = Math.max(profile.bestScore, Math.max(0, Math.round(safeNumber(score))));
-  profile.lastRunAt = Date.now();
-  run.lastEvent = String(reason || 'ENDED');
-  run.active = false;
+  profile.bestWave = Math.max(profile.bestWave, run.finalWave);
+  profile.bestScore = Math.max(profile.bestScore, run.finalScore);
+  profile.bestAccuracy = Math.max(profile.bestAccuracy, clamp(details.accuracy, 0, 100));
+  profile.longestRunSeconds = Math.max(
+    profile.longestRunSeconds,
+    Math.round(safeNumber(details.durationSeconds, 0))
+  );
+  profile.lastRunAt = run.endedAt;
+
+  const liveManifest = getLive1ManifestSnapshot();
+  if (liveManifest?.season?.active === true) {
+    const liveResult = applyLive1RunReceipt(
+      profile.live1,
+      {
+        runId: run.runId,
+        mapId: run.mapId,
+        mode: run.mode,
+        difficulty: run.difficulty,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+        durationSeconds: Math.max(0, Math.round(
+          safeNumber(details.durationSeconds, (run.endedAt - run.startedAt) / 1000)
+        )),
+        reason: run.endReason,
+        kills: run.kills,
+        wavesCleared: run.wavesCleared,
+        coopContractsCompleted: run.coopContractsCompleted,
+        contentOperationsCompleted: run.contentOperationsCompleted,
+        liveSeasonId: liveManifest.season.id,
+        liveManifestRevision: liveManifest.revision
+      },
+      liveManifest,
+      run.endedAt
+    );
+    if (liveResult.valid) {
+      profile.live1 = liveResult.profile;
+      run.liveSeasonPoints = integer(liveResult.seasonPointsAward, 0);
+      run.liveContractsCompleted = liveResult.completedStages.length;
+      run.liveRewardUnlockIds = [...liveResult.rewardUnlockIds];
+      run.liveSeasonId = liveManifest.season.id;
+      run.liveManifestRevision = liveManifest.revision;
+      if (liveResult.xpAward > 0) {
+        grantXP(
+          liveResult.xpAward,
+          'LIVE CONTRACT',
+          'LIVE OPERATIONS'
+        );
+      }
+    }
+  }
+
+  if (completed) {
+    applyOperationEvent({
+      kind: 'RUN_COMPLETE',
+      amount: 1,
+      mode: run.mode,
+      difficulty: run.difficulty
+    });
+  }
+
+  evaluateUnlocks(run.endedAt);
   recalculateLevel();
-  saveProfile(true);
+
+  profile.recentRuns = [
+    {
+      runId: run.runId,
+      endedAt: run.endedAt,
+      mapId: run.mapId,
+      mode: run.mode,
+      difficulty: run.difficulty,
+      score: run.finalScore,
+      wave: run.finalWave,
+      kills: run.kills,
+      headshots: run.headshots,
+      revives: run.revives,
+      coopContractsCompleted: run.coopContractsCompleted,
+      contentOperationsCompleted: run.contentOperationsCompleted,
+      liveSeasonPoints: run.liveSeasonPoints,
+      liveContractsCompleted: run.liveContractsCompleted,
+      xpEarned: run.xpEarned,
+      reason: run.endReason,
+      botAssisted: run.botAssisted
+    },
+    ...(Array.isArray(profile.recentRuns) ? profile.recentRuns : [])
+  ].filter((entry, index, values) => (
+    values.findIndex((candidate) => candidate.runId === entry.runId) === index
+  )).slice(0, 12);
+
+  run.active = false;
+  run.finalized = true;
+  run.lastEvent = run.endReason;
+  saveProfile(true, 'run-finalized');
+  dispatchProgressionRunFinalized({
+    version: 1,
+    runId: run.runId,
+    mapId: run.mapId,
+    mode: run.mode,
+    difficulty: run.difficulty,
+    startedAt: run.startedAt,
+    endedAt: run.endedAt,
+    durationSeconds: Math.max(0, Math.round(
+      safeNumber(details.durationSeconds, (run.endedAt - run.startedAt) / 1000)
+    )),
+    reason: run.endReason,
+    score: run.finalScore,
+    wave: run.finalWave,
+    wavesCleared: run.wavesCleared,
+    kills: run.kills,
+    headshots: run.headshots,
+    assists: run.assists,
+    revives: run.revives,
+    timesRevived: run.timesRevived,
+    damageDealt: Math.round(run.damageDealt),
+    damageTaken: Math.round(run.damageTaken),
+    pointsEarned: run.pointsEarned,
+    pointsSpent: run.pointsSpent,
+    objectivesCompleted: run.objectivesCompleted,
+    challengesCompleted: run.challengesCompleted,
+    coopContractsCompleted: run.coopContractsCompleted,
+    contentOperationsCompleted: run.contentOperationsCompleted,
+    liveSeasonId: run.liveSeasonId,
+    liveManifestRevision: run.liveManifestRevision,
+    weaponUpgrades: run.weaponUpgrades,
+    perksPurchased: run.perksPurchased,
+    accuracy: clamp(details.accuracy, 0, 100),
+    botAssisted: run.botAssisted
+  });
   return getProgressionSnapshot();
 }
 
 export function recordProgressionKill({ headshot = false } = {}) {
   if (!run.active) return;
-  run.kills++;
-  if (headshot) run.headshots++;
-  awardProgressionXP(headshot ? 5 : 3, headshot ? 'HEADSHOT' : 'ELIMINATION');
+  run.kills += 1;
+  grantXP(4, 'ELIMINATION', 'COMBAT');
+  applyOperationEvent({ kind: 'KILL', amount: 1, difficulty: run.difficulty, mode: run.mode });
+  dispatchCoop2Action('KILL', { amount: 1, headshot });
+  if (headshot) {
+    run.headshots += 1;
+    grantXP(3, 'HEADSHOT', 'HEADSHOTS');
+    applyOperationEvent({ kind: 'HEADSHOT', amount: 1, difficulty: run.difficulty, mode: run.mode });
+  }
+}
+
+export function recordProgressionAssist(amount = 1) {
+  if (!run.active) return;
+  const value = integer(amount, 1, 1);
+  run.assists += value;
+  grantXP(value * 4, 'ASSIST', 'ASSISTS');
 }
 
 export function recordProgressionWaveClear(wave = 1) {
   if (!run.active) return;
-  run.wavesCleared++;
-  awardProgressionXP(25 + Math.min(75, Math.max(0, Math.round(wave) - 1) * 3), 'WAVE CLEAR');
+  const value = integer(wave, 1, 1);
+  if (value <= run.lastRecordedWave) return;
+  run.lastRecordedWave = value;
+  run.wavesCleared += 1;
+  grantXP(28 + Math.min(72, Math.max(0, value - 1) * 3), 'WAVE CLEAR', 'WAVES');
+  dispatchCoop2Action('WAVE_CLEAR', {
+    amount: 1,
+    wave: value,
+    eventId: `${run.runId || 'run'}:wave:${value}`
+  });
+  applyOperationEvent({
+    kind: 'WAVE',
+    amount: 1,
+    wave: value,
+    difficulty: run.difficulty,
+    mode: run.mode
+  });
+}
+
+export function recordProgressionDamageDealt(amount = 0) {
+  if (!run.active) return;
+  const value = Math.max(0, safeNumber(amount, 0));
+  run.damageDealt += value;
+  applyOperationEvent({ kind: 'DAMAGE', amount: value, difficulty: run.difficulty, mode: run.mode });
+}
+
+export function recordProgressionDamageTaken(amount = 0) {
+  if (!run.active) return;
+  run.damageTaken += Math.max(0, safeNumber(amount, 0));
+}
+
+export function recordProgressionPointsEarned(amount = 0) {
+  if (!run.active) return;
+  run.pointsEarned += integer(amount, 0);
 }
 
 export function recordProgressionPurchase(cost = 0, type = 'PURCHASE') {
   if (!run.active) return;
-  const value = Math.max(0, Math.round(safeNumber(cost)));
+  const value = integer(cost, 0);
   run.pointsSpent += value;
-  run.lastEvent = `${type} -${value} PTS`;
+  run.lastEvent = `${String(type || 'PURCHASE').toUpperCase()} -${value} PTS`;
 }
 
 export function recordProgressionObjective() {
   if (!run.active) return;
-  run.objectivesCompleted++;
+  run.objectivesCompleted += 1;
   run.lastEvent = 'OBJECTIVE COMPLETE';
+  dispatchCoop2Action('OBJECTIVE', { amount: 1 });
+  applyOperationEvent({ kind: 'OBJECTIVE', amount: 1, difficulty: run.difficulty, mode: run.mode });
 }
 
 export function recordProgressionChallenge() {
   if (!run.active) return;
-  run.challengesCompleted++;
+  run.challengesCompleted += 1;
   run.lastEvent = 'CHALLENGE COMPLETE';
+  dispatchCoop2Action('CHALLENGE', { amount: 1 });
+  applyOperationEvent({ kind: 'CHALLENGE', amount: 1, difficulty: run.difficulty, mode: run.mode });
+}
+
+export function recordProgressionRevive({ revivedSelf = false } = {}) {
+  if (!run.active) return;
+  if (revivedSelf) {
+    run.timesRevived += 1;
+    grantXP(15, 'BACK IN ACTION', 'TEAMWORK');
+    return;
+  }
+  run.revives += 1;
+  grantXP(65, 'REVIVE', 'TEAMWORK');
+  applyOperationEvent({ kind: 'REVIVE', amount: 1, difficulty: run.difficulty, mode: run.mode });
+}
+
+export function recordProgressionCoopContract({
+  contractId = 'SHARED_CONTRACT',
+  completionId = '',
+  xp = 180
+} = {}) {
+  if (!run.active && !run.finalized) return false;
+  run.coopContractsCompleted += 1;
+  run.challengesCompleted += 1;
+  grantXP(
+    Math.min(250, Math.max(0, integer(xp, 180))),
+    `CO-OP CONTRACT · ${String(contractId || 'TEAM').replace(/_/g, ' ')}`,
+    'CO-OP CONTRACT'
+  );
+  run.lastEvent = 'SHARED CONTRACT COMPLETE';
+  applyOperationEvent({
+    kind: 'CHALLENGE',
+    amount: 1,
+    difficulty: run.difficulty,
+    mode: run.mode
+  });
+  return {
+    contractId: String(contractId || 'SHARED_CONTRACT').slice(0, 80),
+    completionId: String(completionId || '').slice(0, 220),
+    completed: run.coopContractsCompleted
+  };
+}
+
+
+export function recordProgressionContentOperation({
+  operationId = 'ARENA_OPERATION',
+  completionId = '',
+  xp = 160
+} = {}) {
+  if (!run.active && !run.finalized) return false;
+  run.contentOperationsCompleted += 1;
+  run.objectivesCompleted += 1;
+  grantXP(
+    Math.min(220, Math.max(0, integer(xp, 160))),
+    `ARENA OPERATION · ${String(operationId || 'OPERATION').replace(/_/g, ' ')}`,
+    'ARENA OPERATION'
+  );
+  run.lastEvent = 'ARENA OPERATION COMPLETE';
+  applyOperationEvent({
+    kind: 'OBJECTIVE',
+    amount: 1,
+    difficulty: run.difficulty,
+    mode: run.mode
+  });
+  return {
+    operationId: String(operationId || 'ARENA_OPERATION').slice(0, 80),
+    completionId: String(completionId || '').slice(0, 220),
+    completed: run.contentOperationsCompleted
+  };
 }
 
 export function recordProgressionWeaponUpgrade(tier = 1) {
   if (!run.active) return;
-  run.weaponUpgrades++;
-  awardProgressionXP(35 + Math.max(0, tier - 1) * 20, `WEAPON TIER ${tier}`);
+  run.weaponUpgrades += 1;
+  grantXP(35 + Math.max(0, integer(tier, 1, 1) - 1) * 20, `WEAPON TIER ${tier}`, 'UPGRADES');
+}
+
+export function markProgressionBotAssisted(value = true) {
+  if (!run.active) return;
+  run.botAssisted = value === true;
 }
 
 export function getPerkIdForShop(shopType) {
@@ -249,6 +739,7 @@ export function purchaseProgressionPerk(perkId, playerState) {
   if (!playerState) return { ok: false, reason: 'NO PLAYER', perk };
 
   run.perks.add(perk.id);
+  run.perksPurchased += 1;
 
   if (perk.id === 'JUGGERNOG') {
     playerState.maxHealth = 250;
@@ -261,7 +752,7 @@ export function purchaseProgressionPerk(perkId, playerState) {
     playerState.adsSpeed = 4.8;
   }
 
-  awardProgressionXP(40, perk.label.toUpperCase());
+  grantXP(40, perk.label.toUpperCase(), 'PERKS');
   run.lastEvent = `${perk.label.toUpperCase()} ACTIVE`;
   return { ok: true, perk };
 }
@@ -295,28 +786,62 @@ export function consumeProgressionLevelUps() {
   return values;
 }
 
+export function consumeProgressionUnlocks() {
+  const values = run.newlyUnlocked.map((entry) => ({ ...entry }));
+  run.newlyUnlocked.length = 0;
+  return values;
+}
+
+export function equipProgressionCosmetic(unlockId) {
+  const entry = PROGRESSION_UNLOCK_CATALOG.find((candidate) => candidate.id === String(unlockId || ''));
+  if (!entry) return { ok: false, reason: 'UNKNOWN_UNLOCK' };
+  if (!profile.unlocks?.[entry.id]) return { ok: false, reason: 'LOCKED', unlock: entry };
+  const field = entry.kind.toLowerCase();
+  profile.equipped = {
+    ...(profile.equipped || {}),
+    [field]: entry.id,
+    updatedAt: Date.now()
+  };
+  saveProfile(true, 'cosmetic-equipped');
+  return { ok: true, unlock: entry, snapshot: getProgressionSnapshot() };
+}
+
 export function getProgressionSnapshot() {
+  profile = normalizeProgressionProfile(profile, Date.now());
   const levelInfo = recalculateLevel();
+  const unlocks = getProgressionUnlockPresentation(profile);
   return {
+    patch: PROGRESSION_PATCH,
+    version: PROGRESSION_VERSION,
     profile: { ...profile, ...levelInfo },
     run: {
       ...run,
       perks: [...run.perks],
-      durationSeconds: run.startedAt ? Math.max(0, (Date.now() - run.startedAt) / 1000) : 0,
-      levelUps: run.levelUps.slice()
+      xpBreakdown: { ...run.xpBreakdown },
+      durationSeconds: run.startedAt
+        ? Math.max(0, ((run.endedAt || Date.now()) - run.startedAt) / 1000)
+        : 0,
+      levelUps: run.levelUps.slice(),
+      newlyUnlocked: run.newlyUnlocked.map((entry) => ({ ...entry })),
+      operationsCompleted: run.operationsCompleted.map((entry) => ({ ...entry }))
     },
-    maxLevel: MAX_LEVEL,
+    operations: profile.operations,
+    operationExpiry: getProgressionOperationExpiry(Date.now()),
+    unlocks,
+    equipped: { ...profile.equipped },
+    maxLevel: PROGRESSION_MAX_LEVEL,
     perkDefinitions: Object.values(PERK_DEFS).map((perk) => ({ ...perk }))
   };
 }
 
 export function resetPersistentProgression() {
-  profile = defaultProfile();
-  saveProfile(true);
+  const raw = storageGet(STORAGE_KEY);
+  backupStorage(BACKUP_KEY, raw, 'manual-reset');
+  profile = normalizeProgressionProfile({}, Date.now());
+  saveProfile(true, 'manual-reset');
   return getProgressionSnapshot();
 }
 
 if (typeof window !== 'undefined') {
   window.KAGetProgression = getProgressionSnapshot;
-  window.KAResetProgression = resetPersistentProgression;
 }

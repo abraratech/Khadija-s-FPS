@@ -1,6 +1,6 @@
 // js/multiplayer/protocol.js
 
-export const MULTIPLAYER_BUILD_ID = 'm5-coop-turn-fallback-r1';
+export const MULTIPLAYER_BUILD_ID = 'final2-consolidated-production-r1';
 export const MULTIPLAYER_PROTOCOL_VERSION = 6;
 export const MULTIPLAYER_COMPATIBLE_PROTOCOL_VERSIONS = Object.freeze([5, 6]);
 
@@ -18,6 +18,8 @@ export const MULTIPLAYER_MESSAGE_TYPES = Object.freeze({
   REVIVE_STATE: 'revive-state',
   TACTICAL_PING: 'tactical-ping',
   RUN_STATS: 'run-stats',
+  COOP2_STATE: 'coop2-state',
+  CONTENT1_STATE: 'content1-state',
   STATE_RESYNC_REQUEST: 'state-resync-request',
   HEARTBEAT: 'heartbeat'
 });

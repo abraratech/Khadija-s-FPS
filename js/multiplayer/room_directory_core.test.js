@@ -7,7 +7,7 @@ import {
   roomDirectoryStatusPresentation
 } from './room_directory_core.js';
 
-assert.equal(PUBLIC_ROOM_DIRECTORY_PATCH, 'match2-public-room-admission-r1-1');
+assert.equal(PUBLIC_ROOM_DIRECTORY_PATCH, 'match3-r1-party-quality-room-discovery');
 const entry = normalizePublicRoomEntry({
   listingId: 'listing-1',
   joinToken: 'join-1',

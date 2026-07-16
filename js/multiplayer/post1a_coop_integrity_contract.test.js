@@ -4,12 +4,11 @@ import { readFile } from 'node:fs/promises';
 
 const base = new URL('./', import.meta.url);
 const read = (name) => readFile(new URL(name, base), 'utf8');
-const [weapons, economy, hud, main, voiceCore, shared, revive, foundation, remotePlayers, cloud] = await Promise.all([
+const [weapons, economy, hud, main, shared, revive, foundation, remotePlayers, cloud] = await Promise.all([
   read('../weapons.js'),
   read('./economy.js'),
   read('./network_hud.js'),
   read('../main.js'),
-  read('./live_voice_reliability_core.js'),
   read('./shared_world.js'),
   read('./revive.js'),
   read('./foundation.js'),
@@ -24,7 +23,6 @@ assert.match(hud, /debugNetworkMetricsEnabled/);
 assert.doesNotMatch(hud, /EPOCH \$\{snapshot\.authorityEpoch\}/);
 assert.match(main, /live voice was removed from the player-facing build/);
 assert.doesNotMatch(main, /import '\.\/multiplayer\/live_voice\.js'/);
-assert.match(voiceCore, /candidate && typeof candidate === 'object'/);
 assert.match(shared, /this\.revive\?\.applyAuthorityDamage/);
 assert.doesNotMatch(shared, /\|\| roomPlayer\.connected === false\s*\|\| this\.isLateJoinProtected/);
 assert.match(revive, /applyAuthorityDamage\(playerId, damage/);
@@ -33,14 +31,5 @@ assert.match(foundation, /revive: reviveManager/);
 assert.match(remotePlayers, /const isAway = playerRecord\?\.connected === false/);
 assert.match(cloud, /CLOUD_SERVICE_UNAVAILABLE/);
 assert.match(cloud, /if \(existing\)[\s\S]*scheduleRemoteQueueRetry\(\)/);
-
-const { normalizeVoiceQualityMetrics } = await import('./live_voice_reliability_core.js');
-assert.deepEqual(normalizeVoiceQualityMetrics(null), {
-  packetsReceived: 0,
-  packetsLost: 0,
-  lossPercent: 0,
-  jitterMs: 0,
-  rttMs: 0
-});
 
 console.log('POST.1A co-op integrity contract tests passed');

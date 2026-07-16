@@ -533,6 +533,69 @@ export function renderRunSummaryScreen() {
   setText('final-challenges', summary.challengesCompleted);
   setText('final-contract-status', objective.completed ? objective.objective?.label || 'Complete' : 'Incomplete');
   setText('final-achievements', challenges.totalUnlocked);
+
+  const level = progression.profile.level;
+  const capped = level >= progression.maxLevel || progression.profile.xpToNext <= 0;
+  const levelProgress = capped
+    ? 100
+    : Math.min(100, (progression.profile.xpIntoLevel / Math.max(1, progression.profile.xpToNext)) * 100);
+  setText(
+    'final-level-progress',
+    capped
+      ? `LEVEL ${level} · MAX`
+      : `LEVEL ${level} · ${Math.floor(progression.profile.xpIntoLevel)}/${progression.profile.xpToNext} XP`
+  );
+  const levelFill = document.getElementById('final-level-progress-fill');
+  if (levelFill) levelFill.style.width = `${levelProgress}%`;
+
+  const breakdown = document.getElementById('final-xp-breakdown');
+  if (breakdown) {
+    const entries = Object.entries(progression.run.xpBreakdown || {})
+      .filter(([, value]) => Number(value) > 0)
+      .sort((left, right) => Number(right[1]) - Number(left[1]));
+    breakdown.replaceChildren();
+    if (!entries.length) {
+      const empty = document.createElement('span');
+      empty.className = 'prog1-postmatch-empty';
+      empty.textContent = 'No career XP earned.';
+      breakdown.append(empty);
+    } else {
+      entries.forEach(([label, value]) => {
+        const row = document.createElement('div');
+        const name = document.createElement('span');
+        const amount = document.createElement('b');
+        name.textContent = label.replaceAll('_', ' ');
+        amount.textContent = `+${Math.round(Number(value) || 0)} XP`;
+        row.append(name, amount);
+        breakdown.append(row);
+      });
+    }
+  }
+
+  const operationProgress = document.getElementById('final-operation-progress');
+  if (operationProgress) {
+    const completed = progression.run.operationsCompleted || [];
+    operationProgress.textContent = completed.length
+      ? completed.map((entry) => `${entry.scope}: ${entry.label} (+${entry.xp} XP)`).join(' · ')
+      : 'No operation completed this run.';
+  }
+
+  const liveProgress = document.getElementById('final-live-progress');
+  if (liveProgress) {
+    const seasonPoints = Math.max(0, Number(progression.run.liveSeasonPoints || 0));
+    const stages = Math.max(0, Number(progression.run.liveContractsCompleted || 0));
+    liveProgress.textContent = seasonPoints > 0 || stages > 0
+      ? `+${seasonPoints} SP${stages ? ` · ${stages} season stage${stages === 1 ? '' : 's'} complete` : ''}`
+      : 'No seasonal progress this run.';
+  }
+
+  const unlocks = document.getElementById('final-unlocks');
+  if (unlocks) {
+    const values = progression.run.newlyUnlocked || [];
+    unlocks.textContent = values.length
+      ? values.map((entry) => `${entry.kind}: ${entry.label}`).join(' · ')
+      : 'No new unlocks this run.';
+  }
 }
 
 export function updateCombatStatusHUD(playerState, activeWeapon = null) {

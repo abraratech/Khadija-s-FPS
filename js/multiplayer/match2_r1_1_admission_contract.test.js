@@ -10,7 +10,7 @@ const worker = fs.readFileSync(new URL('../../multiplayer-server/src/index.js', 
 const workerCore = fs.readFileSync(new URL('../../multiplayer-server/src/room_directory_core.js', import.meta.url), 'utf8');
 const hub = fs.readFileSync(new URL('../../multiplayer-server/src/matchmaking_hub.js', import.meta.url), 'utf8');
 
-assert(workerCore.includes("ROOM_DIRECTORY_PATCH = 'match2-public-room-admission-r1-1'"));
+assert(workerCore.includes('ROOM_DIRECTORY_PATCH = MATCH3_SERVER_PATCH'));
 assert(workerCore.includes('ROOM_DIRECTORY_ADMISSION_TTL_MS'));
 assert(worker.includes("url.searchParams.get('admissionToken')"));
 assert(worker.includes('directoryAdmissions'));

@@ -7,9 +7,12 @@ import {
   MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL
 } from './production_release_core.js';
 
-assert.equal(MULTIPLAYER_BUILD_ID, 'm5-coop-turn-fallback-r1');
+assert.equal(MULTIPLAYER_BUILD_ID, 'final2-consolidated-production-r1');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_BUILD, MULTIPLAYER_BUILD_ID);
-assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, MULTIPLAYER_BUILD_ID);
+assert.equal(
+  MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
+  'final2-r1-full-product-certification'
+);
 assert.equal(MULTIPLAYER_PROTOCOL_VERSION, 6);
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, MULTIPLAYER_PROTOCOL_VERSION);
 

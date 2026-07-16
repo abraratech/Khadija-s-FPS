@@ -127,6 +127,25 @@ function nowMs() {
   return Date.now();
 }
 
+function dispatchCloudAuthChanged({ authenticated = false, accountId = '', accountType = 'guest', reason = '' } = {}) {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return false;
+  const detail = Object.freeze({
+    authenticated: authenticated === true,
+    accountId: String(accountId || '').slice(0, 80),
+    accountType: accountType === 'passkey' ? 'passkey' : 'guest',
+    reason: String(reason || '').slice(0, 80)
+  });
+  try {
+    const event = typeof CustomEvent === 'function'
+      ? new CustomEvent('ka:cloud-auth-changed', { detail })
+      : Object.assign(new Event('ka:cloud-auth-changed'), { detail });
+    window.dispatchEvent(event);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function randomId() {
   try {
     if (globalThis.crypto?.randomUUID) return `guest-${globalThis.crypto.randomUUID()}`;
@@ -409,6 +428,7 @@ function expireCloudAuthenticatedSession(error = null) {
     toast?.(CLOUD_SESSION_EXPIRED_MESSAGE, '#ffaa00', 2600);
   }
   refreshProfileUi();
+  dispatchCloudAuthChanged({ authenticated: false, accountId: accountHint, reason: 'session-expired' });
   return createCloudSessionExpiryResult(error, { accountHint });
 }
 
@@ -882,6 +902,12 @@ export async function upgradeCloudAccountToPasskey(name = 'Khadija’s Arena Pla
     statusMessage = verified.upgraded ? 'CLOUD ACCOUNT UPGRADED TO PASSKEY' : 'PASSKEY ADDED';
     toast?.(verified.upgraded ? 'PERMANENT PASSKEY ACCOUNT READY' : 'PASSKEY ADDED', '#22ff88', 1900);
     refreshProfileUi();
+    dispatchCloudAuthChanged({
+      authenticated: true,
+      accountId: verified.account?.accountId || getRemoteCredentials().accountId,
+      accountType: 'passkey',
+      reason: verified.upgraded ? 'passkey-upgraded' : 'passkey-added'
+    });
     return Object.freeze({ accepted: true, upgraded: verified.upgraded === true, account: verified.account });
   } catch (error) {
     const reason = String(error?.code || error?.name || error?.message || error).slice(0, 120);
@@ -952,6 +978,12 @@ export async function signInCloudAccountWithPasskey(accountId, { reload = true }
     statusMessage = 'PASSKEY SIGN-IN COMPLETE · RELOADING';
     toast?.('CLOUD ACCOUNT SIGNED IN', '#22ff88', 1800);
     refreshProfileUi();
+    dispatchCloudAuthChanged({
+      authenticated: true,
+      accountId: verified.account?.accountId || cleanAccount,
+      accountType: 'passkey',
+      reason: 'passkey-signin'
+    });
     if (reload && typeof location !== 'undefined') setTimeout(() => location.reload(), 650);
     return Object.freeze({ accepted: true, account: verified.account });
   } catch (error) {
@@ -1005,6 +1037,7 @@ export async function signOutCloudAccount() {
   statusMessage = 'SIGNED OUT · LOCAL PROFILE KEPT';
   toast?.('SIGNED OUT · LOCAL SAVE KEPT', '#ffaa00', 1700);
   refreshProfileUi();
+  dispatchCloudAuthChanged({ authenticated: false, accountId: credentials.accountId, reason: 'signout' });
   return Object.freeze({ accepted: true });
 }
 

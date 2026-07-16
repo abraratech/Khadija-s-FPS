@@ -39,6 +39,7 @@ let lastPresenceFingerprint = '';
 let lastRoomFingerprint = '';
 let busy = false;
 let toastHandler = null;
+let cloudAuthListenerBound = false;
 
 function readJson(key, fallback) {
   try {
@@ -769,6 +770,29 @@ async function handleAction(action, id = '') {
   }
 }
 
+function handleCloudAuthChanged(event) {
+  const authenticated = event?.detail?.authenticated === true;
+  lastPresenceFingerprint = '';
+  lastRoomFingerprint = '';
+  if (!authenticated) {
+    state = normalizeSocialBootstrap({
+      authenticated: false,
+      accountType: 'guest',
+      recent: localRecentPlayers()
+    });
+    setStatus('PASSKEY SOCIAL SIGN-IN REQUIRED', 'warning');
+    return;
+  }
+  setStatus('REFRESHING SOCIAL PROFILE…', 'neutral');
+  void refreshSocial({ silent: true }).then(() => publishPresence({ force: true }));
+}
+
+function bindCloudAuthEvents() {
+  if (cloudAuthListenerBound || typeof window === 'undefined') return;
+  cloudAuthListenerBound = true;
+  window.addEventListener('ka:cloud-auth-changed', handleCloudAuthChanged);
+}
+
 function bindUi() {
   document.getElementById('social-screen')?.addEventListener('click', (event) => {
     const target = event.target instanceof Element
@@ -785,6 +809,7 @@ export function initSocialSystems({ showToast = null } = {}) {
   initialized = true;
   toastHandler = typeof showToast === 'function' ? showToast : null;
   bindUi();
+  bindCloudAuthEvents();
 
   setSocialRuntimeProvider({
     getSnapshot,

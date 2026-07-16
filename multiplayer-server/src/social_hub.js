@@ -30,6 +30,29 @@ const REPORT_NOTE_LIMIT = 240;
 const REPORT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 const PARTY_ROOM_TTL_MS = 20 * 60 * 1000;
 const SOCIAL_RATE_WINDOW_MS = 60_000;
+const INTERNAL_SOCIAL_AUTH_HEADER = 'x-ka-internal-social-auth';
+const INTERNAL_SOCIAL_ACCOUNT_HEADER = 'x-ka-social-account-id';
+const INTERNAL_SOCIAL_NAME_HEADER = 'x-ka-social-display-name';
+
+function trustedProxyAuthentication(request) {
+  if (request.headers.get(INTERNAL_SOCIAL_AUTH_HEADER) !== '1') return null;
+  const accountId = cleanAccountId(request.headers.get(INTERNAL_SOCIAL_ACCOUNT_HEADER));
+  if (!accountId) throw new Error('SOCIAL_AUTH_CONTEXT_INVALID');
+  let displayName = 'Player';
+  try {
+    displayName = decodeURIComponent(String(request.headers.get(INTERNAL_SOCIAL_NAME_HEADER) || 'Player'));
+  } catch {
+    displayName = 'Player';
+  }
+  displayName = cleanSocialString(displayName, 'Player', 24);
+  return {
+    accountId,
+    displayName,
+    account: { accountId, accountType: 'passkey' },
+    profile: null,
+    trustedProxy: true
+  };
+}
 
 function responseJson(data, init = {}) {
   const headers = new Headers(init.headers || {});
@@ -228,6 +251,12 @@ export class SocialHub extends DurableObject {
   }
 
   async cloudAuthenticate(request) {
+    const trusted = trustedProxyAuthentication(request);
+    if (trusted) {
+      const moderation = await this.checkOpsRestriction(trusted.accountId);
+      if (moderation.allowed === false) throw new Error('SOCIAL_ACCOUNT_RESTRICTED');
+      return trusted;
+    }
     if (!this.env.CLOUD_PROFILES) {
       throw new Error('SOCIAL_AUTH_BINDING_UNAVAILABLE');
     }

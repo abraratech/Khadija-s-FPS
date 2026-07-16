@@ -392,5 +392,17 @@
     "voiceChat": false,
     "protocolUnchanged": true,
     "workerChangeRequired": false
+  },
+  "socialSessionHotfix": {
+    "schema": 1,
+    "patch": "post-final2-r1-2-social-credential-envelope",
+    "workerLevelSocialAuthentication": true,
+    "deterministicCredentialEnvelope": true,
+    "authorizationHeaderNotForwardedAcrossDurableObjects": true,
+    "nestedDurableObjectAuthRemovedFromPublicPath": true,
+    "spoofedInternalAuthHeadersStripped": true,
+    "immediateFrontendRefreshAfterAuthChange": true,
+    "passkeyOnlySocialPolicyPreserved": true,
+    "workerDeploymentRequired": true
   }
 }

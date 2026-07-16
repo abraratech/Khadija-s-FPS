@@ -6,6 +6,11 @@ import { CloudProfileHub, CLOUD_PROFILE_SERVER_INFO } from './cloud_profile_hub.
 import { buildTextChatMessage, consumeTextChatRate, sanitizeTextChatText } from './text_chat_core.js';
 import { MatchmakingHub } from './matchmaking_hub.js';
 import { SocialHub, SOCIAL1_SERVER_INFO } from './social_hub.js';
+import {
+  INTERNAL_SOCIAL_PROFILE_AUTH_HEADER,
+  INTERNAL_SOCIAL_PROFILE_AUTH_PATH,
+  buildSocialCredentialEnvelope
+} from './social_auth_bridge_core.js';
 import { OpsHub, OPS1_SERVER_INFO } from './ops_hub.js';
 import { LIVE1_PATCH, LIVE1_SCHEMA, resolveLive1Manifest } from './live1_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
@@ -53,6 +58,18 @@ const POST_FINAL1_SERVER_INFO = Object.freeze({
   mobileClarity: true,
   socialRecovery: true,
   socialAuthErrorsPreserved: true,
+  baseFinal2IdentityPreserved: true
+});
+
+const POST_FINAL2_R1_2_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'post-final2-r1-2-social-credential-envelope',
+  workerLevelSocialAuthentication: true,
+  deterministicCredentialEnvelope: true,
+  authorizationHeaderNotForwardedAcrossDurableObjects: true,
+  nestedDurableObjectAuthRemovedFromPublicPath: true,
+  spoofedInternalAuthHeadersStripped: true,
+  passkeyOnlySocialPolicyPreserved: true,
   baseFinal2IdentityPreserved: true
 });
 
@@ -229,6 +246,77 @@ async function proxyCloudProfileRequest(request, env) {
 }
 
 
+const INTERNAL_SOCIAL_AUTH_HEADER = 'x-ka-internal-social-auth';
+const INTERNAL_SOCIAL_ACCOUNT_HEADER = 'x-ka-social-account-id';
+const INTERNAL_SOCIAL_NAME_HEADER = 'x-ka-social-display-name';
+
+async function authenticateSocialProxyRequest(request, env) {
+  if (!env.CLOUD_PROFILES) {
+    return {
+      ok: false,
+      response: json({ ok: false, error: 'SOCIAL_AUTH_BINDING_UNAVAILABLE' }, { status: 503 })
+    };
+  }
+
+  const sourceUrl = new URL(request.url);
+  let rpId = '';
+  try {
+    const requestOrigin = String(request.headers.get('origin') || '').trim();
+    rpId = requestOrigin ? new URL(requestOrigin).hostname.toLowerCase() : '';
+  } catch {
+    rpId = '';
+  }
+
+  const envelope = buildSocialCredentialEnvelope(request.headers, {
+    region: String(request.cf?.country || 'ZZ').toUpperCase(),
+    origin: String(request.headers.get('origin') || '').trim(),
+    rpId
+  });
+  if (!envelope.ok) {
+    return {
+      ok: false,
+      response: json({ ok: false, error: envelope.error }, { status: 401 })
+    };
+  }
+
+  const internalHeaders = new Headers({
+    'content-type': 'application/json; charset=utf-8',
+    [INTERNAL_SOCIAL_PROFILE_AUTH_HEADER]: '1',
+    'x-ka-rate-key': `social-proxy-auth-${envelope.value.accountId.slice(0, 64)}`
+  });
+  const id = env.CLOUD_PROFILES.idFromName('global-v1');
+  const response = await env.CLOUD_PROFILES.get(id).fetch(
+    new Request(`https://profiles.internal${INTERNAL_SOCIAL_PROFILE_AUTH_PATH}`, {
+      method: 'POST',
+      headers: internalHeaders,
+      body: JSON.stringify(envelope.value)
+    })
+  );
+  const value = await response.json().catch(() => ({}));
+  if (!response.ok || value.ok !== true) {
+    return {
+      ok: false,
+      response: json(
+        { ok: false, error: String(value.error || `HTTP_${response.status}`).slice(0, 160) },
+        { status: response.status || 401 }
+      )
+    };
+  }
+  const accountId = String(value.account?.accountId || '').trim();
+  if (!/^cloud-[a-f0-9]{32}$/i.test(accountId) || value.account?.accountType !== 'passkey') {
+    return {
+      ok: false,
+      response: json({ ok: false, error: 'PASSKEY_SOCIAL_REQUIRED' }, { status: 401 })
+    };
+  }
+  const displayName = String(
+    value.profile?.identity?.displayName
+    || value.account?.accountLabel
+    || 'Player'
+  ).replace(/[<>\u0000-\u001f\u007f]/g, '').trim().replace(/\s+/g, ' ').slice(0, 24) || 'Player';
+  return { ok: true, accountId, displayName };
+}
+
 async function proxySocialRequest(request, env) {
   if (!env.SOCIAL) {
     return json({ ok: false, error: 'SOCIAL_BINDING_UNAVAILABLE' }, { status: 503 });
@@ -239,6 +327,19 @@ async function proxySocialRequest(request, env) {
     headers.set('x-ka-region', String(request.cf?.country || 'ZZ').toUpperCase());
     headers.set('x-ka-origin', String(request.headers.get('origin') || '').trim());
     headers.delete('cf-connecting-ip');
+
+    // Public callers may never supply trusted Social identity context.
+    headers.delete(INTERNAL_SOCIAL_AUTH_HEADER);
+    headers.delete(INTERNAL_SOCIAL_ACCOUNT_HEADER);
+    headers.delete(INTERNAL_SOCIAL_NAME_HEADER);
+
+    const auth = await authenticateSocialProxyRequest(request, env);
+    if (!auth.ok) return corsify(auth.response);
+
+    headers.set(INTERNAL_SOCIAL_AUTH_HEADER, '1');
+    headers.set(INTERNAL_SOCIAL_ACCOUNT_HEADER, auth.accountId);
+    headers.set(INTERNAL_SOCIAL_NAME_HEADER, encodeURIComponent(auth.displayName));
+
     const internal = new Request(
       `https://social.internal${sourceUrl.pathname}${sourceUrl.search}`,
       {
@@ -2175,6 +2276,7 @@ export default {
         live: LIVE1_SERVER_INFO,
         operations: OPS1_SERVER_INFO,
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
+        socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2210,6 +2312,7 @@ export default {
         live: LIVE1_SERVER_INFO,
         operations: OPS1_SERVER_INFO,
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
+        socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

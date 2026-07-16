@@ -1,5 +1,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+  INTERNAL_SOCIAL_PROFILE_AUTH_HEADER,
+  INTERNAL_SOCIAL_PROFILE_AUTH_PATH,
+  normalizeSocialCredentialEnvelope
+} from './social_auth_bridge_core.js';
+import {
   CLOUD_PROFILE_PATCH,
   CLOUD_PROFILE_SCHEMA,
   CLOUD_PROFILE_VERSION,
@@ -357,6 +362,7 @@ export class CloudProfileHub extends DurableObject {
     const url = new URL(request.url);
     const rateKey = request.headers.get('x-ka-rate-key') || 'anonymous';
     try {
+      if (request.method === 'POST' && url.pathname === INTERNAL_SOCIAL_PROFILE_AUTH_PATH) return this.internalSocialAuthSession(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/register') return this.register(request, rateKey);
       if (request.method === 'GET' && url.pathname === '/profiles/profile') return this.getProfile(request, rateKey);
       if (request.method === 'POST' && url.pathname === '/profiles/sync') return this.sync(request, rateKey);
@@ -1283,6 +1289,49 @@ export class CloudProfileHub extends DurableObject {
       passkeys: publicPasskeys(meta.passkeys),
       profile,
       profileChecksum: meta.profileChecksum,
+      checksumVerified: true,
+      reliability: reliabilityForRequest(request, { checksumVerified: true })
+    });
+  }
+
+  async internalSocialAuthSession(request, rateKey) {
+    if (request.headers.get(INTERNAL_SOCIAL_PROFILE_AUTH_HEADER) !== '1') {
+      return responseJson({ ok: false, error: 'SOCIAL_AUTH_CONTEXT_FORBIDDEN' }, { status: 403 });
+    }
+    const payload = normalizeSocialCredentialEnvelope(await requestJson(request));
+    if (!payload.ok) {
+      return responseJson({ ok: false, error: payload.error }, { status: 401 });
+    }
+    if (!await this.consumeRateLimit('social-auth-session', rateKey || `social-auth-${payload.value.accountId}`, 120)) {
+      return responseJson({ ok: false, error: 'PASSKEY_SESSION_RATE_LIMITED' }, { status: 429 });
+    }
+
+    const headers = new Headers({
+      authorization: `Bearer ${payload.value.token}`,
+      'x-ka-account-id': payload.value.accountId,
+      'x-ka-device-id': payload.value.deviceId,
+      'x-ka-client-time': payload.value.clientTime,
+      'x-ka-origin': payload.value.origin,
+      'x-ka-rp-id': payload.value.rpId,
+      'x-ka-region': payload.value.region
+    });
+    const auth = await this.authenticate(
+      new Request('https://profiles.internal/profiles/auth/session', {
+        method: 'GET',
+        headers
+      })
+    );
+    if (!auth.ok) return auth.response;
+
+    auth.meta.lastAuthenticatedAt = Date.now();
+    await this.ctx.storage.put(accountKey(auth.accountId), auth.meta);
+    const profile = await this.loadProfile(auth.meta);
+    return responseJson({
+      ok: true,
+      patch: CLOUD_AUTH_PATCH,
+      account: publicAccount(auth.meta),
+      profile,
+      profileChecksum: auth.meta.profileChecksum,
       checksumVerified: true,
       reliability: reliabilityForRequest(request, { checksumVerified: true })
     });

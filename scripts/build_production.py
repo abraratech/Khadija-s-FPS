@@ -17,6 +17,7 @@ from pathlib import Path
 PATCH = "final2-r1-full-product-certification"
 SOURCE_SEAL = "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e"
 POST_FINAL_PATCH = "post-final1-r1-mobile-clarity-social-recovery"
+POST_FINAL2_PATCH = "post-final2-r1-coop-audio-awareness"
 ROOT_FILES = ("index.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -60,7 +61,7 @@ def allowed(relative: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\FINAL2_PRODUCTION_BUILD")
+    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\POST_FINAL2_PRODUCTION_BUILD")
     args = parser.parse_args()
 
     project = Path(args.project_root).resolve()
@@ -114,8 +115,8 @@ def main() -> None:
         "certified_source_seal": SOURCE_SEAL,
         "certification": {
             "status": "CERTIFIED",
-            "deterministic_tests": 140,
-            "javascript_syntax_checks": 339,
+            "deterministic_tests": 144,
+            "javascript_syntax_checks": 345,
             "map_hero_checks": 6,
             "voice_runtime_removed": True,
             "administrator_tools_included": False,
@@ -127,6 +128,19 @@ def main() -> None:
             "mobile_clarity": True,
             "social_recovery": True,
             "base_final2_identity_preserved": True
+        },
+        "post_final2": {
+            "schema": 1,
+            "patch": POST_FINAL2_PATCH,
+            "coop_audio_awareness": True,
+            "ally_down_alerts": True,
+            "remote_tactical_ping_cues": True,
+            "ai_wingman_enemy_marks": True,
+            "team_alerts_volume_control": True,
+            "caption_fallback": True,
+            "voice_chat": False,
+            "protocol_unchanged": True,
+            "worker_change_required": False
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

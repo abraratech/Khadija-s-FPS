@@ -1,0 +1,94 @@
+/* POST-FINAL.2 R1 — short, readable co-op audio captions. */
+
+#ka-coop-audio-caption {
+  position: fixed;
+  left: 50%;
+  top: max(94px, calc(env(safe-area-inset-top, 0px) + 76px));
+  z-index: 74;
+  transform: translateX(-50%);
+  max-width: min(560px, 72vw);
+  padding: 8px 14px;
+  border: 1px solid rgba(71, 200, 255, 0.72);
+  border-radius: 999px;
+  background: rgba(2, 9, 14, 0.88);
+  box-shadow:
+    0 0 18px rgba(71, 200, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: #e9faff;
+  font: 900 12px/1.2 system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+  animation: ka-coop-audio-caption-in 140ms ease-out both;
+}
+
+#ka-coop-audio-caption[hidden] {
+  display: none !important;
+}
+
+#ka-coop-audio-caption[data-kind="ALLY_DOWN"],
+#ka-coop-audio-caption[data-kind="ALLY_DOWN_REMINDER"],
+#ka-coop-audio-caption[data-kind="NEED_HELP"] {
+  border-color: rgba(255, 82, 82, 0.9);
+  color: #fff0f0;
+  box-shadow:
+    0 0 22px rgba(255, 70, 70, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+#ka-coop-audio-caption[data-kind="ENEMY_MARK"] {
+  border-color: rgba(255, 108, 69, 0.9);
+  color: #ffe8df;
+}
+
+#ka-coop-audio-caption[data-kind="ALLY_REVIVED"] {
+  border-color: rgba(61, 242, 155, 0.86);
+  color: #ddffed;
+}
+
+#ka-coop-audio-caption[data-kind="MOVE_MARK"],
+#ka-coop-audio-caption[data-kind="FOLLOW_ME"] {
+  border-color: rgba(71, 200, 255, 0.86);
+  color: #e1f8ff;
+}
+
+#ka-coop-audio-caption[data-kind="NEED_AMMO"],
+#ka-coop-audio-caption[data-kind="BUY_OPEN"] {
+  border-color: rgba(246, 207, 85, 0.86);
+  color: #fff8d8;
+}
+
+@keyframes ka-coop-audio-caption-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+body.ka-mobile-device #ka-coop-audio-caption {
+  top: max(66px, calc(env(safe-area-inset-top, 0px) + 54px));
+  max-width: min(62vw, 430px);
+  padding: 6px 10px;
+  font-size: clamp(9px, 1.55vw, 11px);
+  letter-spacing: 0.08em;
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  body.ka-mobile-device #ka-coop-audio-caption {
+    top: max(54px, calc(env(safe-area-inset-top, 0px) + 44px));
+    max-width: 56vw;
+    padding: 5px 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #ka-coop-audio-caption {
+    animation: none;
+  }
+}

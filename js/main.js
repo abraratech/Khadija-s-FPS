@@ -5,7 +5,17 @@ import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, 
 import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, damageEnemyForBot, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
 import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
-import { initAudio, setMasterVolume, getMasterVolumePercent, updateLowHealthHeartbeat, playUISound } from './audio.js';
+import {
+  areTeamAlertCaptionsEnabled,
+  getMasterVolumePercent,
+  getTeamAlertsVolumePercent,
+  initAudio,
+  playUISound,
+  setMasterVolume,
+  setTeamAlertCaptionsEnabled,
+  setTeamAlertsVolume,
+  updateLowHealthHeartbeat
+} from './audio.js';
 import { configureEconomyBalance, getEconomyBalanceSnapshot } from './economy_balance.js';
 import { updateParticles, clearAllDecals } from './particles.js';
 import {
@@ -331,6 +341,8 @@ function setPerformanceStatsEnabled(enabled) {
 
 function syncCoreSettingsControls() {
   const volumePercent = getMasterVolumePercent();
+  const teamAlertsPercent = getTeamAlertsVolumePercent();
+  const teamCaptionsValue = areTeamAlertCaptionsEnabled() ? 'on' : 'off';
   const damageValue = getDamageIndicatorsEnabled() ? 'on' : 'off';
   const perfValue = performanceStatsEnabled ? 'on' : 'off';
   const mouseSensitivity = getMouseSensitivityPercent();
@@ -351,6 +363,31 @@ function syncCoreSettingsControls() {
     document.getElementById('pause-master-volume-current')
   ].forEach((label) => {
     if (label) label.textContent = `${volumePercent}%`;
+  });
+
+  [
+    document.getElementById('team-alerts-volume-slider'),
+    document.getElementById('pause-team-alerts-volume-slider')
+  ].forEach((slider) => {
+    if (slider && slider.value !== String(teamAlertsPercent)) {
+      slider.value = String(teamAlertsPercent);
+    }
+  });
+
+  [
+    document.getElementById('team-alerts-volume-current'),
+    document.getElementById('pause-team-alerts-volume-current')
+  ].forEach((label) => {
+    if (label) label.textContent = `${teamAlertsPercent}%`;
+  });
+
+  [
+    document.getElementById('team-alert-captions-select'),
+    document.getElementById('pause-team-alert-captions-select')
+  ].forEach((select) => {
+    if (select && select.value !== teamCaptionsValue) {
+      select.value = teamCaptionsValue;
+    }
   });
 
   [
@@ -418,6 +455,30 @@ function bindCoreSettingsControls() {
 
     slider.addEventListener('input', () => {
       setMasterVolume(Number(slider.value));
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('team-alerts-volume-slider'),
+    document.getElementById('pause-team-alerts-volume-slider')
+  ].forEach((slider) => {
+    if (!slider) return;
+
+    slider.addEventListener('input', () => {
+      setTeamAlertsVolume(Number(slider.value));
+      syncCoreSettingsControls();
+    });
+  });
+
+  [
+    document.getElementById('team-alert-captions-select'),
+    document.getElementById('pause-team-alert-captions-select')
+  ].forEach((select) => {
+    if (!select) return;
+
+    select.addEventListener('change', () => {
+      setTeamAlertCaptionsEnabled(select.value !== 'off');
       syncCoreSettingsControls();
     });
   });
@@ -589,6 +650,8 @@ initAccessibilityControls();
 initPlayerPreferencesControls({
   onReset: () => {
     setMasterVolume(80);
+    setTeamAlertsVolume(85);
+    setTeamAlertCaptionsEnabled(true);
     setMouseSensitivityPercent(100);
     setBaseFOV(82);
     setDamageIndicatorsEnabled(true);

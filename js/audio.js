@@ -42,6 +42,76 @@ export function getMasterVolumePercent() {
   return Math.round(masterVolume * 100);
 }
 
+const TEAM_ALERTS_VOLUME_KEY = 'ka_team_alerts_volume';
+const TEAM_ALERT_CAPTIONS_KEY = 'ka_team_alert_captions';
+let teamAlertsVolume = readStoredTeamAlertsVolume();
+let teamAlertCaptionsEnabled = readStoredTeamAlertCaptions();
+
+function readStoredTeamAlertsVolume() {
+  try {
+    const saved = localStorage.getItem(TEAM_ALERTS_VOLUME_KEY);
+    if (saved === null) return 0.85;
+    const parsed = Number(saved);
+    return Number.isFinite(parsed)
+      ? Math.max(0, Math.min(1, parsed))
+      : 0.85;
+  } catch {
+    return 0.85;
+  }
+}
+
+function readStoredTeamAlertCaptions() {
+  try {
+    const saved = localStorage.getItem(TEAM_ALERT_CAPTIONS_KEY);
+    return saved === null ? true : saved !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function setTeamAlertsVolume(value) {
+  const parsed = Number(value);
+  const normalized = parsed > 1 ? parsed / 100 : parsed;
+  teamAlertsVolume = Math.max(
+    0,
+    Math.min(1, Number.isFinite(normalized) ? normalized : 0.85)
+  );
+  try {
+    localStorage.setItem(
+      TEAM_ALERTS_VOLUME_KEY,
+      String(teamAlertsVolume)
+    );
+  } catch {
+    // Ignore restricted storage failures.
+  }
+  return teamAlertsVolume;
+}
+
+export function getTeamAlertsVolume() {
+  return teamAlertsVolume;
+}
+
+export function getTeamAlertsVolumePercent() {
+  return Math.round(teamAlertsVolume * 100);
+}
+
+export function setTeamAlertCaptionsEnabled(enabled) {
+  teamAlertCaptionsEnabled = enabled !== false;
+  try {
+    localStorage.setItem(
+      TEAM_ALERT_CAPTIONS_KEY,
+      teamAlertCaptionsEnabled ? 'on' : 'off'
+    );
+  } catch {
+    // Ignore restricted storage failures.
+  }
+  return teamAlertCaptionsEnabled;
+}
+
+export function areTeamAlertCaptionsEnabled() {
+  return teamAlertCaptionsEnabled;
+}
+
 
 const AUDIO_ROUTE_GAIN = Object.freeze({
   weapon: 1.0,
@@ -410,6 +480,132 @@ export function playUISound(keyOrName, volume = 1.0, randomizePitch = false, opt
 
 export function playWorldSound(keyOrName, volume = 1.0, randomizePitch = false, options = {}) {
   return playRoutedSound('world', keyOrName, volume, randomizePitch, options);
+}
+
+
+const TEAM_ALERT_TONE_SHAPES = Object.freeze({
+  ALLY_DOWN: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.18, from: 520, to: 360, gain: 1.00, type: 'sawtooth' }),
+    Object.freeze({ at: 0.21, duration: 0.18, from: 500, to: 330, gain: 0.92, type: 'sawtooth' }),
+    Object.freeze({ at: 0.44, duration: 0.24, from: 430, to: 260, gain: 0.86, type: 'triangle' })
+  ]),
+  ALLY_DOWN_REMINDER: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.16, from: 420, to: 320, gain: 0.75, type: 'triangle' }),
+    Object.freeze({ at: 0.24, duration: 0.16, from: 420, to: 300, gain: 0.70, type: 'triangle' })
+  ]),
+  ALLY_REVIVED: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.14, from: 440, to: 560, gain: 0.62, type: 'sine' }),
+    Object.freeze({ at: 0.16, duration: 0.22, from: 580, to: 820, gain: 0.72, type: 'sine' })
+  ]),
+  ENEMY_MARK: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.09, from: 1120, to: 880, gain: 0.72, type: 'square' }),
+    Object.freeze({ at: 0.13, duration: 0.13, from: 920, to: 650, gain: 0.62, type: 'triangle' })
+  ]),
+  MOVE_MARK: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.10, from: 470, to: 620, gain: 0.58, type: 'sine' }),
+    Object.freeze({ at: 0.14, duration: 0.12, from: 620, to: 820, gain: 0.64, type: 'sine' })
+  ]),
+  NEED_HELP: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.13, from: 680, to: 470, gain: 0.88, type: 'square' }),
+    Object.freeze({ at: 0.17, duration: 0.13, from: 680, to: 430, gain: 0.84, type: 'square' }),
+    Object.freeze({ at: 0.34, duration: 0.16, from: 620, to: 390, gain: 0.76, type: 'triangle' })
+  ]),
+  NEED_AMMO: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.08, from: 760, to: 760, gain: 0.54, type: 'square' }),
+    Object.freeze({ at: 0.12, duration: 0.08, from: 760, to: 760, gain: 0.54, type: 'square' }),
+    Object.freeze({ at: 0.24, duration: 0.08, from: 760, to: 760, gain: 0.54, type: 'square' })
+  ]),
+  FOLLOW_ME: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.10, from: 520, to: 650, gain: 0.52, type: 'sine' }),
+    Object.freeze({ at: 0.13, duration: 0.15, from: 650, to: 920, gain: 0.60, type: 'sine' })
+  ]),
+  BUY_OPEN: Object.freeze([
+    Object.freeze({ at: 0.00, duration: 0.09, from: 610, to: 610, gain: 0.52, type: 'triangle' }),
+    Object.freeze({ at: 0.13, duration: 0.09, from: 820, to: 820, gain: 0.58, type: 'triangle' })
+  ])
+});
+
+function connectTeamAlertOutput(gainNode, pan = 0) {
+  const safePan = Math.max(-1, Math.min(1, Number(pan) || 0));
+  if (typeof audioCtx?.createStereoPanner === 'function') {
+    const panner = audioCtx.createStereoPanner();
+    panner.pan.value = safePan;
+    gainNode.connect(panner);
+    panner.connect(audioCtx.destination);
+    return panner;
+  }
+  gainNode.connect(audioCtx.destination);
+  return gainNode;
+}
+
+export function playTeamAlertCue(kind, {
+  volume = 1,
+  pan = 0,
+  cooldownKey = '',
+  cooldownMs = 0
+} = {}) {
+  if (!audioCtx) return false;
+
+  const normalizedKind = String(kind || '').toUpperCase();
+  const tones = TEAM_ALERT_TONE_SHAPES[normalizedKind];
+  if (!tones?.length) return false;
+
+  const nowMsValue = (
+    typeof performance !== 'undefined'
+    && typeof performance.now === 'function'
+  ) ? performance.now() : Date.now();
+  const resolvedCooldownKey = cooldownKey || `team-alert:${normalizedKind}`;
+  const lastPlayed = soundCooldowns.get(resolvedCooldownKey) || -Infinity;
+  if (
+    Number(cooldownMs) > 0
+    && nowMsValue - lastPlayed < Number(cooldownMs)
+  ) {
+    return false;
+  }
+  soundCooldowns.set(resolvedCooldownKey, nowMsValue);
+
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+
+  const routeVolume = clamp01(volume, 1)
+    * masterVolume
+    * teamAlertsVolume
+    * 0.42;
+  if (routeVolume <= 0.001) return false;
+
+  const startTime = audioCtx.currentTime + 0.008;
+  tones.forEach((tone) => {
+    const oscillator = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const toneStart = startTime + Math.max(0, Number(tone.at) || 0);
+    const toneEnd = toneStart + Math.max(0.04, Number(tone.duration) || 0.1);
+    const toneGain = routeVolume * clamp01(tone.gain, 1);
+
+    oscillator.type = tone.type || 'sine';
+    oscillator.frequency.setValueAtTime(
+      Math.max(60, Number(tone.from) || 440),
+      toneStart
+    );
+    oscillator.frequency.exponentialRampToValueAtTime(
+      Math.max(60, Number(tone.to) || Number(tone.from) || 440),
+      toneEnd
+    );
+
+    gain.gain.setValueAtTime(0.0001, toneStart);
+    gain.gain.exponentialRampToValueAtTime(
+      Math.max(0.0002, toneGain),
+      toneStart + Math.min(0.025, (toneEnd - toneStart) * 0.25)
+    );
+    gain.gain.exponentialRampToValueAtTime(0.0001, toneEnd);
+
+    oscillator.connect(gain);
+    connectTeamAlertOutput(gain, pan);
+    oscillator.start(toneStart);
+    oscillator.stop(toneEnd + 0.01);
+  });
+
+  return true;
 }
 
 

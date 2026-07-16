@@ -373,5 +373,24 @@
     "featuredArenaHiddenOnTouch": true,
     "socialAuthErrorsPreserved": true,
     "baseFinal2IdentityPreserved": true
+  },
+  "coopAudioAwareness": {
+    "schema": 1,
+    "patch": "post-final2-r1-coop-audio-awareness",
+    "shortNonverbalCues": true,
+    "allyDownInitialAlert": true,
+    "allyDownReminders": true,
+    "allyRevivedCue": true,
+    "remoteTacticalPingCues": true,
+    "aiWingmanEnemyMarks": true,
+    "directionalStereoPan": true,
+    "priorityQueue": true,
+    "cooldownAndDuplicateSuppression": true,
+    "teamAlertsVolumeControl": true,
+    "captionFallback": true,
+    "mobileAudioUnlockCompatible": true,
+    "voiceChat": false,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false
   }
 }

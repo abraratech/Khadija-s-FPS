@@ -59,6 +59,8 @@ function livingEnemies(enemies = []) {
   ));
 }
 
+const BOT_TEAM_ENEMY_MARK_COOLDOWN_MS = 6500;
+
 export class MultiplayerBotManager {
   constructor({
     runtime,
@@ -105,6 +107,7 @@ export class MultiplayerBotManager {
     this.holdPosition = null;
     this.currentTargetId = null;
     this.targetAcquiredAt = -Infinity;
+    this.lastTeamEnemyMarkAt = -Infinity;
     this.burstShots = 0;
     this.burstPauseUntil = -Infinity;
     this.raycaster = new THREE.Raycaster();
@@ -147,7 +150,12 @@ export class MultiplayerBotManager {
       isSprinting: false,
       reloading: false,
       currentWeaponIdx: 0,
-      weaponKey: 'rifle'
+      weaponKey: 'rifle',
+      teamAlertSequence: 0,
+      teamAlertKind: null,
+      teamAlertTargetId: null,
+      teamAlertPosition: null,
+      teamAlertAtEpochMs: 0
     };
   }
 
@@ -905,6 +913,26 @@ export class MultiplayerBotManager {
     return true;
   }
 
+  publishTeamEnemyMark(enemy, targetId, now = nowMs()) {
+    if (
+      !enemy?.mesh?.position
+      || now - this.lastTeamEnemyMarkAt < BOT_TEAM_ENEMY_MARK_COOLDOWN_MS
+    ) {
+      return false;
+    }
+
+    this.lastTeamEnemyMarkAt = now;
+    this.state.teamAlertSequence = Math.max(
+      0,
+      Math.floor(Number(this.state.teamAlertSequence) || 0)
+    ) + 1;
+    this.state.teamAlertKind = 'ENEMY_MARK';
+    this.state.teamAlertTargetId = String(targetId || '').slice(0, 96);
+    this.state.teamAlertPosition = clonePosition(enemy.mesh.position);
+    this.state.teamAlertAtEpochMs = Date.now();
+    return true;
+  }
+
   update(dt, now = nowMs()) {
     if (!this.active || !this.runActive || !this.isAuthority()) return;
 
@@ -1017,6 +1045,7 @@ export class MultiplayerBotManager {
       if (nextTargetId !== this.currentTargetId) {
         this.currentTargetId = nextTargetId;
         this.targetAcquiredAt = now;
+        this.publishTeamEnemyMark(combatTarget, nextTargetId, now);
         this.burstShots = 0;
         this.burstPauseUntil = -Infinity;
       }

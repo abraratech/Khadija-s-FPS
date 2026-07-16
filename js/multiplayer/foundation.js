@@ -36,6 +36,7 @@ import {
 import { MultiplayerTacticalAwareness } from './tactical_ping.js'; import { MultiplayerTextChat } from './text_chat.js';
 import { MultiplayerCoopStatsManager } from './coop_stats.js';
 import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
+import { MultiplayerCoopAudioManager } from './coop_audio.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -48,7 +49,7 @@ let botManager = null;
 let economyManager = null;
 let reviveManager = null; let coop2Manager = null; let content1Manager = null; let networkHud = null;
 let multiplayerReleaseGuard = null;
-let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null;
+let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null; let coopAudioManager = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 let knownConnectedHumanIds = new Set();
 let lateJoinBurstSerial = 0;
@@ -372,6 +373,7 @@ export function initializeMultiplayerFoundation(
       onReviveEvent: (event) => {
         reviveAdapter?.onReviveEvent?.(event);
         coopStatsManager?.recordReviveEvent?.(event);
+        coopAudioManager?.handleReviveEvent?.(event);
         if (event?.type === 'REVIVED' && event.reviverId) {
           coop2Manager?.recordAuthorityAction?.('REVIVE', {
             actorId: event.reviverId,
@@ -412,6 +414,17 @@ export function initializeMultiplayerFoundation(
     onTeamAction: (kind, details) => {
       coop2Manager?.recordAuthorityAction?.(kind, details);
     }
+  });
+
+  coopAudioManager = new MultiplayerCoopAudioManager({
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    camera: tacticalAdapter?.camera || reviveAdapter?.camera || null,
+    getReviveSnapshot:
+      () => reviveManager?.getSnapshot?.() || null,
+    getBotSnapshot:
+      () => botManager?.getSnapshot?.() || null
   });
 
   coop2Manager = new MultiplayerCoop2Manager({
@@ -476,6 +489,12 @@ export function initializeMultiplayerFoundation(
       (playerId) => coop2Manager?.getTacticalPingMultiplier?.(playerId) || 1,
     onTeamAction: (kind, details) => {
       coop2Manager?.recordAction?.(kind, details);
+    },
+    onRemotePing: (ping, details) => {
+      coopAudioManager?.handleTacticalPing?.(ping, {
+        remote: true,
+        now: details?.receivedAt
+      });
     }
   });
 
@@ -693,6 +712,7 @@ export function beginMultiplayerRun({
   reviveManager?.beginRun();
   sharedWorldManager?.beginRun();
   botManager?.beginRun();
+  coopAudioManager?.beginRun();
   coop2Manager?.beginRun();
   content1Manager?.beginRun({
     runId: multiplayerSession.run?.runId,
@@ -832,6 +852,7 @@ export function endMultiplayerRun({
   } else {
     coopScoreboard?.setHeld?.(false);
   }
+  coopAudioManager?.endRun();
   botManager?.endRun(reason);
   sharedWorldManager?.endRun();
   reviveManager?.endRun();
@@ -1079,7 +1100,10 @@ export function syncMultiplayerFrame(
   });
 
   botManager?.update(dt, now);
-  remotePlayerManager?.update(now); tacticalAwareness?.update(now); networkHud?.update(now);
+  remotePlayerManager?.update(now);
+  tacticalAwareness?.update(now);
+  coopAudioManager?.update(now);
+  networkHud?.update(now);
   multiplayerReleaseGuard?.update(now); coopStatsManager?.update(now); coop2Manager?.update(now); content1Manager?.update(dt, { player, wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1 }); coopScoreboard?.update(now);
   return { state, input };
 }
@@ -1122,7 +1146,7 @@ export function getMultiplayerFoundationSnapshot() {
     remotePlayers: remotePlayerManager?.getSnapshot?.() || null,
     sharedWorld: sharedWorldManager?.getSnapshot?.() || null,
     economy: economyManager?.getSnapshot?.() || null,
-    revive: reviveManager?.getSnapshot?.() || null, coop2: coop2Manager?.getSnapshot?.() || null, bot: botManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
+    revive: reviveManager?.getSnapshot?.() || null, coop2: coop2Manager?.getSnapshot?.() || null, bot: botManager?.getSnapshot?.() || null, tacticalAwareness: tacticalAwareness?.getSnapshot?.() || null, coopAudio: coopAudioManager?.getSnapshot?.() || null, coopStats: coopStatsManager?.getSnapshot?.() || null, networkQuality: multiplayerRuntime.getNetworkQualitySnapshot(Date.now()), reconciliation: multiplayerRuntime.getReconciliationSnapshot(Date.now()), networkHud: networkHud?.getSnapshot?.() || null,
     hostMigration: hostMigrationState.getSnapshot(),
     coopScaling: getCoopScalingSnapshot(),
     releaseGuard: multiplayerReleaseGuard?.getSnapshot?.() || null,

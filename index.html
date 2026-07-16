@@ -1365,6 +1365,7 @@
 </style>
 
 <link href="css/postfinal1.css" rel="stylesheet"/>
+<link href="css/postfinal2.css" rel="stylesheet"/>
 </head>
 <body>
 <div id="portrait-warning">
@@ -1966,6 +1967,28 @@
 </div>
 <div class="ka-setting-row">
 <div>
+<strong>Team Alerts</strong>
+<small>Controls audible co-op cues for downed allies, tactical marks, and AI Wingman warnings.</small>
+</div>
+<div>
+<input id="team-alerts-volume-slider" max="100" min="0" type="range" value="85"/>
+<small style="display:block;margin-top:6px;color:#8aa;">Current: <span id="team-alerts-volume-current" style="color:#ffaa00;font-weight:900;">85%</span></small>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Team Alert Captions</strong>
+<small>Shows a short directional text cue with each audible team alert.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="team-alert-captions-select">
+<option value="on">On</option>
+<option value="off">Off</option>
+</select>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
 <strong>Music Volume</strong>
 <small>Controls menu, ambient, and combat music. Saved automatically.</small>
 </div>
@@ -2495,6 +2518,18 @@
       </label>
 <input id="pause-master-volume-slider" max="100" min="0" style="width:100%; accent-color:#ffaa00; cursor:pointer;" type="range" value="80"/>
 <div style="margin-top: 6px; color: #8aa; font-size: 12px;">Current: <span id="pause-master-volume-current" style="color:#ffaa00; font-weight:bold;">80%</span></div>
+<div style="margin-top:14px;">
+<label for="pause-team-alerts-volume-slider" style="display:block; color:#3df29b; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">TEAM ALERTS</label>
+<input id="pause-team-alerts-volume-slider" max="100" min="0" style="width:100%; accent-color:#3df29b; cursor:pointer;" type="range" value="85"/>
+<div style="margin-top:5px; color:#8aa; font-size:11px;">Current: <span id="pause-team-alerts-volume-current" style="color:#3df29b;font-weight:bold;">85%</span></div>
+</div>
+<div style="margin-top:12px;">
+<label for="pause-team-alert-captions-select" style="display:block; color:#3df29b; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">TEAM ALERT CAPTIONS</label>
+<select id="pause-team-alert-captions-select" style="width:100%; padding:8px; background:#061018; color:#fff; border:1px solid #3df29b; border-radius:4px; font-weight:bold;">
+<option value="on">On</option>
+<option value="off">Off</option>
+</select>
+</div>
 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px;">
 <div>
 <label for="pause-mouse-sensitivity-slider" style="display:block; color:#00d4ff; font-size:11px; font-weight:bold; letter-spacing:1px; margin-bottom:6px;">MOUSE SENSITIVITY</label>

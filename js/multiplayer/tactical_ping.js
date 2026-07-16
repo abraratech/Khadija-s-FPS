@@ -125,7 +125,8 @@ export class MultiplayerTacticalAwareness {
     getReviveSnapshot = () => null,
     getRoleForPlayer = () => 'VANGUARD',
     getPingLifetimeMultiplier = null,
-    onTeamAction = () => {}
+    onTeamAction = () => {},
+    onRemotePing = () => {}
   } = {}) {
     this.eventBus = eventBus;
     this.runtime = runtime;
@@ -139,6 +140,7 @@ export class MultiplayerTacticalAwareness {
     this.getRoleForPlayer = getRoleForPlayer;
     this.getPingLifetimeMultiplier = getPingLifetimeMultiplier;
     this.onTeamAction = onTeamAction;
+    this.onRemotePing = onRemotePing;
     this.store = new TacticalPingStore();
     this.active = false;
     this.root = null;
@@ -431,6 +433,10 @@ export class MultiplayerTacticalAwareness {
 
     if (result.accepted) {
       this.metrics.remoteAccepted += 1;
+      this.onRemotePing?.(result.ping, {
+        envelope,
+        receivedAt: now
+      });
     } else {
       this.metrics.remoteRejected += 1;
       if (result.reason === 'duplicate') this.metrics.duplicates += 1;

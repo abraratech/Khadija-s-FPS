@@ -16,6 +16,7 @@ from pathlib import Path
 
 PATCH = "final2-r1-full-product-certification"
 SOURCE_SEAL = "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e"
+POST_FINAL_PATCH = "post-final1-r1-mobile-clarity-social-recovery"
 ROOT_FILES = ("index.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -119,6 +120,13 @@ def main() -> None:
             "voice_runtime_removed": True,
             "administrator_tools_included": False,
             "secrets_included": False
+        },
+        "post_final_hotfix": {
+            "schema": 1,
+            "patch": POST_FINAL_PATCH,
+            "mobile_clarity": True,
+            "social_recovery": True,
+            "base_final2_identity_preserved": True
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

@@ -181,43 +181,43 @@ export class SocialHub extends DurableObject {
         || request.headers.get('x-ka-internal-matchmaking-social') === '1'
       ) {
         if (request.method === 'POST' && url.pathname === '/internal/social/tickets/consume') {
-          return this.consumeIdentityTicket(request);
+          return await this.consumeIdentityTicket(request);
         }
         if (request.method === 'POST' && url.pathname === '/internal/social/admission/check') {
-          return this.internalAdmissionCheck(request);
+          return await this.internalAdmissionCheck(request);
         }
         if (
           request.method === 'POST'
           && url.pathname === '/internal/social/party/matchmaking/consume'
         ) {
-          return this.consumePartyMatchmakingTicket(request);
+          return await this.consumePartyMatchmakingTicket(request);
         }
         return responseJson({ ok: false, error: 'SOCIAL_INTERNAL_ENDPOINT_NOT_FOUND' }, { status: 404 });
       }
 
-      if (request.method === 'GET' && url.pathname === '/social/bootstrap') return this.bootstrap(request);
-      if (request.method === 'POST' && url.pathname === '/social/identity/ticket') return this.createIdentityTicket(request);
-      if (request.method === 'POST' && url.pathname === '/social/presence') return this.updatePresence(request);
-      if (request.method === 'POST' && url.pathname === '/social/privacy') return this.updatePrivacy(request);
-      if (request.method === 'POST' && url.pathname === '/social/friends/request') return this.friendRequest(request);
-      if (request.method === 'POST' && url.pathname === '/social/friends/respond') return this.friendRespond(request);
-      if (request.method === 'POST' && url.pathname === '/social/friends/remove') return this.friendRemove(request);
-      if (request.method === 'POST' && url.pathname === '/social/blocks/add') return this.blockAdd(request);
-      if (request.method === 'POST' && url.pathname === '/social/blocks/remove') return this.blockRemove(request);
-      if (request.method === 'POST' && url.pathname === '/social/reports/create') return this.reportCreate(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/create') return this.partyCreate(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/invite') return this.partyInvite(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/respond') return this.partyRespond(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/leave') return this.partyLeave(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/kick') return this.partyKick(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/transfer') return this.partyTransfer(request);
-      if (request.method === 'POST' && url.pathname === '/social/party/matchmaking-ticket') return this.createPartyMatchmakingTicket(request);
+      if (request.method === 'GET' && url.pathname === '/social/bootstrap') return await this.bootstrap(request);
+      if (request.method === 'POST' && url.pathname === '/social/identity/ticket') return await this.createIdentityTicket(request);
+      if (request.method === 'POST' && url.pathname === '/social/presence') return await this.updatePresence(request);
+      if (request.method === 'POST' && url.pathname === '/social/privacy') return await this.updatePrivacy(request);
+      if (request.method === 'POST' && url.pathname === '/social/friends/request') return await this.friendRequest(request);
+      if (request.method === 'POST' && url.pathname === '/social/friends/respond') return await this.friendRespond(request);
+      if (request.method === 'POST' && url.pathname === '/social/friends/remove') return await this.friendRemove(request);
+      if (request.method === 'POST' && url.pathname === '/social/blocks/add') return await this.blockAdd(request);
+      if (request.method === 'POST' && url.pathname === '/social/blocks/remove') return await this.blockRemove(request);
+      if (request.method === 'POST' && url.pathname === '/social/reports/create') return await this.reportCreate(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/create') return await this.partyCreate(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/invite') return await this.partyInvite(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/respond') return await this.partyRespond(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/leave') return await this.partyLeave(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/kick') return await this.partyKick(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/transfer') return await this.partyTransfer(request);
+      if (request.method === 'POST' && url.pathname === '/social/party/matchmaking-ticket') return await this.createPartyMatchmakingTicket(request);
 
       return responseJson({ ok: false, error: 'SOCIAL_ENDPOINT_NOT_FOUND' }, { status: 404 });
     } catch (error) {
       const code = String(error?.message || error || 'SOCIAL_ERROR').slice(0, 160);
-      const status = code.endsWith('_REQUIRED') || code.includes('INVALID') ? 400
-        : code.includes('AUTH') ? 401
+      const status = code.includes('AUTH') || code === 'PASSKEY_SOCIAL_REQUIRED' ? 401
+        : code.endsWith('_REQUIRED') || code.includes('INVALID') ? 400
           : code.includes('FORBIDDEN') || code.includes('BLOCKED') || code.includes('RESTRICTED') ? 403
             : code.includes('NOT_FOUND') ? 404
               : code.includes('FULL') || code.includes('CONFLICT') ? 409

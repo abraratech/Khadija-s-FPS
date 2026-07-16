@@ -364,5 +364,14 @@
     "crawlerLowProfilePreserved": true,
     "baseModesPreserved": true,
     "rollbackReady": true
+  },
+  "postFinalHotfix": {
+    "schema": 1,
+    "patch": "post-final1-r1-mobile-clarity-social-recovery",
+    "mobileClarity": true,
+    "socialRecovery": true,
+    "featuredArenaHiddenOnTouch": true,
+    "socialAuthErrorsPreserved": true,
+    "baseFinal2IdentityPreserved": true
   }
 }

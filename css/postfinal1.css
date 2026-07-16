@@ -1,0 +1,259 @@
+/* POST-FINAL.1 R1 — mobile combat clarity and compact information hierarchy. */
+
+/* The featured arena duplicates the arena selector on touch devices. */
+body.ka-mobile-device .ka-home-live-card {
+  display: none !important;
+}
+
+body.ka-mobile-device .ka-home-copy {
+  width: min(92%, 760px) !important;
+}
+
+body.ka-mobile-device .ka-home-hero {
+  isolation: isolate;
+}
+
+/* Landscape phones use wide CSS viewports, so device-class rules are more
+   reliable than max-width-only queries. */
+@media (orientation: landscape), (max-height: 760px) {
+  body.ka-mobile-device .ka-live1-hud {
+    top: max(5px, env(safe-area-inset-top)) !important;
+    min-width: 0 !important;
+    width: auto !important;
+    max-width: 34vw !important;
+    padding: 4px 9px !important;
+    border-radius: 999px !important;
+    background: rgba(4, 8, 14, .72) !important;
+    box-shadow: 0 0 10px rgba(255, 95, 210, .11) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  body.ka-mobile-device .ka-live1-hud span,
+  body.ka-mobile-device .ka-live1-hud small {
+    display: none !important;
+  }
+
+  body.ka-mobile-device .ka-live1-hud strong {
+    overflow: hidden;
+    max-width: 30vw;
+    font-size: 9px !important;
+    line-height: 1.2 !important;
+    letter-spacing: .7px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.ka-mobile-device .ka-content1-hud {
+    top: max(64px, calc(env(safe-area-inset-top) + 54px)) !important;
+    left: max(8px, env(safe-area-inset-left)) !important;
+    width: min(205px, 31vw) !important;
+    padding: 6px 8px !important;
+    border-left-width: 2px !important;
+    border-radius: 7px !important;
+    background: rgba(3, 10, 16, .72) !important;
+    box-shadow: 0 5px 14px rgba(0, 0, 0, .24) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  body.ka-mobile-device .ka-content1-kicker,
+  body.ka-mobile-device .ka-content1-progress {
+    display: none !important;
+  }
+
+  body.ka-mobile-device .ka-content1-operation {
+    overflow: hidden;
+    margin: 0 !important;
+    font-size: 9px !important;
+    letter-spacing: .06em !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.ka-mobile-device .ka-content1-encounter {
+    overflow: hidden;
+    margin-top: 3px !important;
+    padding-top: 3px !important;
+    font-size: 8px !important;
+    letter-spacing: .05em !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud {
+    top: max(58px, calc(env(safe-area-inset-top) + 48px)) !important;
+    right: max(52px, calc(env(safe-area-inset-right) + 44px)) !important;
+    bottom: auto !important;
+    width: min(155px, 25vw) !important;
+    padding: 5px 7px !important;
+    border-left-width: 2px !important;
+    background: rgba(3, 12, 20, .70) !important;
+    box-shadow: 0 5px 14px rgba(0, 0, 0, .24) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-hud-head span,
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-contract,
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-meter,
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-team {
+    display: none !important;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-hud-head {
+    display: block !important;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-hud-head strong {
+    display: block;
+    overflow: hidden;
+    font-size: 9px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-cohesion {
+    overflow: hidden;
+    margin-top: 2px !important;
+    font-size: 8px !important;
+    letter-spacing: .45px !important;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  body.ka-mobile-device #multiplayer-network-hud {
+    top: max(96px, calc(env(safe-area-inset-top) + 86px)) !important;
+    right: max(7px, env(safe-area-inset-right)) !important;
+    width: min(172px, 28vw) !important;
+    max-height: 108px !important;
+    overflow: hidden !important;
+    padding: 5px !important;
+    border-radius: 7px !important;
+    background: rgba(3, 10, 17, .72) !important;
+    font-size: 8px !important;
+    line-height: 1.15 !important;
+    box-shadow: 0 4px 13px rgba(0, 0, 0, .25) !important;
+    backdrop-filter: blur(4px) !important;
+  }
+
+  body.ka-mobile-device #multiplayer-network-hud > div:nth-child(2) {
+    display: none !important;
+  }
+
+  body.ka-mobile-device #multiplayer-network-hud > div {
+    margin-top: 3px !important;
+    margin-bottom: 0 !important;
+    padding: 3px 4px !important;
+  }
+
+  body.ka-mobile-device #multiplayer-network-hud [style*="height: 3px"] {
+    margin: 2px 0 !important;
+  }
+
+  body.ka-mobile-device #ka-camera-mobile-toggle {
+    top: max(58px, calc(env(safe-area-inset-top) + 48px)) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    min-width: 36px !important;
+    min-height: 30px !important;
+    width: 36px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    border-radius: 8px !important;
+    font-size: 9px !important;
+  }
+
+  body.ka-mobile-device #ka-camera-mode-indicator {
+    display: none !important;
+  }
+
+  body.ka-mobile-device #ka-quick-message-mobile-button {
+    right: max(8px, env(safe-area-inset-right)) !important;
+    bottom: calc(164px + env(safe-area-inset-bottom)) !important;
+    width: 44px !important;
+    height: 34px !important;
+    border-radius: 9px !important;
+    font-size: 0 !important;
+    letter-spacing: 0 !important;
+  }
+
+  body.ka-mobile-device #ka-quick-message-mobile-button::after {
+    content: "PING";
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .06em;
+  }
+
+  body.ka-mobile-device #ka-multiplayer-text-chat {
+    left: max(8px, env(safe-area-inset-left)) !important;
+    bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+    width: min(320px, 42vw) !important;
+  }
+
+  body.ka-mobile-device #ka-multiplayer-text-chat button[aria-label="Open co-op text chat"] {
+    width: 48px !important;
+    height: 34px !important;
+    font-size: 0 !important;
+    border-radius: 9px !important;
+  }
+
+  body.ka-mobile-device #ka-multiplayer-text-chat button[aria-label="Open co-op text chat"]::after {
+    content: "CHAT";
+    font-size: 9px;
+    font-weight: 900;
+    letter-spacing: .06em;
+  }
+
+  body.ka-mobile-device #hud-status-rail {
+    top: 52px !important;
+    max-width: 38vw !important;
+    gap: 4px !important;
+  }
+
+  body.ka-mobile-device .hud-chip {
+    padding: 4px 7px !important;
+    font-size: 8px !important;
+    letter-spacing: .45px !important;
+  }
+
+  body.ka-mobile-device .hud-chip b {
+    font-size: 9px !important;
+  }
+
+  body.ka-mobile-device .hud-warning-stack {
+    bottom: 52px !important;
+  }
+
+  body.ka-mobile-device .hud-warning {
+    min-width: 110px !important;
+    padding: 5px 9px !important;
+    font-size: 9px !important;
+    letter-spacing: 1px !important;
+  }
+
+  body.ka-mobile-device .shop-feedback-panel {
+    top: 58px !important;
+    width: min(260px, 42vw) !important;
+    padding: 6px 8px !important;
+  }
+
+  body.ka-mobile-device .shop-feedback-title {
+    font-size: 8px !important;
+  }
+
+  body.ka-mobile-device .shop-feedback-body {
+    font-size: 9px !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  body.ka-mobile-device .ka-live1-hud {
+    display: none !important;
+  }
+
+  body.ka-mobile-device #ka-coop2-hud .ka-coop2-cohesion,
+  body.ka-mobile-device .ka-content1-encounter {
+    display: none !important;
+  }
+
+  body.ka-mobile-device #multiplayer-network-hud {
+    max-height: 76px !important;
+  }
+}

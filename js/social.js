@@ -128,7 +128,11 @@ async function socialRequest(path, {
     });
     const value = await response.json().catch(() => ({}));
     if (!response.ok || value.ok !== true) {
-      throw new Error(String(value.error || `HTTP_${response.status}`));
+      const code = String(value.error || `HTTP_${response.status}`);
+      const failure = new Error(code);
+      failure.code = code;
+      failure.status = response.status;
+      throw failure;
     }
     return value;
   } catch (error) {
@@ -137,6 +141,28 @@ async function socialRequest(path, {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function socialFailureLabel(error) {
+  const code = String(error?.code || error?.message || error || 'SOCIAL_UNAVAILABLE').toUpperCase();
+  if (
+    code === 'PROFILE_AUTH_REQUIRED'
+    || code === 'SOCIAL_AUTH_REQUIRED'
+    || code === 'PASSKEY_SOCIAL_REQUIRED'
+    || Number(error?.status) === 401
+  ) return 'PASSKEY SESSION REQUIRED — SIGN IN AGAIN';
+  if (code.includes('RESTRICTED') || code.includes('BLOCKED')) return 'SOCIAL ACCESS RESTRICTED';
+  if (code === 'SOCIAL_REQUEST_TIMEOUT') return 'SOCIAL SERVICE TIMED OUT — RETRY';
+  if (code === 'SOCIAL_UPSTREAM_UNAVAILABLE') return 'SOCIAL SERVICE TEMPORARILY UNAVAILABLE';
+  return code.replaceAll('_', ' ').slice(0, 140);
+}
+
+function socialAuthFailure(error) {
+  const code = String(error?.code || error?.message || error || '').toUpperCase();
+  return Number(error?.status) === 401
+    || code === 'PROFILE_AUTH_REQUIRED'
+    || code === 'SOCIAL_AUTH_REQUIRED'
+    || code === 'PASSKEY_SOCIAL_REQUIRED';
 }
 
 function setStatus(text, tone = 'neutral', { toast = false } = {}) {
@@ -495,7 +521,16 @@ async function refreshSocial({ silent = false } = {}) {
     state = normalizeSocialBootstrap(value);
     setStatus('SOCIAL PROFILE SYNCED', 'good');
   } catch (error) {
-    setStatus(String(error?.message || error || 'SOCIAL UNAVAILABLE'), 'error');
+    if (socialAuthFailure(error)) {
+      state = normalizeSocialBootstrap({
+        authenticated: false,
+        accountType: 'guest',
+        recent: localRecentPlayers()
+      });
+      setStatus(socialFailureLabel(error), 'warning');
+    } else {
+      setStatus(socialFailureLabel(error), 'error');
+    }
   } finally {
     busy = false;
   }
@@ -515,7 +550,11 @@ async function mutate(path, body, successMessage) {
     setStatus(successMessage, 'good', { toast: true });
     return true;
   } catch (error) {
-    setStatus(String(error?.message || error || 'SOCIAL ACTION FAILED'), 'error', { toast: true });
+    setStatus(
+      socialFailureLabel(error),
+      socialAuthFailure(error) ? 'warning' : 'error',
+      { toast: true }
+    );
     return false;
   } finally {
     busy = false;

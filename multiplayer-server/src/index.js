@@ -47,6 +47,15 @@ const CERTIFIED_SOURCE_SEAL = 'dbc459802c5b38e71870ea70016f6200a523bb96148a74f29
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 
+const POST_FINAL1_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'post-final1-r1-mobile-clarity-social-recovery',
+  mobileClarity: true,
+  socialRecovery: true,
+  socialAuthErrorsPreserved: true,
+  baseFinal2IdentityPreserved: true
+});
+
 const FINAL2_SERVER_INFO = Object.freeze({
   schema: 1,
   patch: SERVER_PATCH,
@@ -2165,6 +2174,7 @@ export default {
         content: CONTENT1_SERVER_INFO,
         live: LIVE1_SERVER_INFO,
         operations: OPS1_SERVER_INFO,
+        postFinalHotfix: POST_FINAL1_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2199,6 +2209,7 @@ export default {
         content: CONTENT1_SERVER_INFO,
         live: LIVE1_SERVER_INFO,
         operations: OPS1_SERVER_INFO,
+        postFinalHotfix: POST_FINAL1_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

@@ -736,6 +736,7 @@ function isGameplayInputBlocked() {
     isMultiplayerLifeInputBlocked()
     || isMultiplayerRefreshGameplayBlocked()
     || isMultiplayerTabLeaseBlocking()
+    || document.documentElement.dataset.kaQuickMessageWheel === 'open'
   );
 }
 

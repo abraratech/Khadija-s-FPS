@@ -329,7 +329,8 @@ export function chooseBotIntent({
   hostPosition = {},
   targetPosition = null,
   downedTeammatePosition = null,
-  holdPosition = null
+  holdPosition = null,
+  squadCommand = null
 } = {}) {
   if (downedTeammatePosition) {
     return Object.freeze({
@@ -337,6 +338,34 @@ export function chooseBotIntent({
       destination: vector(downedTeammatePosition),
       desiredDistance: 1.8,
       speed: 4.4
+    });
+  }
+
+  const commandType = String(squadCommand?.type || '').toUpperCase();
+  const commandPosition = squadCommand?.position || null;
+  if (commandPosition && [
+    'MOVE',
+    'DEFEND',
+    'REGROUP',
+    'FOLLOW_ME',
+    'NEED_HELP',
+    'INTERACT',
+    'BUY_OPEN'
+  ].includes(commandType)) {
+    const profile = {
+      MOVE: { kind: 'COMMAND_MOVE', desiredDistance: 1.5, speed: 4.0 },
+      DEFEND: { kind: 'COMMAND_DEFEND', desiredDistance: 1.4, speed: 3.6 },
+      REGROUP: { kind: 'COMMAND_REGROUP', desiredDistance: 2.2, speed: 4.4 },
+      FOLLOW_ME: { kind: 'COMMAND_FOLLOW', desiredDistance: 3.0, speed: 4.2 },
+      NEED_HELP: { kind: 'COMMAND_ASSIST', desiredDistance: 2.1, speed: 4.6 },
+      INTERACT: { kind: 'COMMAND_INTERACT', desiredDistance: 1.6, speed: 3.8 },
+      BUY_OPEN: { kind: 'COMMAND_INTERACT', desiredDistance: 1.6, speed: 3.8 }
+    }[commandType];
+    return Object.freeze({
+      kind: profile.kind,
+      destination: vector(commandPosition),
+      desiredDistance: profile.desiredDistance,
+      speed: profile.speed
     });
   }
 

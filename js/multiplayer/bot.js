@@ -9,6 +9,18 @@ import {
 } from './bot_grounding_core.js';
 
 import {
+  SQUAD_COMMAND_STATUS,
+  buildSquadCommandIntent,
+  chooseCommandEnemyTarget,
+  commandReached,
+  isMovementSquadCommand,
+  isRescueSquadCommand,
+  shouldAcceptSquadCommand,
+  squadCommandIsActive
+} from './squad_command_core.js';
+import { TACTICAL_PING_TYPES, normalizePingType } from './tactical_ping_core.js';
+
+import {
   BOT1_BODY_RADIUS,
   BOT1_DISPLAY_NAME,
   BOT1_BURST_PAUSE_MS,
@@ -107,7 +119,10 @@ export class MultiplayerBotManager {
     this.holdPosition = null;
     this.currentTargetId = null;
     this.targetAcquiredAt = -Infinity;
+    this.squadCommand = null;
+    this.squadCommandSequence = 0;
     this.lastTeamEnemyMarkAt = -Infinity;
+    this.lastSquadCommandToastAt = -Infinity;
     this.burstShots = 0;
     this.burstPauseUntil = -Infinity;
     this.raycaster = new THREE.Raycaster();
@@ -155,7 +170,16 @@ export class MultiplayerBotManager {
       teamAlertKind: null,
       teamAlertTargetId: null,
       teamAlertPosition: null,
-      teamAlertAtEpochMs: 0
+      teamAlertAtEpochMs: 0,
+      squadIntentSequence: 0,
+      squadIntentType: null,
+      squadIntentStatus: SQUAD_COMMAND_STATUS.IDLE,
+      squadIntentOwnerPlayerId: null,
+      squadIntentOwnerName: null,
+      squadIntentPosition: null,
+      squadIntentTargetId: null,
+      squadIntentExpiresAtEpochMs: 0,
+      squadIntentVisibleUntilEpochMs: 0
     };
   }
 
@@ -244,6 +268,9 @@ export class MultiplayerBotManager {
     this.state = this.makeInitialState();
     this.currentTargetId = null;
     this.targetAcquiredAt = -Infinity;
+    this.squadCommand = null;
+    this.squadCommandSequence = 0;
+    this.holdPosition = null;
     this.burstShots = 0;
     this.burstPauseUntil = -Infinity;
     this.placeAtSafeAnchor(this.player?.pos, this.player?.yaw);
@@ -278,6 +305,7 @@ export class MultiplayerBotManager {
     });
 
     this.releaseReviveHold(nowMs());
+    this.squadCommand = null;
     this.active = false;
     this.remotePlayers?.removePlayer?.(BOT1_PLAYER_ID);
     this.runtime?.removeRemotePlayer?.(BOT1_PLAYER_ID);
@@ -913,6 +941,121 @@ export class MultiplayerBotManager {
     return true;
   }
 
+  commandOwnerPosition(command, now = nowMs()) {
+    if (!command?.ownerPlayerId) return command?.position || null;
+    const localPlayerId = this.runtime?.localPlayerId || null;
+    if (command.ownerPlayerId === localPlayerId && this.player?.pos) {
+      return clonePosition(this.player.pos);
+    }
+    const sampled = this.runtime?.sampleRemotePlayer?.(command.ownerPlayerId, now);
+    return sampled?.state?.position
+      ? clonePosition(sampled.state.position)
+      : (command.position ? clonePosition(command.position) : null);
+  }
+
+  syncSquadIntentState(command, status = command?.status || SQUAD_COMMAND_STATUS.ACKNOWLEDGED, {
+    visibleForMs = 0
+  } = {}) {
+    this.squadCommandSequence += 1;
+    this.state.squadIntentSequence = this.squadCommandSequence;
+    this.state.squadIntentType = command?.type || this.state.squadIntentType || null;
+    this.state.squadIntentStatus = status;
+    this.state.squadIntentOwnerPlayerId = command?.ownerPlayerId || this.state.squadIntentOwnerPlayerId || null;
+    this.state.squadIntentOwnerName = command?.ownerName || this.state.squadIntentOwnerName || null;
+    this.state.squadIntentPosition = command?.position
+      ? clonePosition(command.position)
+      : (this.state.squadIntentPosition ? clonePosition(this.state.squadIntentPosition) : null);
+    this.state.squadIntentTargetId = command?.targetId || null;
+    this.state.squadIntentExpiresAtEpochMs = Number(command?.expiresAtEpochMs || 0);
+    this.state.squadIntentVisibleUntilEpochMs = visibleForMs > 0
+      ? Date.now() + visibleForMs
+      : Number(command?.expiresAtEpochMs || 0);
+  }
+
+  finishSquadCommand(status = SQUAD_COMMAND_STATUS.COMPLETE, now = nowMs(), message = '') {
+    const command = this.squadCommand;
+    if (!command) return false;
+    this.syncSquadIntentState(command, status, { visibleForMs: 2600 });
+    this.squadCommand = null;
+    this.holdPosition = null;
+    if (message && now - this.lastSquadCommandToastAt >= 900) {
+      this.lastSquadCommandToastAt = now;
+      this.showToast?.(`WINGMAN · ${message}`, status === SQUAD_COMMAND_STATUS.UNAVAILABLE ? '#ffc08f' : '#7df2a5', 1900);
+    }
+    this.publishSnapshot(now, true);
+    return true;
+  }
+
+  handleTacticalCommand(ping, { receivedAt = nowMs() } = {}) {
+    if (!this.active || !this.runActive || !this.isAuthority()) {
+      return { accepted: false, reason: 'not-authority' };
+    }
+    if (!ping?.ownerPlayerId || ping.ownerPlayerId === BOT1_PLAYER_ID) {
+      return { accepted: false, reason: 'invalid-owner' };
+    }
+
+    const candidate = buildSquadCommandIntent(ping, {
+      now: receivedAt,
+      epochNow: Date.now()
+    });
+    if (!candidate) return { accepted: false, reason: 'unsupported-command' };
+    if (!shouldAcceptSquadCommand(this.squadCommand, candidate, receivedAt)) {
+      return { accepted: false, reason: 'lower-priority' };
+    }
+
+    this.squadCommand = candidate;
+    if (candidate.type === TACTICAL_PING_TYPES.DEFEND) {
+      this.holdPosition = clonePosition(candidate.position);
+    } else {
+      this.holdPosition = null;
+    }
+    this.syncSquadIntentState(candidate, SQUAD_COMMAND_STATUS.ACKNOWLEDGED);
+    if (receivedAt - this.lastSquadCommandToastAt >= 700) {
+      this.lastSquadCommandToastAt = receivedAt;
+      this.showToast?.(`WINGMAN · ${candidate.acknowledgement}`, '#63d8ff', 1800);
+    }
+    this.publishSnapshot(receivedAt, true);
+    return { accepted: true, reason: 'acknowledged', command: candidate };
+  }
+
+  refreshSquadCommand(now = nowMs()) {
+    if (!this.squadCommand) {
+      if (
+        this.state.squadIntentStatus !== SQUAD_COMMAND_STATUS.IDLE
+        && Number(this.state.squadIntentVisibleUntilEpochMs || 0) <= Date.now()
+      ) {
+        this.state.squadIntentStatus = SQUAD_COMMAND_STATUS.IDLE;
+        this.state.squadIntentType = null;
+        this.state.squadIntentOwnerPlayerId = null;
+        this.state.squadIntentOwnerName = null;
+        this.state.squadIntentPosition = null;
+        this.state.squadIntentTargetId = null;
+        this.state.squadIntentExpiresAtEpochMs = 0;
+        this.state.squadIntentVisibleUntilEpochMs = 0;
+      }
+      return null;
+    }
+    if (!squadCommandIsActive(this.squadCommand, now)) {
+      this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'COMMAND WINDOW COMPLETE');
+      return null;
+    }
+
+    if ([
+      TACTICAL_PING_TYPES.FOLLOW_ME,
+      TACTICAL_PING_TYPES.REGROUP,
+      TACTICAL_PING_TYPES.NEED_HELP
+    ].includes(normalizePingType(this.squadCommand.type))) {
+      const livePosition = this.commandOwnerPosition(this.squadCommand, now);
+      if (livePosition) {
+        this.squadCommand = Object.freeze({
+          ...this.squadCommand,
+          position: clonePosition(livePosition)
+        });
+      }
+    }
+    return this.squadCommand;
+  }
+
   publishTeamEnemyMark(enemy, targetId, now = nowMs()) {
     if (
       !enemy?.mesh?.position
@@ -941,6 +1084,7 @@ export class MultiplayerBotManager {
     this.lastUpdateAt = now;
 
     const enemies = livingEnemies(this.getActiveEnemies?.() || []);
+    const activeCommand = this.refreshSquadCommand(now);
     const humanCount = this.connectedHumanCount();
     // R2.7: do not auto-stand-down for the supported host + ally team.
     this.pendingHumanReplacement = false;
@@ -965,13 +1109,16 @@ export class MultiplayerBotManager {
       hostPlayer: this.player,
       hostPosition: this.player?.pos
     });
+    const commandedTarget = downed
+      ? null
+      : chooseCommandEnemyTarget(enemies, activeCommand);
     const target = downed
       ? null
-      : selectBotEnemyTarget(
+      : (commandedTarget || selectBotEnemyTarget(
           enemies,
           this.state.position,
           this.player?.pos
-        );
+        ));
     const rescueThreat = downed
       ? selectBotRescueThreat(
           enemies,
@@ -985,7 +1132,10 @@ export class MultiplayerBotManager {
       hostPosition: this.player?.pos,
       targetPosition: target?.mesh?.position || null,
       downedTeammatePosition: downed?.position || null,
-      holdPosition: this.holdPosition
+      holdPosition: this.holdPosition,
+      squadCommand: activeCommand && isMovementSquadCommand(activeCommand.type)
+        ? activeCommand
+        : null
     });
 
     const direct = {
@@ -1013,6 +1163,35 @@ export class MultiplayerBotManager {
     // height and climbable obstacle height must never be copied into the bot.
     this.applyGrounding();
     this.state.isSprinting = intent.speed >= 4.1 && velocityResult.moving;
+
+    if (activeCommand) {
+      const commandType = normalizePingType(activeCommand.type);
+      if (isRescueSquadCommand(commandType)) {
+        if (downed) this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.REVIVING);
+        else this.finishSquadCommand(SQUAD_COMMAND_STATUS.UNAVAILABLE, now, 'NO DOWNED OPERATIVE FOUND');
+      } else if (commandType === TACTICAL_PING_TYPES.ENEMY) {
+        if (commandedTarget) this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.ENGAGING);
+        else this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'MARKED THREAT CLEARED');
+      } else if ([TACTICAL_PING_TYPES.INTERACT, TACTICAL_PING_TYPES.BUY_OPEN].includes(commandType)) {
+        if (commandReached(activeCommand, this.state.position, 2.0)) {
+          this.finishSquadCommand(SQUAD_COMMAND_STATUS.UNAVAILABLE, now, 'CANNOT OPERATE INTERACTABLE');
+        } else {
+          this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.INTERACTING);
+        }
+      } else if (commandType === TACTICAL_PING_TYPES.MOVE) {
+        if (commandReached(activeCommand, this.state.position, 1.8)) {
+          this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'MOVE COMPLETE');
+        } else {
+          this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.MOVING);
+        }
+      } else if (commandType === TACTICAL_PING_TYPES.DEFEND) {
+        this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.DEFENDING);
+      } else if (commandType === TACTICAL_PING_TYPES.NEED_HELP) {
+        this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.ASSISTING);
+      } else {
+        this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.REGROUPING);
+      }
+    }
 
     const criticalRescueThreat = Boolean(
       downed
@@ -1093,6 +1272,10 @@ export class MultiplayerBotManager {
       activeSeconds: this.activeMs / 1000,
       replacementReason: this.replacementReason,
       request: this.request ? { ...this.request } : null,
+      squadCommand: this.squadCommand ? {
+        ...this.squadCommand,
+        position: clonePosition(this.squadCommand.position)
+      } : null,
       state: {
         ...this.state,
         position: clonePosition(this.state.position),

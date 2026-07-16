@@ -86,17 +86,19 @@
     "protocolUnchanged": true
   },
   "m5Communication": {
-    "milestone": "M5.1-M5.28",
-    "patch": "m5-coop-turn-fallback-r1",
+    "milestone": "M5.1-M5.28 + POST-FINAL.3",
+    "patch": "post-final3-r1-squad-command-team-intelligence",
     "quickMessages": [
-      "ENEMY_HERE",
+      "ENEMY_PRIORITY",
+      "MOVE_HERE",
+      "DEFEND_HERE",
+      "REGROUP",
+      "INTERACT_HERE",
+      "REVIVE_RESCUE",
       "NEED_HELP",
-      "NEED_AMMO",
-      "REVIVE_ME",
-      "BUY_OPEN_THIS",
       "FOLLOW_ME"
     ],
-    "desktopControl": "Hold C and press 1-6",
+    "desktopControl": "Hold C and press 1-8",
     "mobileControl": "COMMS button",
     "protocolUnchanged": true,
     "textChat": {
@@ -123,7 +125,8 @@
       "voiceRemoved": true,
       "microphonePermissionRequested": false,
       "transport": "authenticated Worker control messages"
-    }
+    },
+    "controllerControl": "Hold View/Back and use face buttons or D-pad"
   },
   "productionHardening": {
     "patch": "prog2-r1-production-hardening-cloud-integrity",
@@ -404,5 +407,34 @@
     "immediateFrontendRefreshAfterAuthChange": true,
     "passkeyOnlySocialPolicyPreserved": true,
     "workerDeploymentRequired": true
+  },
+  "squadCommandTeamIntelligence": {
+    "schema": 1,
+    "patch": "post-final3-r1-squad-command-team-intelligence",
+    "combinedRelease": true,
+    "commandWheel": {
+      "commands": 8,
+      "keyboard": true,
+      "controller": true,
+      "mobile": true,
+      "contextualWorldTargets": true
+    },
+    "aiWingmanResponses": {
+      "acknowledgements": true,
+      "enemyPriority": true,
+      "moveAndDefend": true,
+      "regroupAndFollow": true,
+      "revivePriority": true,
+      "interactionLimitReporting": true,
+      "safetyOverridesPreserved": true
+    },
+    "teamIntentHud": true,
+    "humanCommandDistance": true,
+    "aiIntentStatus": true,
+    "antiSpamAndDuplicateSuppression": true,
+    "lateJoinIntentReplicationViaBotSnapshot": true,
+    "hostMigrationUsesExistingTacticalPingRebroadcast": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false
   }
 }

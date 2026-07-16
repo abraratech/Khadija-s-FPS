@@ -18,6 +18,7 @@ PATCH = "final2-r1-full-product-certification"
 SOURCE_SEAL = "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e"
 POST_FINAL_PATCH = "post-final1-r1-mobile-clarity-social-recovery"
 POST_FINAL2_PATCH = "post-final2-r1-coop-audio-awareness"
+POST_FINAL3_PATCH = "post-final3-r1-squad-command-team-intelligence"
 ROOT_FILES = ("index.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -139,6 +140,18 @@ def main() -> None:
             "team_alerts_volume_control": True,
             "caption_fallback": True,
             "voice_chat": False,
+            "protocol_unchanged": True,
+            "worker_change_required": False
+        },
+        "post_final3": {
+            "schema": 1,
+            "patch": POST_FINAL3_PATCH,
+            "combined_squad_command_release": True,
+            "command_wheel_commands": 8,
+            "keyboard_controller_mobile": True,
+            "ai_wingman_command_response": True,
+            "team_intent_hud": True,
+            "late_join_intent_via_bot_snapshot": True,
             "protocol_unchanged": True,
             "worker_change_required": False
         },

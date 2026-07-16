@@ -37,6 +37,7 @@ import { MultiplayerTacticalAwareness } from './tactical_ping.js'; import { Mult
 import { MultiplayerCoopStatsManager } from './coop_stats.js';
 import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
 import { MultiplayerCoopAudioManager } from './coop_audio.js';
+import { MultiplayerSquadIntentHud } from './squad_intent_hud.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -49,7 +50,7 @@ let botManager = null;
 let economyManager = null;
 let reviveManager = null; let coop2Manager = null; let content1Manager = null; let networkHud = null;
 let multiplayerReleaseGuard = null;
-let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null; let coopAudioManager = null;
+let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null; let coopAudioManager = null; let squadIntentHud = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 let knownConnectedHumanIds = new Set();
 let lateJoinBurstSerial = 0;
@@ -495,7 +496,18 @@ export function initializeMultiplayerFoundation(
         remote: true,
         now: details?.receivedAt
       });
+    },
+    onAcceptedPing: (ping, details) => {
+      botManager?.handleTacticalCommand?.(ping, details);
     }
+  });
+
+  squadIntentHud = new MultiplayerSquadIntentHud({
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    getBotSnapshot: () => botManager?.getSnapshot?.() || null,
+    getTacticalSnapshot: () => tacticalAwareness?.getSnapshot?.() || null
   });
 
   coopScoreboard = new MultiplayerCoopScoreboard({
@@ -620,7 +632,7 @@ textChat.initialize();
       reviveManager?.endRun();
       economyManager?.endRun();
       multiplayerRuntime.endRun();
-      remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
+      remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); squadIntentHud?.endRun(); networkHud?.reset();
             hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
@@ -720,6 +732,7 @@ export function beginMultiplayerRun({
     difficulty: multiplayerSession.run?.difficulty ?? difficulty
   });
   tacticalAwareness?.beginRun();
+  squadIntentHud?.beginRun();
   coopStatsManager?.beginRun();
   coopScoreboard?.hideAll?.();
 
@@ -858,7 +871,7 @@ export function endMultiplayerRun({
   reviveManager?.endRun();
   economyManager?.endRun();
   multiplayerRuntime.endRun();
-  remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); networkHud?.reset();
+  remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); squadIntentHud?.endRun(); networkHud?.reset();
             hostMigrationState.reset();
 
   if (notifyServer) {
@@ -1102,6 +1115,7 @@ export function syncMultiplayerFrame(
   botManager?.update(dt, now);
   remotePlayerManager?.update(now);
   tacticalAwareness?.update(now);
+  squadIntentHud?.update(now);
   coopAudioManager?.update(now);
   networkHud?.update(now);
   multiplayerReleaseGuard?.update(now); coopStatsManager?.update(now); coop2Manager?.update(now); content1Manager?.update(dt, { player, wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1 }); coopScoreboard?.update(now);

@@ -17,6 +17,10 @@ import {
     tacticalPingTypeToAudioKind('REVIVE_ME'),
     COOP_AUDIO_KINDS.NEED_HELP
   );
+  assert.equal(tacticalPingTypeToAudioKind('DEFEND'), COOP_AUDIO_KINDS.MOVE_MARK);
+  assert.equal(tacticalPingTypeToAudioKind('REGROUP'), COOP_AUDIO_KINDS.FOLLOW_ME);
+  assert.equal(tacticalPingTypeToAudioKind('INTERACT'), COOP_AUDIO_KINDS.BUY_OPEN);
+  assert.equal(tacticalPingTypeToAudioKind('REVIVE'), COOP_AUDIO_KINDS.NEED_HELP);
   assert.equal(tacticalPingTypeToAudioKind('UNKNOWN'), null);
 }
 

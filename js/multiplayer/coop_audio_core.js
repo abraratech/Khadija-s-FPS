@@ -111,15 +111,19 @@ export function tacticalPingTypeToAudioKind(value) {
     case 'ENEMY':
       return COOP_AUDIO_KINDS.ENEMY_MARK;
     case 'MOVE':
+    case 'DEFEND':
       return COOP_AUDIO_KINDS.MOVE_MARK;
     case 'NEED_HELP':
+    case 'REVIVE':
     case 'REVIVE_ME':
       return COOP_AUDIO_KINDS.NEED_HELP;
     case 'NEED_AMMO':
       return COOP_AUDIO_KINDS.NEED_AMMO;
     case 'FOLLOW_ME':
+    case 'REGROUP':
       return COOP_AUDIO_KINDS.FOLLOW_ME;
     case 'BUY_OPEN':
+    case 'INTERACT':
       return COOP_AUDIO_KINDS.BUY_OPEN;
     default:
       return null;

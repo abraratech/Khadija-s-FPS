@@ -50,6 +50,18 @@ const followIntent = chooseBotIntent({
 });
 assert(followIntent.kind === 'FOLLOW', 'bot should follow with no higher priority');
 
+const commandIntent = chooseBotIntent({
+  botPosition: { x: 0, y: 0, z: 0 },
+  hostPosition: { x: 10, y: 0, z: 0 },
+  targetPosition: { x: 3, y: 0, z: 0 },
+  squadCommand: {
+    type: 'DEFEND',
+    position: { x: 8, y: 0, z: 4 }
+  }
+});
+assert(commandIntent.kind === 'COMMAND_DEFEND', 'explicit defend command should guide movement before normal combat pursuit');
+assert(commandIntent.destination.x === 8 && commandIntent.destination.z === 4, 'defend command destination should be preserved');
+
 const movement = computeBotVelocity({
   position: { x: 0, y: 0, z: 0 },
   destination: { x: 10, y: 0, z: 0 },

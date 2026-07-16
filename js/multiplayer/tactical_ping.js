@@ -126,7 +126,8 @@ export class MultiplayerTacticalAwareness {
     getRoleForPlayer = () => 'VANGUARD',
     getPingLifetimeMultiplier = null,
     onTeamAction = () => {},
-    onRemotePing = () => {}
+    onRemotePing = () => {},
+    onAcceptedPing = () => {}
   } = {}) {
     this.eventBus = eventBus;
     this.runtime = runtime;
@@ -141,6 +142,7 @@ export class MultiplayerTacticalAwareness {
     this.getPingLifetimeMultiplier = getPingLifetimeMultiplier;
     this.onTeamAction = onTeamAction;
     this.onRemotePing = onRemotePing;
+    this.onAcceptedPing = onAcceptedPing;
     this.store = new TacticalPingStore();
     this.active = false;
     this.root = null;
@@ -270,6 +272,7 @@ export class MultiplayerTacticalAwareness {
       eventId: result.ping?.pingId,
       at: now
     });
+    this.onAcceptedPing?.(result.ping, { local: true, receivedAt: now });
     return result;
   }
   placeQuickMessage(type, now = nowMs()) {
@@ -281,6 +284,7 @@ export class MultiplayerTacticalAwareness {
 
     const canUseWhileDowned = (
       normalizedType === TACTICAL_PING_TYPES.REVIVE_ME
+      || normalizedType === TACTICAL_PING_TYPES.REVIVE
       || normalizedType === TACTICAL_PING_TYPES.NEED_HELP
     );
     if (this.player?.alive !== true && !canUseWhileDowned) {
@@ -299,8 +303,19 @@ export class MultiplayerTacticalAwareness {
     if (normalizedType === TACTICAL_PING_TYPES.ENEMY) {
       aimedEnemy = this.findAimedEnemy();
       position = aimedEnemy ? this.enemyPingPosition(aimedEnemy) : this.findMovePingPosition();
-    } else if (normalizedType === TACTICAL_PING_TYPES.BUY_OPEN) {
+    } else if ([
+      TACTICAL_PING_TYPES.MOVE,
+      TACTICAL_PING_TYPES.DEFEND,
+      TACTICAL_PING_TYPES.INTERACT,
+      TACTICAL_PING_TYPES.BUY_OPEN
+    ].includes(normalizedType)) {
       position = this.findMovePingPosition();
+    } else if (normalizedType === TACTICAL_PING_TYPES.REVIVE && this.player?.alive === true) {
+      position = this.findDownedTeammatePosition() || new THREE.Vector3(
+        finite(this.player?.pos?.x),
+        finite(this.player?.pos?.y) + 1.55,
+        finite(this.player?.pos?.z)
+      );
     } else {
       position = new THREE.Vector3(
         finite(this.player?.pos?.x),
@@ -342,10 +357,29 @@ export class MultiplayerTacticalAwareness {
       eventId: result.ping?.pingId,
       at: now
     });
+    this.onAcceptedPing?.(result.ping, { local: true, receivedAt: now });
     return result;
   }
 
-
+  findDownedTeammatePosition() {
+    const snapshot = this.getReviveSnapshot?.() || {};
+    const players = Array.isArray(snapshot?.state?.players)
+      ? snapshot.state.players
+      : (Array.isArray(snapshot?.players) ? snapshot.players : []);
+    const localPlayerId = this.runtime?.localPlayerId || null;
+    const downed = players
+      .filter((entry) => (
+        entry?.playerId
+        && entry.playerId !== localPlayerId
+        && entry.connected !== false
+        && String(entry.lifeState || '').toUpperCase() === 'DOWNED'
+        && entry.position
+      ))
+      .sort((a, b) => distance(this.player?.pos, a.position) - distance(this.player?.pos, b.position))[0];
+    return downed?.position
+      ? new THREE.Vector3(finite(downed.position.x), finite(downed.position.y) + 1.0, finite(downed.position.z))
+      : null;
+  }
 
   findAimedEnemy() {
     const enemies = (this.getActiveEnemies?.() || [])
@@ -437,6 +471,7 @@ export class MultiplayerTacticalAwareness {
         envelope,
         receivedAt: now
       });
+      this.onAcceptedPing?.(result.ping, { local: false, envelope, receivedAt: now });
     } else {
       this.metrics.remoteRejected += 1;
       if (result.reason === 'duplicate') this.metrics.duplicates += 1;

@@ -15,6 +15,7 @@ assert.ok(moderation.includes('STAFF INVITATION'));
 assert.ok(moderation.includes('id="mod-platform"'));
 assert.ok(moderation.includes('id="mod-staff"'));
 assert.ok(moderation.includes('id="mod-sessions"'));
+assert.ok(moderation.includes("connect-src 'self' https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev"));
 assert.ok(admin.includes('/ops/admin/auth/login/options'));
 assert.ok(admin.includes('/ops/admin/auth/bootstrap/options'));
 assert.ok(admin.includes('/ops/admin/auth/enroll/options'));

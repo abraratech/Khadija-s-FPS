@@ -17,6 +17,15 @@ import {
   publicMatchmakingTicket
 } from './matchmaking_core.js';
 import {
+  PVP2_MODE,
+  PVP2_PATCH,
+  PVP2_SCHEMA,
+  applyPvp2MatchResult,
+  pvp2FeatureEnabled,
+  publicPvp2Stats,
+  rankPvp2Leaderboard
+} from './pvp2_core.js';
+import {
   ROOM_DIRECTORY_MAX_RESULTS,
   ROOM_DIRECTORY_PATCH,
   ROOM_DIRECTORY_SCHEMA,
@@ -73,6 +82,8 @@ export class MatchmakingHub extends DurableObject {
       revision: 0,
       tickets: {},
       rooms: {},
+      pvp2Stats: {},
+      pvp2Results: {},
       updatedAt: Date.now()
     };
 
@@ -87,6 +98,12 @@ export class MatchmakingHub extends DurableObject {
             : {},
           rooms: stored.rooms && typeof stored.rooms === 'object'
             ? stored.rooms
+            : {},
+          pvp2Stats: stored.pvp2Stats && typeof stored.pvp2Stats === 'object'
+            ? stored.pvp2Stats
+            : {},
+          pvp2Results: stored.pvp2Results && typeof stored.pvp2Results === 'object'
+            ? stored.pvp2Results
             : {},
           updatedAt: Math.max(0, Number(stored.updatedAt) || Date.now())
         };
@@ -121,12 +138,28 @@ export class MatchmakingHub extends DurableObject {
     if (request.method === 'POST' && url.pathname === '/matchmaking/rooms/join') {
       return this.joinRoomListing(request, now);
     }
+    if (request.method === 'GET' && url.pathname === '/pvp2/stats') {
+      return this.pvp2Stats(url, now);
+    }
+    if (request.method === 'GET' && url.pathname === '/pvp2/leaderboard') {
+      return this.pvp2Leaderboard(url, request, now);
+    }
+    if (request.method === 'POST' && url.pathname === '/pvp2/result') {
+      return this.pvp2Result(request, now);
+    }
     if (request.method === 'GET' && url.pathname === '/matchmaking/health') {
       return json({
         ok: true,
         schema: MATCHMAKING_SCHEMA,
         patch: MATCHMAKING_PATCH,
         queued: queuedCount(this.state.tickets),
+        pvpQueued: Object.values(this.state.tickets || {}).filter((ticket) => ticket?.status === 'queued' && ticket?.mode === PVP2_MODE).length,
+        pvp2: {
+          schema: PVP2_SCHEMA,
+          patch: PVP2_PATCH,
+          publicMatchmakingEnabled: pvp2FeatureEnabled(this.env.PVP2_PUBLIC_MATCHMAKING_ENABLED),
+          competitivePlayers: Object.keys(this.state.pvp2Stats || {}).length
+        },
         openRooms: Object.values(this.state.rooms || {}).filter((listing) => roomDirectoryListingVisible(listing, { now })).length,
         roomDirectory: { schema: ROOM_DIRECTORY_SCHEMA, patch: ROOM_DIRECTORY_PATCH },
         revision: this.state.revision
@@ -520,8 +553,21 @@ export class MatchmakingHub extends DurableObject {
       }, { status: 400 });
     }
 
+    if (
+      normalized.mode === PVP2_MODE
+      && !pvp2FeatureEnabled(this.env.PVP2_PUBLIC_MATCHMAKING_ENABLED)
+    ) {
+      return json({
+        ok: false,
+        error: 'PVP2_PUBLIC_MATCHMAKING_DISABLED',
+        message: 'Public PvP matchmaking is temporarily disabled. Private PvP, Solo, and Co-Op remain available.'
+      }, { status: 503 });
+    }
+
     try {
-      const partyClaim = await this.resolvePartyClaim(normalized);
+      const partyClaim = normalized.mode === PVP2_MODE
+        ? { partyId: '', partySize: 1, leaderSocialId: '', memberSocialIds: [] }
+        : await this.resolvePartyClaim(normalized);
       normalized = Object.freeze({
         ...normalized,
         partyId: partyClaim.partyId,
@@ -585,7 +631,9 @@ export class MatchmakingHub extends DurableObject {
       const result = await this.createPartyMatch(ticket, now);
       if (!result.ok) return json(result, { status: 503 });
     } else {
-      const backfilled = await this.tryBackfill(ticket, now);
+      const backfilled = ticket.mode === PVP2_MODE
+        ? false
+        : await this.tryBackfill(ticket, now);
       if (!backfilled) {
         const candidate = chooseMatchmakingCandidate(
           Object.values(this.state.tickets),
@@ -638,7 +686,9 @@ export class MatchmakingHub extends DurableObject {
       partySize: 1,
       quality: scope === 'regional'
         ? qualityScore >= 100 ? 'excellent' : 'good'
-        : 'expanded'
+        : 'expanded',
+      gameMode: incoming.mode === PVP2_MODE ? PVP2_MODE : 'coop',
+      publicPvp: incoming.mode === PVP2_MODE
     };
 
     const reservation = await this.reserveRoom({
@@ -648,6 +698,8 @@ export class MatchmakingHub extends DurableObject {
       difficulty: assignmentBase.difficulty,
       maxPlayers: assignmentBase.maxPlayers,
       region,
+      gameMode: assignmentBase.gameMode,
+      publicPvp: assignmentBase.publicPvp,
       now
     });
     if (!reservation.ok) return reservation;
@@ -679,6 +731,8 @@ export class MatchmakingHub extends DurableObject {
     difficulty,
     maxPlayers,
     region,
+    gameMode = 'coop',
+    publicPvp = false,
     now
   }) {
     if (!this.env.ROOMS) {
@@ -706,6 +760,8 @@ export class MatchmakingHub extends DurableObject {
             difficulty,
             maxPlayers,
             region,
+            gameMode,
+            publicPvp: publicPvp === true,
             reservedAt: now,
             expiresAt: now + MATCHMAKING_MATCH_TTL_MS
           })
@@ -835,6 +891,72 @@ export class MatchmakingHub extends DurableObject {
       now,
       queueDepth: queuedCount(this.state.tickets)
     }));
+  }
+
+  pvp2Stats(url, now) {
+    const playerId = cleanText(url.searchParams.get('playerId'), 160);
+    if (!playerId) return json({ ok: false, error: 'PLAYER_ID_REQUIRED' }, { status: 400 });
+    const stats = this.state.pvp2Stats?.[playerId] || {
+      playerId,
+      displayName: 'Player',
+      region: 'ZZ',
+      rating: 1000,
+      bestRating: 1000,
+      updatedAt: now
+    };
+    return json({ ok: true, schema: PVP2_SCHEMA, patch: PVP2_PATCH, stats: publicPvp2Stats(stats) });
+  }
+
+  pvp2Leaderboard(url, request, now) {
+    const scope = url.searchParams.get('scope') === 'regional' ? 'regional' : 'global';
+    const region = String(
+      url.searchParams.get('region')
+      || request.headers.get('x-ka-region')
+      || 'ZZ'
+    ).toUpperCase().slice(0, 16);
+    const limit = Math.max(1, Math.min(100, Math.trunc(Number(url.searchParams.get('limit')) || 50)));
+    return json({
+      ok: true,
+      schema: PVP2_SCHEMA,
+      patch: PVP2_PATCH,
+      scope,
+      region,
+      entries: rankPvp2Leaderboard(this.state.pvp2Stats, { scope, region, limit }),
+      refreshedAt: now
+    });
+  }
+
+  async pvp2Result(request, now) {
+    if (request.headers.get('x-ka-internal-pvp2-result') !== '1') {
+      return json({ ok: false, error: 'PVP2_RESULT_FORBIDDEN' }, { status: 403 });
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ ok: false, error: 'INVALID_JSON' }, { status: 400 });
+    }
+    try {
+      const applied = applyPvp2MatchResult({
+        statsByPlayer: this.state.pvp2Stats,
+        resultLedger: this.state.pvp2Results,
+        result: body,
+        now
+      });
+      this.state.pvp2Stats = applied.statsByPlayer;
+      this.state.pvp2Results = applied.resultLedger;
+      if (applied.applied) await this.commit(now);
+      return json({
+        ok: true,
+        schema: PVP2_SCHEMA,
+        patch: PVP2_PATCH,
+        applied: applied.applied,
+        duplicate: applied.duplicate,
+        result: applied.result
+      });
+    } catch (error) {
+      return json({ ok: false, error: cleanText(error?.message || error, 120) }, { status: 400 });
+    }
   }
 
   async cleanup(now, { persist = false } = {}) {

@@ -1233,3 +1233,75 @@
     font-size: 0.62rem;
   }
 }
+
+/* PVP.2 R1 — public 1v1 queue and competitive record. */
+.ka-pvp2-queue-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ka-pvp2-primary {
+  border-color: rgba(255, 209, 102, 0.72) !important;
+  background: linear-gradient(180deg, rgba(255, 209, 102, 0.22), rgba(255, 107, 107, 0.12)) !important;
+  color: #fff2bd !important;
+}
+
+.ka-pvp2-record {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 209, 102, 0.28);
+  border-radius: 10px;
+  background: rgba(8, 13, 22, 0.72);
+}
+
+.ka-pvp2-record-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ka-pvp2-record-heading > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ka-pvp2-record-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ka-pvp2-record-grid span {
+  padding: 8px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.ka-pvp2-leaderboard {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ka-pvp2-leaderboard li {
+  padding: 6px 8px;
+  border-left: 2px solid rgba(255, 209, 102, 0.65);
+  background: rgba(255, 209, 102, 0.055);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.74rem;
+}
+
+@media (max-width: 700px) {
+  .ka-pvp2-queue-actions,
+  .ka-pvp2-record-grid {
+    grid-template-columns: 1fr;
+  }
+}

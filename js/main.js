@@ -253,10 +253,10 @@ configureMultiplayerPvp({
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
 window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
-window.KHADIJA_PVP_PATCH = 'pvp1-r1-isolated-team-elimination-foundation';
+window.KHADIJA_PVP_PATCH = 'pvp2-r1-public-matchmaking-competitive-stats-balance';
 console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
 console.info('[Multiplayer Patch] final2-r1-full-product-certification');
-console.info('[PvP Patch] pvp1-r1-isolated-team-elimination-foundation');
+console.info('[PvP Patch] pvp2-r1-public-matchmaking-competitive-stats-balance');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

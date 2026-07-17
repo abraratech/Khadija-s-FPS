@@ -16,6 +16,7 @@ export const MATCHMAKING_QUEUE_TTL_MS = 90_000;
 export const MATCHMAKING_MATCH_TTL_MS = 180_000;
 export const MATCHMAKING_GLOBAL_FALLBACK_MS = 12_000;
 export const MATCHMAKING_MAX_PLAYERS = 4;
+export const PVP2_MATCHMAKING_MODE = 'pvp-team-elimination';
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -49,6 +50,7 @@ export function normalizeMatchmakingRequest(value = {}, {
   const protocol = Math.max(1, finiteInteger(value.protocol, 0));
   const build = cleanText(value.build, '', 120);
   const mode = cleanText(value.mode, 'coop', 40).toLowerCase();
+  const pvp = mode === PVP2_MATCHMAKING_MODE;
   const mapId = cleanText(value.mapId, 'grid_bunker', 80);
   const difficulty = Math.max(0.25, Math.min(10, finiteNumber(value.difficulty, 1)));
   const maxPlayers = Math.max(
@@ -65,7 +67,8 @@ export function normalizeMatchmakingRequest(value = {}, {
   if (!playerId) throw new TypeError('PLAYER_ID_REQUIRED');
   if (!protocol) throw new TypeError('PROTOCOL_REQUIRED');
   if (!build) throw new TypeError('BUILD_REQUIRED');
-  if (mode !== 'coop') throw new TypeError('UNSUPPORTED_MODE');
+  if (!['coop', PVP2_MATCHMAKING_MODE].includes(mode)) throw new TypeError('UNSUPPORTED_MODE');
+  if (pvp && partySize !== 1) throw new TypeError('PVP2_SOLO_QUEUE_ONLY');
   if (!tabId) throw new TypeError('TAB_ID_REQUIRED');
 
   return Object.freeze({
@@ -76,20 +79,20 @@ export function normalizeMatchmakingRequest(value = {}, {
     build,
     mode,
     mapId,
-    difficulty,
-    maxPlayers,
+    difficulty: pvp ? 1 : difficulty,
+    maxPlayers: pvp ? 2 : maxPlayers,
     region: normalizeMatchmakingRegion(region),
     tabId,
     resumeToken,
-    partySize,
-    partyId,
-    partyTicket,
+    partySize: pvp ? 1 : partySize,
+    partyId: pvp ? '' : partyId,
+    partyTicket: pvp ? '' : partyTicket,
     searchPriority: search.searchPriority,
     regionPolicy: search.regionPolicy,
     preferredRegion: search.preferredRegion,
     globalExpansionMs: search.globalExpansionMs,
-    allowBackfill: search.allowBackfill,
-    joinInProgress: search.joinInProgress,
+    allowBackfill: pvp ? false : search.allowBackfill,
+    joinInProgress: pvp ? false : search.joinInProgress,
     requestedAt: Math.max(0, finiteInteger(now, Date.now()))
   });
 }
@@ -177,7 +180,9 @@ export function publicMatchmakingTicket(ticket, {
           ticket.assignment.partySize,
           ticket.partySize || 1
         ))),
-        quality: cleanText(ticket.assignment.quality, 'compatible', 40)
+        quality: cleanText(ticket.assignment.quality, 'compatible', 40),
+        gameMode: cleanText(ticket.assignment.gameMode || ticket.mode, 'coop', 40).toLowerCase(),
+        publicPvp: ticket.assignment.publicPvp === true
       })
     : null;
 
@@ -200,6 +205,7 @@ export function publicMatchmakingTicket(ticket, {
     }),
     searchScope: ticket.regionPolicy || 'auto',
     partySize: Math.max(1, Math.min(2, finiteInteger(ticket.partySize, 1))),
+    mode: cleanText(ticket.mode, 'coop', 40).toLowerCase(),
     assignment,
     reason: cleanText(ticket.reason, '', 120) || null
   });

@@ -7,6 +7,7 @@ import {
   createPvp1MatchState,
   normalizePvp1Mode,
   pvp1ForfeitTeam,
+  resolvePvp1RoundTimeout,
   resolvePvp1Shot
 } from './pvp1_core.js';
 
@@ -67,7 +68,7 @@ assert.equal(result.accepted, false);
 assert.equal(result.reason, 'FRIENDLY_FIRE_BLOCKED');
 
 for (let win = 0; win < 3; win += 1) {
-  const at = state.roundStartsAt + 1;
+  const at = state.roundStartsAt + 2100;
   result = resolvePvp1Shot({
     state,
     shooterId: 'alpha',
@@ -98,6 +99,25 @@ const duplicate = resolvePvp1Shot({
 });
 assert.equal(duplicate.accepted, false);
 assert.equal(duplicate.reason, 'MATCH_COMPLETE');
+
+
+const timeoutState = createPvp1MatchState({
+  runId: 'run-timeout',
+  players: [
+    { playerId: 'alpha', joinedAt: 1 },
+    { playerId: 'bravo', joinedAt: 2 }
+  ],
+  now: 0
+});
+timeoutState.players.alpha.health = 80;
+timeoutState.players.bravo.health = 20;
+const timeout = resolvePvp1RoundTimeout(timeoutState, {
+  now: timeoutState.roundEndsAt
+});
+assert.equal(timeout.changed, true);
+assert.equal(timeout.event.roundWinnerTeam, 'ALPHA');
+assert.equal(timeout.state.teams.ALPHA.roundWins, 1);
+assert.equal(timeout.state.phase, 'COUNTDOWN');
 
 const forfeitState = createPvp1MatchState({
   runId: 'run-forfeit',

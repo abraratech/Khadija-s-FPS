@@ -31,6 +31,16 @@ import {
   PVP1_SCHEMA,
   PVP1_SOURCE_BASELINE_SHA
 } from './pvp1_core.js';
+import {
+  PVP2_CERTIFIED_FRONTEND_BASELINE_SHA,
+  PVP2_FEATURE_FLAG,
+  PVP2_MODE,
+  PVP2_PATCH,
+  PVP2_PRODUCT_VERSION,
+  PVP2_PUBLIC_MATCHMAKING_ENABLED,
+  PVP2_SCHEMA,
+  PVP2_SOURCE_BASELINE_SHA
+} from './pvp2_core.js';
 
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'final2-r1-full-product-certification');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
@@ -105,6 +115,38 @@ const pvp1 = {
 assert.deepEqual(frontend.pvp1, pvp1);
 assert.deepEqual(frontend.pvp1, releaseMetadata.pvp1);
 
+const pvp2 = {
+  schema: PVP2_SCHEMA,
+  patch: PVP2_PATCH,
+  productVersion: PVP2_PRODUCT_VERSION,
+  sourceBaselineSha: PVP2_SOURCE_BASELINE_SHA,
+  certifiedFrontendBaselineSha: PVP2_CERTIFIED_FRONTEND_BASELINE_SHA,
+  featureFlag: PVP2_FEATURE_FLAG,
+  publicMatchmakingEnabled: PVP2_PUBLIC_MATCHMAKING_ENABLED,
+  mode: PVP2_MODE,
+  publicMatchmaking: true,
+  publicTeamSize: 1,
+  privatePvpPreserved: true,
+  regionFirstGlobalExpansion: true,
+  noBackfill: true,
+  noJoinInProgress: true,
+  competitiveStatistics: true,
+  competitiveLeaderboards: ['global', 'regional'],
+  ratingSystem: 'elo-32',
+  idempotentMatchResults: true,
+  spawnProtectionMs: 2000,
+  roundTimeoutMs: 90000,
+  serverAuthoritativeTimeoutResolution: true,
+  coopIsolationPreserved: true,
+  soloIsolationPreserved: true,
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false,
+  endpoints: ['/pvp2/stats', '/pvp2/leaderboard']
+};
+assert.deepEqual(frontend.pvp2, pvp2);
+assert.deepEqual(frontend.pvp2, releaseMetadata.pvp2);
+
 const passing = evaluateMultiplayerProductionRelease({
   frontendManifest: frontend,
   workerManifest: {
@@ -118,6 +160,7 @@ const passing = evaluateMultiplayerProductionRelease({
     releaseStatus: 'CERTIFIED',
     version1Certification,
     pvp1,
+    pvp2,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -138,6 +181,7 @@ const pvpFeatureDisabled = evaluateMultiplayerProductionRelease({
     releaseStatus: 'CERTIFIED',
     version1Certification,
     pvp1: { ...pvp1, featureEnabled: false },
+    pvp2,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -145,6 +189,28 @@ const pvpFeatureDisabled = evaluateMultiplayerProductionRelease({
 });
 assert.equal(pvpFeatureDisabled.status, 'PASS');
 assert.equal(pvpFeatureDisabled.ready, true);
+
+const pvp2PublicQueueDisabled = evaluateMultiplayerProductionRelease({
+  frontendManifest: frontend,
+  workerManifest: {
+    ok: true,
+    service: 'khadijas-arena-multiplayer',
+    protocol: 6,
+    build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
+    patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
+    certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
+    releaseStatus: 'CERTIFIED',
+    version1Certification,
+    pvp1,
+    pvp2: { ...pvp2, publicMatchmakingEnabled: false },
+    leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
+    cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
+    deployedAt: '2026-07-10T00:00:00.000Z'
+  }
+});
+assert.equal(pvp2PublicQueueDisabled.status, 'PASS');
+assert.equal(pvp2PublicQueueDisabled.ready, true);
 const missingLeaderboard = evaluateMultiplayerProductionRelease({
   frontendManifest: frontend,
   workerManifest: {

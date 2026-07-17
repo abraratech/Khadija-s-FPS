@@ -320,7 +320,11 @@ export class MultiplayerPvp1Manager {
     if (bravo) bravo.textContent = String(presentation.bravoWins);
     if (round) round.textContent = `ROUND ${presentation.round}`;
     if (status) {
-      status.textContent = `${presentation.headline} · ${presentation.localTeam || 'UNASSIGNED'}`;
+      const clock = presentation.phase === 'ACTIVE'
+        ? ` · ${presentation.roundRemainingSeconds}s`
+        : '';
+      const protection = presentation.spawnProtected ? ' · SPAWN PROTECTED' : '';
+      status.textContent = `${presentation.headline}${clock} · ${presentation.localTeam || 'UNASSIGNED'}${protection}`;
     }
   }
 

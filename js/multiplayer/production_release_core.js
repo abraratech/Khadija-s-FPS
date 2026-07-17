@@ -16,6 +16,16 @@ import {
   PVP1_SCHEMA,
   PVP1_SOURCE_BASELINE_SHA
 } from './pvp1_core.js';
+import {
+  PVP2_CERTIFIED_FRONTEND_BASELINE_SHA,
+  PVP2_FEATURE_FLAG,
+  PVP2_MODE,
+  PVP2_PATCH,
+  PVP2_PRODUCT_VERSION,
+  PVP2_PUBLIC_MATCHMAKING_ENABLED,
+  PVP2_SCHEMA,
+  PVP2_SOURCE_BASELINE_SHA
+} from './pvp2_core.js';
 
 export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'final2-r1-full-product-certification';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
@@ -119,6 +129,35 @@ export function createMultiplayerFrontendReleaseManifest() {
       protocolUnchanged: true,
       workerChangeRequired: true,
       frontendOnly: false
+    }),
+    pvp2: Object.freeze({
+      schema: PVP2_SCHEMA,
+      patch: PVP2_PATCH,
+      productVersion: PVP2_PRODUCT_VERSION,
+      sourceBaselineSha: PVP2_SOURCE_BASELINE_SHA,
+      certifiedFrontendBaselineSha: PVP2_CERTIFIED_FRONTEND_BASELINE_SHA,
+      featureFlag: PVP2_FEATURE_FLAG,
+      publicMatchmakingEnabled: PVP2_PUBLIC_MATCHMAKING_ENABLED,
+      mode: PVP2_MODE,
+      publicMatchmaking: true,
+      publicTeamSize: 1,
+      privatePvpPreserved: true,
+      regionFirstGlobalExpansion: true,
+      noBackfill: true,
+      noJoinInProgress: true,
+      competitiveStatistics: true,
+      competitiveLeaderboards: Object.freeze(['global', 'regional']),
+      ratingSystem: 'elo-32',
+      idempotentMatchResults: true,
+      spawnProtectionMs: 2000,
+      roundTimeoutMs: 90000,
+      serverAuthoritativeTimeoutResolution: true,
+      coopIsolationPreserved: true,
+      soloIsolationPreserved: true,
+      protocolUnchanged: true,
+      workerChangeRequired: true,
+      frontendOnly: false,
+      endpoints: Object.freeze(['/pvp2/stats', '/pvp2/leaderboard'])
     })
   });
 }
@@ -163,7 +202,17 @@ export function evaluateMultiplayerProductionRelease({ workerManifest = null, fr
     ['PVP1_PRIVATE_ROOM_POLICY_MISMATCH','PvP private-room policy',frontend.pvp1?.privateRooms === true,worker.pvp1?.privateRooms === true],
     ['PVP1_PUBLIC_MATCHMAKING_POLICY_MISMATCH','PvP public-matchmaking policy',frontend.pvp1?.publicMatchmaking === true,worker.pvp1?.publicMatchmaking === true],
     ['PVP1_SERVER_DAMAGE_POLICY_MISMATCH','PvP server-authoritative damage policy',frontend.pvp1?.serverAuthoritativeDamage === true,worker.pvp1?.serverAuthoritativeDamage === true],
-    ['PVP1_FRIENDLY_FIRE_POLICY_MISMATCH','PvP friendly-fire policy',frontend.pvp1?.friendlyFireBlocked === true,worker.pvp1?.friendlyFireBlocked === true]
+    ['PVP1_FRIENDLY_FIRE_POLICY_MISMATCH','PvP friendly-fire policy',frontend.pvp1?.friendlyFireBlocked === true,worker.pvp1?.friendlyFireBlocked === true],
+    ['PVP2_SCHEMA_MISMATCH','PVP.2 schema',finiteInteger(frontend.pvp2?.schema),finiteInteger(worker.pvp2?.schema,-1)],
+    ['PVP2_PATCH_MISMATCH','PVP.2 patch',cleanText(frontend.pvp2?.patch),cleanText(worker.pvp2?.patch,'missing')],
+    ['PVP2_PRODUCT_VERSION_MISMATCH','PVP.2 product version',cleanText(frontend.pvp2?.productVersion),cleanText(worker.pvp2?.productVersion,'missing')],
+    ['PVP2_SOURCE_BASELINE_MISMATCH','PVP.2 source baseline',cleanText(frontend.pvp2?.sourceBaselineSha),cleanText(worker.pvp2?.sourceBaselineSha,'missing')],
+    ['PVP2_CERTIFIED_FRONTEND_BASELINE_MISMATCH','PVP.2 certified frontend baseline',cleanText(frontend.pvp2?.certifiedFrontendBaselineSha),cleanText(worker.pvp2?.certifiedFrontendBaselineSha,'missing')],
+    ['PVP2_MODE_MISMATCH','PVP.2 mode',cleanText(frontend.pvp2?.mode),cleanText(worker.pvp2?.mode,'missing')],
+    ['PVP2_PUBLIC_MATCHMAKING_POLICY_MISMATCH','PVP.2 public matchmaking policy',frontend.pvp2?.publicMatchmaking === true,worker.pvp2?.publicMatchmaking === true],
+    ['PVP2_PUBLIC_TEAM_SIZE_MISMATCH','PVP.2 public team size',finiteInteger(frontend.pvp2?.publicTeamSize),finiteInteger(worker.pvp2?.publicTeamSize,-1)],
+    ['PVP2_COOP_ISOLATION_MISMATCH','PVP.2 Co-Op isolation',frontend.pvp2?.coopIsolationPreserved === true,worker.pvp2?.coopIsolationPreserved === true],
+    ['PVP2_RESULT_LEDGER_MISMATCH','PVP.2 idempotent result ledger',frontend.pvp2?.idempotentMatchResults === true,worker.pvp2?.idempotentMatchResults === true]
   ]) if (expected !== received) errors.push(finding(code, `Frontend and Worker ${label} do not match.`, { expected, received }));
   if (!cleanText(worker.deployedAt)) warnings.push(finding('WORKER_DEPLOYED_AT_MISSING', 'The Worker release manifest does not include a deployment timestamp.'));
   const status = errors.length > 0 ? 'FAIL' : warnings.length > 0 ? 'WARN' : 'PASS';

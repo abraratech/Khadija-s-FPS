@@ -41,6 +41,10 @@ PVP1_PATCH = "pvp1-r1-isolated-team-elimination-foundation"
 PVP1_PRODUCT_VERSION = "1.1.0-pvp1"
 PVP1_SOURCE_BASELINE_SHA = "ddbdc3a4b478aa26a515e2dd8dbfc9449885c466"
 PVP1_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+PVP2_PATCH = "pvp2-r1-public-matchmaking-competitive-stats-balance"
+PVP2_PRODUCT_VERSION = "1.1.0-pvp2"
+PVP2_SOURCE_BASELINE_SHA = "014b0cf1921a3df3d8fbc3df9ad3be93e7e4fb0b"
+PVP2_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
@@ -85,7 +89,7 @@ def allowed(relative: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\PVP1_R1_PRODUCTION_BUILD")
+    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\PVP2_R1_PRODUCTION_BUILD")
     args = parser.parse_args()
 
     project = Path(args.project_root).resolve()
@@ -371,6 +375,35 @@ def main() -> None:
             "coop_reward_receipts_disabled": True,
             "reconnect_grace_ms": 45000,
             "host_migration_preserved": True,
+            "protocol_unchanged": True,
+            "worker_change_required": True,
+            "frontend_only": False
+        },
+        "pvp2": {
+            "schema": 1,
+            "patch": PVP2_PATCH,
+            "product_version": PVP2_PRODUCT_VERSION,
+            "source_baseline_sha": PVP2_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": PVP2_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "feature_enabled": True,
+            "feature_flag": "PVP2_PUBLIC_MATCHMAKING_ENABLED",
+            "mode": "pvp-team-elimination",
+            "public_matchmaking": True,
+            "public_team_size": 1,
+            "private_pvp_preserved": True,
+            "region_first_global_expansion": True,
+            "no_backfill": True,
+            "no_join_in_progress": True,
+            "competitive_statistics": True,
+            "competitive_leaderboards": ["global", "regional"],
+            "rating_system": "elo-32",
+            "idempotent_match_results": True,
+            "spawn_protection_ms": 2000,
+            "round_timeout_ms": 90000,
+            "server_authoritative_timeout_resolution": True,
+            "coop_isolation_preserved": True,
+            "solo_isolation_preserved": True,
+            "endpoints": ["/pvp2/stats", "/pvp2/leaderboard"],
             "protocol_unchanged": True,
             "worker_change_required": True,
             "frontend_only": False

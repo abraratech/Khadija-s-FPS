@@ -8,6 +8,8 @@ export const PVP1_ROUNDS_TO_WIN = 3;
 export const PVP1_MAX_PLAYERS = 4;
 export const PVP1_FEATURE_ENABLED = true;
 export const PVP1_TEAMS = Object.freeze(['ALPHA', 'BRAVO']);
+export const PVP1_ROUND_DURATION_MS = 90_000;
+export const PVP1_SPAWN_PROTECTION_MS = 2_000;
 
 export const PVP1_WEAPON_PROFILES = Object.freeze({
   PISTOL: Object.freeze({
@@ -128,6 +130,8 @@ export function createPvp1MatchState({
       eliminations: 0,
       deaths: 0,
       damageDealt: 0,
+      headshots: 0,
+      spawnProtectedUntil: Math.max(0, finite(now)) + 5000,
       lastShotAt: 0,
       lastShotId: '',
       spawnSerial: 1
@@ -144,6 +148,7 @@ export function createPvp1MatchState({
     bestOf: PVP1_BEST_OF,
     roundsToWin: PVP1_ROUNDS_TO_WIN,
     roundStartsAt: Math.max(0, finite(now)) + 3000,
+    roundEndsAt: Math.max(0, finite(now)) + 3000 + PVP1_ROUND_DURATION_MS,
     roundEndedAt: 0,
     matchEndedAt: 0,
     winnerTeam: null,
@@ -174,11 +179,13 @@ function livingPlayersForTeam(state, team) {
 }
 
 function resetPlayersForRound(state) {
+  const protectedUntil = Math.max(0, finite(state.roundStartsAt)) + PVP1_SPAWN_PROTECTION_MS;
   Object.values(state.players || {}).forEach((entry) => {
     entry.health = entry.maxHealth || 100;
     entry.alive = true;
     entry.lastShotAt = 0;
     entry.lastShotId = '';
+    entry.spawnProtectedUntil = protectedUntil;
     entry.spawnSerial = Math.max(1, Math.floor(finite(entry.spawnSerial, 1))) + 1;
   });
 }
@@ -225,6 +232,14 @@ export function resolvePvp1Shot({
   if (shooter.team === target.team) {
     return { accepted: false, reason: 'FRIENDLY_FIRE_BLOCKED', state };
   }
+  if (timestamp < Math.max(0, finite(target.spawnProtectedUntil))) {
+    return {
+      accepted: false,
+      reason: 'SPAWN_PROTECTED',
+      retryAfterMs: Math.ceil(target.spawnProtectedUntil - timestamp),
+      state
+    };
+  }
 
   const cleanShotId = cleanId(shotId, 200);
   if (!cleanShotId || cleanShotId === shooter.lastShotId) {
@@ -260,6 +275,7 @@ export function resolvePvp1Shot({
   target.health = Math.max(0, target.health - damage);
   target.alive = target.health > 0;
   shooter.damageDealt += appliedDamage;
+  if (headshot === true) shooter.headshots = Math.max(0, finite(shooter.headshots)) + 1;
 
   let eliminated = false;
   let roundEnded = false;
@@ -291,6 +307,7 @@ export function resolvePvp1Shot({
         state.round += 1;
         state.phase = 'COUNTDOWN';
         state.roundStartsAt = timestamp + 3500;
+        state.roundEndsAt = state.roundStartsAt + PVP1_ROUND_DURATION_MS;
         state.reason = 'next-round';
         resetPlayersForRound(state);
       }
@@ -320,6 +337,73 @@ export function resolvePvp1Shot({
       roundWinnerTeam,
       matchEnded,
       winnerTeam: state.winnerTeam,
+      round: state.round,
+      teamScore: {
+        ALPHA: state.teams.ALPHA.roundWins,
+        BRAVO: state.teams.BRAVO.roundWins
+      },
+      serverTime: timestamp
+    }
+  };
+}
+
+export function resolvePvp1RoundTimeout(state, {
+  now = Date.now()
+} = {}) {
+  if (!state || state.mode !== PVP1_MODE || state.phase === 'COMPLETE') {
+    return { changed: false, state };
+  }
+  const timestamp = Math.max(0, finite(now));
+  if (timestamp < Math.max(0, finite(state.roundEndsAt))) {
+    return { changed: false, state };
+  }
+
+  const alpha = livingPlayersForTeam(state, 'ALPHA');
+  const bravo = livingPlayersForTeam(state, 'BRAVO');
+  const alphaHealth = alpha.reduce((sum, entry) => sum + Math.max(0, finite(entry.health)), 0);
+  const bravoHealth = bravo.reduce((sum, entry) => sum + Math.max(0, finite(entry.health)), 0);
+  let winnerTeam = null;
+  if (alpha.length !== bravo.length) winnerTeam = alpha.length > bravo.length ? 'ALPHA' : 'BRAVO';
+  else if (alphaHealth !== bravoHealth) winnerTeam = alphaHealth > bravoHealth ? 'ALPHA' : 'BRAVO';
+
+  state.roundEndedAt = timestamp;
+  state.roundWinnerTeam = winnerTeam;
+  let matchEnded = false;
+  if (winnerTeam) {
+    state.teams[winnerTeam].roundWins += 1;
+    if (state.teams[winnerTeam].roundWins >= state.roundsToWin) {
+      state.phase = 'COMPLETE';
+      state.winnerTeam = winnerTeam;
+      state.matchEndedAt = timestamp;
+      state.reason = 'round-timeout';
+      matchEnded = true;
+    } else {
+      state.round += 1;
+      state.phase = 'COUNTDOWN';
+      state.roundStartsAt = timestamp + 3500;
+      state.roundEndsAt = state.roundStartsAt + PVP1_ROUND_DURATION_MS;
+      state.reason = 'next-round-timeout';
+      resetPlayersForRound(state);
+    }
+  } else {
+    state.phase = 'COUNTDOWN';
+    state.roundStartsAt = timestamp + 3500;
+    state.roundEndsAt = state.roundStartsAt + PVP1_ROUND_DURATION_MS;
+    state.reason = 'round-draw-replay';
+    resetPlayersForRound(state);
+  }
+
+  state.revision = Math.max(0, Math.floor(finite(state.revision))) + 1;
+  state.updatedAt = timestamp;
+  return {
+    changed: true,
+    state,
+    event: {
+      roundEnded: true,
+      roundWinnerTeam: winnerTeam,
+      matchEnded,
+      winnerTeam: state.winnerTeam,
+      reason: state.reason,
       round: state.round,
       teamScore: {
         ALPHA: state.teams.ALPHA.roundWins,

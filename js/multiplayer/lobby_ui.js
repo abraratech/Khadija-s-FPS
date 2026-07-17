@@ -1,6 +1,7 @@
 import { deriveMultiplayerProductionReleaseUiState } from './production_release_ui_core.js';
 import { matchmakingStatusPresentation } from './matchmaking_core.js';
 import { roomDirectoryStatusPresentation } from './room_directory_core.js';
+import { PVP2_MODE, pvp2StatsPresentation } from './pvp2_core.js';
 
 // js/multiplayer/lobby_ui.js
 
@@ -188,9 +189,14 @@ export class MultiplayerLobbyUI {
                 </select>
               </label>
             </div>
-            <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
-              FIND PUBLIC MATCH
-            </button>
+            <div class="ka-pvp2-queue-actions">
+              <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
+                FIND PUBLIC CO-OP
+              </button>
+              <button id="ka-pvp2-quick-match" class="ka-pvp2-primary" type="button">
+                FIND PUBLIC PVP 1V1
+              </button>
+            </div>
             <div class="ka-public-room-actions">
               <button id="ka-coop-browse-rooms" type="button">BROWSE OPEN ROOMS</button>
               <button id="ka-coop-create-public" type="button">CREATE PUBLIC ROOM</button>
@@ -246,6 +252,23 @@ export class MultiplayerLobbyUI {
               </button>
               <button id="ka-matchmaking-cancel" type="button">CANCEL</button>
             </div>
+            <section class="ka-pvp2-record" aria-labelledby="ka-pvp2-record-title">
+              <div class="ka-pvp2-record-heading">
+                <div>
+                  <span class="ka-coop-kicker">COMPETITIVE RECORD</span>
+                  <strong id="ka-pvp2-record-title">PVP RATING 1000</strong>
+                </div>
+                <button id="ka-pvp2-refresh" type="button">REFRESH</button>
+              </div>
+              <div class="ka-pvp2-record-grid">
+                <span id="ka-pvp2-record">0W · 0L</span>
+                <span id="ka-pvp2-performance">0 ELIMS · 0 DEATHS</span>
+                <span id="ka-pvp2-streak">NO ACTIVE STREAK</span>
+              </div>
+              <ol id="ka-pvp2-leaderboard" class="ka-pvp2-leaderboard">
+                <li>NO PUBLIC PVP RESULTS YET</li>
+              </ol>
+            </section>
           </section>
 
           <div class="ka-coop-private-divider"><span>PRIVATE ROOMS</span></div>
@@ -316,6 +339,7 @@ export class MultiplayerLobbyUI {
       server: modal.querySelector('#ka-coop-server'),
       releaseRetry: modal.querySelector('#ka-coop-release-retry'),
       quickMatch: modal.querySelector('#ka-coop-quick-match'),
+      pvp2QuickMatch: modal.querySelector('#ka-pvp2-quick-match'),
       browseRooms: modal.querySelector('#ka-coop-browse-rooms'),
       createPublic: modal.querySelector('#ka-coop-create-public'),
       roomBrowser: modal.querySelector('#ka-room-browser'),
@@ -337,6 +361,12 @@ export class MultiplayerLobbyUI {
       matchmakingElapsed: modal.querySelector('#ka-matchmaking-elapsed'),
       matchmakingBot: modal.querySelector('#ka-matchmaking-bot'),
       matchmakingCancel: modal.querySelector('#ka-matchmaking-cancel'),
+      pvp2Refresh: modal.querySelector('#ka-pvp2-refresh'),
+      pvp2RecordTitle: modal.querySelector('#ka-pvp2-record-title'),
+      pvp2Record: modal.querySelector('#ka-pvp2-record'),
+      pvp2Performance: modal.querySelector('#ka-pvp2-performance'),
+      pvp2Streak: modal.querySelector('#ka-pvp2-streak'),
+      pvp2Leaderboard: modal.querySelector('#ka-pvp2-leaderboard'),
       create: modal.querySelector('#ka-coop-create'),
       privateGameMode: modal.querySelector('#ka-private-game-mode'),
       privateModeNote: modal.querySelector('#ka-pvp1-private-note'),
@@ -604,6 +634,29 @@ bindEvents() {
       });
     });
 
+    this.elements.pvp2QuickMatch.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.quickMatch?.({
+        displayName: this.elements.name.value,
+        serverUrl: this.elements.server.value,
+        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+        difficulty: 1,
+        searchPriority: this.elements.match3SearchPriority.value || 'balanced',
+        regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
+        allowBackfill: false,
+        joinInProgress: false,
+        mode: PVP2_MODE
+      });
+    });
+
+    this.elements.pvp2Refresh.addEventListener('click', () => {
+      this.saveIdentity();
+      this.actions.refreshPvp2?.({
+        serverUrl: this.elements.server.value,
+        scope: 'global'
+      });
+    });
+
     const browseRooms = () => {
       this.saveIdentity();
       this.actions.browseOpenRooms?.({
@@ -805,6 +858,9 @@ bindEvents() {
     const pvpWorkerEnabled = (
       nextState.productionRelease?.worker?.pvp1?.featureEnabled !== false
     );
+    const pvp2WorkerEnabled = (
+      nextState.productionRelease?.worker?.pvp2?.publicMatchmakingEnabled !== false
+    );
     if (
       !pvpWorkerEnabled
       && this.elements.privateGameMode?.value === 'pvp-team-elimination'
@@ -847,6 +903,7 @@ bindEvents() {
     );
     const disabled = nextState.connecting || releaseUi.blockActions;
     this.elements.quickMatch.disabled = disabled || online || matchmakingActive;
+    this.elements.pvp2QuickMatch.disabled = disabled || online || matchmakingActive || !pvp2WorkerEnabled;
     this.elements.matchmakingMap.disabled = disabled || matchmakingActive;
     this.elements.matchmakingDifficulty.disabled = disabled || matchmakingActive;
     this.elements.match3SearchPriority.disabled = disabled || matchmakingActive;
@@ -868,6 +925,29 @@ bindEvents() {
     );
     this.elements.matchmakingCancel.hidden = !matchmakingUi.cancellable;
     this.elements.matchmakingCancel.disabled = !matchmakingUi.cancellable;
+
+    const pvp2 = nextState.pvp2 || {};
+    const pvp2Presentation = pvp2StatsPresentation(pvp2.stats || {});
+    this.elements.pvp2RecordTitle.textContent = pvp2Presentation.headline;
+    this.elements.pvp2Record.textContent = `${pvp2Presentation.record} · ${pvp2Presentation.winRateText}`;
+    this.elements.pvp2Performance.textContent = `${pvp2Presentation.performance} · ${pvp2Presentation.kdText}`;
+    this.elements.pvp2Streak.textContent = pvp2Presentation.streak;
+    this.elements.pvp2Refresh.disabled = disabled || pvp2.status === 'loading';
+    this.elements.pvp2Leaderboard.replaceChildren();
+    const pvp2Entries = pvp2.leaderboard?.entries || [];
+    if (pvp2Entries.length) {
+      pvp2Entries.slice(0, 5).forEach((entry) => {
+        const item = document.createElement('li');
+        item.textContent = `#${entry.rank} ${entry.displayName} · ${entry.rating} · ${entry.wins}W`;
+        this.elements.pvp2Leaderboard.appendChild(item);
+      });
+    } else {
+      const item = document.createElement('li');
+      item.textContent = pvp2.status === 'error'
+        ? 'COMPETITIVE STATS TEMPORARILY UNAVAILABLE'
+        : 'NO PUBLIC PVP RESULTS YET';
+      this.elements.pvp2Leaderboard.appendChild(item);
+    }
 
     const roomDirectory = nextState.roomDirectory || { status: 'idle', rooms: [] };
     const roomDirectoryUi = roomDirectoryStatusPresentation(roomDirectory);

@@ -35,6 +35,8 @@ import {
 } from './production_release.js';
 import { PublicMatchmakingClient } from './matchmaking.js';
 import { PublicRoomDirectoryClient } from './room_directory.js';
+import { Pvp2CompetitiveClient } from './pvp2.js';
+import { PVP2_MODE, createPvp2PublicQueuePreferences } from './pvp2_core.js';
 import { normalizePvp1Mode } from './pvp1_core.js';
 import {
   match3PartyErrorMessage,
@@ -204,6 +206,13 @@ export class MultiplayerLobbyController {
           }
         });
         this.matchmakingState = this.matchmaking.getSnapshot();
+        this.pvp2 = new Pvp2CompetitiveClient({
+          onChange: (snapshot) => {
+            this.pvp2State = snapshot;
+            this.render();
+          }
+        });
+        this.pvp2State = this.pvp2.getSnapshot();
         this.pendingPublicListing = false;
         this.pendingDirectoryJoin = null;
         this.roomDirectory = new PublicRoomDirectoryClient({
@@ -220,6 +229,7 @@ export class MultiplayerLobbyController {
     this.ui = new MultiplayerLobbyUI({
       actions: {
         quickMatch: (options) => this.startQuickMatch(options),
+        refreshPvp2: (options) => this.refreshPvp2(options),
         browseOpenRooms: (options) => this.browseOpenRooms(options),
         joinOpenRoom: (options) => this.joinOpenRoom(options),
         createPublicRoom: (options) => this.createPublicRoom(options),
@@ -517,7 +527,8 @@ export class MultiplayerLobbyController {
     regionPolicy = 'auto',
     preferredRegion = 'AUTO',
     allowBackfill = true,
-    joinInProgress = true
+    joinInProgress = true,
+    mode = 'coop'
   } = {}) {
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.error = null;
@@ -533,9 +544,10 @@ export class MultiplayerLobbyController {
       return false;
     }
 
-    const party = normalizeMatch3PartyContext(
-      getSocialMatchmakingPartyContext()
-    );
+    const pvpPublic = String(mode || '').toLowerCase() === PVP2_MODE;
+    const party = pvpPublic
+      ? normalizeMatch3PartyContext(null)
+      : normalizeMatch3PartyContext(getSocialMatchmakingPartyContext());
     if (!party.eligible) {
       this.error = match3PartyErrorMessage(party.reason).toUpperCase();
       this.render();
@@ -543,7 +555,7 @@ export class MultiplayerLobbyController {
     }
 
     let partyTicket = '';
-    if (party.active) {
+    if (!pvpPublic && party.active) {
       try {
         const ticket = await getSocialPartyMatchmakingTicket({
           playerId: this.localPlayerId,
@@ -569,20 +581,27 @@ export class MultiplayerLobbyController {
       displayName: String(displayName || 'Player').trim().slice(0, 24),
       protocol: MULTIPLAYER_PROTOCOL_VERSION,
       build: MULTIPLAYER_BUILD_ID,
-      preferences: {
-        mode: 'coop',
-        mapId: String(mapId || 'grid_bunker').slice(0, 80),
-        difficulty: Number(difficulty) || 1,
-        maxPlayers: 2,
-        partySize: party.memberCount,
-        partyId: party.partyId,
-        partyTicket,
-        searchPriority,
-        regionPolicy,
-        preferredRegion,
-        allowBackfill,
-        joinInProgress
-      }
+      preferences: pvpPublic
+        ? createPvp2PublicQueuePreferences({
+            mapId,
+            searchPriority,
+            regionPolicy,
+            preferredRegion
+          })
+        : {
+            mode: 'coop',
+            mapId: String(mapId || 'grid_bunker').slice(0, 80),
+            difficulty: Number(difficulty) || 1,
+            maxPlayers: 2,
+            partySize: party.memberCount,
+            partyId: party.partyId,
+            partyTicket,
+            searchPriority,
+            regionPolicy,
+            preferredRegion,
+            allowBackfill,
+            joinInProgress
+          }
     });
     this.matchmakingState = snapshot;
     this.render();
@@ -755,7 +774,8 @@ export class MultiplayerLobbyController {
       displayName: identity.displayName || 'Player',
       serverUrl: identity.serverUrl,
       joinMode: assignment.joinMode || 'join',
-      admissionToken: assignment.admissionToken || ''
+      admissionToken: assignment.admissionToken || '',
+      gameMode: assignment.gameMode || 'coop'
     });
 
     if (!connected) {
@@ -769,6 +789,20 @@ export class MultiplayerLobbyController {
     }
 
     return true;
+  }
+
+  async refreshPvp2({ serverUrl, scope = 'global', region = 'ZZ' } = {}) {
+    const url = String(serverUrl || this.ui?.getConnectionIdentity?.()?.serverUrl || '').trim();
+    if (!url) return false;
+    const snapshot = await this.pvp2.refresh({
+      serverUrl: url,
+      playerId: this.localPlayerId,
+      scope,
+      region
+    });
+    this.pvp2State = snapshot;
+    this.render();
+    return snapshot.status === 'ready';
   }
 
   async rejoinLastRoom({ displayName } = {}) {
@@ -1274,6 +1308,10 @@ export class MultiplayerLobbyController {
         );
       }
 
+      if (payload.pvp || payload.room?.settings?.gameMode === PVP2_MODE) {
+        void this.refreshPvp2({});
+      }
+
       this.onRunEnded?.({
         reason: String(payload.reason || 'ended'),
         endedByPlayerId: payload.endedByPlayerId || null,
@@ -1420,6 +1458,7 @@ openLobby() {
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
       matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
       roomDirectory: this.roomDirectoryState || this.roomDirectory.getSnapshot(),
+      pvp2: this.pvp2State || this.pvp2.getSnapshot(),
             lastRoom: this.lastRoom || loadLastRoom(),
             localPlayerId: this.localPlayerId,
       error: this.error
@@ -1435,6 +1474,7 @@ openLobby() {
       productionRelease: this.productionRelease || getMultiplayerProductionReleaseSnapshot(),
       matchmaking: this.matchmakingState || this.matchmaking.getSnapshot(),
       roomDirectory: this.roomDirectoryState || this.roomDirectory.getSnapshot(),
+      pvp2: this.pvp2State || this.pvp2.getSnapshot(),
       transport: this.transport.getConnectionSnapshot()
     };
   }

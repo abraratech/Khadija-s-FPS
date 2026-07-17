@@ -57,6 +57,8 @@ export function normalizePvp1State(value = {}) {
       eliminations: Math.max(0, Math.floor(Number(entry?.eliminations) || 0)),
       deaths: Math.max(0, Math.floor(Number(entry?.deaths) || 0)),
       damageDealt: Math.max(0, Math.floor(Number(entry?.damageDealt) || 0)),
+      headshots: Math.max(0, Math.floor(Number(entry?.headshots) || 0)),
+      spawnProtectedUntil: Math.max(0, Number(entry?.spawnProtectedUntil) || 0),
       spawnSerial: Math.max(1, Math.floor(Number(entry?.spawnSerial) || 1))
     });
   });
@@ -73,6 +75,7 @@ export function normalizePvp1State(value = {}) {
     bestOf: Math.max(1, Math.floor(Number(source.bestOf) || 5)),
     roundsToWin: Math.max(1, Math.floor(Number(source.roundsToWin) || 3)),
     roundStartsAt: Math.max(0, Number(source.roundStartsAt) || 0),
+    roundEndsAt: Math.max(0, Number(source.roundEndsAt) || 0),
     winnerTeam: normalizePvp1Team(source.winnerTeam),
     roundWinnerTeam: normalizePvp1Team(source.roundWinnerTeam),
     teams: Object.freeze({
@@ -99,6 +102,10 @@ export function derivePvp1Presentation(state, localPlayerId, now = Date.now()) {
   const countdownSeconds = countdownMs > 0
     ? Math.max(1, Math.ceil(countdownMs / 1000))
     : 0;
+  const roundRemainingMs = match.phase === 'ACTIVE'
+    ? Math.max(0, match.roundEndsAt - Number(now || 0))
+    : 0;
+  const roundRemainingSeconds = Math.max(0, Math.ceil(roundRemainingMs / 1000));
 
   return Object.freeze({
     mode: match.mode,
@@ -114,7 +121,11 @@ export function derivePvp1Presentation(state, localPlayerId, now = Date.now()) {
     localMaxHealth: local?.maxHealth ?? 100,
     localEliminations: local?.eliminations ?? 0,
     localDeaths: local?.deaths ?? 0,
+    localHeadshots: local?.headshots ?? 0,
+    spawnProtected: Boolean(local && Number(now || 0) < local.spawnProtectedUntil),
     countdownMs,
+    roundRemainingMs,
+    roundRemainingSeconds,
     countdownSeconds,
     inputBlocked: Boolean(
       !local

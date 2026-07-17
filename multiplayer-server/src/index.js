@@ -24,8 +24,16 @@ import {
   isPvp1Mode,
   normalizePvp1Mode,
   pvp1ForfeitTeam,
+  resolvePvp1RoundTimeout,
   resolvePvp1Shot
 } from './pvp1_core.js';
+import {
+  PVP2_MODE,
+  PVP2_PATCH,
+  PVP2_PRODUCT_VERSION,
+  PVP2_SCHEMA,
+  pvp2FeatureEnabled
+} from './pvp2_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 import {
   BOT1_VIRTUAL_PLAYER_ID,
@@ -68,6 +76,10 @@ const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
 function pvp1Enabled(env) {
   const token = String(env?.PVP1_ENABLED ?? 'true').trim().toLowerCase();
   return !['0', 'false', 'off', 'disabled'].includes(token);
+}
+
+function pvp2PublicMatchmakingEnabled(env) {
+  return pvp2FeatureEnabled(env?.PVP2_PUBLIC_MATCHMAKING_ENABLED, true);
 }
 
 const POST_FINAL1_SERVER_INFO = Object.freeze({
@@ -218,6 +230,35 @@ const PVP1_SERVER_INFO = Object.freeze({
   protocolUnchanged: true,
   workerChangeRequired: true,
   frontendOnly: false
+});
+
+const PVP2_SERVER_INFO = Object.freeze({
+  schema: PVP2_SCHEMA,
+  patch: PVP2_PATCH,
+  productVersion: PVP2_PRODUCT_VERSION,
+  sourceBaselineSha: '014b0cf1921a3df3d8fbc3df9ad3be93e7e4fb0b',
+  certifiedFrontendBaselineSha: CERTIFIED_FRONTEND_SHA,
+  featureFlag: 'PVP2_PUBLIC_MATCHMAKING_ENABLED',
+  mode: PVP1_MODE,
+  publicMatchmaking: true,
+  publicTeamSize: 1,
+  privatePvpPreserved: true,
+  regionFirstGlobalExpansion: true,
+  noBackfill: true,
+  noJoinInProgress: true,
+  competitiveStatistics: true,
+  competitiveLeaderboards: ['global', 'regional'],
+  ratingSystem: 'elo-32',
+  idempotentMatchResults: true,
+  spawnProtectionMs: 2000,
+  roundTimeoutMs: 90000,
+  serverAuthoritativeTimeoutResolution: true,
+  coopIsolationPreserved: true,
+  soloIsolationPreserved: true,
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false,
+  endpoints: ['/pvp2/stats', '/pvp2/leaderboard']
 });
 
 const FINAL2_SERVER_INFO = Object.freeze({
@@ -902,20 +943,29 @@ export class ArenaRoom extends DurableObject {
       }
 
       this.room = defaultRoom(roomCode);
+      const reservedGameMode = (
+        String(reservation?.gameMode || '').toLowerCase() === PVP2_MODE
+        && pvp1Enabled(this.env)
+        && pvp2PublicMatchmakingEnabled(this.env)
+      ) ? PVP2_MODE : 'coop';
+      const publicPvp = reservedGameMode === PVP2_MODE && reservation?.publicPvp === true;
       this.room.settings = {
         ...this.room.settings,
-        maxPlayers: normalizeMaxPlayers(reservation?.maxPlayers),
+        maxPlayers: publicPvp ? 2 : normalizeMaxPlayers(reservation?.maxPlayers),
         mapId: String(reservation?.mapId || 'grid_bunker').slice(0, 80),
-        difficulty: Number(reservation?.difficulty) || 1,
+        difficulty: publicPvp ? 1 : Number(reservation?.difficulty) || 1,
         privacy: 'public',
         publicListing: false,
         locked: false,
-        allowLateJoin: true,
-        gameMode: 'coop'
+        allowLateJoin: publicPvp ? false : true,
+        gameMode: reservedGameMode
       };
+      if (publicPvp) this.room.virtualPlayers = {};
       this.room.matchmaking = {
         matchId,
         region: String(reservation?.region || 'ZZ').slice(0, 16),
+        publicPvp,
+        gameMode: reservedGameMode,
         reservedAt: Math.max(0, Number(reservation?.reservedAt) || Date.now()),
         expiresAt: Math.max(0, Number(reservation?.expiresAt) || 0)
       };
@@ -1793,6 +1843,53 @@ isAuthorityCheckpointEnvelope(envelope) {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
+  async recordPvp2PublicResult(state, reason = 'pvp-match-complete') {
+    if (
+      !state
+      || this.room?.matchmaking?.publicPvp !== true
+      || !this.env.MATCHMAKING
+    ) return false;
+    const players = Object.values(state.players || {}).map((entry) => ({
+      playerId: entry.playerId,
+      displayName: this.room.players?.[entry.playerId]?.displayName || 'Player',
+      team: entry.team,
+      eliminations: Math.max(0, Number(entry.eliminations) || 0),
+      deaths: Math.max(0, Number(entry.deaths) || 0),
+      damageDealt: Math.max(0, Number(entry.damageDealt) || 0),
+      headshots: Math.max(0, Number(entry.headshots) || 0)
+    }));
+    try {
+      const id = this.env.MATCHMAKING.idFromName('public-v1');
+      const response = await this.env.MATCHMAKING.get(id).fetch(
+        new Request('https://matchmaking.internal/pvp2/result', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-ka-internal-pvp2-result': '1'
+          },
+          body: JSON.stringify({
+            matchId: this.room.matchmaking.matchId || state.runId,
+            runId: state.runId,
+            mode: PVP2_MODE,
+            publicMatch: true,
+            region: this.room.matchmaking.region || 'ZZ',
+            winnerTeam: state.winnerTeam,
+            reason,
+            rounds: {
+              ALPHA: Math.max(0, Number(state.teams?.ALPHA?.roundWins) || 0),
+              BRAVO: Math.max(0, Number(state.teams?.BRAVO?.roundWins) || 0)
+            },
+            players,
+            endedAt: Date.now()
+          })
+        })
+      );
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async finishPvpMatch({
     reason = 'pvp-match-complete',
     endedByPlayerId = null,
@@ -1805,6 +1902,9 @@ isAuthorityCheckpointEnvelope(envelope) {
     ) return false;
 
     const state = this.room.pvp || null;
+    if (state?.winnerTeam) {
+      await this.recordPvp2PublicResult(state, reason);
+    }
     this.room.finalSummary = state
       ? {
           kind: 'pvp-team-elimination',
@@ -1821,7 +1921,8 @@ isAuthorityCheckpointEnvelope(envelope) {
             team: entry.team,
             eliminations: Math.max(0, Number(entry.eliminations) || 0),
             deaths: Math.max(0, Number(entry.deaths) || 0),
-            damageDealt: Math.max(0, Number(entry.damageDealt) || 0)
+            damageDealt: Math.max(0, Number(entry.damageDealt) || 0),
+            headshots: Math.max(0, Number(entry.headshots) || 0)
           })),
           endedAt: Date.now()
         }
@@ -2277,6 +2378,7 @@ isAuthorityCheckpointEnvelope(envelope) {
         };
       }
       await this.commit();
+      if (pvpRoom) await this.scheduleCleanup();
 
       this.broadcast({
         kind: 'control',
@@ -2553,6 +2655,14 @@ isAuthorityCheckpointEnvelope(envelope) {
         expiries.push(Number(reservation.expiresAt));
       }
     });
+    if (
+      this.room.status === 'in-run'
+      && isPvp1Mode(this.room.settings?.gameMode)
+      && this.room.pvp?.phase !== 'COMPLETE'
+      && Number(this.room.pvp?.roundEndsAt) > Date.now()
+    ) {
+      expiries.push(Number(this.room.pvp.roundEndsAt));
+    }
 
     if (expiries.length) {
       await this.ctx.storage.setAlarm(Math.min(...expiries));
@@ -2564,6 +2674,21 @@ isAuthorityCheckpointEnvelope(envelope) {
     const now = Date.now();
     let changed = this.cleanupDirectoryAdmissions(now);
     const expiredPlayerIds = [];
+
+    let pvpTimeout = null;
+    if (
+      this.room.status === 'in-run'
+      && isPvp1Mode(this.room.settings?.gameMode)
+      && Number(this.room.pvp?.roundEndsAt) > 0
+      && now >= Number(this.room.pvp.roundEndsAt)
+    ) {
+      pvpTimeout = resolvePvp1RoundTimeout(this.room.pvp, { now });
+      if (pvpTimeout.changed) {
+        this.room.pvp = pvpTimeout.state;
+        if (this.room.authorityCheckpoint) this.room.authorityCheckpoint.pvp = this.room.pvp;
+        changed = true;
+      }
+    }
 
     let pvpForfeit = null;
     Object.entries(this.room.players).forEach(([playerId, player]) => {
@@ -2619,6 +2744,21 @@ isAuthorityCheckpointEnvelope(envelope) {
 
     if (changed) {
       await this.commit();
+      if (pvpTimeout?.changed) {
+        this.broadcast({
+          kind: 'control',
+          action: 'pvp-state',
+          payload: { state: this.room.pvp }
+        });
+        if (pvpTimeout.event?.matchEnded) {
+          await this.finishPvpMatch({
+            reason: pvpTimeout.state.reason,
+            event: pvpTimeout.event
+          });
+          await this.scheduleCleanup();
+          return;
+        }
+      }
       if (pvpForfeit?.changed) {
         await this.finishPvpMatch({
           reason: pvpForfeit.state.reason,
@@ -2784,6 +2924,23 @@ export default {
       );
     }
 
+    if (url.pathname === '/pvp2/stats' || url.pathname === '/pvp2/leaderboard') {
+      if (request.method !== 'GET') {
+        return json({ ok: false, error: 'METHOD_NOT_ALLOWED' }, { status: 405 });
+      }
+      return observeOpsResponse(
+        proxyMatchmakingRequest(request, env),
+        request,
+        env,
+        ctx,
+        'pvp2'
+      );
+    }
+
+    if (url.pathname.startsWith('/pvp2/')) {
+      return json({ ok: false, error: 'NOT_FOUND' }, { status: 404 });
+    }
+
     if (url.pathname.startsWith('/social/')) {
       return observeOpsResponse(
         proxySocialRequest(request, env),
@@ -2835,6 +2992,7 @@ export default {
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
+        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env) },
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2876,6 +3034,7 @@ export default {
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
+        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env) },
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });
@@ -2884,7 +3043,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/ops/health', '/ops/privacy', '/ops/events', '/live/manifest', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/join', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', ...SOCIAL1_SERVER_INFO.endpoints, '/ws']
+        endpoints: ['/health', '/release', '/ops/health', '/ops/privacy', '/ops/events', '/live/manifest', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/join', '/pvp2/stats', '/pvp2/leaderboard', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', ...SOCIAL1_SERVER_INFO.endpoints, '/ws']
       });
     }
 

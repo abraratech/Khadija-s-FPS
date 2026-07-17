@@ -142,6 +142,7 @@ export class PublicMatchmakingClient {
       ticketId: null,
       botAvailable: false,
       partySize: 1,
+      mode: 'coop',
       searchScope: 'regional',
       estimatedWaitMs: 0
     });
@@ -186,6 +187,7 @@ export class PublicMatchmakingClient {
       elapsedMs,
       botAvailable: (
         status === 'searching'
+        && String(patch.mode ?? this.state.mode ?? 'coop') === 'coop'
         && elapsedMs >= PUBLIC_MATCHMAKING_BOT_FILL_DELAY_MS
       )
     });
@@ -257,7 +259,8 @@ export class PublicMatchmakingClient {
       ticketId: this.ticket.ticketId,
       token: this.ticket.token,
       queuedAt: this.ticket.queuedAt,
-      fallbackAt: this.ticket.fallbackAt
+      fallbackAt: this.ticket.fallbackAt,
+      mode: this.ticket.mode || this.state.mode || 'coop'
     }));
   }
 
@@ -312,6 +315,7 @@ export class PublicMatchmakingClient {
         ticketId: resume?.ticketId || null,
         botAvailable: false,
         partySize: request.partySize || 1,
+        mode: request.mode || 'coop',
         searchScope: request.regionPolicy || 'auto',
         estimatedWaitMs: 0
       });
@@ -369,6 +373,7 @@ export class PublicMatchmakingClient {
         estimatedWaitMs: payload.estimatedWaitMs,
         searchScope: payload.searchScope,
         partySize: payload.partySize,
+        mode: payload.mode || this.state.mode || 'coop',
         ticketId: payload.ticketId,
         assignment: null
       });
@@ -388,6 +393,7 @@ export class PublicMatchmakingClient {
         estimatedWaitMs: payload.estimatedWaitMs,
         searchScope: payload.searchScope,
         partySize: payload.partySize,
+        mode: payload.mode || this.state.mode || 'coop',
         ticketId: payload.ticketId,
         assignment: payload.assignment
       });

@@ -13,6 +13,7 @@ export const PUBLIC_MATCHMAKING_QUEUE_TIMEOUT_MS = 95_000;
 export const PUBLIC_MATCHMAKING_POLL_MS = 1_500;
 export const PUBLIC_MATCHMAKING_LOCK_TTL_MS = 10_000;
 export const PUBLIC_MATCHMAKING_BOT_FILL_DELAY_MS = 25_000;
+export const PUBLIC_PVP_MATCHMAKING_MODE = 'pvp-team-elimination';
 
 function cleanText(value, fallback = '', limit = 240) {
   const text = String(value ?? fallback).trim();
@@ -63,26 +64,30 @@ export function normalizeQuickMatchPreferences(value = {}) {
     1,
     Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))
   );
+  const mode = String(value.mode || '').trim().toLowerCase() === PUBLIC_PVP_MATCHMAKING_MODE
+    ? PUBLIC_PVP_MATCHMAKING_MODE
+    : 'coop';
+  const pvp = mode === PUBLIC_PVP_MATCHMAKING_MODE;
   return Object.freeze({
-    mode: 'coop',
+    mode,
     mapId: cleanText(value.mapId, 'grid_bunker', 80),
-    difficulty: Math.max(
+    difficulty: pvp ? 1 : Math.max(
       0.25,
       Math.min(10, finiteNumber(value.difficulty, 1))
     ),
-    maxPlayers: Math.max(
+    maxPlayers: pvp ? 2 : Math.max(
       2,
       Math.min(4, Math.trunc(finiteNumber(value.maxPlayers, 2)))
     ),
-    partySize,
-    partyId: cleanText(value.partyId, '', 120),
-    partyTicket: cleanText(value.partyTicket, '', 240),
+    partySize: pvp ? 1 : partySize,
+    partyId: pvp ? '' : cleanText(value.partyId, '', 120),
+    partyTicket: pvp ? '' : cleanText(value.partyTicket, '', 240),
     searchPriority: search.searchPriority,
     regionPolicy: search.regionPolicy,
     preferredRegion: search.preferredRegion,
     globalExpansionMs: search.globalExpansionMs,
-    allowBackfill: search.allowBackfill,
-    joinInProgress: search.joinInProgress
+    allowBackfill: pvp ? false : search.allowBackfill,
+    joinInProgress: pvp ? false : search.joinInProgress
   });
 }
 export function createQuickMatchRequest({
@@ -147,7 +152,11 @@ export function normalizeMatchmakingResponse(value = {}) {
           1,
           Math.min(2, Math.trunc(finiteNumber(value.assignment.partySize, 1)))
         ),
-        quality: cleanText(value.assignment.quality, 'compatible', 40)
+        quality: cleanText(value.assignment.quality, 'compatible', 40),
+        gameMode: String(value.assignment.gameMode || value.assignment.mode || 'coop').trim().toLowerCase() === PUBLIC_PVP_MATCHMAKING_MODE
+          ? PUBLIC_PVP_MATCHMAKING_MODE
+          : 'coop',
+        publicPvp: value.assignment.publicPvp === true
       })
     : null;
 
@@ -167,6 +176,9 @@ export function normalizeMatchmakingResponse(value = {}) {
     estimatedWaitMs: Math.max(0, Math.trunc(finiteNumber(value.estimatedWaitMs, 0))),
     searchScope: cleanText(value.searchScope, 'regional', 24),
     partySize: Math.max(1, Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))),
+    mode: String(value.mode || assignment?.gameMode || 'coop').trim().toLowerCase() === PUBLIC_PVP_MATCHMAKING_MODE
+      ? PUBLIC_PVP_MATCHMAKING_MODE
+      : 'coop',
     assignment,
     reason: cleanText(value.reason, '', 120) || null,
     error: cleanText(value.error, '', 120) || null,
@@ -179,6 +191,7 @@ export function matchmakingStatusPresentation(snapshot = {}, {
   now = Date.now()
 } = {}) {
   const status = cleanText(snapshot.status, 'idle', 40).toLowerCase();
+  const pvp = String(snapshot.mode || snapshot.assignment?.gameMode || '').toLowerCase() === PUBLIC_PVP_MATCHMAKING_MODE;
   const queuedAt = Math.max(0, finiteNumber(snapshot.queuedAt, 0));
   const fallbackAt = Math.max(0, finiteNumber(snapshot.fallbackAt, 0));
   const elapsedMs = queuedAt > 0
@@ -192,8 +205,14 @@ export function matchmakingStatusPresentation(snapshot = {}, {
   if (status === 'searching' || status === 'queued') {
     return Object.freeze({
       tone: 'searching',
-      title: 'SEARCHING FOR OPERATIVES',
-      detail: snapshot.botAvailable === true
+      title: pvp ? 'SEARCHING FOR PVP OPPONENT' : 'SEARCHING FOR OPERATIVES',
+      detail: pvp
+        ? (snapshot.searchScope === 'regional-only'
+            ? 'PUBLIC 1V1 · REGIONAL-ONLY SEARCH'
+            : fallbackSeconds > 0
+              ? `PUBLIC 1V1 · GLOBAL IN ${fallbackSeconds}s`
+              : 'PUBLIC 1V1 · REGIONAL + GLOBAL')
+        : snapshot.botAvailable === true
         ? 'NO HUMAN MATCH YET · AI WINGMATE AVAILABLE'
         : snapshot.partySize > 1
           ? 'PARTY ROOM RESERVATION · KEEP PARTY TOGETHER'
@@ -211,7 +230,7 @@ export function matchmakingStatusPresentation(snapshot = {}, {
     return Object.freeze({
       tone: 'matched',
       title: 'MATCH FOUND',
-      detail: 'RESERVING PUBLIC ROOM…',
+      detail: pvp ? 'RESERVING PUBLIC PVP ARENA…' : 'RESERVING PUBLIC ROOM…',
       elapsedText: `${elapsedSeconds}s`,
       cancellable: false
     });

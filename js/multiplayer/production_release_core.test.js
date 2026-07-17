@@ -1,6 +1,7 @@
 // js/multiplayer/production_release_core.test.js
 // M4.55-M4.58 passkey account upgrade release coverage.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
   MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
@@ -22,6 +23,20 @@ assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
 assert.equal(normalizeMultiplayerReleaseEndpoint('wss://example.workers.dev/ws?room=ABCDEF'), 'https://example.workers.dev/release');
 assert.equal(normalizeMultiplayerReleaseEndpoint('example.workers.dev'), 'https://example.workers.dev/release');
 const frontend = createMultiplayerFrontendReleaseManifest();
+const releaseMetadata = JSON.parse(
+  fs.readFileSync(
+    new URL('../../multiplayer-release.json', import.meta.url),
+    'utf8'
+  )
+);
+assert.equal(
+  MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+  releaseMetadata.certifiedBaselineSha
+);
+assert.equal(
+  frontend.certifiedBaselineSha,
+  releaseMetadata.certifiedBaselineSha
+);
 assert.equal(frontend.build, MULTIPLAYER_PRODUCTION_RELEASE_BUILD);
 assert.equal(frontend.certifiedSourceSeal, MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL);
 assert.equal(frontend.leaderboards.patch, MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH);

@@ -37,7 +37,22 @@ const receipt = {
   weaponUpgrades: 1,
   perksPurchased: 2,
   accuracy: 36.5,
-  botAssisted: true
+  botAssisted: true,
+  factionId: 'MACHINE_COLLECTIVE',
+  bossId: 'SIEGE-WALKER',
+  bossDefeated: true,
+  bossWeakPointHits: 6,
+  bossStaggers: 2,
+  replayModifierCount: 3,
+  replayMasteryGrade: 'S',
+  missionRiskChoice: 'OVERDRIVE',
+  missionChainsCompleted: 1,
+  missionStagesCompleted: 6,
+  missionOptionalStagesCompleted: 1,
+  contributionRole: 'LIFELINE',
+  loadoutId: 'authority-loadout',
+  primaryWeaponId: 'AR',
+  missionId: 'BLACK-VAULT'
 };
 
 const normalized = normalizeProgressionRunReceipt(receipt, now);
@@ -59,6 +74,10 @@ assert.equal(applied.profile.totalRevives, 2);
 assert.equal(applied.profile.bestWave, 8);
 assert.ok(applied.profile.xp > 0);
 assert.equal(applied.profile.recentRuns[0].runId, receipt.runId);
+assert.ok(applied.economy.award.credits > 0);
+assert.ok(applied.profile.economy.currencies.arenaCredits > 0);
+assert.ok(applied.profile.economy.factionReputation.MACHINE_COLLECTIVE.points > 0);
+assert.ok(applied.profile.economy.weaponMastery.AR.xp > 0);
 
 assert.equal(normalizeProgressionRunReceipt({ ...receipt, runId: 'bad id' }, now).valid, false);
 assert.equal(normalizeProgressionRunReceipt({ ...receipt, endedAt: now + 60 * 60 * 1000 }, now).valid, false);

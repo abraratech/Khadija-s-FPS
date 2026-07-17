@@ -579,9 +579,10 @@
   top: 102px;
   right: 20px;
   z-index: 11;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 9px;
+  gap: 3px 9px;
   padding: 7px 10px;
   border: 1px solid rgba(255,170,0,0.46);
   border-radius: 10px;
@@ -594,6 +595,8 @@
 .progression-level-badge { color: #ffaa00; font-size: 12px; font-weight: 900; letter-spacing: 1px; }
 .progression-level-badge b { font-size: 17px; }
 .progression-xp { color: rgba(255,255,255,0.72); font-size: 10px; font-weight: 800; letter-spacing: .7px; }
+.progression-prestige { color: #69f0ff; font-size: 9px; font-weight: 900; letter-spacing: .8px; }
+.progression-wallet { color: #b9ff75; font-size: 9px; font-weight: 900; letter-spacing: .45px; }
 
 .objective-panel {
   position: absolute;
@@ -1081,6 +1084,8 @@ body.ka-mobile-device .mobile-only-setting { display: grid; }
   body.ka-mobile-device .progression-level-badge { font-size: 9px !important; }
   body.ka-mobile-device .progression-level-badge b { font-size: 13px !important; }
   body.ka-mobile-device .progression-xp { font-size: 8px !important; }
+  body.ka-mobile-device .progression-prestige,
+  body.ka-mobile-device .progression-wallet { font-size: 7px !important; }
 
   body.ka-mobile-device #ammo-wrap {
     top: auto !important;

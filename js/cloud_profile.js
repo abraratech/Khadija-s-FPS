@@ -647,9 +647,23 @@ async function drainProgressionReceiptQueue() {
     remoteState.lastProgressionAt = Number(value.receipt?.committedAt || nowMs());
     writeProgressionReceiptQueue(queue.slice(1));
     const liveSeasonPoints = Math.max(0, Number(value.receipt?.live?.seasonPointsAward || 0));
+    const economyCredits = Math.max(0, Number(value.receipt?.economy?.award?.credits || 0));
+    const economySalvage = Math.max(0, Number(value.receipt?.economy?.award?.salvage || 0));
     statusMessage = value.idempotent
       ? 'PROGRESSION RECEIPT RECOVERED'
-      : `PROGRESSION VERIFIED · +${Number(value.receipt?.award?.total || 0)} XP${liveSeasonPoints > 0 ? ` · +${liveSeasonPoints} SP` : ''}`;
+      : `PROGRESSION VERIFIED · +${Number(value.receipt?.award?.total || 0)} XP${economyCredits > 0 ? ` · +${economyCredits} CR` : ''}${economySalvage > 0 ? ` · +${economySalvage} SALVAGE` : ''}${liveSeasonPoints > 0 ? ` · +${liveSeasonPoints} SP` : ''}`;
+    try {
+      window.dispatchEvent(new CustomEvent('ka:postfinal9-economy-verified', {
+        detail: {
+          patch: value.receipt?.economy?.patch || 'post-final9-r1-economy-rewards-long-term-progression',
+          idempotent: value.idempotent === true,
+          economy: value.receipt?.economy || null,
+          receiptId: value.receipt?.runId || ''
+        }
+      }));
+    } catch {
+      // Profile synchronization remains authoritative when events are unavailable.
+    }
     refreshProfileUi();
     if (readProgressionReceiptQueue().length) queueMicrotask(() => {
       void drainProgressionReceiptQueue();

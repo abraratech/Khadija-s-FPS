@@ -3,13 +3,20 @@ import {
   normalizeLive1Profile,
   resolveLive1Manifest
 } from './live1_core.js';
+import {
+  POST_FINAL9_COSMETIC_CATALOG,
+  applyPostFinal9EconomyReceipt,
+  createDefaultPostFinal9Economy,
+  normalizePostFinal9Economy,
+  normalizePostFinal9ReceiptFields
+} from './postfinal9_economy_core.js';
 
 // multiplayer-server/src/progression_authority_core.js
 // PROG.2 R1 — server-validated progression receipts and canonical cloud progression.
 
 
 export const PROGRESSION_PATCH = 'prog1-r1-unified-progression-retention';
-export const PROGRESSION_VERSION = 2;
+export const PROGRESSION_VERSION = 3;
 export const PROGRESSION_MAX_LEVEL = 50;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -91,7 +98,15 @@ export const PROGRESSION_UNLOCK_CATALOG = Object.freeze([
   Object.freeze({ id: 'BANNER_LEGEND', kind: 'BANNER', label: 'Legendary Containment', description: 'Reach profile level 50.', requirement: { type: 'LEVEL', value: 50 }, tone: '#72d7ff' }),
   Object.freeze({ id: 'TITLE_SEASONED_OPERATOR', kind: 'TITLE', label: 'Seasoned Operator', description: 'Earn 250 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 250 } }),
   Object.freeze({ id: 'BADGE_LIVE_COMMAND', kind: 'BADGE', label: 'Live Command', description: 'Earn 650 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 650 } }),
-  Object.freeze({ id: 'BANNER_EVENT_HORIZON', kind: 'BANNER', label: 'Event Horizon', description: 'Earn 1,100 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 1100 }, tone: '#ff5fd2' })
+  Object.freeze({ id: 'BANNER_EVENT_HORIZON', kind: 'BANNER', label: 'Event Horizon', description: 'Earn 1,100 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 1100 }, tone: '#ff5fd2' }),
+  ...POST_FINAL9_COSMETIC_CATALOG.map((entry) => Object.freeze({
+    id: entry.id,
+    kind: entry.kind,
+    label: entry.label,
+    description: `Earned through POST-FINAL.9 long-term progression${entry.factionId ? ` against ${entry.factionId.replaceAll('_', ' ')}` : ''}.`,
+    requirement: { type: 'ECONOMY_COLLECTION', value: entry.id },
+    tone: entry.kind === 'BANNER' ? '#69f0ff' : undefined
+  }))
 ]);
 
 const DAILY_OPERATION_POOL = Object.freeze([
@@ -255,7 +270,8 @@ export function defaultProgressionProfile(now = Date.now()) {
     },
     operations: normalizeProgressionOperations({}, now),
     recentRuns: [],
-    live1: normalizeLive1Profile({}, now)
+    live1: normalizeLive1Profile({}, now),
+    economy: createDefaultPostFinal9Economy(now, 0)
   };
 }
 
@@ -353,6 +369,7 @@ export function normalizeProgressionProfile(value, now = Date.now()) {
   output.operations = normalizeProgressionOperations(source.operations, now);
   output.recentRuns = normalizeRecentRuns(source.recentRuns);
   output.live1 = normalizeLive1Profile(source.live1, now);
+  output.economy = normalizePostFinal9Economy(source.economy, { now, totalXp: output.xp });
   return output;
 }
 
@@ -366,6 +383,9 @@ function requirementMet(profile, requirement) {
   }
   if (requirement.type === 'LIVE_POINTS') {
     return finite(profile.live1?.seasonPoints, 0) >= finite(requirement.value, 0);
+  }
+  if (requirement.type === 'ECONOMY_COLLECTION') {
+    return Boolean(profile.economy?.collections?.owned?.[cleanText(requirement.value, '', 100)]);
   }
   return false;
 }
@@ -560,7 +580,18 @@ export function normalizeProgressionRunReceipt(value = {}, now = Date.now()) {
     weaponUpgrades: boundedReceiptInteger(source.weaponUpgrades, 0, 100),
     perksPurchased: boundedReceiptInteger(source.perksPurchased, 0, 100),
     accuracy: Math.max(0, Math.min(100, finite(source.accuracy, 0))),
-    botAssisted: source.botAssisted === true
+    botAssisted: source.botAssisted === true,
+    ...normalizePostFinal9ReceiptFields({
+      ...source,
+      runId,
+      endedAt,
+      reason,
+      mode,
+      difficulty,
+      kills,
+      headshots,
+      wavesCleared
+    })
   };
 
   const errors = [];
@@ -735,6 +766,24 @@ export function applyAuthoritativeProgressionReceipt(
   profile.weeklyOperationsCompleted = integer(profile.weeklyOperationsCompleted, 0)
     + operationResult.completed.filter((entry) => entry.scope === 'WEEKLY').length;
 
+  const economyResult = applyPostFinal9EconomyReceipt(
+    profile.economy,
+    receipt,
+    {
+      totalXp: profile.xp,
+      completedOperations: operationResult.completed,
+      now
+    }
+  );
+  if (!economyResult.valid) {
+    return Object.freeze({
+      valid: false,
+      errors: Object.freeze(['POST_FINAL9_ECONOMY_RECEIPT_INVALID']),
+      receipt
+    });
+  }
+  profile.economy = economyResult.economy;
+
   const unlockResult = evaluateProgressionUnlocks(profile, now);
   profile.unlocks = { ...unlockResult.unlocks };
   profile.level = deriveProgressionLevel(profile.xp).level;
@@ -789,6 +838,14 @@ export function applyAuthoritativeProgressionReceipt(
     completedOperations: Object.freeze(
       operationResult.completed.map((entry) => Object.freeze({ ...entry }))
     ),
+    economy: Object.freeze({
+      patch: profile.economy.patch,
+      idempotent: economyResult.idempotent === true,
+      award: economyResult.award ? Object.freeze({ ...economyResult.award }) : null,
+      newlyOwned: Object.freeze(
+        (economyResult.newlyOwned || []).map((entry) => Object.freeze({ ...entry }))
+      )
+    }),
     newlyUnlocked: Object.freeze(
       unlockResult.newlyUnlocked.map((entry) => Object.freeze({ ...entry }))
     )

@@ -1132,13 +1132,19 @@ function finalizeCurrentRun(reason = 'ENDED') {
   const localCoopStats = coopStats?.snapshot?.players?.find((entry) => (
     entry?.playerId === localPlayerId
   ))?.counters || null;
-  const progressionSummary = localCoopStats
-    ? {
-        ...summary,
-        revives: Number(localCoopStats.revives || 0),
-        timesDowned: Number(localCoopStats.timesDowned || 0)
-      }
-    : summary;
+  const activeLoadout = player.loadoutPreferences || {};
+  const progressionSummary = {
+    ...summary,
+    revives: localCoopStats
+      ? Number(localCoopStats.revives || 0)
+      : Number(summary.revives || 0),
+    timesDowned: localCoopStats
+      ? Number(localCoopStats.timesDowned || 0)
+      : Number(summary.timesDowned || 0),
+    loadoutId: String(activeLoadout.loadoutId || 'default-loadout'),
+    primaryWeaponId: String(activeLoadout.primary || 'PISTOL'),
+    missionId: String(summary.lastMission?.missionId || mapId)
+  };
   finalizeProgressionRun({
     ...payload,
     summary: progressionSummary,

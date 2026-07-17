@@ -467,6 +467,14 @@ function updateProgressionPanels() {
 
   setText('progression-level', profile.level);
   setText('progression-xp', profile.level >= progression.maxLevel ? 'MAX' : `${Math.floor(profile.xpIntoLevel)}/${profile.xpToNext} XP`);
+  const economy = progression.economy || {};
+  const prestige = economy.prestige || profile.economy?.prestige || {};
+  const currencies = economy.currencies || profile.economy?.currencies || {};
+  setText('progression-prestige', `PRESTIGE ${Math.max(0, Number(prestige.level) || 0)}`);
+  setText(
+    'progression-wallet',
+    `${Math.max(0, Math.round(Number(currencies.arenaCredits) || 0))} CR · ${Math.max(0, Math.round(Number(currencies.salvage) || 0))} SALVAGE`
+  );
   for (const level of consumeProgressionLevelUps()) {
     showStatusToast(`PROFILE LEVEL ${level}`, '#ffaa00', 2200);
   }
@@ -529,6 +537,20 @@ export function renderRunSummaryScreen() {
   setText('final-time', `${minutes}:${String(seconds).padStart(2, '0')}`);
   setText('final-xp', `+${progression.run.xpEarned}`);
   setText('final-level', progression.profile.level);
+  const economyAward = progression.run.economyAward || {};
+  setText('final-economy-credits', `+${Math.max(0, Math.round(Number(economyAward.credits) || 0))}`);
+  setText('final-economy-salvage', `+${Math.max(0, Math.round(Number(economyAward.salvage) || 0))}`);
+  setText('final-economy-tokens', `+${Math.max(0, Math.round(Number(economyAward.factionTokens) || 0))}`);
+  setText('final-economy-reputation', `+${Math.max(0, Math.round(Number(economyAward.reputation) || 0))}`);
+  setText('final-weapon-mastery', `+${Math.max(0, Math.round(Number(economyAward.weaponMasteryXp) || 0))}`);
+  setText('final-loadout-mastery', `+${Math.max(0, Math.round(Number(economyAward.loadoutMasteryXp) || 0))}`);
+  setText('final-mission-mastery', `+${Math.max(0, Math.round(Number(economyAward.missionMasteryXp) || 0))}`);
+  setText(
+    'final-collection-drop',
+    economyAward.collectionId
+      ? `${String(economyAward.collectionId).replaceAll('_', ' ')}${economyAward.duplicateConverted ? ' · DUPLICATE → SALVAGE' : ''}`
+      : 'NONE'
+  );
   setText('final-objectives', summary.objectivesCompleted);
   setText('final-challenges', summary.challengesCompleted);
   setText('final-contract-status', objective.completed ? objective.objective?.label || 'Complete' : 'Incomplete');
@@ -627,6 +649,23 @@ export function renderRunSummaryScreen() {
     liveProgress.textContent = seasonPoints > 0 || stages > 0
       ? `+${seasonPoints} SP${stages ? ` · ${stages} season stage${stages === 1 ? '' : 's'} complete` : ''}`
       : 'No seasonal progress this run.';
+  }
+
+  const economyProgress = document.getElementById('final-economy-progress');
+  if (economyProgress) {
+    const prestigeLevel = Math.max(0, Number(progression.economy?.prestige?.level) || 0);
+    economyProgress.textContent = progression.run.economyAward
+      ? `+${Math.max(0, Math.round(Number(economyAward.credits) || 0))} CR · +${Math.max(0, Math.round(Number(economyAward.salvage) || 0))} SALVAGE · PRESTIGE ${prestigeLevel}`
+      : `PRESTIGE ${prestigeLevel} · No economy reward this run.`;
+  }
+
+  const economyGoals = document.getElementById('final-economy-goals');
+  if (economyGoals) {
+    const goalCredits = Math.max(0, Math.round(Number(economyAward.goalCredits) || 0));
+    const goalSalvage = Math.max(0, Math.round(Number(economyAward.goalSalvage) || 0));
+    economyGoals.textContent = goalCredits > 0 || goalSalvage > 0
+      ? `Goal rewards: +${goalCredits} CR · +${goalSalvage} SALVAGE`
+      : 'No economy goal completed this run.';
   }
 
   const unlocks = document.getElementById('final-unlocks');

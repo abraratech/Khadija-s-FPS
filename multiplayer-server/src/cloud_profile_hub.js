@@ -62,6 +62,7 @@ import {
   PROGRESSION_AUTHORITY_PATCH,
   applyAuthoritativeProgressionReceipt
 } from './progression_authority_core.js';
+import { POST_FINAL9_PATCH } from './postfinal9_economy_core.js';
 
 const MAX_BODY_BYTES = 2_800_000;
 const MAX_PROFILE_BYTES = 2_600_000;
@@ -853,7 +854,7 @@ export class CloudProfileHub extends DurableObject {
       auth.meta,
       auth,
       'PROGRESSION_COMMIT',
-      `${receiptId} · +${result.award.total} XP`
+      `${receiptId} · +${result.award.total} XP · +${Number(result.economy?.award?.credits || 0)} CREDITS`
     );
 
     const savedProfile = await this.saveProfile(auth.meta, profile);
@@ -877,7 +878,8 @@ export class CloudProfileHub extends DurableObject {
         award: result.award,
         completedOperations: result.completedOperations,
         newlyUnlocked: result.newlyUnlocked,
-        live: result.live
+        live: result.live,
+        economy: result.economy
       },
       reliability: reliabilityForRequest(request, {
         uploadComplete: true,
@@ -1547,6 +1549,8 @@ export const CLOUD_PROFILE_SERVER_INFO = Object.freeze({
   authentication: 'passkey',
   authAlgorithms: Object.freeze(['ES256', 'RS256']),
   progressionAuthorityPatch: PROGRESSION_AUTHORITY_PATCH,
+  economyAuthorityPatch: POST_FINAL9_PATCH,
   progressionCommitRateLimit: PROGRESSION_RECEIPT_RATE_LIMIT,
-  progressionProtection: 'passkey-canonical-receipts'
+  progressionProtection: 'passkey-canonical-receipts',
+  economyProtection: 'server-authoritative-idempotent-ledger'
 });

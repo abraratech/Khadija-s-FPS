@@ -41,7 +41,7 @@ globalThis.CustomEvent = class CustomEvent {
 const progression = await import(`./progression.js?prog1-runtime=${Date.now()}`);
 
 let snapshot = progression.getProgressionSnapshot();
-assert.equal(snapshot.version, 2);
+assert.equal(snapshot.version, 3);
 assert.equal(snapshot.profile.totalRuns, 2);
 assert.ok(localStorage.getItem('ka_progression_backup_v1'));
 
@@ -81,7 +81,20 @@ snapshot = progression.finalizeProgressionRun({
     perksPurchased: 0,
     durationSeconds: 120,
     accuracy: 42.5,
-    botAssisted: true
+    botAssisted: true,
+    factionId: 'MACHINE_COLLECTIVE',
+    bossDefeated: 'SIEGE WALKER',
+    bossWeakPointHits: 2,
+    bossStaggers: 1,
+    replayModifiers: ['HEAVY ARMOR', 'AGGRESSIVE BOSS'],
+    replayMasteryGrade: 'A',
+    missionRiskChoice: 'OVERDRIVE',
+    missionChainsCompleted: 1,
+    missionStagesCompleted: 6,
+    missionOptionalStagesCompleted: 1,
+    loadoutId: 'runtime-loadout',
+    primaryWeaponId: 'AR',
+    missionId: 'BLACK-VAULT'
   }
 });
 assert.equal(snapshot.run.finalized, true);
@@ -97,6 +110,9 @@ assert.equal(snapshot.profile.challengesCompleted, 1);
 assert.ok(snapshot.run.xpEarned > 0);
 assert.ok(Object.keys(snapshot.run.xpBreakdown).length > 0);
 assert.equal(snapshot.profile.recentRuns[0].mapId, 'grid_bunker');
+assert.ok(snapshot.run.economyAward.credits > 0);
+assert.ok(snapshot.profile.economy.currencies.arenaCredits > 0);
+assert.ok(snapshot.profile.economy.weaponMastery.AR.xp > 0);
 
 const equip = progression.equipProgressionCosmetic('TITLE_SURVIVOR');
 assert.equal(equip.ok, true);

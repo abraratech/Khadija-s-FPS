@@ -13,6 +13,7 @@ import {
 } from './social_auth_bridge_core.js';
 import { OpsHub, OPS1_SERVER_INFO } from './ops_hub.js';
 import { LIVE1_PATCH, LIVE1_SCHEMA, resolveLive1Manifest } from './live1_core.js';
+import { POST_FINAL9_PATCH } from './postfinal9_economy_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 import {
   BOT1_VIRTUAL_PLAYER_ID,
@@ -110,6 +111,28 @@ const POST_FINAL6_SERVER_INFO = Object.freeze({
   pagesWorkerCompatibilityVerification: true,
   protocolUnchanged: true,
   workerChangeRequired: true
+});
+
+const POST_FINAL9_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: POST_FINAL9_PATCH,
+  sourceBaselineSha: 'bde3ff8d8fa5f29948c82ec4fa20959685e92846',
+  certifiedFrontendBaselineSha: CERTIFIED_FRONTEND_SHA,
+  serverAuthoritativeCurrencies: true,
+  rewardReceiptLedger: 'idempotent-per-account-run-id',
+  accountPrestige: true,
+  factionReputationTracks: 4,
+  weaponLoadoutMissionMastery: true,
+  deterministicCollectionDrops: true,
+  duplicateConversion: 'salvage',
+  dailyWeeklyEconomyGoals: true,
+  supportRoleBonuses: true,
+  offlineReceiptReconciliation: true,
+  cloudProfileSynchronization: true,
+  lateJoinReconnectHostMigrationRewardIntegrity: true,
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false
 });
 
 const FINAL2_SERVER_INFO = Object.freeze({
@@ -2326,6 +2349,7 @@ export default {
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
+        economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2364,6 +2388,7 @@ export default {
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
+        economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

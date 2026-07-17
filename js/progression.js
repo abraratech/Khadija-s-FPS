@@ -15,6 +15,11 @@ import {
 
 import { applyLive1RunReceipt } from './live1_core.js';
 import { getLive1ManifestSnapshot } from './live1_state.js';
+import {
+  POST_FINAL9_PATCH,
+  applyPostFinal9EconomyReceipt,
+  getPostFinal9EconomyPresentation
+} from './postfinal9_economy_core.js';
 
 // js/progression.js
 // PROG.1 R1 — unified persistent progression and run perks.
@@ -152,7 +157,10 @@ const run = {
   finalScore: 0,
   finalWave: 1,
   endReason: 'NONE',
-  botAssisted: false
+  botAssisted: false,
+  economyAward: null,
+  economyNewlyOwned: [],
+  economyReceiptFields: {}
 };
 
 function dispatchCoop2Action(kind, details = {}) {
@@ -335,7 +343,10 @@ export function resetProgressionRun({
     finalScore: 0,
     finalWave: 1,
     endReason: 'NONE',
-    botAssisted: false
+    botAssisted: false,
+    economyAward: null,
+    economyNewlyOwned: [],
+    economyReceiptFields: {}
   });
   recalculateLevel();
   saveProfile(false, 'run-start');
@@ -485,6 +496,57 @@ export function finalizeProgressionRun({
     });
   }
 
+  const localMissionMedal = Array.isArray(details.missionMedals)
+    ? details.missionMedals.find((entry) => entry?.isLocal === true)
+    : null;
+  run.economyReceiptFields = {
+    factionId: String(details.lastReplayability?.factionId || details.factionId || '').slice(0, 80),
+    bossId: String(details.lastReplayability?.bossId || '').slice(0, 100),
+    bossDefeated: Boolean(details.lastReplayability?.bossId || (details.bossDefeated && details.bossDefeated !== 'NONE')),
+    bossWeakPointHits: integer(details.bossWeakPointHits, 0),
+    bossStaggers: integer(details.bossStaggers, 0),
+    replayModifierCount: Array.isArray(details.replayModifiers) ? details.replayModifiers.length : 0,
+    replayMasteryGrade: String(details.replayMasteryGrade || 'UNRANKED').slice(0, 16),
+    missionRiskChoice: String(details.missionRiskChoice || 'NONE').slice(0, 24),
+    missionChainsCompleted: integer(details.missionChainsCompleted, 0),
+    missionStagesCompleted: integer(details.missionStagesCompleted, 0),
+    missionOptionalStagesCompleted: integer(details.missionOptionalStagesCompleted, 0),
+    contributionRole: String(localMissionMedal?.role || details.contributionRole || 'VANGUARD').slice(0, 32),
+    loadoutId: String(details.loadoutId || 'default-loadout').slice(0, 100),
+    primaryWeaponId: String(details.primaryWeaponId || 'PISTOL').slice(0, 80),
+    missionId: String(details.lastMission?.missionId || details.missionId || run.mapId).slice(0, 100)
+  };
+  const economyResult = applyPostFinal9EconomyReceipt(
+    profile.economy,
+    {
+      runId: run.runId,
+      endedAt: run.endedAt,
+      reason: run.endReason,
+      difficulty: run.difficulty,
+      kills: run.kills,
+      headshots: run.headshots,
+      assists: run.assists,
+      revives: run.revives,
+      damageDealt: Math.round(run.damageDealt),
+      wavesCleared: run.wavesCleared,
+      objectivesCompleted: run.objectivesCompleted,
+      ...run.economyReceiptFields
+    },
+    {
+      totalXp: profile.xp,
+      completedOperations: run.operationsCompleted,
+      now: run.endedAt
+    }
+  );
+  if (economyResult.valid) {
+    profile.economy = economyResult.economy;
+    run.economyAward = economyResult.award ? { ...economyResult.award } : null;
+    run.economyNewlyOwned = (economyResult.newlyOwned || []).map((entry) => ({ ...entry }));
+    if (run.economyAward) {
+      run.lastEvent = `ECONOMY +${run.economyAward.credits || 0} CREDITS`;
+    }
+  }
+
   evaluateUnlocks(run.endedAt);
   recalculateLevel();
 
@@ -550,7 +612,8 @@ export function finalizeProgressionRun({
     weaponUpgrades: run.weaponUpgrades,
     perksPurchased: run.perksPurchased,
     accuracy: clamp(details.accuracy, 0, 100),
-    botAssisted: run.botAssisted
+    botAssisted: run.botAssisted,
+    ...run.economyReceiptFields
   });
   return getProgressionSnapshot();
 }
@@ -830,6 +893,8 @@ export function getProgressionSnapshot() {
     unlocks,
     equipped: { ...profile.equipped },
     maxLevel: PROGRESSION_MAX_LEVEL,
+    economy: getPostFinal9EconomyPresentation(profile.economy, profile.xp, Date.now()),
+    economyPatch: POST_FINAL9_PATCH,
     perkDefinitions: Object.values(PERK_DEFS).map((perk) => ({ ...perk }))
   };
 }

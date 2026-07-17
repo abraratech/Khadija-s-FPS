@@ -1,10 +1,15 @@
 import { normalizeLive1Profile } from './live1_core.js';
+import {
+  POST_FINAL9_COSMETIC_CATALOG,
+  createDefaultPostFinal9Economy,
+  normalizePostFinal9Economy
+} from './postfinal9_economy_core.js';
 
 // js/progression_core.js
 // PROG.1 R1 — deterministic unified progression, operations, rewards, and unlocks.
 
 export const PROGRESSION_PATCH = 'prog1-r1-unified-progression-retention';
-export const PROGRESSION_VERSION = 2;
+export const PROGRESSION_VERSION = 3;
 export const PROGRESSION_MAX_LEVEL = 50;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -86,7 +91,15 @@ export const PROGRESSION_UNLOCK_CATALOG = Object.freeze([
   Object.freeze({ id: 'BANNER_LEGEND', kind: 'BANNER', label: 'Legendary Containment', description: 'Reach profile level 50.', requirement: { type: 'LEVEL', value: 50 }, tone: '#72d7ff' }),
   Object.freeze({ id: 'TITLE_SEASONED_OPERATOR', kind: 'TITLE', label: 'Seasoned Operator', description: 'Earn 250 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 250 } }),
   Object.freeze({ id: 'BADGE_LIVE_COMMAND', kind: 'BADGE', label: 'Live Command', description: 'Earn 650 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 650 } }),
-  Object.freeze({ id: 'BANNER_EVENT_HORIZON', kind: 'BANNER', label: 'Event Horizon', description: 'Earn 1,100 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 1100 }, tone: '#ff5fd2' })
+  Object.freeze({ id: 'BANNER_EVENT_HORIZON', kind: 'BANNER', label: 'Event Horizon', description: 'Earn 1,100 seasonal points in the active Outbreak Cycle.', requirement: { type: 'LIVE_POINTS', value: 1100 }, tone: '#ff5fd2' }),
+  ...POST_FINAL9_COSMETIC_CATALOG.map((entry) => Object.freeze({
+    id: entry.id,
+    kind: entry.kind,
+    label: entry.label,
+    description: `Earned through POST-FINAL.9 long-term progression${entry.factionId ? ` against ${entry.factionId.replaceAll('_', ' ')}` : ''}.`,
+    requirement: { type: 'ECONOMY_COLLECTION', value: entry.id },
+    tone: entry.kind === 'BANNER' ? '#69f0ff' : undefined
+  }))
 ]);
 
 const DAILY_OPERATION_POOL = Object.freeze([
@@ -250,7 +263,8 @@ export function defaultProgressionProfile(now = Date.now()) {
     },
     operations: normalizeProgressionOperations({}, now),
     recentRuns: [],
-    live1: normalizeLive1Profile({}, now)
+    live1: normalizeLive1Profile({}, now),
+    economy: createDefaultPostFinal9Economy(now, 0)
   };
 }
 
@@ -348,6 +362,7 @@ export function normalizeProgressionProfile(value, now = Date.now()) {
   output.operations = normalizeProgressionOperations(source.operations, now);
   output.recentRuns = normalizeRecentRuns(source.recentRuns);
   output.live1 = normalizeLive1Profile(source.live1, now);
+  output.economy = normalizePostFinal9Economy(source.economy, { now, totalXp: output.xp });
   return output;
 }
 
@@ -361,6 +376,9 @@ function requirementMet(profile, requirement) {
   }
   if (requirement.type === 'LIVE_POINTS') {
     return finite(profile.live1?.seasonPoints, 0) >= finite(requirement.value, 0);
+  }
+  if (requirement.type === 'ECONOMY_COLLECTION') {
+    return Boolean(profile.economy?.collections?.owned?.[cleanText(requirement.value, '', 100)]);
   }
   return false;
 }

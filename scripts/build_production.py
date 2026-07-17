@@ -30,6 +30,9 @@ POST_FINAL7_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb6
 POST_FINAL8_PATCH = "post-final8-r1-enemy-factions-boss-replayability"
 POST_FINAL8_SOURCE_BASELINE_SHA = "298ff47a5706c630ef48ed2d26625502440efb4f"
 POST_FINAL8_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+POST_FINAL9_PATCH = "post-final9-r1-economy-rewards-long-term-progression"
+POST_FINAL9_SOURCE_BASELINE_SHA = "bde3ff8d8fa5f29948c82ec4fa20959685e92846"
+POST_FINAL9_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -271,6 +274,31 @@ def main() -> None:
             "protocol_unchanged": True,
             "worker_change_required": False,
             "frontend_only": True
+        },
+        "post_final9": {
+            "schema": 1,
+            "patch": POST_FINAL9_PATCH,
+            "source_baseline_sha": POST_FINAL9_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": POST_FINAL9_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "server_authoritative_currencies": ["arena_credits", "salvage", "faction_tokens"],
+            "account_prestige": True,
+            "prestige_cap": 20,
+            "faction_reputation_tracks": 4,
+            "weapon_loadout_mission_mastery": True,
+            "boss_modifier_extraction_reward_balancing": True,
+            "deterministic_cosmetic_collections": True,
+            "duplicate_protection": "convert-to-salvage",
+            "daily_weekly_economy_goals": True,
+            "support_role_bonuses": True,
+            "server_authoritative_reward_receipts": True,
+            "idempotent_run_ledger": True,
+            "offline_reconciliation": True,
+            "cloud_profile_synchronization": True,
+            "late_join_reconnect_host_migration_reward_integrity": True,
+            "progression_and_run_summary_ui": True,
+            "protocol_unchanged": True,
+            "worker_change_required": True,
+            "frontend_only": False
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

@@ -1040,9 +1040,13 @@ export class MultiplayerBotManager {
           : (type === TACTICAL_PING_TYPES.ENEMY
             ? SQUAD_COMMAND_STATUS.ENGAGING
             : SQUAD_COMMAND_STATUS.MOVING)),
-      acknowledgement: 'OBJECTIVE DIRECTIVE ACKNOWLEDGED',
-      ownerPlayerId: 'postfinal4-objective-director',
-      ownerName: 'OBJECTIVE DIRECTOR',
+      acknowledgement: directive.bossStage
+        ? 'BOSS TARGET ACKNOWLEDGED'
+        : (directive.extractionStage
+          ? 'EXTRACTION DIRECTIVE ACKNOWLEDGED'
+          : 'MISSION DIRECTIVE ACKNOWLEDGED'),
+      ownerPlayerId: 'postfinal7-mission-director',
+      ownerName: directive.missionLabel || 'MISSION DIRECTOR',
       position: clonePosition(position),
       targetId: targetId ? String(targetId).slice(0, 96) : null,
       createdAt: receivedAt,
@@ -1052,13 +1056,27 @@ export class MultiplayerBotManager {
       objectiveDirector: true,
       operationId: String(directive.operationId || '').slice(0, 180),
       objectiveKind: kind,
-      objectiveStage: stage
+      objectiveStage: stage,
+      postFinal7Patch: String(directive.postFinal7Patch || '').slice(0, 100),
+      missionId: String(directive.missionId || '').slice(0, 100),
+      missionLabel: String(directive.missionLabel || '').slice(0, 100),
+      missionStageId: String(directive.missionStageId || '').slice(0, 180),
+      missionStageType: String(directive.missionStageType || '').slice(0, 40),
+      missionStageLabel: String(directive.missionStageLabel || '').slice(0, 100),
+      bossStage: directive.bossStage === true,
+      extractionStage: directive.extractionStage === true,
+      riskChoice: String(directive.riskChoice || '').slice(0, 20),
+      humanSquadCommandsOverride: directive.humanSquadCommandsOverride !== false
     });
 
     if (!this.squadCommand) {
       if (type === TACTICAL_PING_TYPES.DEFEND) {
         this.holdPosition = clonePosition(position);
-      } else if (this.holdPosition && this.state.squadIntentOwnerPlayerId === 'postfinal4-objective-director') {
+      } else if (
+        this.holdPosition
+        && ['postfinal4-objective-director', 'postfinal7-mission-director']
+          .includes(this.state.squadIntentOwnerPlayerId)
+      ) {
         this.holdPosition = null;
       }
       this.syncSquadIntentState(this.objectiveCommand, this.objectiveCommand.status);

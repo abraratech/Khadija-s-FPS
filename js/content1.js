@@ -15,8 +15,19 @@ import {
   PostFinal4ObjectiveDirector,
   pointInsidePostFinal4Anchor
 } from './postfinal4_objective_core.js';
+import {
+  POST_FINAL7_MISSION_STATUS,
+  POST_FINAL7_PATCH,
+  POST_FINAL7_RISK_CHOICES,
+  POST_FINAL7_STAGE_TYPES,
+  PostFinal7MissionDirector,
+  computePostFinal7Reward
+} from './postfinal7_operation_core.js';
 import { recordProgressionContentOperation } from './progression.js';
-import { recordRunDynamicOperation } from './run_summary.js';
+import {
+  recordRunDynamicOperation,
+  recordRunPostFinal7Mission
+} from './run_summary.js';
 import { recordChallengeObjective } from './challenges.js';
 import { playUISound, playTeamAlertCue } from './audio.js';
 import { getLive1RunDirective } from './live1_state.js';
@@ -170,6 +181,7 @@ export class Content1Manager {
     this.getInteractLabel = getInteractLabel;
     this.core = new Content1Authority();
     this.objectiveDirector = new PostFinal4ObjectiveDirector();
+    this.missionDirector = new PostFinal7MissionDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -183,6 +195,7 @@ export class Content1Manager {
     this.currentWave = 1;
     this.awardedCompletionIds = new Set();
     this.teamRewardedCompletionIds = new Set();
+    this.missionRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
@@ -194,6 +207,11 @@ export class Content1Manager {
     this.hudMeta = null;
     this.hudTeam = null;
     this.hudEncounter = null;
+    this.hudMission = null;
+    this.hudMissionStages = null;
+    this.hudRisk = null;
+    this.hudRiskSecure = null;
+    this.hudRiskOverdrive = null;
     this.objectiveGroup = null;
     this.primaryRing = null;
     this.secondaryRing = null;
@@ -235,10 +253,25 @@ export class Content1Manager {
         this.isAuthority() ? this.core.getEncounterDirective() : this.directiveFromSnapshot()
       );
       window.KAGetPostFinal4Objective = () => this.getSnapshot()?.postFinal4 || null;
+      window.KAGetPostFinal7Mission = () => this.getSnapshot()?.postFinal7 || null;
+      window.KAChoosePostFinal7Risk = (choice) => this.chooseMissionRisk(choice);
       window.KAContent1EnemySpawned = (enemy) => this.prepareEnemySpawn(enemy);
       window.KAContent1EnemyKilled = (details) => this.recordEnemyKill(details);
       window.KAContent1WaveStarted = (wave) => this.startWave(wave);
       window.KAContent1WaveCleared = (details) => this.recordWaveClear(details);
+      const onMissionRiskKey = (event) => {
+        const mission = this.getSnapshot()?.postFinal7;
+        if (mission?.status !== POST_FINAL7_MISSION_STATUS.DECISION) return;
+        if (event.code === 'Digit1' || event.code === 'Numpad1') {
+          event.preventDefault();
+          this.chooseMissionRisk(POST_FINAL7_RISK_CHOICES.SECURE);
+        } else if (event.code === 'Digit2' || event.code === 'Numpad2') {
+          event.preventDefault();
+          this.chooseMissionRisk(POST_FINAL7_RISK_CHOICES.OVERDRIVE);
+        }
+      };
+      window.addEventListener('keydown', onMissionRiskKey);
+      this.unsubscribe.push(() => window.removeEventListener('keydown', onMissionRiskKey));
       this.bindHudModeControl();
     }
   }
@@ -280,6 +313,7 @@ export class Content1Manager {
     this.actionSerial = 0;
     this.awardedCompletionIds.clear();
     this.teamRewardedCompletionIds.clear();
+    this.missionRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
@@ -299,6 +333,17 @@ export class Content1Manager {
       playerCount: humans,
       now: Date.now()
     });
+    // Discard the standalone POST-FINAL.4 assignment because POST-FINAL.7 owns
+    // the operation sequence for the entire run.
+    this.objectiveDirector.consumeEvents();
+    this.missionDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
+      playerCount: humans,
+      now: Date.now()
+    });
+    this.ensureMissionObjective(Date.now(), { announce: false });
     this.ensureHud();
     this.clearObjectiveVisuals();
     this.consumeAuthorityEvents();
@@ -344,10 +389,134 @@ export class Content1Manager {
     return this.sendCommand({ action: 'SNAPSHOT_REQUEST' }, true);
   }
 
+  tuneMissionOperation(operation, stage = this.missionDirector.currentStage()) {
+    if (!operation || !stage) return operation;
+    operation.label = cleanText(stage.label, operation.label, 100);
+    operation.description = cleanText(stage.description, operation.description, 180);
+    operation.optional = stage.optional === true;
+    operation.postFinal7MissionId = this.missionDirector.state.missionId;
+    operation.postFinal7StageId = stage.stageId;
+    operation.postFinal7StageType = stage.type;
+    operation.postFinal7RiskChoice = this.missionDirector.state.riskChoice;
+
+    if (stage.type === POST_FINAL7_STAGE_TYPES.HUNT) {
+      operation.rewardPoints = Math.max(1, Math.round(finite(operation.rewardPoints, 100) * 2));
+      operation.xp = Math.max(1, Math.round(finite(operation.xp, CONTENT1_OPERATION_XP) * 1.5));
+      operation.targetEnemyLabel = cleanText(stage.label, 'ELITE TARGET', 100).toUpperCase();
+    }
+
+    if (
+      stage.type === POST_FINAL7_STAGE_TYPES.EXTRACT
+      && this.missionDirector.state.riskChoice === POST_FINAL7_RISK_CHOICES.OVERDRIVE
+    ) {
+      const scaledTarget = Math.max(
+        finite(operation.stageTarget, 1),
+        Math.ceil(finite(operation.stageTarget, 1) * 1.4)
+      );
+      operation.stageTarget = scaledTarget;
+      operation.target = Math.max(finite(operation.target, scaledTarget), scaledTarget);
+      operation.rewardPoints = Math.max(1, Math.round(finite(operation.rewardPoints, 100) * 1.5));
+      operation.xp = Math.max(1, Math.round(finite(operation.xp, CONTENT1_OPERATION_XP) * 1.35));
+      operation.description = `${operation.description} OVERDRIVE: LONGER HOLD, 50% MISSION REWARD BONUS.`;
+    }
+    return operation;
+  }
+
+  ensureMissionObjective(now = Date.now(), { announce = true } = {}) {
+    if (!this.active || !this.isAuthority()) return null;
+    const mission = this.missionDirector.state;
+    if (mission.status !== POST_FINAL7_MISSION_STATUS.ACTIVE) return null;
+    const stage = this.missionDirector.currentStage();
+    if (!stage) return null;
+
+    const current = this.objectiveDirector.state.current;
+    if (
+      stage.operationId
+      && current?.operationId === stage.operationId
+      && current.status === POST_FINAL4_OPERATION_STATUS.ACTIVE
+    ) {
+      return current;
+    }
+    if (stage.operationId && current?.operationId === stage.operationId) return current;
+
+    const operation = this.objectiveDirector.assignOperation(stage.objectiveKind, {
+      wave: this.currentWave,
+      now,
+      optional: stage.optional === true
+    });
+    this.tuneMissionOperation(operation, stage);
+    // assignOperation returns a clone, so tune the authoritative object too.
+    this.tuneMissionOperation(this.objectiveDirector.state.current, stage);
+    this.missionDirector.bindOperation(this.objectiveDirector.state.current, now);
+    // POST-FINAL.7 provides its own stage announcement and avoids duplicate
+    // standalone objective-assignment toasts.
+    this.objectiveDirector.consumeEvents();
+
+    if (announce) {
+      this.showToast?.(
+        `${stage.optional ? 'SECONDARY · ' : `STAGE ${stage.index + 1}/${mission.stages.length} · `}${stage.label}`
+      );
+      playUISound('warning', 0.18, true, {
+        cooldownKey: `postfinal7_stage_${stage.stageId}`,
+        cooldownMs: 800,
+        pitchMin: 1.04,
+        pitchMax: 1.16
+      });
+    }
+    this.handleObjectiveDirective?.(this.getCombinedObjectiveDirective());
+    return this.objectiveDirector.state.current;
+  }
+
+  chooseMissionRisk(choice, actorId = this.localPlayerId()) {
+    const normalized = cleanText(choice, '', 20).toUpperCase();
+    if (![POST_FINAL7_RISK_CHOICES.SECURE, POST_FINAL7_RISK_CHOICES.OVERDRIVE].includes(normalized)) {
+      return false;
+    }
+    if (!this.isAuthority()) {
+      this.sendCommand({
+        action: 'MISSION_RISK_CHOICE',
+        choice: normalized
+      }, true);
+      return true;
+    }
+    if (!this.missionDirector.chooseRisk(normalized, actorId, Date.now())) return false;
+    this.ensureMissionObjective(Date.now());
+    this.consumeAuthorityEvents();
+    this.publishSnapshot(true);
+    return true;
+  }
+
+  getCombinedObjectiveDirective() {
+    const objective = this.objectiveDirector.getDirective();
+    if (!objective) return null;
+    const mission = this.missionDirector.getDirective();
+    return Object.freeze({
+      ...objective,
+      postFinal7Patch: POST_FINAL7_PATCH,
+      missionId: mission?.missionId || '',
+      missionLabel: mission?.missionLabel || '',
+      missionStatus: mission?.missionStatus || '',
+      missionStageId: mission?.stageId || '',
+      missionStageIndex: finite(mission?.stageIndex, 0),
+      missionStageCount: finite(mission?.stageCount, 0),
+      missionStageType: mission?.stageType || '',
+      missionStageLabel: mission?.stageLabel || '',
+      bossStage: mission?.bossStage === true,
+      extractionStage: mission?.extractionStage === true,
+      riskChoice: mission?.riskChoice || POST_FINAL7_RISK_CHOICES.PENDING,
+      rewardMultiplier: finite(mission?.rewardMultiplier, 1),
+      humanSquadCommandsOverride: true
+    });
+  }
+
   buildSnapshot(now = nowMs()) {
     const base = this.core.update(now);
-    const postFinal4 = this.objectiveDirector.update(Date.now());
-    return { ...base, postFinal4 };
+    const epochNow = Date.now();
+    this.missionDirector.update(epochNow);
+    if (this.isAuthority()) this.ensureMissionObjective(epochNow);
+    const postFinal4 = this.objectiveDirector.update(epochNow);
+    const postFinal7 = this.missionDirector.getSnapshot(epochNow);
+    return { ...base, postFinal4, postFinal7 };
   }
 
   publishSnapshot(force = false) {
@@ -424,8 +593,10 @@ export class Content1Manager {
       this.participants().filter((entry) => !entry.isBot && entry.connected).length
     );
     this.objectiveDirector.state.playerCount = humans;
+    this.objectiveDirector.state.currentWave = normalizedWave;
+    this.missionDirector.state.playerCount = humans;
     const encounter = this.core.startWave(normalizedWave, nowMs());
-    this.objectiveDirector.startWave(normalizedWave, Date.now());
+    this.ensureMissionObjective(Date.now(), { announce: false });
     this.consumeAuthorityEvents();
     this.publishSnapshot(true);
     return encounter;
@@ -476,10 +647,20 @@ export class Content1Manager {
       enemy.health = enemy.maxHealth;
       enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 1.5);
       tintEnemyForPriority(enemy, true);
+      const missionStage = this.missionDirector.currentStage();
+      const bossStage = missionStage?.type === POST_FINAL7_STAGE_TYPES.HUNT;
+      if (bossStage) {
+        enemy.isPostFinal7Boss = true;
+        enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * 1.8));
+        enemy.health = enemy.maxHealth;
+        enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 1.75);
+      }
       changed = this.objectiveDirector.assignPriorityTarget({
         enemyId: targetId,
         position: enemy.mesh?.position,
-        label: `${cleanText(enemy.type, 'HOSTILE', 40)} PRIORITY`
+        label: bossStage
+          ? cleanText(missionStage.label, 'ELITE MISSION TARGET', 100).toUpperCase()
+          : `${cleanText(enemy.type, 'HOSTILE', 40)} PRIORITY`
       }, Date.now()) || changed;
     }
 
@@ -530,6 +711,7 @@ export class Content1Manager {
     if (snapshot) {
       this.core.replaceSnapshot(snapshot, nowMs());
       if (snapshot.postFinal4) this.objectiveDirector.replaceSnapshot(snapshot.postFinal4, Date.now());
+      if (snapshot.postFinal7) this.missionDirector.replaceSnapshot(snapshot.postFinal7, Date.now());
       this.latestSnapshot = clone(this.buildSnapshot(nowMs()));
     }
     this.core.state.authorityEpoch = Math.max(
@@ -564,6 +746,9 @@ export class Content1Manager {
         this.publishSnapshot(true);
         return true;
       }
+      if (payload.action === 'MISSION_RISK_CHOICE') {
+        return this.chooseMissionRisk(payload.choice, actorId);
+      }
       if (payload.action === 'OPERATION_ACTION' && payload.operationAction) {
         if (!this.validateRemoteDynamicAction(payload.operationAction, actorId)) return false;
         const action = { ...payload.operationAction, actorId };
@@ -590,15 +775,19 @@ export class Content1Manager {
     if (payload.snapshot?.postFinal4) {
       this.objectiveDirector.replaceSnapshot(payload.snapshot.postFinal4, Date.now());
     }
+    if (payload.snapshot?.postFinal7) {
+      this.missionDirector.replaceSnapshot(payload.snapshot.postFinal7, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
-      postFinal4: this.objectiveDirector.getSnapshot(Date.now())
+      postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
+      postFinal7: this.missionDirector.getSnapshot(Date.now())
     });
     this.applyLocalOperationRewards();
     this.observeDynamicOperation(this.latestSnapshot, { transitions: true });
     this.updateHud(true);
     this.updateObjectiveVisuals(nowMs());
-    this.handleObjectiveDirective?.(this.objectiveDirector.getDirective());
+    this.handleObjectiveDirective?.(this.getCombinedObjectiveDirective());
     return true;
   }
 
@@ -649,7 +838,7 @@ export class Content1Manager {
     this.observeDynamicOperation(finalSnapshot, { transitions: !this.isAuthority() });
     this.updateHud(false);
     this.updateObjectiveVisuals(now);
-    this.handleObjectiveDirective?.(this.objectiveDirector.getDirective());
+    this.handleObjectiveDirective?.(this.getCombinedObjectiveDirective());
     return finalSnapshot;
   }
 
@@ -811,6 +1000,8 @@ export class Content1Manager {
       ...this.core.consumeEvents(),
       ...this.objectiveDirector.consumeEvents()
     ];
+    const missionTransitions = [];
+
     for (const event of events) {
       if (event.type === 'ENCOUNTER_STARTED') {
         this.showToast?.(event.encounter?.announcement || 'ENCOUNTER ACTIVE');
@@ -836,15 +1027,57 @@ export class Content1Manager {
         playUISound('waveClear', 0.45, true, {
           cooldownKey: 'postfinal4_complete', cooldownMs: 1500, pitchMin: 1.05, pitchMax: 1.18
         });
+        const transition = this.missionDirector.observeOperation(event.operation, Date.now());
+        if (transition?.accepted) missionTransitions.push(transition);
       } else if (event.type === 'DYNAMIC_OPERATION_FAILED') {
         this.showToast?.(`OPERATION FAILED · ${event.reason || 'WINDOW EXPIRED'}`);
         playUISound('warning', 0.28, true, {
           cooldownKey: 'postfinal4_failed', cooldownMs: 1500, pitchMin: 0.68, pitchMax: 0.82
         });
+        const transition = this.missionDirector.observeOperation(event.operation, Date.now());
+        if (transition?.accepted) missionTransitions.push(transition);
       }
     }
+
+    for (const transition of missionTransitions) {
+      if (transition.advance) this.ensureMissionObjective(Date.now());
+    }
+
+    const missionEvents = this.missionDirector.consumeEvents();
+    for (const event of missionEvents) {
+      if (event.type === 'MISSION_CHAIN_ASSIGNED') {
+        this.showToast?.(`OPERATION CHAIN · ${event.mission?.label || 'MISSION ASSIGNED'}`);
+      } else if (event.type === 'MISSION_STAGE_COMPLETED') {
+        this.showToast?.(`MISSION STAGE COMPLETE · ${event.stage?.label || 'OBJECTIVE'}`);
+      } else if (event.type === 'MISSION_STAGE_FAILED') {
+        this.showToast?.(`${event.stage?.optional ? 'SECONDARY' : 'MISSION'} FAILED · ${event.stage?.label || 'OBJECTIVE'}`);
+      } else if (event.type === 'MISSION_RISK_DECISION_OPENED') {
+        this.showToast?.('EXTRACTION DECISION · 1 SECURE / 2 OVERDRIVE');
+        playUISound('warning', 0.24, true, {
+          cooldownKey: 'postfinal7_risk_open',
+          cooldownMs: 1200,
+          pitchMin: 0.94,
+          pitchMax: 1.04
+        });
+      } else if (event.type === 'MISSION_RISK_SELECTED') {
+        this.showToast?.(
+          event.riskChoice === POST_FINAL7_RISK_CHOICES.OVERDRIVE
+            ? 'OVERDRIVE EXTRACTION SELECTED · 50% MISSION BONUS'
+            : 'SECURE EXTRACTION SELECTED'
+        );
+      } else if (event.type === 'MISSION_CHAIN_COMPLETED') {
+        this.showToast?.(`MISSION COMPLETE · ${event.mission?.label || 'OPERATION CHAIN'}`);
+        playUISound('waveClear', 0.55, true, {
+          cooldownKey: 'postfinal7_complete',
+          cooldownMs: 1800,
+          pitchMin: 1.08,
+          pitchMax: 1.2
+        });
+      }
+    }
+
     this.applyLocalOperationRewards();
-    return events;
+    return [...events, ...missionEvents];
   }
 
   applyLocalOperationRewards() {
@@ -891,6 +1124,43 @@ export class Content1Manager {
         });
       }
     });
+
+    const mission = snapshot?.postFinal7;
+    if (
+      mission?.status === POST_FINAL7_MISSION_STATUS.COMPLETE
+      && mission.completionId
+      && !this.missionRewardedCompletionIds.has(mission.completionId)
+    ) {
+      this.missionRewardedCompletionIds.add(mission.completionId);
+      const missionPoints = computePostFinal7Reward({
+        basePoints: 350,
+        difficulty: mission.difficulty,
+        playerCount: mission.playerCount,
+        riskChoice: mission.riskChoice,
+        optionalStagesCompleted: mission.optionalStagesCompleted
+      });
+      const missionXp = Math.max(180, Math.round(240 * finite(mission.rewardMultiplier, 1)));
+      recordProgressionContentOperation({
+        operationId: mission.missionId,
+        completionId: mission.completionId,
+        xp: missionXp
+      });
+      recordRunPostFinal7Mission({
+        mission,
+        rewardPoints: missionPoints,
+        localPlayerId: this.localPlayerId()
+      });
+      if (this.isAuthority()) {
+        this.awardTeamObjective?.({
+          completionId: mission.completionId,
+          operationId: mission.missionId,
+          points: missionPoints,
+          label: cleanText(`${mission.label} MISSION COMPLETE`, 'MISSION COMPLETE', 80),
+          contributors: clone(mission.totalContributions || {})
+        });
+      }
+      this.showToast?.(`${String(mission.label || 'MISSION').toUpperCase()} · +${missionXp} XP`);
+    }
     return true;
   }
 
@@ -936,22 +1206,43 @@ export class Content1Manager {
     hud.id = 'ka-content1-hud';
     hud.className = 'ka-content1-hud ka-postfinal4-hud';
     hud.innerHTML = `
-      <div class="ka-content1-kicker">DYNAMIC OPERATION</div>
+      <div class="ka-content1-kicker">CO-OP OPERATION CHAIN</div>
+      <div class="ka-postfinal7-mission">MISSION DIRECTOR INITIALIZING</div>
+      <div class="ka-postfinal7-stages">STAGE 0 / 0</div>
       <div class="ka-content1-operation">STANDBY</div>
       <div class="ka-postfinal4-description">OBJECTIVE DIRECTOR INITIALIZING</div>
       <div class="ka-content1-progress">0 / 0</div>
       <div class="ka-postfinal4-meta">• 0m · 0:00</div>
       <div class="ka-postfinal4-team">TEAM CONTRIBUTION · STANDBY</div>
+      <div class="ka-postfinal7-risk" hidden>
+        <b>EXTRACTION DECISION</b>
+        <span>Choose within 15 seconds</span>
+        <div>
+          <button type="button" class="ka-postfinal7-risk-secure">1 · SECURE EXTRACT</button>
+          <button type="button" class="ka-postfinal7-risk-overdrive">2 · OVERDRIVE +50%</button>
+        </div>
+      </div>
       <div class="ka-content1-encounter">STANDARD PRESSURE</div>
     `;
     document.body.appendChild(hud);
     this.hud = hud;
+    this.hudMission = hud.querySelector('.ka-postfinal7-mission');
+    this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
     this.hudOperation = hud.querySelector('.ka-content1-operation');
     this.hudDescription = hud.querySelector('.ka-postfinal4-description');
     this.hudProgress = hud.querySelector('.ka-content1-progress');
     this.hudMeta = hud.querySelector('.ka-postfinal4-meta');
     this.hudTeam = hud.querySelector('.ka-postfinal4-team');
+    this.hudRisk = hud.querySelector('.ka-postfinal7-risk');
+    this.hudRiskSecure = hud.querySelector('.ka-postfinal7-risk-secure');
+    this.hudRiskOverdrive = hud.querySelector('.ka-postfinal7-risk-overdrive');
     this.hudEncounter = hud.querySelector('.ka-content1-encounter');
+    this.hudRiskSecure?.addEventListener('click', () => (
+      this.chooseMissionRisk(POST_FINAL7_RISK_CHOICES.SECURE)
+    ));
+    this.hudRiskOverdrive?.addEventListener('click', () => (
+      this.chooseMissionRisk(POST_FINAL7_RISK_CHOICES.OVERDRIVE)
+    ));
     return hud;
   }
 
@@ -967,11 +1258,42 @@ export class Content1Manager {
     hud.hidden = false;
     hud.style.setProperty('--ka-content1-accent', roleColor(snapshot.mapId));
     const operation = snapshot.postFinal4?.current;
+    const mission = snapshot.postFinal7;
+    const missionStage = mission?.stages?.[mission.currentStageIndex] || null;
+    if (this.hudMission) {
+      const risk = mission?.riskChoice && mission.riskChoice !== POST_FINAL7_RISK_CHOICES.PENDING
+        ? ` · ${mission.riskChoice}`
+        : '';
+      this.hudMission.textContent = mission
+        ? `${mission.label.toUpperCase()}${risk}`
+        : 'MISSION DIRECTOR STANDBY';
+    }
+    if (this.hudMissionStages) {
+      const completed = Math.max(0, Math.floor(finite(mission?.completedStageCount)));
+      const total = mission?.stages?.length || 0;
+      this.hudMissionStages.textContent = mission
+        ? `STAGE ${Math.min(total, finite(mission.currentStageIndex, 0) + 1)} / ${total} · ${completed} COMPLETE`
+        : 'STAGE 0 / 0';
+    }
+    if (this.hudRisk) {
+      const decision = mission?.status === POST_FINAL7_MISSION_STATUS.DECISION;
+      this.hudRisk.hidden = !decision;
+      if (decision) {
+        const remaining = Math.max(
+          0,
+          Math.ceil((finite(mission.riskDecisionDeadline) - Date.now()) / 1000)
+        );
+        const label = this.hudRisk.querySelector('span');
+        if (label) label.textContent = `Choose within ${remaining}s · keyboard 1/2`;
+      }
+    }
     if (this.hudOperation) {
       const prefix = operation?.optional ? 'BONUS · ' : '';
       this.hudOperation.textContent = operation
-        ? `${prefix}${operation.label}${operation.status === 'COMPLETE' ? ' · COMPLETE' : ''}`
-        : 'OBJECTIVE DIRECTOR STANDBY';
+        ? `${prefix}${missionStage?.label || operation.label}${operation.status === 'COMPLETE' ? ' · COMPLETE' : ''}`
+        : (mission?.status === POST_FINAL7_MISSION_STATUS.DECISION
+          ? 'SELECT EXTRACTION RISK'
+          : 'OBJECTIVE DIRECTOR STANDBY');
     }
     if (this.hudDescription) {
       this.hudDescription.textContent = operation?.description || 'No dynamic operation is active.';

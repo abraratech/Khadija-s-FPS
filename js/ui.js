@@ -543,6 +543,18 @@ export function renderRunSummaryScreen() {
       ? `${topContributor.isLocal ? 'YOU' : String(topContributor.playerId || 'TEAM').slice(0, 18)} · ${Math.round(Number(topContributor.contribution) || 0)}`
       : 'NONE'
   );
+  setText('final-mission-chains', summary.missionChainsCompleted || 0);
+  setText('final-mission-stages', summary.missionStagesCompleted || 0);
+  setText('final-mission-risk', summary.missionRiskChoice || 'NONE');
+  setText('final-mission-rewards', `+${Math.max(0, Math.round(Number(summary.missionRewardPoints) || 0))}`);
+  setText(
+    'final-mission-medals',
+    Array.isArray(summary.missionMedals) && summary.missionMedals.length
+      ? summary.missionMedals
+          .map((entry) => `${entry.isLocal ? 'YOU' : String(entry.playerId || 'TEAM').slice(0, 12)} · ${entry.label}`)
+          .join(' · ')
+      : 'NONE'
+  );
 
   const level = progression.profile.level;
   const capped = level >= progression.maxLevel || progression.profile.xpToNext <= 0;

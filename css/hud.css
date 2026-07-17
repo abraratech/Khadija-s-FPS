@@ -1381,3 +1381,106 @@ body.ka-mobile-device #btn-switch.is-held {
   }
 }
 \n\n/* POST-FINAL.4 R1 — dynamic operations, contribution, and compact HUD. */\n.ka-postfinal4-hud {\n  width: min(360px, calc(100vw - 28px));\n}\n\n.ka-postfinal4-description {\n  margin-top: 4px;\n  color: rgba(229, 247, 255, 0.82);\n  font-size: 0.68rem;\n  font-weight: 700;\n  line-height: 1.28;\n}\n\n.ka-postfinal4-meta {\n  margin-top: 6px;\n  color: #9ddfff;\n  font-size: 0.70rem;\n  font-weight: 900;\n  letter-spacing: 0.06em;\n}\n\n.ka-postfinal4-team {\n  margin-top: 5px;\n  color: #9ff5c8;\n  font-size: 0.64rem;\n  font-weight: 900;\n  letter-spacing: 0.055em;\n  text-transform: uppercase;\n}\n\n.ka-postfinal4-hud.ka-objective-hud-compact {\n  width: min(300px, calc(100vw - 22px));\n  padding: 8px 10px;\n}\n\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal4-description,\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal4-team,\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-content1-encounter {\n  display: none;\n}\n\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-content1-operation {\n  font-size: 0.78rem;\n}\n\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-content1-progress,\n.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal4-meta {\n  display: inline-block;\n  margin-right: 8px;\n  font-size: 0.63rem;\n}\n\n@media (max-width: 760px) {\n  .ka-postfinal4-hud {\n    top: max(70px, calc(env(safe-area-inset-top, 0px) + 58px));\n    width: min(300px, calc(100vw - 20px));\n  }\n\n  .ka-postfinal4-description {\n    font-size: 0.60rem;\n  }\n\n  .ka-postfinal4-meta,\n  .ka-postfinal4-team {\n    font-size: 0.57rem;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .ka-postfinal4-hud {\n    transition: none;\n  }\n\n  .ka-content1-hud-pulse {\n    transform: none;\n  }\n}\n
+
+/* POST-FINAL.7 R1 — multi-stage operation chain, risk choice, and medals. */
+.ka-postfinal7-mission {
+  margin-top: 4px;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 950;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+}
+
+.ka-postfinal7-stages {
+  margin-top: 2px;
+  color: #7ddfff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ka-postfinal7-risk {
+  margin-top: 9px;
+  padding: 8px;
+  border: 1px solid rgba(255, 197, 91, 0.48);
+  border-radius: 7px;
+  background: rgba(40, 22, 3, 0.82);
+  color: #ffe3a0;
+  pointer-events: auto;
+}
+
+.ka-postfinal7-risk[hidden] {
+  display: none !important;
+}
+
+.ka-postfinal7-risk > b,
+.ka-postfinal7-risk > span {
+  display: block;
+}
+
+.ka-postfinal7-risk > b {
+  font-size: 0.68rem;
+  letter-spacing: 0.10em;
+}
+
+.ka-postfinal7-risk > span {
+  margin-top: 2px;
+  color: rgba(255, 240, 204, 0.76);
+  font-size: 0.58rem;
+}
+
+.ka-postfinal7-risk > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.ka-postfinal7-risk button {
+  min-height: 34px;
+  padding: 6px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.34);
+  color: #fff;
+  font: inherit;
+  font-size: 0.56rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ka-postfinal7-risk button:hover,
+.ka-postfinal7-risk button:focus-visible {
+  border-color: #ffe18a;
+  outline: 2px solid rgba(255, 225, 138, 0.36);
+  outline-offset: 1px;
+}
+
+.ka-postfinal7-risk-overdrive {
+  color: #ffb46b !important;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal7-mission {
+  font-size: 0.68rem;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal7-stages {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .ka-postfinal7-mission {
+    font-size: 0.70rem;
+  }
+
+  .ka-postfinal7-risk > div {
+    grid-template-columns: 1fr;
+  }
+
+  .ka-postfinal7-risk button {
+    min-height: 40px;
+    font-size: 0.60rem;
+  }
+}

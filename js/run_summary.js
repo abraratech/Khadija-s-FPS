@@ -38,6 +38,13 @@ const state = {
   objectiveContributions: {},
   topObjectiveContributor: null,
   lastDynamicOperation: null,
+  missionChainsCompleted: 0,
+  missionStagesCompleted: 0,
+  missionOptionalStagesCompleted: 0,
+  missionRewardPoints: 0,
+  missionRiskChoice: 'NONE',
+  missionMedals: [],
+  lastMission: null,
   botAssisted: false,
   leaderboardEligible: true,
   botProfile: null,
@@ -88,6 +95,13 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     objectiveContributions: {},
     topObjectiveContributor: null,
     lastDynamicOperation: null,
+    missionChainsCompleted: 0,
+    missionStagesCompleted: 0,
+    missionOptionalStagesCompleted: 0,
+    missionRewardPoints: 0,
+    missionRiskChoice: 'NONE',
+    missionMedals: [],
+    lastMission: null,
     botAssisted: false,
     leaderboardEligible: true,
     botProfile: null,
@@ -228,6 +242,54 @@ export function recordRunDynamicOperation({
   state.lastEvent = optional === true
     ? 'BONUS OPERATION COMPLETE'
     : 'DYNAMIC OPERATION COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunPostFinal7Mission({
+  mission = null,
+  rewardPoints = 0,
+  localPlayerId = ''
+} = {}) {
+  if (!state.active || !mission?.completionId) return getRunSummarySnapshot();
+  if (state.lastMission?.completionId === mission.completionId) {
+    return getRunSummarySnapshot();
+  }
+
+  state.missionChainsCompleted += 1;
+  state.missionStagesCompleted += Math.max(0, Math.round(finite(mission.completedStageCount)));
+  state.missionOptionalStagesCompleted += Math.max(
+    0,
+    Math.round(finite(mission.optionalStagesCompleted))
+  );
+  state.missionRewardPoints += Math.max(0, Math.round(finite(rewardPoints)));
+  state.objectiveRewardPoints += Math.max(0, Math.round(finite(rewardPoints)));
+  state.missionRiskChoice = String(mission.riskChoice || 'SECURE').slice(0, 24);
+  state.missionMedals = Array.isArray(mission.medals)
+    ? mission.medals.map((entry) => ({
+        role: String(entry?.role || '').slice(0, 32),
+        label: String(entry?.label || entry?.role || 'MEDAL').slice(0, 64),
+        playerId: String(entry?.playerId || '').slice(0, 160),
+        score: Math.max(0, Math.round(finite(entry?.score))),
+        isLocal: Boolean(localPlayerId && entry?.playerId === localPlayerId)
+      })).slice(0, 8)
+    : [];
+
+  const localContribution = Math.max(
+    0,
+    finite(mission.totalContributions?.[String(localPlayerId || '')])
+  );
+  state.lastMission = {
+    completionId: String(mission.completionId).slice(0, 200),
+    missionId: String(mission.missionId || '').slice(0, 100),
+    label: String(mission.label || 'Co-op operation').slice(0, 120),
+    riskChoice: state.missionRiskChoice,
+    rewardMultiplier: Math.max(1, finite(mission.rewardMultiplier, 1)),
+    rewardPoints: Math.max(0, Math.round(finite(rewardPoints))),
+    stagesCompleted: Math.max(0, Math.round(finite(mission.completedStageCount))),
+    optionalStagesCompleted: Math.max(0, Math.round(finite(mission.optionalStagesCompleted))),
+    localContribution
+  };
+  state.lastEvent = 'CO-OP MISSION COMPLETE';
   return getRunSummarySnapshot();
 }
 

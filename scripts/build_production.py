@@ -24,6 +24,9 @@ POST_FINAL4_PATCH = "post-final4-r1-dynamic-operations-objective-director"
 POST_FINAL5_PATCH = "post-final5-r1-moderation-player-safety-operations"
 POST_FINAL6_PATCH = "post-final6-r1-production-operations-hardening"
 POST_FINAL6_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+POST_FINAL7_PATCH = "post-final7-r1-coop-operations-expansion"
+POST_FINAL7_SOURCE_BASELINE_SHA = "83a44d5aad87b6785b8d466d8fb69bed0cb676f3"
+POST_FINAL7_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -219,6 +222,29 @@ def main() -> None:
             "manual_deployment_only": True,
             "protocol_unchanged": True,
             "worker_change_required": True
+        },
+        "post_final7": {
+            "schema": 1,
+            "patch": POST_FINAL7_PATCH,
+            "source_baseline_sha": POST_FINAL7_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": POST_FINAL7_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "mission_chains": 6,
+            "stages_per_chain": 6,
+            "map_specific_chains": True,
+            "randomized_secondary_objectives": True,
+            "elite_boss_stage": True,
+            "extraction_risk_choices": ["SECURE", "OVERDRIVE"],
+            "overdrive_reward_multiplier": 1.5,
+            "ai_mission_awareness": True,
+            "human_squad_command_override": True,
+            "team_role_scoring": True,
+            "mission_medals": True,
+            "late_join_reconnect_host_migration_restore": True,
+            "controller_mobile_support": True,
+            "existing_content1_transport": True,
+            "protocol_unchanged": True,
+            "worker_change_required": False,
+            "frontend_only": True
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

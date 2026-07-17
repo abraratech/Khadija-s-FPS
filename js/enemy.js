@@ -3359,7 +3359,9 @@ export function killEnemy(e, context = {}) {
     try {
       globalThis.KAContent1EnemyKilled?.({
         enemyId: e.content1Id || e.networkId || `enemy-${e.type}-${Math.round(performance.now())}`,
-        elite: e.isContent1Elite === true,
+        elite: e.isContent1Elite === true || e.isPostFinal8Boss === true,
+        boss: e.isPostFinal8Boss === true,
+        factionId: e.postFinal8FactionId || null,
         headshot,
         actorId: creditPlayerId || localPlayerId || 'local'
       });
@@ -3471,6 +3473,18 @@ export function damageEnemyForBot(enemy, damage, {
   const previousHealth = Math.max(0, Number(enemy.health) || 0);
   enemy.health = Math.max(0, previousHealth - amount);
   enemy.hitReactT = Math.max(Number(enemy.hitReactT) || 0, 0.12);
+  try {
+    globalThis.KAContent1EnemyDamaged?.({
+      enemyId: enemy.content1Id || enemy.networkId || '',
+      damage: Math.min(previousHealth, amount),
+      headshot: false,
+      actorId: String(botId || 'bot-wingmate-r1').slice(0, 160),
+      health: Math.max(0, Number(enemy.health) || 0),
+      maxHealth: Math.max(1, Number(enemy.maxHealth) || 1)
+    });
+  } catch {
+    // POST-FINAL.8 replayability is optional during isolated bot tests.
+  }
   const killed = previousHealth > 0 && enemy.health <= 0;
 
   if (killed) {

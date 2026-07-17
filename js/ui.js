@@ -555,6 +555,24 @@ export function renderRunSummaryScreen() {
           .join(' · ')
       : 'NONE'
   );
+  setText('final-enemy-faction', summary.enemyFaction || 'NONE');
+  setText('final-boss-defeated', summary.bossDefeated || 'NONE');
+  setText('final-boss-weakpoints', Math.max(0, Math.round(Number(summary.bossWeakPointHits) || 0)));
+  setText('final-boss-staggers', Math.max(0, Math.round(Number(summary.bossStaggers) || 0)));
+  setText('final-replay-mastery', summary.replayMasteryGrade || 'UNRANKED');
+  setText('final-replay-rewards', `+${Math.max(0, Math.round(Number(summary.factionRewardPoints) || 0))}`);
+  setText(
+    'final-replay-modifiers',
+    Array.isArray(summary.replayModifiers) && summary.replayModifiers.length
+      ? summary.replayModifiers.join(' · ')
+      : 'NONE'
+  );
+  setText(
+    'final-replay-medals',
+    Array.isArray(summary.replayMedals) && summary.replayMedals.length
+      ? summary.replayMedals.map((entry) => entry.label || entry.id || 'MEDAL').join(' · ')
+      : 'NONE'
+  );
 
   const level = progression.profile.level;
   const capped = level >= progression.maxLevel || progression.profile.xpToNext <= 0;

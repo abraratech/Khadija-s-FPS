@@ -45,6 +45,17 @@ const state = {
   missionRiskChoice: 'NONE',
   missionMedals: [],
   lastMission: null,
+  factionOperationsCompleted: 0,
+  factionRewardPoints: 0,
+  enemyFaction: 'NONE',
+  bossDefeated: 'NONE',
+  bossWeakPointHits: 0,
+  bossStaggers: 0,
+  replayModifiers: [],
+  replayMasteryGrade: 'UNRANKED',
+  replayMedals: [],
+  noDownedMastery: false,
+  lastReplayability: null,
   botAssisted: false,
   leaderboardEligible: true,
   botProfile: null,
@@ -102,6 +113,17 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     missionRiskChoice: 'NONE',
     missionMedals: [],
     lastMission: null,
+    factionOperationsCompleted: 0,
+    factionRewardPoints: 0,
+    enemyFaction: 'NONE',
+    bossDefeated: 'NONE',
+    bossWeakPointHits: 0,
+    bossStaggers: 0,
+    replayModifiers: [],
+    replayMasteryGrade: 'UNRANKED',
+    replayMedals: [],
+    noDownedMastery: false,
+    lastReplayability: null,
     botAssisted: false,
     leaderboardEligible: true,
     botProfile: null,
@@ -290,6 +312,56 @@ export function recordRunPostFinal7Mission({
     localContribution
   };
   state.lastEvent = 'CO-OP MISSION COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunPostFinal8Replayability({
+  replayability = null,
+  rewardPoints = 0
+} = {}) {
+  if (!state.active || !replayability?.completionId) return getRunSummarySnapshot();
+  if (state.lastReplayability?.completionId === replayability.completionId) {
+    return getRunSummarySnapshot();
+  }
+
+  const boss = replayability.boss || {};
+  state.factionOperationsCompleted += 1;
+  state.factionRewardPoints += Math.max(0, Math.round(finite(rewardPoints)));
+  state.objectiveRewardPoints += Math.max(0, Math.round(finite(rewardPoints)));
+  state.enemyFaction = String(replayability.faction?.label || 'UNKNOWN').slice(0, 80);
+  state.bossDefeated = String(boss.label || 'NONE').slice(0, 100);
+  state.bossWeakPointHits += Math.max(0, Math.round(finite(boss.weakPointHits)));
+  state.bossStaggers += Math.max(0, Math.round(finite(boss.staggerCount)));
+  state.replayModifiers = Array.isArray(replayability.modifiers)
+    ? replayability.modifiers.map((entry) => String(entry?.label || entry?.id || '').slice(0, 60)).filter(Boolean).slice(0, 4)
+    : [];
+  state.replayMasteryGrade = String(replayability.masteryGrade || 'UNRANKED').slice(0, 16);
+  state.replayMedals = Array.isArray(replayability.medals)
+    ? replayability.medals.map((entry) => ({
+        id: String(entry?.id || '').slice(0, 80),
+        label: String(entry?.label || entry?.id || 'MEDAL').slice(0, 80),
+        score: Math.max(0, Math.round(finite(entry?.score)))
+      })).slice(0, 8)
+    : [];
+  state.noDownedMastery = replayability.noDownedEligible === true;
+  state.lastReplayability = {
+    completionId: String(replayability.completionId).slice(0, 220),
+    factionId: String(replayability.faction?.id || '').slice(0, 80),
+    factionLabel: state.enemyFaction,
+    bossId: String(boss.bossId || '').slice(0, 100),
+    bossLabel: state.bossDefeated,
+    weakPointHits: Math.max(0, Math.round(finite(boss.weakPointHits))),
+    staggerCount: Math.max(0, Math.round(finite(boss.staggerCount))),
+    modifierIds: Array.isArray(replayability.modifiers)
+      ? replayability.modifiers.map((entry) => String(entry?.id || '').slice(0, 60)).slice(0, 4)
+      : [],
+    masteryScore: Math.max(0, Math.round(finite(replayability.masteryScore))),
+    masteryGrade: state.replayMasteryGrade,
+    rewardMultiplier: Math.max(1, finite(replayability.rewardMultiplier, 1)),
+    rewardPoints: Math.max(0, Math.round(finite(rewardPoints))),
+    noDownedEligible: state.noDownedMastery
+  };
+  state.lastEvent = 'FACTION MASTERY COMPLETE';
   return getRunSummarySnapshot();
 }
 

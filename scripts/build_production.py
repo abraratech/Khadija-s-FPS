@@ -27,6 +27,9 @@ POST_FINAL6_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 POST_FINAL7_PATCH = "post-final7-r1-coop-operations-expansion"
 POST_FINAL7_SOURCE_BASELINE_SHA = "83a44d5aad87b6785b8d466d8fb69bed0cb676f3"
 POST_FINAL7_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+POST_FINAL8_PATCH = "post-final8-r1-enemy-factions-boss-replayability"
+POST_FINAL8_SOURCE_BASELINE_SHA = "298ff47a5706c630ef48ed2d26625502440efb4f"
+POST_FINAL8_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -240,6 +243,29 @@ def main() -> None:
             "team_role_scoring": True,
             "mission_medals": True,
             "late_join_reconnect_host_migration_restore": True,
+            "controller_mobile_support": True,
+            "existing_content1_transport": True,
+            "protocol_unchanged": True,
+            "worker_change_required": False,
+            "frontend_only": True
+        },
+        "post_final8": {
+            "schema": 1,
+            "patch": POST_FINAL8_PATCH,
+            "source_baseline_sha": POST_FINAL8_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": POST_FINAL8_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "enemy_factions": 4,
+            "boss_candidates_per_faction": 2,
+            "boss_phases": 3,
+            "weak_point_and_stagger_tracking": True,
+            "phase_reinforcement_escalation": True,
+            "deterministic_mission_modifiers": True,
+            "elite_affixes": True,
+            "ai_boss_awareness": True,
+            "human_squad_command_override": True,
+            "late_join_reconnect_host_migration_restore": True,
+            "mastery_grades_and_medals": True,
+            "run_summary_integration": True,
             "controller_mobile_support": True,
             "existing_content1_transport": True,
             "protocol_unchanged": True,

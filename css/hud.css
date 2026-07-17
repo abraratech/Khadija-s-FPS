@@ -1484,3 +1484,77 @@ body.ka-mobile-device #btn-switch.is-held {
     font-size: 0.60rem;
   }
 }
+
+
+/* POST-FINAL.8 R1 — faction intelligence, boss telemetry, and replay modifiers. */
+.ka-postfinal8-faction {
+  margin-top: 5px;
+  color: var(--ka-content1-accent, #00d4ff);
+  font-size: 0.69rem;
+  font-weight: 1000;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--ka-content1-accent, #00d4ff) 58%, transparent);
+}
+
+.ka-postfinal8-modifiers {
+  margin-top: 3px;
+  color: rgba(255, 219, 145, 0.94);
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.ka-postfinal8-boss {
+  margin-top: 6px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--ka-content1-accent, #ff3d9a) 72%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ka-content1-accent, #ff3d9a) 14%, rgba(6, 10, 18, 0.86));
+  color: #ffffff;
+  font-size: 0.63rem;
+  font-weight: 1000;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  box-shadow: inset 0 0 14px color-mix(in srgb, var(--ka-content1-accent, #ff3d9a) 14%, transparent);
+}
+
+.ka-postfinal8-boss[hidden] {
+  display: none;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-modifiers {
+  display: none;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-faction {
+  font-size: 0.59rem;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-boss {
+  padding: 4px 6px;
+  font-size: 0.56rem;
+}
+
+@media (max-width: 760px) {
+  .ka-postfinal8-faction {
+    font-size: 0.61rem;
+  }
+
+  .ka-postfinal8-modifiers {
+    font-size: 0.52rem;
+  }
+
+  .ka-postfinal8-boss {
+    font-size: 0.56rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ka-postfinal8-boss {
+    box-shadow: none;
+  }
+}

@@ -299,7 +299,11 @@ forceAuthoritativeSnapshot(reason = 'manual') {
       hitReactT: Number(enemy.hitReactT || 0),
       targetPlayerId: enemy.targetPlayerId || null,
       content1Id: enemy.content1Id || null,
-      objectivePriority: enemy.isPostFinal4Priority === true
+      objectivePriority: enemy.isPostFinal4Priority === true,
+      postFinal8Boss: enemy.isPostFinal8Boss === true,
+      postFinal8BossPhase: Math.max(0, Number(enemy.postFinal8BossPhase) || 0),
+      postFinal8FactionId: enemy.postFinal8FactionId || null,
+      postFinal8FactionLabel: enemy.postFinal8FactionLabel || null
     };
   }
 
@@ -402,6 +406,10 @@ forceAuthoritativeSnapshot(reason = 'manual') {
       targetPlayerId: state.targetPlayerId || null,
       content1Id: state.content1Id || null,
       isPostFinal4Priority: state.objectivePriority === true,
+      isPostFinal8Boss: state.postFinal8Boss === true,
+      postFinal8BossPhase: Math.max(0, Number(state.postFinal8BossPhase) || 0),
+      postFinal8FactionId: state.postFinal8FactionId || null,
+      postFinal8FactionLabel: state.postFinal8FactionLabel || null,
       handleNetworkHit: (hit) => {
                 const predictedDamage = Math.max(1, Math.min(
                     MAX_REMOTE_DAMAGE,
@@ -486,13 +494,20 @@ forceAuthoritativeSnapshot(reason = 'manual') {
         proxy.targetPlayerId = state.targetPlayerId || null;
         proxy.content1Id = state.content1Id || null;
         proxy.isPostFinal4Priority = state.objectivePriority === true;
+        proxy.isPostFinal8Boss = state.postFinal8Boss === true;
+        proxy.postFinal8BossPhase = Math.max(0, Number(state.postFinal8BossPhase) || 0);
+        proxy.postFinal8FactionId = state.postFinal8FactionId || null;
+        proxy.postFinal8FactionLabel = state.postFinal8FactionLabel || null;
         proxy.visual?.traverse?.((child) => {
           const materials = Array.isArray(child?.material)
             ? child.material
             : (child?.material ? [child.material] : []);
           materials.forEach((material) => {
             if (!material?.emissive?.setHex) return;
-            if (proxy.isPostFinal4Priority) {
+            if (proxy.isPostFinal8Boss) {
+              material.emissive.setHex(0xff3d9a);
+              material.emissiveIntensity = Math.max(Number(material.emissiveIntensity) || 0, 0.72);
+            } else if (proxy.isPostFinal4Priority) {
               material.emissive.setHex(0x00d4ff);
               material.emissiveIntensity = Math.max(Number(material.emissiveIntensity) || 0, 0.42);
             }
@@ -909,6 +924,18 @@ getRemoteAuthorityTargets(now = nowMs()) {
       enemy.hitReactT || 0,
       hit?.headshot ? 0.22 : 0.15
     );
+    try {
+      globalThis.KAContent1EnemyDamaged?.({
+        enemyId: enemy.content1Id || enemy.networkId || enemyId,
+        damage: Math.min(previousHealth, damage),
+        headshot: hit?.headshot === true,
+        actorId: envelope.playerId,
+        health: Math.max(0, Number(enemy.health) || 0),
+        maxHealth: Math.max(1, Number(enemy.maxHealth) || 1)
+      });
+    } catch {
+      // POST-FINAL.8 replayability is optional during isolated network tests.
+    }
 
     if (enemy.health <= 0 && enemy.alive) {
       this.adapter.killEnemy?.(enemy, {

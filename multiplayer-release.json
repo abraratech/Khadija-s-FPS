@@ -607,5 +607,49 @@
     "protocolUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "postFinal8": {
+    "schema": 1,
+    "patch": "post-final8-r1-enemy-factions-boss-replayability",
+    "sourceBaselineSha": "298ff47a5706c630ef48ed2d26625502440efb4f",
+    "certifiedFrontendBaselineSha": "5511d393d7249b5487affa3616716ccb64593e99",
+    "enemyFactions": [
+      "VANGUARD_CORPS",
+      "WASTELAND_RAIDERS",
+      "BIOHAZARD_SWARM",
+      "MACHINE_COLLECTIVE"
+    ],
+    "factionWeightedEnemyComposition": true,
+    "bossCandidatesPerFaction": 2,
+    "bossPhases": 3,
+    "breakableArmorProgression": true,
+    "weakPointTracking": true,
+    "staggerWindows": true,
+    "phaseReinforcementEscalation": true,
+    "deterministicMissionModifiers": true,
+    "eliteAffixes": true,
+    "repeatSuppressionWithinRun": true,
+    "bossAndModifierSnapshotRecovery": true,
+    "lateJoinRestore": true,
+    "reconnectRestore": true,
+    "hostMigrationRestore": true,
+    "aiBossAwareness": true,
+    "humanSquadCommandOverride": true,
+    "masteryGrades": [
+      "S",
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "factionAndBossMedals": true,
+    "noDownedBonus": true,
+    "runSummaryIntegration": true,
+    "controllerSupport": true,
+    "mobileSupport": true,
+    "existingContent1Transport": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

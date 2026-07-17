@@ -23,10 +23,17 @@ import {
   PostFinal7MissionDirector,
   computePostFinal7Reward
 } from './postfinal7_operation_core.js';
+import {
+  POST_FINAL8_BOSS_STATUS,
+  POST_FINAL8_PATCH,
+  PostFinal8ReplayDirector,
+  computePostFinal8Reward
+} from './postfinal8_replayability_core.js';
 import { recordProgressionContentOperation } from './progression.js';
 import {
   recordRunDynamicOperation,
-  recordRunPostFinal7Mission
+  recordRunPostFinal7Mission,
+  recordRunPostFinal8Replayability
 } from './run_summary.js';
 import { recordChallengeObjective } from './challenges.js';
 import { playUISound, playTeamAlertCue } from './audio.js';
@@ -152,6 +159,23 @@ function tintEnemyForPriority(enemy, enabled = true) {
   });
 }
 
+function tintEnemyForFaction(enemy, emissiveHex = 0x00d4ff, intensity = 0.22) {
+  if (!enemy?.mesh) return;
+  enemy.mesh.traverse?.((child) => {
+    const materials = Array.isArray(child?.material)
+      ? child.material
+      : (child?.material ? [child.material] : []);
+    materials.forEach((material) => {
+      if (!material?.emissive?.setHex) return;
+      material.emissive.setHex(Math.max(0, Math.floor(finite(emissiveHex))));
+      material.emissiveIntensity = Math.max(
+        finite(material.emissiveIntensity),
+        Math.max(0, finite(intensity, 0.22))
+      );
+    });
+  });
+}
+
 export class Content1Manager {
   constructor({
     eventBus,
@@ -182,6 +206,7 @@ export class Content1Manager {
     this.core = new Content1Authority();
     this.objectiveDirector = new PostFinal4ObjectiveDirector();
     this.missionDirector = new PostFinal7MissionDirector();
+    this.replayDirector = new PostFinal8ReplayDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -196,7 +221,9 @@ export class Content1Manager {
     this.awardedCompletionIds = new Set();
     this.teamRewardedCompletionIds = new Set();
     this.missionRewardedCompletionIds = new Set();
+    this.replayRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
+    this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
@@ -212,6 +239,9 @@ export class Content1Manager {
     this.hudRisk = null;
     this.hudRiskSecure = null;
     this.hudRiskOverdrive = null;
+    this.hudFaction = null;
+    this.hudModifiers = null;
+    this.hudBoss = null;
     this.objectiveGroup = null;
     this.primaryRing = null;
     this.secondaryRing = null;
@@ -249,13 +279,13 @@ export class Content1Manager {
       this.unsubscribe.push(() => window.removeEventListener('ka:coop2-action', onCoopAction));
 
       window.KAGetContent1Snapshot = () => this.getSnapshot();
-      window.KAGetContent1EncounterDirective = () => (
-        this.isAuthority() ? this.core.getEncounterDirective() : this.directiveFromSnapshot()
-      );
+      window.KAGetContent1EncounterDirective = () => this.getEncounterDirective();
       window.KAGetPostFinal4Objective = () => this.getSnapshot()?.postFinal4 || null;
       window.KAGetPostFinal7Mission = () => this.getSnapshot()?.postFinal7 || null;
+      window.KAGetPostFinal8Replayability = () => this.getSnapshot()?.postFinal8 || null;
       window.KAChoosePostFinal7Risk = (choice) => this.chooseMissionRisk(choice);
       window.KAContent1EnemySpawned = (enemy) => this.prepareEnemySpawn(enemy);
+      window.KAContent1EnemyDamaged = (details) => this.recordEnemyDamage(details);
       window.KAContent1EnemyKilled = (details) => this.recordEnemyKill(details);
       window.KAContent1WaveStarted = (wave) => this.startWave(wave);
       window.KAContent1WaveCleared = (details) => this.recordWaveClear(details);
@@ -314,7 +344,9 @@ export class Content1Manager {
     this.awardedCompletionIds.clear();
     this.teamRewardedCompletionIds.clear();
     this.missionRewardedCompletionIds.clear();
+    this.replayRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
+    this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
@@ -339,6 +371,14 @@ export class Content1Manager {
     this.missionDirector.reset({
       runId: resolvedRunId,
       mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
+      playerCount: humans,
+      now: Date.now()
+    });
+    this.replayDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      missionId: this.missionDirector.state.missionId,
       difficulty: resolvedDifficulty,
       playerCount: humans,
       now: Date.now()
@@ -391,6 +431,7 @@ export class Content1Manager {
 
   tuneMissionOperation(operation, stage = this.missionDirector.currentStage()) {
     if (!operation || !stage) return operation;
+    const replayTuning = this.replayDirector.getObjectiveTuning();
     operation.label = cleanText(stage.label, operation.label, 100);
     operation.description = cleanText(stage.description, operation.description, 180);
     operation.optional = stage.optional === true;
@@ -398,6 +439,14 @@ export class Content1Manager {
     operation.postFinal7StageId = stage.stageId;
     operation.postFinal7StageType = stage.type;
     operation.postFinal7RiskChoice = this.missionDirector.state.riskChoice;
+    operation.postFinal8FactionId = this.replayDirector.state.faction.id;
+    operation.postFinal8ModifierIds = this.replayDirector.state.modifiers.map((entry) => entry.id);
+
+    if (finite(replayTuning.timeScale, 1) < 0.999) {
+      operation.remainingMs = Math.max(10000, Math.round(finite(operation.remainingMs, 60000) * replayTuning.timeScale));
+      operation.expiresAt = Date.now() + operation.remainingMs;
+      operation.description = `${operation.description} MODIFIER: COMPRESSED OBJECTIVE WINDOW.`;
+    }
 
     if (stage.type === POST_FINAL7_STAGE_TYPES.HUNT) {
       operation.rewardPoints = Math.max(1, Math.round(finite(operation.rewardPoints, 100) * 2));
@@ -490,6 +539,7 @@ export class Content1Manager {
     const objective = this.objectiveDirector.getDirective();
     if (!objective) return null;
     const mission = this.missionDirector.getDirective();
+    const replay = this.replayDirector.getSnapshot(Date.now());
     return Object.freeze({
       ...objective,
       postFinal7Patch: POST_FINAL7_PATCH,
@@ -505,7 +555,40 @@ export class Content1Manager {
       extractionStage: mission?.extractionStage === true,
       riskChoice: mission?.riskChoice || POST_FINAL7_RISK_CHOICES.PENDING,
       rewardMultiplier: finite(mission?.rewardMultiplier, 1),
+      postFinal8Patch: POST_FINAL8_PATCH,
+      factionId: replay.faction?.id || '',
+      factionLabel: replay.faction?.label || '',
+      factionColor: replay.faction?.color || '#00d4ff',
+      modifiers: clone(replay.modifiers || []),
+      bossTargetId: replay.boss?.enemyId || null,
+      bossLabel: replay.boss?.label || '',
+      bossStatus: replay.boss?.status || POST_FINAL8_BOSS_STATUS.PENDING,
+      bossPhase: finite(replay.boss?.phase, 0),
+      bossPhaseCount: finite(replay.boss?.phaseCount, 3),
+      bossStagger: finite(replay.boss?.stagger, 0),
+      weakPointHits: finite(replay.boss?.weakPointHits, 0),
       humanSquadCommandsOverride: true
+    });
+  }
+
+  getEncounterDirective() {
+    const base = this.isAuthority()
+      ? this.core.getEncounterDirective()
+      : this.directiveFromSnapshot();
+    const factionMultipliers = this.replayDirector.getEncounterMultipliers();
+    const weights = { ...(base?.weightMultipliers || {}) };
+    Object.entries(factionMultipliers).forEach(([type, multiplier]) => {
+      weights[type] = Math.max(0.35, finite(weights[type], 1) * finite(multiplier, 1));
+    });
+    const replay = this.replayDirector.getSnapshot(Date.now());
+    return Object.freeze({
+      ...(base || {}),
+      weightMultipliers: Object.freeze(weights),
+      postFinal8Patch: POST_FINAL8_PATCH,
+      factionId: replay.faction?.id || '',
+      factionLabel: replay.faction?.label || '',
+      bossId: replay.boss?.bossId || '',
+      modifierIds: Object.freeze((replay.modifiers || []).map((entry) => entry.id))
     });
   }
 
@@ -516,7 +599,8 @@ export class Content1Manager {
     if (this.isAuthority()) this.ensureMissionObjective(epochNow);
     const postFinal4 = this.objectiveDirector.update(epochNow);
     const postFinal7 = this.missionDirector.getSnapshot(epochNow);
-    return { ...base, postFinal4, postFinal7 };
+    const postFinal8 = this.replayDirector.getSnapshot(epochNow);
+    return { ...base, postFinal4, postFinal7, postFinal8 };
   }
 
   publishSnapshot(force = false) {
@@ -595,11 +679,61 @@ export class Content1Manager {
     this.objectiveDirector.state.playerCount = humans;
     this.objectiveDirector.state.currentWave = normalizedWave;
     this.missionDirector.state.playerCount = humans;
+    this.replayDirector.state.playerCount = humans;
     const encounter = this.core.startWave(normalizedWave, nowMs());
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.consumeAuthorityEvents();
     this.publishSnapshot(true);
     return encounter;
+  }
+
+  recordEnemyDamage({
+    enemyId = '',
+    damage = 0,
+    headshot = false,
+    actorId = '',
+    health = null,
+    maxHealth = null
+  } = {}) {
+    if (!this.active || !this.isAuthority()) return false;
+    const normalizedId = cleanText(enemyId, '', 180);
+    if (!normalizedId) return false;
+    const result = this.replayDirector.recordBossDamage({
+      enemyId: normalizedId,
+      damage,
+      headshot,
+      actorId,
+      health,
+      maxHealth
+    }, Date.now());
+    if (!result?.accepted) return false;
+
+    const enemy = this.getActiveEnemies?.().find((entry) => (
+      cleanText(entry?.content1Id || entry?.networkId, '', 180) === normalizedId
+    ));
+    for (const event of result.events || []) {
+      if (event.type === 'BOSS_PHASE_CHANGED' && enemy) {
+        const appliedPhase = Math.max(0, Math.floor(finite(enemy.postFinal8BossPhase)));
+        if (event.phase > appliedPhase) {
+          enemy.postFinal8BossPhase = event.phase;
+          enemy.speed = finite(enemy.speed, 1) * 1.08;
+          enemy.damage = Math.max(1, Math.round(finite(enemy.damage, 1) * 1.08));
+          enemy.attackRate = Math.max(0.35, finite(enemy.attackRate, 1) * 0.92);
+        }
+      } else if (event.type === 'BOSS_STAGGERED' && enemy) {
+        enemy.atkCD = Math.max(finite(enemy.atkCD), 1.4);
+        enemy.attackState = 'IDLE';
+        enemy.hitReactT = Math.max(finite(enemy.hitReactT), 0.55);
+      }
+    }
+
+    this.consumeAuthorityEvents();
+    const now = nowMs();
+    if ((result.events || []).length || now - this.lastBossDamageSnapshotAt >= 220) {
+      this.lastBossDamageSnapshotAt = now;
+      this.publishSnapshot(true);
+    }
+    return true;
   }
 
   recordEnemyKill({ enemyId = '', elite = false, headshot = false, actorId = '' } = {}) {
@@ -608,6 +742,12 @@ export class Content1Manager {
       `enemy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       180
     );
+    const bossKilled = this.isAuthority()
+      ? this.replayDirector.recordBossKilled({
+          enemyId: baseId,
+          actorId
+        }, Date.now())
+      : false;
     this.recordAction('KILL', {
       actorId,
       enemyId: baseId,
@@ -615,13 +755,17 @@ export class Content1Manager {
       headshot,
       eventId: `${this.session?.run?.runId || 'run'}:content-kill:${baseId}`
     });
-    if (elite) {
+    if (elite || bossKilled) {
       this.recordAction('ELITE_KILL', {
         actorId,
         amount: 1,
         enemyId: baseId,
         eventId: `${this.session?.run?.runId || 'run'}:content-elite-kill:${baseId}`
       });
+    }
+    if (bossKilled) {
+      this.consumeAuthorityEvents();
+      this.publishSnapshot(true);
     }
     return true;
   }
@@ -630,11 +774,48 @@ export class Content1Manager {
     if (!this.active || !this.isAuthority() || !enemy) return false;
     let changed = false;
     const dynamic = this.objectiveDirector.state.current;
+    const missionStage = this.missionDirector.currentStage();
+    const bossStage = missionStage?.type === POST_FINAL7_STAGE_TYPES.HUNT;
+    const directive = this.core.getEncounterDirective();
+    const type = cleanText(enemy.type, 'SHAMBLER', 40).toUpperCase();
+    const eliteCandidate = (
+      directive.elitePending
+      || (
+        bossStage
+        && this.replayDirector.state.boss.status === POST_FINAL8_BOSS_STATUS.PENDING
+        && PRIORITY_TYPES.has(type)
+      )
+    );
+    const replayTuning = this.replayDirector.nextSpawnTuning({
+      enemyType: type,
+      bossStage,
+      elite: eliteCandidate
+    });
+
+    enemy.postFinal8FactionId = replayTuning.factionId;
+    enemy.postFinal8FactionLabel = replayTuning.factionLabel;
+    enemy.postFinal8Affixes = clone(replayTuning.affixes || []);
+    enemy.maxHealth = Math.max(
+      1,
+      Math.round(finite(enemy.maxHealth, enemy.health) * finite(replayTuning.healthScale, 1))
+    );
+    enemy.health = enemy.maxHealth;
+    enemy.speed = finite(enemy.speed, 1) * finite(replayTuning.speedScale, 1);
+    enemy.damage = Math.max(
+      1,
+      Math.round(finite(enemy.damage, 1) * finite(replayTuning.damageScale, 1))
+    );
+    tintEnemyForFaction(
+      enemy,
+      replayTuning.emissiveHex,
+      replayTuning.bossProfile ? 0.68 : (eliteCandidate ? 0.42 : 0.18)
+    );
+
     if (
       dynamic?.status === POST_FINAL4_OPERATION_STATUS.ACTIVE
       && dynamic.kind === POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET
       && !dynamic.targetEnemyId
-      && PRIORITY_TYPES.has(cleanText(enemy.type, '', 40).toUpperCase())
+      && PRIORITY_TYPES.has(type)
     ) {
       const targetId = cleanText(
         enemy.networkId || enemy.content1Id,
@@ -647,26 +828,37 @@ export class Content1Manager {
       enemy.health = enemy.maxHealth;
       enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 1.5);
       tintEnemyForPriority(enemy, true);
-      const missionStage = this.missionDirector.currentStage();
-      const bossStage = missionStage?.type === POST_FINAL7_STAGE_TYPES.HUNT;
       if (bossStage) {
         enemy.isPostFinal7Boss = true;
         enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * 1.8));
         enemy.health = enemy.maxHealth;
         enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 1.75);
       }
+      let targetLabel = bossStage
+        ? cleanText(missionStage.label, 'ELITE MISSION TARGET', 100).toUpperCase()
+        : `${type || 'HOSTILE'} PRIORITY`;
+      if (bossStage && replayTuning.bossProfile) {
+        enemy.isPostFinal8Boss = true;
+        enemy.postFinal8BossId = replayTuning.bossProfile.bossId;
+        enemy.postFinal8BossLabel = replayTuning.bossProfile.label;
+        enemy.postFinal8BossPhase = 0;
+        targetLabel = cleanText(replayTuning.bossProfile.label, targetLabel, 100).toUpperCase();
+        this.replayDirector.bindBoss({
+          enemyId: targetId,
+          enemyType: type,
+          maxHealth: enemy.maxHealth,
+          health: enemy.health
+        }, Date.now());
+        tintEnemyForFaction(enemy, replayTuning.emissiveHex, 0.82);
+      }
       changed = this.objectiveDirector.assignPriorityTarget({
         enemyId: targetId,
         position: enemy.mesh?.position,
-        label: bossStage
-          ? cleanText(missionStage.label, 'ELITE MISSION TARGET', 100).toUpperCase()
-          : `${cleanText(enemy.type, 'HOSTILE', 40)} PRIORITY`
+        label: targetLabel
       }, Date.now()) || changed;
     }
 
-    const directive = this.core.getEncounterDirective();
     if (directive.elitePending) {
-      const type = cleanText(enemy.type, '', 40).toUpperCase();
       if (type !== 'CRAWLER' && type !== 'EXPLODER') {
         const enemyId = cleanText(
           enemy.networkId || enemy.content1Id,
@@ -682,17 +874,7 @@ export class Content1Manager {
           enemy.damage = Math.max(1, Math.round(finite(enemy.damage, 1) * 1.08));
           enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 2);
           enemy.headshotReward = Math.round(finite(enemy.headshotReward, 100) * 1.65);
-          enemy.mesh?.traverse?.((child) => {
-            const materials = Array.isArray(child?.material)
-              ? child.material
-              : (child?.material ? [child.material] : []);
-            materials.forEach((material) => {
-              if (material?.emissive?.setHex) {
-                material.emissive.setHex(0xff8a22);
-                material.emissiveIntensity = Math.max(finite(material.emissiveIntensity), 0.38);
-              }
-            });
-          });
+          tintEnemyForFaction(enemy, replayTuning.emissiveHex, 0.48);
           changed = true;
         }
       }
@@ -712,6 +894,22 @@ export class Content1Manager {
       this.core.replaceSnapshot(snapshot, nowMs());
       if (snapshot.postFinal4) this.objectiveDirector.replaceSnapshot(snapshot.postFinal4, Date.now());
       if (snapshot.postFinal7) this.missionDirector.replaceSnapshot(snapshot.postFinal7, Date.now());
+      if (snapshot.postFinal8) this.replayDirector.replaceSnapshot(snapshot.postFinal8, Date.now());
+      const restoredBoss = this.replayDirector.state.boss;
+      if (restoredBoss?.enemyId) {
+        const enemy = this.getActiveEnemies?.().find((entry) => (
+          cleanText(entry?.content1Id || entry?.networkId, '', 180) === restoredBoss.enemyId
+        ));
+        if (enemy) {
+          enemy.isPostFinal8Boss = restoredBoss.status === POST_FINAL8_BOSS_STATUS.ACTIVE;
+          enemy.postFinal8BossId = restoredBoss.bossId;
+          enemy.postFinal8BossLabel = restoredBoss.label;
+          enemy.postFinal8BossPhase = restoredBoss.phase;
+          enemy.postFinal8FactionId = this.replayDirector.state.faction.id;
+          enemy.postFinal8FactionLabel = this.replayDirector.state.faction.label;
+          tintEnemyForFaction(enemy, this.replayDirector.state.faction.emissiveHex, 0.82);
+        }
+      }
       this.latestSnapshot = clone(this.buildSnapshot(nowMs()));
     }
     this.core.state.authorityEpoch = Math.max(
@@ -778,10 +976,14 @@ export class Content1Manager {
     if (payload.snapshot?.postFinal7) {
       this.missionDirector.replaceSnapshot(payload.snapshot.postFinal7, Date.now());
     }
+    if (payload.snapshot?.postFinal8) {
+      this.replayDirector.replaceSnapshot(payload.snapshot.postFinal8, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
-      postFinal7: this.missionDirector.getSnapshot(Date.now())
+      postFinal7: this.missionDirector.getSnapshot(Date.now()),
+      postFinal8: this.replayDirector.getSnapshot(Date.now())
     });
     this.applyLocalOperationRewards();
     this.observeDynamicOperation(this.latestSnapshot, { transitions: true });
@@ -805,6 +1007,14 @@ export class Content1Manager {
     const baseOperation = snapshot?.operation;
     const participants = this.participants(now);
     const activeParticipants = participants.filter((entry) => entry.connected && entry.alive);
+    if (this.isAuthority()) {
+      const downedHuman = participants.find((entry) => (
+        entry.connected
+        && !entry.isBot
+        && (!entry.alive || entry.lifeState !== 'ACTIVE')
+      ));
+      if (downedHuman) this.replayDirector.recordPlayerDowned(downedHuman.playerId, Date.now());
+    }
 
     if (
       this.isAuthority()
@@ -1076,8 +1286,56 @@ export class Content1Manager {
       }
     }
 
+    const missionSnapshot = this.missionDirector.getSnapshot(Date.now());
+    if (missionSnapshot.status === POST_FINAL7_MISSION_STATUS.COMPLETE) {
+      this.replayDirector.observeMission(missionSnapshot, Date.now());
+    }
+    const replayEvents = this.replayDirector.consumeEvents();
+    for (const event of replayEvents) {
+      if (event.type === 'FACTION_ASSIGNED') {
+        const modifierLabel = (event.modifiers || []).map((entry) => entry.label).join(' · ');
+        this.showToast?.(`${event.faction?.label || 'ENEMY FACTION'} · ${modifierLabel || 'STANDARD CONDITIONS'}`);
+      } else if (event.type === 'BOSS_DEPLOYED') {
+        this.showToast?.(`BOSS DEPLOYED · ${event.boss?.label || 'MISSION TARGET'}`);
+        playTeamAlertCue('ENEMY_MARK', {
+          cooldownKey: 'postfinal8_boss_deployed',
+          cooldownMs: 1400
+        });
+      } else if (event.type === 'BOSS_PHASE_CHANGED') {
+        this.showToast?.(`BOSS PHASE ${finite(event.phase, 0) + 1} · REINFORCEMENTS`);
+        playUISound('warning', 0.28, true, {
+          cooldownKey: `postfinal8_phase_${event.phase}`,
+          cooldownMs: 1200,
+          pitchMin: 0.72,
+          pitchMax: 0.86
+        });
+      } else if (event.type === 'BOSS_STAGGERED') {
+        this.showToast?.('BOSS STAGGERED · ATTACK THE WEAK POINT');
+        playUISound('waveClear', 0.24, true, {
+          cooldownKey: `postfinal8_stagger_${event.boss?.staggerCount}`,
+          cooldownMs: 900,
+          pitchMin: 1.08,
+          pitchMax: 1.2
+        });
+      } else if (event.type === 'BOSS_DEFEATED') {
+        this.showToast?.(`BOSS DEFEATED · ${event.boss?.label || 'MISSION TARGET'}`);
+        playUISound('waveClear', 0.58, true, {
+          cooldownKey: 'postfinal8_boss_defeated',
+          cooldownMs: 1800,
+          pitchMin: 1.06,
+          pitchMax: 1.18
+        });
+      } else if (event.type === 'NO_DOWNED_BONUS_LOST') {
+        this.showToast?.('MASTERY UPDATE · UNBROKEN TEAM BONUS LOST');
+      } else if (event.type === 'REPLAYABILITY_MASTERY_COMPLETE') {
+        this.showToast?.(
+          `MISSION MASTERY ${event.replayability?.masteryGrade || 'COMPLETE'} · ${event.replayability?.faction?.label || 'FACTION CLEARED'}`
+        );
+      }
+    }
+
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents];
+    return [...events, ...missionEvents, ...replayEvents];
   }
 
   applyLocalOperationRewards() {
@@ -1161,19 +1419,65 @@ export class Content1Manager {
       }
       this.showToast?.(`${String(mission.label || 'MISSION').toUpperCase()} · +${missionXp} XP`);
     }
+
+    const replay = snapshot?.postFinal8;
+    if (
+      replay?.missionComplete
+      && replay.completionId
+      && !this.replayRewardedCompletionIds.has(replay.completionId)
+    ) {
+      this.replayRewardedCompletionIds.add(replay.completionId);
+      const replayPoints = computePostFinal8Reward(replay);
+      const replayXp = Math.max(
+        120,
+        Math.round(160 * finite(replay.rewardMultiplier, 1))
+      );
+      recordProgressionContentOperation({
+        operationId: `${mission?.missionId || replay.missionId || 'MISSION'}-MASTERY`,
+        completionId: replay.completionId,
+        xp: replayXp
+      });
+      recordRunPostFinal8Replayability({
+        replayability: replay,
+        rewardPoints: replayPoints
+      });
+      if (this.isAuthority()) {
+        this.awardTeamObjective?.({
+          completionId: replay.completionId,
+          operationId: replay.boss?.bossId || replay.missionId || 'POST-FINAL.8',
+          points: replayPoints,
+          label: cleanText(
+            `${replay.faction?.label || 'FACTION'} MASTERY ${replay.masteryGrade || ''}`,
+            'MISSION MASTERY',
+            80
+          ),
+          contributors: clone(mission?.totalContributions || {})
+        });
+      }
+      this.showToast?.(
+        `MASTERY ${replay.masteryGrade || 'COMPLETE'} · +${replayXp} XP`
+      );
+    }
     return true;
   }
 
   directiveFromSnapshot() {
     const encounter = this.latestSnapshot?.encounter;
+    const replay = this.latestSnapshot?.postFinal8;
+    const baseWeights = { ...(encounter?.weights || {}) };
     return Object.freeze({
       patch: CONTENT1_PATCH,
       encounterId: encounter?.id || 'NONE',
       label: encounter?.label || 'Standard Pressure',
       wave: Math.max(1, Math.floor(finite(encounter?.wave, 1))),
-      weightMultipliers: Object.freeze({ ...(encounter?.weights || {}) }),
+      weightMultipliers: Object.freeze(baseWeights),
       elitePending: this.latestSnapshot?.elite?.pending === true,
-      eliteActiveIds: Object.freeze([...(this.latestSnapshot?.elite?.activeIds || [])])
+      eliteActiveIds: Object.freeze([...(this.latestSnapshot?.elite?.activeIds || [])]),
+      postFinal8Patch: replay?.patch || POST_FINAL8_PATCH,
+      factionId: replay?.faction?.id || '',
+      factionLabel: replay?.faction?.label || '',
+      bossId: replay?.boss?.bossId || '',
+      modifierIds: Object.freeze((replay?.modifiers || []).map((entry) => entry.id))
     });
   }
 
@@ -1209,6 +1513,9 @@ export class Content1Manager {
       <div class="ka-content1-kicker">CO-OP OPERATION CHAIN</div>
       <div class="ka-postfinal7-mission">MISSION DIRECTOR INITIALIZING</div>
       <div class="ka-postfinal7-stages">STAGE 0 / 0</div>
+      <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
+      <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
+      <div class="ka-postfinal8-boss" hidden>BOSS TELEMETRY STANDBY</div>
       <div class="ka-content1-operation">STANDBY</div>
       <div class="ka-postfinal4-description">OBJECTIVE DIRECTOR INITIALIZING</div>
       <div class="ka-content1-progress">0 / 0</div>
@@ -1228,6 +1535,9 @@ export class Content1Manager {
     this.hud = hud;
     this.hudMission = hud.querySelector('.ka-postfinal7-mission');
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
+    this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
+    this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
+    this.hudBoss = hud.querySelector('.ka-postfinal8-boss');
     this.hudOperation = hud.querySelector('.ka-content1-operation');
     this.hudDescription = hud.querySelector('.ka-postfinal4-description');
     this.hudProgress = hud.querySelector('.ka-content1-progress');
@@ -1256,7 +1566,11 @@ export class Content1Manager {
     }
     this.bindHudModeControl();
     hud.hidden = false;
-    hud.style.setProperty('--ka-content1-accent', roleColor(snapshot.mapId));
+    const replay = snapshot.postFinal8;
+    hud.style.setProperty(
+      '--ka-content1-accent',
+      replay?.faction?.color || roleColor(snapshot.mapId)
+    );
     const operation = snapshot.postFinal4?.current;
     const mission = snapshot.postFinal7;
     const missionStage = mission?.stages?.[mission.currentStageIndex] || null;
@@ -1274,6 +1588,31 @@ export class Content1Manager {
       this.hudMissionStages.textContent = mission
         ? `STAGE ${Math.min(total, finite(mission.currentStageIndex, 0) + 1)} / ${total} · ${completed} COMPLETE`
         : 'STAGE 0 / 0';
+    }
+    if (this.hudFaction) {
+      const faction = replay?.faction?.label || 'UNKNOWN FACTION';
+      const boss = replay?.boss?.label || 'MISSION BOSS';
+      this.hudFaction.textContent = `${String(faction).toUpperCase()} · ${String(boss).toUpperCase()}`;
+    }
+    if (this.hudModifiers) {
+      const labels = (replay?.modifiers || []).map((entry) => entry.label);
+      this.hudModifiers.textContent = labels.length
+        ? `MODIFIERS · ${labels.join(' · ')}`
+        : 'STANDARD CONDITIONS';
+    }
+    if (this.hudBoss) {
+      const boss = replay?.boss;
+      const visible = boss?.status === POST_FINAL8_BOSS_STATUS.ACTIVE
+        || boss?.status === POST_FINAL8_BOSS_STATUS.DEFEATED;
+      this.hudBoss.hidden = !visible;
+      if (visible) {
+        const healthPct = boss.maxHealth > 0
+          ? Math.max(0, Math.round((finite(boss.health) / finite(boss.maxHealth, 1)) * 100))
+          : 0;
+        this.hudBoss.textContent = boss.status === POST_FINAL8_BOSS_STATUS.DEFEATED
+          ? `${String(boss.label || 'BOSS').toUpperCase()} · DEFEATED · ${boss.staggerCount || 0} STAGGERS`
+          : `${String(boss.label || 'BOSS').toUpperCase()} · PHASE ${finite(boss.phase, 0) + 1}/${finite(boss.phaseCount, 3)} · ${healthPct}% · STAGGER ${Math.round(finite(boss.stagger))}% · WEAK ${finite(boss.weakPointHits)}`;
+      }
     }
     if (this.hudRisk) {
       const decision = mission?.status === POST_FINAL7_MISSION_STATUS.DECISION;
@@ -1322,9 +1661,12 @@ export class Content1Manager {
     }
     if (this.hudEncounter) {
       const encounter = snapshot.encounter;
+      const mastery = replay?.missionComplete
+        ? ` · MASTERY ${replay.masteryGrade || 'COMPLETE'}`
+        : '';
       this.hudEncounter.textContent = encounter
-        ? `${encounter.liveFeatured ? 'LIVE · ' : ''}${encounter.label.toUpperCase()} · WAVE ${encounter.wave}`
-        : 'STANDARD PRESSURE';
+        ? `${encounter.liveFeatured ? 'LIVE · ' : ''}${encounter.label.toUpperCase()} · WAVE ${encounter.wave}${mastery}`
+        : `STANDARD PRESSURE${mastery}`;
     }
     if (force) hud.classList.add('ka-content1-hud-pulse');
     setTimeout(() => hud.classList.remove('ka-content1-hud-pulse'), 280);

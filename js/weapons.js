@@ -3046,6 +3046,18 @@ const wasHealth = e.health;
 
     e.health -= finalDamage;
     recordRunDamageDealt(Math.min(wasHealth, finalDamage));
+    try {
+      globalThis.KAContent1EnemyDamaged?.({
+        enemyId: e.content1Id || e.networkId || '',
+        damage: Math.min(wasHealth, finalDamage),
+        headshot: hs,
+        actorId: localMultiplayerPlayerId() || 'local',
+        health: Math.max(0, Number(e.health) || 0),
+        maxHealth: Math.max(1, Number(e.maxHealth) || 1)
+      });
+    } catch {
+      // POST-FINAL.8 replayability is optional during isolated combat tests.
+    }
 
     const heavyStaggerScale = e.type === 'GOLIATH'
       ? 0.48

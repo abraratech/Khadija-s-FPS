@@ -1003,6 +1003,7 @@ export class MultiplayerBotManager {
 
     if (kind === 'PRIORITY_TARGET') {
       type = TACTICAL_PING_TYPES.ENEMY;
+      if (directive.bossTargetId) targetId = directive.bossTargetId;
     } else if (kind === 'DEFEND_ZONE' || kind === 'EXTRACTION_HOLDOUT') {
       type = TACTICAL_PING_TYPES.DEFEND;
     } else if (kind === 'RESCUE_SURVIVOR' && stage === 'ESCORT') {
@@ -1032,7 +1033,7 @@ export class MultiplayerBotManager {
     this.objectiveCommand = Object.freeze({
       commandId,
       type,
-      priority: 25,
+      priority: directive.bossStatus === 'ACTIVE' ? 30 : 25,
       status: type === TACTICAL_PING_TYPES.DEFEND
         ? SQUAD_COMMAND_STATUS.DEFENDING
         : (type === TACTICAL_PING_TYPES.INTERACT
@@ -1040,13 +1041,19 @@ export class MultiplayerBotManager {
           : (type === TACTICAL_PING_TYPES.ENEMY
             ? SQUAD_COMMAND_STATUS.ENGAGING
             : SQUAD_COMMAND_STATUS.MOVING)),
-      acknowledgement: directive.bossStage
-        ? 'BOSS TARGET ACKNOWLEDGED'
-        : (directive.extractionStage
-          ? 'EXTRACTION DIRECTIVE ACKNOWLEDGED'
-          : 'MISSION DIRECTIVE ACKNOWLEDGED'),
-      ownerPlayerId: 'postfinal7-mission-director',
-      ownerName: directive.missionLabel || 'MISSION DIRECTOR',
+      acknowledgement: directive.bossStatus === 'ACTIVE'
+        ? `BOSS PHASE ${Math.max(1, Number(directive.bossPhase || 0) + 1)} ACKNOWLEDGED`
+        : (directive.bossStage
+          ? 'BOSS TARGET ACKNOWLEDGED'
+          : (directive.extractionStage
+            ? 'EXTRACTION DIRECTIVE ACKNOWLEDGED'
+            : 'MISSION DIRECTIVE ACKNOWLEDGED')),
+      ownerPlayerId: directive.bossStatus === 'ACTIVE'
+        ? 'postfinal8-replayability-director'
+        : 'postfinal7-mission-director',
+      ownerName: directive.bossStatus === 'ACTIVE'
+        ? (directive.bossLabel || directive.factionLabel || 'BOSS DIRECTOR')
+        : (directive.missionLabel || 'MISSION DIRECTOR'),
       position: clonePosition(position),
       targetId: targetId ? String(targetId).slice(0, 96) : null,
       createdAt: receivedAt,
@@ -1063,6 +1070,15 @@ export class MultiplayerBotManager {
       missionStageId: String(directive.missionStageId || '').slice(0, 180),
       missionStageType: String(directive.missionStageType || '').slice(0, 40),
       missionStageLabel: String(directive.missionStageLabel || '').slice(0, 100),
+      postFinal8Patch: String(directive.postFinal8Patch || '').slice(0, 100),
+      factionId: String(directive.factionId || '').slice(0, 80),
+      factionLabel: String(directive.factionLabel || '').slice(0, 100),
+      bossTargetId: directive.bossTargetId ? String(directive.bossTargetId).slice(0, 96) : null,
+      bossLabel: String(directive.bossLabel || '').slice(0, 100),
+      bossStatus: String(directive.bossStatus || '').slice(0, 30),
+      bossPhase: Math.max(0, Number(directive.bossPhase) || 0),
+      bossStagger: Math.max(0, Number(directive.bossStagger) || 0),
+      weakPointHits: Math.max(0, Number(directive.weakPointHits) || 0),
       bossStage: directive.bossStage === true,
       extractionStage: directive.extractionStage === true,
       riskChoice: String(directive.riskChoice || '').slice(0, 20),
@@ -1074,8 +1090,11 @@ export class MultiplayerBotManager {
         this.holdPosition = clonePosition(position);
       } else if (
         this.holdPosition
-        && ['postfinal4-objective-director', 'postfinal7-mission-director']
-          .includes(this.state.squadIntentOwnerPlayerId)
+        && [
+          'postfinal4-objective-director',
+          'postfinal7-mission-director',
+          'postfinal8-replayability-director'
+        ].includes(this.state.squadIntentOwnerPlayerId)
       ) {
         this.holdPosition = null;
       }

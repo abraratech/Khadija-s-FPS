@@ -6,6 +6,10 @@ import {
   evaluateMultiplayerProductionRelease,
   normalizeMultiplayerReleaseEndpoint
 } from './production_release_core.js';
+import {
+  classifyPostFinal10Network,
+  postFinal10RetryDelay
+} from '../postfinal10_core.js';
 
 const CACHE_MS = 60000;
 const REQUEST_TIMEOUT_MS = 6000;
@@ -39,36 +43,69 @@ function publish(next) {
   return snapshot;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function currentNetworkSnapshot() {
+  const connection = globalThis.navigator?.connection
+    || globalThis.navigator?.mozConnection
+    || globalThis.navigator?.webkitConnection;
+  return {
+    online: globalThis.navigator?.onLine !== false,
+    rttMs: Number(connection?.rtt) || 0,
+    jitterMs: 0,
+    lossPct: 0
+  };
+}
+
 async function fetchManifest(endpoint, fetchImpl) {
-  const controller = typeof AbortController !== 'undefined'
-    ? new AbortController()
-    : null;
-  const timeout = setTimeout(
-    () => controller?.abort(),
-    REQUEST_TIMEOUT_MS
-  );
-  try {
-    const response = await fetchImpl(endpoint, {
-      method: 'GET',
-      cache: 'no-store',
-      credentials: 'omit',
-      signal: controller?.signal
-    });
-    if (!response.ok) {
-      throw new Error(
-        `Worker release endpoint returned HTTP ${response.status}.`
-      );
+  let lastError = null;
+  const maximumAttempts = 3;
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    const controller = typeof AbortController !== 'undefined'
+      ? new AbortController()
+      : null;
+    const timeout = setTimeout(
+      () => controller?.abort(),
+      REQUEST_TIMEOUT_MS
+    );
+    try {
+      const response = await fetchImpl(endpoint, {
+        method: 'GET',
+        cache: 'no-store',
+        credentials: 'omit',
+        signal: controller?.signal
+      });
+      if (!response.ok) {
+        const error = new Error(
+          `Worker release endpoint returned HTTP ${response.status}.`
+        );
+        error.retryable = response.status >= 500 || response.status === 429;
+        throw error;
+      }
+      const contentType = String(
+        response.headers?.get?.('content-type') || ''
+      ).toLowerCase();
+      if (!contentType.includes('application/json')) {
+        const error = new Error('Worker release endpoint did not return JSON.');
+        error.retryable = false;
+        throw error;
+      }
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      const network = classifyPostFinal10Network(currentNetworkSnapshot());
+      const retryable = error?.retryable !== false;
+      if (!retryable || attempt >= maximumAttempts - 1 || network.status === 'OFFLINE') {
+        throw error;
+      }
+      await sleep(postFinal10RetryDelay(attempt, network));
+    } finally {
+      clearTimeout(timeout);
     }
-    const contentType = String(
-      response.headers?.get?.('content-type') || ''
-    ).toLowerCase();
-    if (!contentType.includes('application/json')) {
-      throw new Error('Worker release endpoint did not return JSON.');
-    }
-    return await response.json();
-  } finally {
-    clearTimeout(timeout);
   }
+  throw lastError || new Error('Worker release preflight failed.');
 }
 
 export async function checkMultiplayerProductionRelease(

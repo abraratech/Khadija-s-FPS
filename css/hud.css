@@ -1563,3 +1563,94 @@ body.ka-mobile-device #btn-switch.is-held {
     box-shadow: none;
   }
 }
+
+/* POST-FINAL.10 R1 — Version 1.0 accessibility, focus and runtime budgets. */
+:root {
+  --ka-text-scale: 1;
+  --ka-caption-scale: 1;
+  --ka-particle-budget: 1;
+  --ka-animation-budget: 1;
+  --ka-signal-enemy: #ff4a36;
+  --ka-signal-ally: #6dff9f;
+  --ka-signal-objective: #34d8ff;
+  --ka-signal-revive: #ff6f9f;
+  --ka-signal-warning: #ffe45c;
+}
+
+.ka-setting-row strong,
+.ka-settings-card strong,
+.run-summary-grid b,
+#objective-panel,
+#challenge-panel,
+#tutorial-panel,
+#performance-stats-panel {
+  font-size: calc(1em * var(--ka-text-scale));
+}
+
+.ka-setting-row small,
+.ka-settings-card small,
+.run-summary-grid span,
+#multiplayer-tactical-awareness > div {
+  font-size: calc(11px * var(--ka-text-scale)) !important;
+}
+
+body.ka-focus-assist :is(
+  button,
+  select,
+  input,
+  [tabindex]:not([tabindex="-1"]),
+  a[href]
+):focus-visible {
+  outline: 3px solid var(--ka-signal-warning) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 2px #000, 0 0 18px color-mix(in srgb, var(--ka-signal-warning) 70%, transparent) !important;
+}
+
+body[data-ka-color-vision="monochrome"] #c {
+  filter: grayscale(1) contrast(1.08);
+}
+
+body[data-ka-color-vision="deuteranopia"] #objective-panel,
+body[data-ka-color-vision="protanopia"] #objective-panel,
+body[data-ka-color-vision="tritanopia"] #objective-panel,
+body[data-ka-color-vision="monochrome"] #objective-panel {
+  border-color: var(--ka-signal-objective) !important;
+}
+
+body[data-ka-performance-profile="suspended"] #hud,
+body[data-ka-performance-profile="recovery"] #hud {
+  --ka-runtime-animation-duration: 0.001ms;
+}
+
+body[data-ka-performance-profile="suspended"] #hud *,
+body[data-ka-performance-profile="suspended"] #hud *::before,
+body[data-ka-performance-profile="suspended"] #hud *::after {
+  animation-duration: var(--ka-runtime-animation-duration) !important;
+  animation-iteration-count: 1 !important;
+}
+
+.ka-version1-runtime-status {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 212, 255, 0.42);
+  border-radius: 8px;
+  background: rgba(0, 16, 24, 0.68);
+  color: #9eeeff;
+  font: 900 calc(10px * var(--ka-text-scale))/1.35 ui-monospace, Consolas, monospace;
+  letter-spacing: 0.8px;
+}
+
+.ka-version1-runtime-status[data-tone="ready"] {
+  border-color: rgba(109, 255, 159, 0.56);
+  color: var(--ka-signal-ally);
+}
+
+.ka-version1-runtime-status[data-tone="warning"] {
+  border-color: rgba(255, 228, 92, 0.62);
+  color: var(--ka-signal-warning);
+}
+
+.ka-version1-runtime-status[data-tone="danger"] {
+  border-color: rgba(255, 74, 54, 0.72);
+  color: var(--ka-signal-enemy);
+}

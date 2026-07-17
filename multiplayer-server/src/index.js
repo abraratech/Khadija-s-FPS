@@ -135,6 +135,44 @@ const POST_FINAL9_SERVER_INFO = Object.freeze({
   frontendOnly: false
 });
 
+const POST_FINAL10_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'post-final10-r1-version1-stabilization-accessibility-performance',
+  productVersion: '1.0.0',
+  sourceBaselineSha: '56e98d32e0bf2587a592e1e45faab218bbfbfda4',
+  certifiedFrontendBaselineSha: CERTIFIED_FRONTEND_SHA,
+  accessibilityCertification: Object.freeze({
+    textScale: true,
+    captionScale: true,
+    reducedMotion: true,
+    reducedFlashes: true,
+    highContrast: true,
+    colorVisionModes: 5,
+    colorIndependentSignals: true,
+    focusAssist: true
+  }),
+  performanceGovernor: true,
+  dynamicParticleBudget: true,
+  backgroundTabConservation: true,
+  degradedNetworkClassification: true,
+  releasePreflightRetries: 3,
+  controllerKeyboardMobileCertification: true,
+  frontendWorkerCompatibilityVerification: true,
+  certification: Object.freeze({
+    javascriptSyntaxChecks: 388,
+    frontendDeterministicTests: 137,
+    workerDeterministicTests: 37,
+    productionRuntimeFiles: 252,
+    mapHeroChecks: 6,
+    mp3AssetChecks: 43,
+    status: 'CERTIFIED'
+  }),
+  finalProductCertification: 'VERSION_1_0',
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false
+});
+
 const FINAL2_SERVER_INFO = Object.freeze({
   schema: 1,
   patch: SERVER_PATCH,
@@ -2350,6 +2388,7 @@ export default {
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
+        version1Certification: POST_FINAL10_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2389,6 +2428,7 @@ export default {
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
+        version1Certification: POST_FINAL10_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

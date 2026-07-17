@@ -3,6 +3,7 @@
 // VIS.4 — pooled, quality-aware combat and enemy visual effects.
 import * as THREE from 'three';
 import { scene, getEffectiveGraphicsQuality } from './map.js';
+import { getPostFinal10ParticleBudgetScale } from './postfinal10_runtime.js';
 
 const MAX_DECALS = 110;
 const MAX_BLOOD = 56;
@@ -114,7 +115,10 @@ function qualityRank() {
 
 function qualityCount(low, medium, high) {
   const rank = qualityRank();
-  return rank === 0 ? low : (rank === 2 ? high : medium);
+  const base = rank === 0 ? low : (rank === 2 ? high : medium);
+  if (base <= 0) return 0;
+  const budget = getPostFinal10ParticleBudgetScale();
+  return Math.max(1, Math.round(base * budget));
 }
 
 function next(pool, size) {

@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
 import { TacticalPingStore, TACTICAL_PING_TYPES, normalizePingType, sanitizePingText } from './tactical_ping_core.js';
+import { resolveAccessibleSignalColor } from '../accessibility.js';
 
 const TEAMMATE_MARKER_DISTANCE_M = 65;
 const ENEMY_PING_MAX_DISTANCE_M = 95;
@@ -84,11 +85,30 @@ function teammateStatus({ roomPlayer, reviveEntry, state, hostPlayerId }) {
 }
 
 function statusColor(status) {
-  if (status === 'HOST') return '#ffd166';
-  if (status === 'DOWNED' || status === 'ELIMINATED') return '#ff5c5c';
-  if (status === 'SPECTATING') return '#9edbff';
-  if (status === 'RECONNECTING') return '#ff4fd8';
-  return '#6dff9f';
+  if (status === 'HOST') return resolveAccessibleSignalColor('WARNING', '#ffd166');
+  if (status === 'DOWNED' || status === 'ELIMINATED') return resolveAccessibleSignalColor('REVIVE', '#ff5c5c');
+  if (status === 'SPECTATING') return resolveAccessibleSignalColor('OBJECTIVE', '#9edbff');
+  if (status === 'RECONNECTING') return resolveAccessibleSignalColor('WARNING', '#ff4fd8');
+  return resolveAccessibleSignalColor('ALLY', '#6dff9f');
+}
+
+function pingSymbol(type) {
+  const normalized = normalizePingType(type);
+  if (normalized === TACTICAL_PING_TYPES.ENEMY) return '▲';
+  if (normalized === TACTICAL_PING_TYPES.REVIVE || normalized === TACTICAL_PING_TYPES.REVIVE_ME) return '✚';
+  if (normalized === TACTICAL_PING_TYPES.NEED_HELP) return '!';
+  if (normalized === TACTICAL_PING_TYPES.NEED_AMMO) return '▣';
+  if (normalized === TACTICAL_PING_TYPES.DEFEND) return '◆';
+  if (normalized === TACTICAL_PING_TYPES.REGROUP || normalized === TACTICAL_PING_TYPES.FOLLOW_ME) return '●';
+  return '◇';
+}
+
+function teammateSymbol(status) {
+  if (status === 'DOWNED' || status === 'ELIMINATED') return '✚';
+  if (status === 'HOST') return '★';
+  if (status === 'RECONNECTING') return '↻';
+  if (status === 'SPECTATING') return '◉';
+  return '●';
 }
 
 function setMarkerBoxStyle(el, color) {
@@ -505,14 +525,14 @@ export class MultiplayerTacticalAwareness {
     if (!point) return;
 
     const dist = distance(this.player?.pos, ping.position);
-    const color = ping.color || '#34d8ff';
+    const color = resolveAccessibleSignalColor(ping.type, ping.color || '#34d8ff');
     const marker = document.createElement('div');
     setMarkerBoxStyle(marker, color);
     marker.style.left = `${point.x}px`;
     marker.style.top = `${point.y}px`;
 
     const title = document.createElement('div');
-    title.textContent = `${ping.label || ping.type} | ${sanitizePingText(ping.ownerName, 'Player')}`;
+    title.textContent = `${pingSymbol(ping.type)} ${ping.label || ping.type} | ${sanitizePingText(ping.ownerName, 'Player')}`;
     title.style.color = color;
     const detail = document.createElement('div');
     detail.textContent = formatMeters(dist);
@@ -583,7 +603,7 @@ export class MultiplayerTacticalAwareness {
     marker.style.opacity = teammate.status === 'RECONNECTING' ? '0.82' : '1';
 
     const title = document.createElement('div');
-    title.textContent = `${teammate.displayName} | ${teammate.status}`;
+    title.textContent = `${teammateSymbol(teammate.status)} ${teammate.displayName} | ${teammate.status}`;
     title.style.color = color;
 
     const detail = document.createElement('div');

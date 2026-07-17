@@ -68,6 +68,10 @@ import {
   triggerMobileHaptic
 } from './controls.js';
 import { initAccessibilityControls } from './accessibility.js';
+import {
+  initPostFinal10Runtime,
+  recordPostFinal10Frame
+} from './postfinal10_runtime.js';
 import { initPlayerPreferencesControls, getAdsMode, getInvertYEnabled } from './player_preferences.js';
 import { initAdaptiveMusic } from './adaptive_music.js';
 import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisualTutorial } from './visual_tutorial.js';
@@ -659,6 +663,7 @@ bindCoreSettingsControls();
 bindAIMemoryControls();
 initControlsUI();
 initAccessibilityControls();
+initPostFinal10Runtime({ onToast: showStatusToast });
 initPlayerPreferencesControls({
   onReset: () => {
     setMasterVolume(80);
@@ -1690,6 +1695,13 @@ const dt = Math.min(rawDt, 0.05);
 smoothFps = smoothFps * 0.9 + (rawDt > 0 ? 1 / rawDt : 60) * 0.1;
 
 const rawFrameMs = rawDt * 1000;
+recordPostFinal10Frame({
+  fps: smoothFps,
+  frameMs: rawFrameMs,
+  dt,
+  playing: gs === 'playing',
+  now: Date.now()
+});
 
 if (gs === 'playing') {
   ops1PerformanceSampleT += dt;

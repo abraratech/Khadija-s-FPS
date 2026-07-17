@@ -33,6 +33,10 @@ POST_FINAL8_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb6
 POST_FINAL9_PATCH = "post-final9-r1-economy-rewards-long-term-progression"
 POST_FINAL9_SOURCE_BASELINE_SHA = "bde3ff8d8fa5f29948c82ec4fa20959685e92846"
 POST_FINAL9_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+POST_FINAL10_PATCH = "post-final10-r1-version1-stabilization-accessibility-performance"
+POST_FINAL10_PRODUCT_VERSION = "1.0.0"
+POST_FINAL10_SOURCE_BASELINE_SHA = "56e98d32e0bf2587a592e1e45faab218bbfbfda4"
+POST_FINAL10_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -296,6 +300,43 @@ def main() -> None:
             "cloud_profile_synchronization": True,
             "late_join_reconnect_host_migration_reward_integrity": True,
             "progression_and_run_summary_ui": True,
+            "protocol_unchanged": True,
+            "worker_change_required": True,
+            "frontend_only": False
+        },
+        "post_final10": {
+            "schema": 1,
+            "patch": POST_FINAL10_PATCH,
+            "product_version": POST_FINAL10_PRODUCT_VERSION,
+            "source_baseline_sha": POST_FINAL10_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": POST_FINAL10_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "accessibility": {
+                "text_scale": True,
+                "caption_scale": True,
+                "reduced_motion": True,
+                "reduced_flashes": True,
+                "high_contrast": True,
+                "color_vision_modes": 5,
+                "color_independent_signals": True,
+                "focus_assist": True
+            },
+            "performance_governor": True,
+            "dynamic_particle_budget": True,
+            "background_tab_conservation": True,
+            "degraded_network_classification": True,
+            "release_preflight_retries": 3,
+            "controller_keyboard_mobile_certification": True,
+            "frontend_worker_compatibility_verification": True,
+            "certification": {
+                "javascript_syntax_checks": 388,
+                "frontend_deterministic_tests": 137,
+                "worker_deterministic_tests": 37,
+                "production_runtime_files": 252,
+                "map_hero_checks": 6,
+                "mp3_asset_checks": 43,
+                "status": "CERTIFIED"
+            },
+            "version1_transition": True,
             "protocol_unchanged": True,
             "worker_change_required": True,
             "frontend_only": False

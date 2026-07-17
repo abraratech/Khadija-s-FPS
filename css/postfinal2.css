@@ -92,3 +92,9 @@ body.ka-mobile-device #ka-coop-audio-caption {
     animation: none;
   }
 }
+
+/* POST-FINAL.10 R1 — independently scalable co-op awareness captions. */
+#ka-coop-audio-caption {
+  font-size: calc(15px * var(--ka-caption-scale)) !important;
+  line-height: 1.35;
+}

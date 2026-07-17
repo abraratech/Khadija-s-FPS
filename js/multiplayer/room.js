@@ -1,6 +1,7 @@
 // js/multiplayer/room.js
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
+import { normalizePvp1Mode } from './pvp1_core.js';
 
 export const ROOM_STATUS = Object.freeze({
   WAITING: 'waiting',
@@ -37,7 +38,11 @@ function serializePlayer(player) {
       0,
       Number(player.lateJoinProtectionUntil) || 0
     ),
-    catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0))
+    catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0)),
+    team: ['ALPHA', 'BRAVO'].includes(String(player.team || '').toUpperCase())
+      ? String(player.team).toUpperCase()
+      : null,
+    pvpSlot: Math.max(0, Math.floor(Number(player.pvpSlot) || 0))
   };
 }
 
@@ -54,12 +59,14 @@ export class MultiplayerRoomState {
       maxPlayers: 4,
       mapId: 'grid_bunker',
       difficulty: 1,
-      privacy: 'private'
+      privacy: 'private',
+      gameMode: 'coop'
     };
     this.runId = null;
     this.authorityEpoch = 0;
     this.revision = 0;
     this.finalSummary = null;
+    this.pvp = null;
   }
 
   createLocalRoom({
@@ -79,13 +86,15 @@ export class MultiplayerRoomState {
     this.runId = null;
     this.authorityEpoch = 0;
     this.finalSummary = null;
+    this.pvp = null;
     this.players.clear();
     this.virtualPlayers.clear();
     this.settings = {
       ...this.settings,
       mapId,
       difficulty: Number(difficulty) || 1,
-      maxPlayers: Math.max(1, Math.min(4, Math.floor(maxPlayers) || 4))
+      maxPlayers: Math.max(1, Math.min(4, Math.floor(maxPlayers) || 4)),
+      gameMode: 'coop'
     };
 
     this.players.set(hostPlayer.playerId, {
@@ -181,6 +190,9 @@ export class MultiplayerRoomState {
     if (nextSettings.privacy) {
       this.settings.privacy = String(nextSettings.privacy);
     }
+    if (nextSettings.gameMode !== undefined) {
+      this.settings.gameMode = normalizePvp1Mode(nextSettings.gameMode);
+    }
 
     this.commit('settings-changed');
     return true;
@@ -224,6 +236,7 @@ export class MultiplayerRoomState {
     this.settings = { ...this.settings, ...(snapshot.settings || {}) };
     this.runId = snapshot.runId || null;
     this.finalSummary = snapshot.finalSummary || null;
+    this.pvp = snapshot.pvp || null;
     this.authorityEpoch = Math.max(
       0,
       Math.floor(Number(snapshot.authorityEpoch) || 0)
@@ -279,7 +292,8 @@ export class MultiplayerRoomState {
       runId: this.runId,
       authorityEpoch: this.authorityEpoch,
       revision: this.revision,
-      finalSummary: this.finalSummary
+      finalSummary: this.finalSummary,
+      pvp: this.pvp ? structuredClone(this.pvp) : null
     };
   }
 }

@@ -23,6 +23,14 @@ import {
   POST_FINAL10_SOURCE_BASELINE_SHA,
   POST_FINAL10_CERTIFIED_FRONTEND_BASELINE_SHA
 } from '../postfinal10_core.js';
+import {
+  PVP1_CERTIFIED_FRONTEND_BASELINE_SHA,
+  PVP1_MODE,
+  PVP1_PATCH,
+  PVP1_PRODUCT_VERSION,
+  PVP1_SCHEMA,
+  PVP1_SOURCE_BASELINE_SHA
+} from './pvp1_core.js';
 
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PATCH, 'final2-r1-full-product-certification');
 assert.equal(MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL, 6);
@@ -65,6 +73,37 @@ const version1Certification = {
   }
 };
 assert.deepEqual(frontend.version1Certification, version1Certification);
+const pvp1 = {
+  schema: PVP1_SCHEMA,
+  patch: PVP1_PATCH,
+  productVersion: PVP1_PRODUCT_VERSION,
+  sourceBaselineSha: PVP1_SOURCE_BASELINE_SHA,
+  certifiedFrontendBaselineSha: PVP1_CERTIFIED_FRONTEND_BASELINE_SHA,
+  featureEnabled: true,
+  featureFlag: 'PVP1_ENABLED',
+  mode: PVP1_MODE,
+  privateRooms: true,
+  publicMatchmaking: false,
+  supportedTeamSizes: [1, 2],
+  bestOf: 5,
+  roundsToWin: 3,
+  serverAuthoritativeDamage: true,
+  serverDistanceValidation: true,
+  friendlyFireBlocked: true,
+  separateWeaponBalance: true,
+  aiEnemiesDisabled: true,
+  aiWingmanDisabled: true,
+  reviveDisabled: true,
+  coopObjectivesDisabled: true,
+  coopRewardReceiptsDisabled: true,
+  reconnectGraceMs: 45000,
+  hostMigrationPreserved: true,
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false
+};
+assert.deepEqual(frontend.pvp1, pvp1);
+assert.deepEqual(frontend.pvp1, releaseMetadata.pvp1);
 
 const passing = evaluateMultiplayerProductionRelease({
   frontendManifest: frontend,
@@ -78,6 +117,7 @@ const passing = evaluateMultiplayerProductionRelease({
     certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     version1Certification,
+    pvp1,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -85,6 +125,26 @@ const passing = evaluateMultiplayerProductionRelease({
 });
 assert.equal(passing.status, 'PASS');
 assert.equal(passing.ready, true);
+const pvpFeatureDisabled = evaluateMultiplayerProductionRelease({
+  frontendManifest: frontend,
+  workerManifest: {
+    ok: true,
+    service: 'khadijas-arena-multiplayer',
+    protocol: 6,
+    build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
+    patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
+    certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
+    releaseStatus: 'CERTIFIED',
+    version1Certification,
+    pvp1: { ...pvp1, featureEnabled: false },
+    leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
+    cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
+    deployedAt: '2026-07-10T00:00:00.000Z'
+  }
+});
+assert.equal(pvpFeatureDisabled.status, 'PASS');
+assert.equal(pvpFeatureDisabled.ready, true);
 const missingLeaderboard = evaluateMultiplayerProductionRelease({
   frontendManifest: frontend,
   workerManifest: {
@@ -114,6 +174,7 @@ const missingCloudProfiles = evaluateMultiplayerProductionRelease({
     certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     version1Certification,
+    pvp1,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     deployedAt: '2026-07-10T00:00:00.000Z'
   }
@@ -132,6 +193,7 @@ const missingPasskeyAuth = evaluateMultiplayerProductionRelease({
     certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
     version1Certification,
+    pvp1,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -150,6 +212,7 @@ const missingVersion1 = evaluateMultiplayerProductionRelease({
     certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
     certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
     releaseStatus: 'CERTIFIED',
+    pvp1,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -172,6 +235,7 @@ const uncertifiedVersion1 = evaluateMultiplayerProductionRelease({
       ...version1Certification,
       certification: { ...version1Certification.certification, status: 'PENDING' }
     },
+    pvp1,
     leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
     cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
     deployedAt: '2026-07-10T00:00:00.000Z'
@@ -179,4 +243,23 @@ const uncertifiedVersion1 = evaluateMultiplayerProductionRelease({
 });
 assert.equal(uncertifiedVersion1.ready, false);
 assert.equal(uncertifiedVersion1.errors.some((item) => item.code === 'VERSION1_CERTIFICATION_STATUS_MISMATCH'), true);
+const missingPvp1 = evaluateMultiplayerProductionRelease({
+  frontendManifest: frontend,
+  workerManifest: {
+    ok: true,
+    service: 'khadijas-arena-multiplayer',
+    protocol: 6,
+    build: MULTIPLAYER_PRODUCTION_RELEASE_BUILD,
+    patch: MULTIPLAYER_PRODUCTION_RELEASE_PATCH,
+    certifiedFrontendSha: MULTIPLAYER_PRODUCTION_CERTIFIED_BASELINE,
+    certifiedSourceSeal: MULTIPLAYER_PRODUCTION_CERTIFIED_SOURCE_SEAL,
+    releaseStatus: 'CERTIFIED',
+    version1Certification,
+    leaderboards: { schema: 1, patch: MULTIPLAYER_PRODUCTION_LEADERBOARD_PATCH },
+    cloudProfiles: { schema: 1, patch: MULTIPLAYER_PRODUCTION_CLOUD_PROFILE_PATCH, authPatch: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_PATCH, authentication: MULTIPLAYER_PRODUCTION_CLOUD_AUTH_MECHANISM, authAlgorithms: [...MULTIPLAYER_PRODUCTION_CLOUD_AUTH_ALGORITHMS] },
+    deployedAt: '2026-07-10T00:00:00.000Z'
+  }
+});
+assert.equal(missingPvp1.ready, false);
+assert.equal(missingPvp1.errors.some((item) => item.code === 'PVP1_PATCH_MISMATCH'), true);
 console.log('production_release_core tests passed');

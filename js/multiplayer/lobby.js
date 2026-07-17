@@ -35,6 +35,7 @@ import {
 } from './production_release.js';
 import { PublicMatchmakingClient } from './matchmaking.js';
 import { PublicRoomDirectoryClient } from './room_directory.js';
+import { normalizePvp1Mode } from './pvp1_core.js';
 import {
   match3PartyErrorMessage,
   normalizeMatch3PartyContext
@@ -463,13 +464,18 @@ export class MultiplayerLobbyController {
       roomCode: makeRoomCode(),
       displayName,
       serverUrl,
-      joinMode: 'create'
+      joinMode: 'create',
+      gameMode: 'coop'
     });
     if (!connected) this.pendingPublicListing = false;
     return connected;
   }
 
-  async createRoom({ displayName, serverUrl } = {}) {
+  async createRoom({
+    displayName,
+    serverUrl,
+    gameMode = 'coop'
+  } = {}) {
     if (this.matchmaking?.isActive?.()) {
       await this.matchmaking.cancel({ reason: 'private-room-create' });
     }
@@ -478,7 +484,8 @@ export class MultiplayerLobbyController {
       roomCode,
       displayName,
       serverUrl,
-      joinMode: 'create'
+      joinMode: 'create',
+      gameMode: normalizePvp1Mode(gameMode)
     });
   }
 
@@ -795,6 +802,7 @@ export class MultiplayerLobbyController {
     displayName,
     serverUrl,
     joinMode,
+    gameMode = 'coop',
     admissionToken = null
   } = {}) {
     this.error = null;
@@ -822,6 +830,7 @@ export class MultiplayerLobbyController {
         playerId: this.localPlayerId,
         displayName: String(displayName || 'Player').trim().slice(0, 24),
         joinMode,
+        gameMode: normalizePvp1Mode(gameMode),
         reconnectToken: loadReconnectToken(roomCode),
         admissionToken
       });
@@ -1180,7 +1189,9 @@ export class MultiplayerLobbyController {
         roomCode: payload.roomCode,
         authorityEpoch: payload.authorityEpoch || this.room?.authorityEpoch || 0,
         resume: false,
-        checkpoint: null
+        checkpoint: null,
+        gameMode: normalizePvp1Mode(payload.gameMode || this.room?.settings?.gameMode),
+        pvp: payload.pvp || this.room?.pvp || null
       };
 
       if (!start.runId || !start.mapId) {

@@ -37,6 +37,11 @@ POST_FINAL10_PATCH = "post-final10-r1-version1-stabilization-accessibility-perfo
 POST_FINAL10_PRODUCT_VERSION = "1.0.0"
 POST_FINAL10_SOURCE_BASELINE_SHA = "56e98d32e0bf2587a592e1e45faab218bbfbfda4"
 POST_FINAL10_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+PVP1_PATCH = "pvp1-r1-isolated-team-elimination-foundation"
+PVP1_PRODUCT_VERSION = "1.1.0-pvp1"
+PVP1_SOURCE_BASELINE_SHA = "ddbdc3a4b478aa26a515e2dd8dbfc9449885c466"
+PVP1_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -80,7 +85,7 @@ def allowed(relative: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\POST_FINAL2_PRODUCTION_BUILD")
+    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\PVP1_R1_PRODUCTION_BUILD")
     args = parser.parse_args()
 
     project = Path(args.project_root).resolve()
@@ -337,6 +342,35 @@ def main() -> None:
                 "status": "CERTIFIED"
             },
             "version1_transition": True,
+            "protocol_unchanged": True,
+            "worker_change_required": True,
+            "frontend_only": False
+        },
+        "pvp1": {
+            "schema": 1,
+            "patch": PVP1_PATCH,
+            "product_version": PVP1_PRODUCT_VERSION,
+            "source_baseline_sha": PVP1_SOURCE_BASELINE_SHA,
+            "certified_frontend_baseline_sha": PVP1_CERTIFIED_FRONTEND_BASELINE_SHA,
+            "feature_enabled": True,
+            "feature_flag": "PVP1_ENABLED",
+            "mode": "pvp-team-elimination",
+            "private_rooms": True,
+            "public_matchmaking": False,
+            "supported_team_sizes": [1, 2],
+            "best_of": 5,
+            "rounds_to_win": 3,
+            "server_authoritative_damage": True,
+            "server_distance_validation": True,
+            "friendly_fire_blocked": True,
+            "separate_weapon_balance": True,
+            "ai_enemies_disabled": True,
+            "ai_wingman_disabled": True,
+            "revive_disabled": True,
+            "coop_objectives_disabled": True,
+            "coop_reward_receipts_disabled": True,
+            "reconnect_grace_ms": 45000,
+            "host_migration_preserved": True,
             "protocol_unchanged": True,
             "worker_change_required": True,
             "frontend_only": False

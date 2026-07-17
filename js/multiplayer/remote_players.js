@@ -503,6 +503,7 @@ function createAvatar(THREE, player) {
   group.name = `remote-player-${player.playerId}`;
   group.visible = false;
   group.userData.visualPatch = SURVIVOR_OPERATOR_PATCH;
+  group.userData.pvpPlayerId = player.playerId;
 
   const labelText = player.isBot === true
     ? `${player.displayName || 'ARENA WINGMATE'} · AI`
@@ -568,6 +569,8 @@ export class RemotePlayerManager {
     this.localPlayerId = localPlayerId;
     this.THREE = globalThis.THREE || null;
     this.avatars = new Map();
+    this.pvpRaycaster = this.THREE ? new this.THREE.Raycaster() : null;
+    this.pvpCenter = this.THREE ? new this.THREE.Vector2(0, 0) : null;
     this.roomPlayers = new Map();
     this.unsubscribe = [];
     this.active = false;
@@ -753,6 +756,54 @@ export class RemotePlayerManager {
         updateWeaponShape(avatar, state.weaponKey);
       }
     });
+  }
+
+
+  raycastPvpTarget({
+    camera,
+    opponentIds = [],
+    maximumDistance = 180
+  } = {}) {
+    if (!this.THREE || !this.pvpRaycaster || !camera) return null;
+    const allowed = new Set(
+      Array.isArray(opponentIds)
+        ? opponentIds.map((entry) => String(entry || ''))
+        : []
+    );
+    if (!allowed.size) return null;
+
+    this.pvpRaycaster.near = 0;
+    this.pvpRaycaster.far = Math.max(1, Number(maximumDistance) || 180);
+    this.pvpRaycaster.setFromCamera(this.pvpCenter, camera);
+
+    let best = null;
+    this.avatars.forEach((avatar, playerId) => {
+      if (!allowed.has(playerId) || avatar.visible !== true) return;
+      const hits = this.pvpRaycaster.intersectObject(avatar, true)
+        .filter((entry) => entry?.object?.isMesh === true);
+      const hit = hits[0];
+      if (!hit) return;
+      if (best && best.distance <= hit.distance) return;
+
+      const relativeHeight = Number(hit.point?.y || 0)
+        - Number(avatar.position?.y || 0);
+      const objectName = String(hit.object?.name || '').toLowerCase();
+      best = {
+        playerId,
+        distance: Math.max(0, Number(hit.distance) || 0),
+        headshot: (
+          relativeHeight >= 1.48
+          || objectName.includes('head')
+          || objectName.includes('helmet')
+        ),
+        point: {
+          x: Number(hit.point?.x || 0),
+          y: Number(hit.point?.y || 0),
+          z: Number(hit.point?.z || 0)
+        }
+      };
+    });
+    return best;
   }
 
   getSnapshot() {

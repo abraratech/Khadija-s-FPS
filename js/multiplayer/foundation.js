@@ -38,6 +38,8 @@ import { MultiplayerCoopStatsManager } from './coop_stats.js';
 import { MultiplayerCoopScoreboard } from './coop_scoreboard.js'; import { getCoopScalingSnapshot, setCoopScalingContext } from './coop_scaling_core.js';
 import { MultiplayerCoopAudioManager } from './coop_audio.js';
 import { MultiplayerSquadIntentHud } from './squad_intent_hud.js';
+import { MultiplayerPvp1Manager } from './pvp1.js';
+import { PVP1_MODE, roomUsesPvp1 } from './pvp1_core.js';
 
 let sessionRef = null;
 let runLauncher = null;
@@ -50,7 +52,7 @@ let botManager = null;
 let economyManager = null;
 let reviveManager = null; let coop2Manager = null; let content1Manager = null; let networkHud = null;
 let multiplayerReleaseGuard = null;
-let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null; let coopAudioManager = null; let squadIntentHud = null;
+let tacticalAwareness = null; let textChat = null; let coopStatsManager = null; let coopScoreboard = null; let coopAudioManager = null; let squadIntentHud = null; let pvp1Manager = null;
 let lobbyController = null; let lastAuthoritativeResyncAt = -Infinity;
 let knownConnectedHumanIds = new Set();
 let lateJoinBurstSerial = 0;
@@ -174,7 +176,9 @@ export const multiplayerRuntime = new MultiplayerRuntime({
 let initialized = false;
 function syncCoopScalingFromRoom() {
   const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+  const roomMode = room?.settings?.gameMode || 'coop';
   const online = multiplayerSession?.run?.active === true
+    && roomMode !== PVP1_MODE
     && (
       multiplayerSession.mode === 'host'
       || multiplayerSession.mode === 'client'
@@ -205,7 +209,8 @@ function connectedHumanIds(room = multiplayerRuntime?.room?.getSnapshot?.()) {
 
 function publishLateJoinIntegrityBurst(reason = 'late-join') {
   if (
-    multiplayerSession?.run?.active !== true
+    pvp1Manager?.isPvpRoom?.() === true
+    || multiplayerSession?.run?.active !== true
     || multiplayerSession?.mode !== 'host'
   ) return false;
   const burstNow = performance.now();
@@ -317,7 +322,8 @@ export function initializeMultiplayerFoundation(
     tacticalAdapter = null,
     statsAdapter = null,
     contentAdapter = null,
-    botAdapter = null
+    botAdapter = null,
+    pvpAdapter = null
   } = {}
 ) {
   if (initialized) return getMultiplayerFoundationSnapshot();
@@ -338,6 +344,16 @@ export function initializeMultiplayerFoundation(
     eventBus: multiplayerEvents,
     runtime: multiplayerRuntime,
     localPlayerId: playerId
+  });
+
+  pvp1Manager = new MultiplayerPvp1Manager({
+    eventBus: multiplayerEvents,
+    transport: multiplayerTransport,
+    runtime: multiplayerRuntime,
+    session: multiplayerSession,
+    player,
+    remotePlayers: remotePlayerManager,
+    adapter: pvpAdapter || {}
   });
 
   economyManager = new MultiplayerEconomyManager({
@@ -693,18 +709,25 @@ textChat.initialize();
       cancelMultiplayerRefreshReadiness({
         reason: 'multiplayer-run-ended'
       });
-      coopStatsManager?.finalizeRun?.(details.reason || 'ended');
-      coopStatsManager?.endRun?.({ preserveFinal: true });
-      coop2Manager?.endRun?.();
-  content1Manager?.endRun?.();
-      coopScoreboard?.setHeld?.(false);
-      botManager?.endRun(details.reason || 'ended');
-      sharedWorldManager?.endRun();
-      reviveManager?.endRun();
-      economyManager?.endRun();
+      const pvpRun = pvp1Manager?.isPvpRoom?.() === true;
+      if (!pvpRun) {
+        coopStatsManager?.finalizeRun?.(details.reason || 'ended');
+        coopStatsManager?.endRun?.({ preserveFinal: true });
+        coop2Manager?.endRun?.();
+        content1Manager?.endRun?.();
+        coopScoreboard?.setHeld?.(false);
+        botManager?.endRun(details.reason || 'ended');
+        sharedWorldManager?.endRun();
+        reviveManager?.endRun();
+        economyManager?.endRun();
+        tacticalAwareness?.endRun();
+        squadIntentHud?.endRun();
+      }
+      pvp1Manager?.endRun?.();
       multiplayerRuntime.endRun();
-      remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); squadIntentHud?.endRun(); networkHud?.reset();
-            hostMigrationState.reset();
+      remotePlayerManager?.endRun();
+      networkHud?.reset();
+      hostMigrationState.reset();
 
       const state = multiplayerPlayers.syncLocalPlayer(
         player,
@@ -791,21 +814,38 @@ export function beginMultiplayerRun({
 
   multiplayerRuntime.beginRun(multiplayerSession.getSnapshot());
   remotePlayerManager?.beginRun();
-  economyManager?.beginRun();
-  reviveManager?.beginRun();
-  sharedWorldManager?.beginRun();
-  botManager?.beginRun();
-  coopAudioManager?.beginRun();
-  coop2Manager?.beginRun();
-  content1Manager?.beginRun({
-    runId: multiplayerSession.run?.runId,
-    mapId: multiplayerSession.run?.mapId || mapId,
-    difficulty: multiplayerSession.run?.difficulty ?? difficulty
-  });
-  tacticalAwareness?.beginRun();
-  squadIntentHud?.beginRun();
-  coopStatsManager?.beginRun();
-  coopScoreboard?.hideAll?.();
+  const pvpRun = pvp1Manager?.isPvpRoom?.() === true;
+  if (pvpRun) {
+    pvp1Manager?.beginRun?.();
+    economyManager?.endRun?.();
+    reviveManager?.endRun?.();
+    sharedWorldManager?.endRun?.();
+    botManager?.endRun?.('pvp-isolation');
+    coopAudioManager?.endRun?.();
+    coop2Manager?.endRun?.();
+    content1Manager?.endRun?.();
+    tacticalAwareness?.endRun?.();
+    squadIntentHud?.endRun?.();
+    coopStatsManager?.endRun?.({ preserveFinal: false });
+    coopScoreboard?.hideAll?.();
+  } else {
+    pvp1Manager?.endRun?.();
+    economyManager?.beginRun();
+    reviveManager?.beginRun();
+    sharedWorldManager?.beginRun();
+    botManager?.beginRun();
+    coopAudioManager?.beginRun();
+    coop2Manager?.beginRun();
+    content1Manager?.beginRun({
+      runId: multiplayerSession.run?.runId,
+      mapId: multiplayerSession.run?.mapId || mapId,
+      difficulty: multiplayerSession.run?.difficulty ?? difficulty
+    });
+    tacticalAwareness?.beginRun();
+    squadIntentHud?.beginRun();
+    coopStatsManager?.beginRun();
+    coopScoreboard?.hideAll?.();
+  }
 
   // The runtime must already be inside the resumed run before the forced
   // state event is emitted. Otherwise the first reconnect snapshot is dropped
@@ -925,25 +965,32 @@ export function endMultiplayerRun({
     { force: true }
   );
 
-  if (preserveFinalSummary) {
-    coopStatsManager?.finalizeRun?.(reason);
+  const pvpRun = pvp1Manager?.isPvpRoom?.() === true;
+  if (!pvpRun) {
+    if (preserveFinalSummary) {
+      coopStatsManager?.finalizeRun?.(reason);
+    }
+    coopStatsManager?.endRun?.({ preserveFinal: preserveFinalSummary });
+    coop2Manager?.endRun?.();
+    if (!preserveFinalSummary) {
+      coopStatsManager?.clearFinalSummary?.();
+      coopScoreboard?.hideAll?.();
+    } else {
+      coopScoreboard?.setHeld?.(false);
+    }
+    coopAudioManager?.endRun();
+    botManager?.endRun(reason);
+    sharedWorldManager?.endRun();
+    reviveManager?.endRun();
+    economyManager?.endRun();
+    tacticalAwareness?.endRun();
+    squadIntentHud?.endRun();
   }
-  coopStatsManager?.endRun?.({ preserveFinal: preserveFinalSummary });
-  coop2Manager?.endRun?.();
-  if (!preserveFinalSummary) {
-    coopStatsManager?.clearFinalSummary?.();
-    coopScoreboard?.hideAll?.();
-  } else {
-    coopScoreboard?.setHeld?.(false);
-  }
-  coopAudioManager?.endRun();
-  botManager?.endRun(reason);
-  sharedWorldManager?.endRun();
-  reviveManager?.endRun();
-  economyManager?.endRun();
+  pvp1Manager?.endRun?.();
   multiplayerRuntime.endRun();
-  remotePlayerManager?.endRun(); tacticalAwareness?.endRun(); squadIntentHud?.endRun(); networkHud?.reset();
-            hostMigrationState.reset();
+  remotePlayerManager?.endRun();
+  networkHud?.reset();
+  hostMigrationState.reset();
 
   if (notifyServer) {
     lobbyController?.notifyRunEnded?.(reason);
@@ -1016,25 +1063,45 @@ export function isOnlineMultiplayerRun() {
     );
 }
 
+export function getMultiplayerGameMode() {
+  const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+  return roomUsesPvp1(room) ? PVP1_MODE : 'coop';
+}
+
+export function isMultiplayerPvpRun() {
+  return isOnlineMultiplayerRun()
+    && pvp1Manager?.isPvpRoom?.() === true;
+}
+
+export function attemptMultiplayerPvpShot(payload = {}) {
+  if (!initialized) return false;
+  return pvp1Manager?.attemptShot?.(payload) === true;
+}
+
+export function getMultiplayerPvpSnapshot() {
+  if (!initialized) return null;
+  return pvp1Manager?.getSnapshot?.() || null;
+}
+
 export function initializeSharedMultiplayerEconomy() {
-  if (!initialized) return;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return;
   economyManager?.initializeWorld();
 }
 
 export function updateSharedMultiplayerEconomy(
   now = performance.now()
 ) {
-  if (!initialized) return;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return;
   economyManager?.update(now);
 }
 
 export function requestMultiplayerInteraction(request) {
-  if (!initialized) return false;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return false;
   return economyManager?.requestInteraction?.(request) === true;
 }
 
 export function awardMultiplayerCombat(payload = {}) {
-  if (!initialized) return false;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return false;
   return economyManager?.awardCombat?.({
     ...payload,
     playerId: payload.playerId || multiplayerRuntime.localPlayerId
@@ -1046,17 +1113,18 @@ export function getLocalMultiplayerPlayerId() {
 }
 
 export function refundMultiplayerPoints(playerId, points, label) {
-  if (!initialized) return false;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return false;
   return economyManager?.refundPlayer?.(playerId, points, label) === true;
 }
 
 export function isSharedMultiplayerEconomyAuthority() {
   if (!initialized) return true;
+  if (pvp1Manager?.isPvpRoom?.() === true) return false;
   return economyManager?.isAuthority?.() !== false;
 }
 
 export function initializeSharedMultiplayerEnemies() {
-  if (!initialized) return;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return;
   sharedWorldManager?.initializeEnemies();
 }
 
@@ -1065,6 +1133,10 @@ export function updateSharedMultiplayerWorld(
   now = performance.now()
 ) {
   if (!initialized) return;
+  if (pvp1Manager?.isPvpRoom?.() === true) {
+    pvp1Manager.update?.(Date.now());
+    return;
+  }
   sharedWorldManager?.update(dt, now);
 }
 
@@ -1073,27 +1145,28 @@ export function updateMultiplayerRevive(
   now = performance.now(),
   options = {}
 ) {
-  if (!initialized) return;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return;
   reviveManager?.update(dt, now, options);
 }
 
 export function notifyMultiplayerLocalDowned(reason = 'damage') {
-  if (!initialized) return false;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return false;
   return reviveManager?.handleLocalDeath?.(reason) === true;
 }
 
 export function isMultiplayerLifeInputBlocked() {
   if (!initialized) return false;
-  return reviveManager?.isInputBlocked?.() === true;
+  return pvp1Manager?.isInputBlocked?.() === true
+    || reviveManager?.isInputBlocked?.() === true;
 }
 
 export function getMultiplayerReviveSnapshot() {
-  if (!initialized) return null;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return null;
   return reviveManager?.getSnapshot?.() || null;
 }
 
 export function getMultiplayerCoopStatsSnapshot() {
-  if (!initialized) return null;
+  if (!initialized || pvp1Manager?.isPvpRoom?.() === true) return null;
   return coopStatsManager?.getSnapshot?.() || null;
 }
 
@@ -1120,6 +1193,7 @@ export function getContent1Snapshot() {
 
 export function isSharedMultiplayerWorldAuthority() {
   if (!initialized) return true;
+  if (pvp1Manager?.isPvpRoom?.() === true) return false;
   return sharedWorldManager?.isAuthority?.() !== false;
 }
 
@@ -1184,22 +1258,28 @@ export function syncMultiplayerFrame(
     now
   });
 
-  botManager?.update(dt, now);
+  const pvpRun = pvp1Manager?.isPvpRoom?.() === true;
   remotePlayerManager?.update(now);
-  tacticalAwareness?.update(now);
-  squadIntentHud?.update(now);
-  coopAudioManager?.update(now);
   networkHud?.update(now);
   multiplayerReleaseGuard?.update(now);
-  coopStatsManager?.update(now);
-  coop2Manager?.update(now);
-  content1Manager?.update(dt, {
-    player,
-    wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1,
-    interactHeld: interactHeld === true,
-    now
-  });
-  coopScoreboard?.update(now);
+  if (pvpRun) {
+    pvp1Manager?.update?.(Date.now());
+    coopScoreboard?.hideAll?.();
+  } else {
+    botManager?.update(dt, now);
+    tacticalAwareness?.update(now);
+    squadIntentHud?.update(now);
+    coopAudioManager?.update(now);
+    coopStatsManager?.update(now);
+    coop2Manager?.update(now);
+    content1Manager?.update(dt, {
+      player,
+      wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1,
+      interactHeld: interactHeld === true,
+      now
+    });
+    coopScoreboard?.update(now);
+  }
   return { state, input };
 }
 

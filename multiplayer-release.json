@@ -377,7 +377,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "POST-FINAL.7 R1 \u2014 Co-op Operations Expansion",
+  "releaseLabel": "PVP.1 R1 \u2014 Isolated Team Elimination Foundation",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -725,5 +725,37 @@
       "mp3AssetChecks": 43,
       "status": "CERTIFIED"
     }
+  },
+  "pvp1": {
+    "schema": 1,
+    "patch": "pvp1-r1-isolated-team-elimination-foundation",
+    "productVersion": "1.1.0-pvp1",
+    "sourceBaselineSha": "ddbdc3a4b478aa26a515e2dd8dbfc9449885c466",
+    "certifiedFrontendBaselineSha": "5511d393d7249b5487affa3616716ccb64593e99",
+    "featureEnabled": true,
+    "mode": "pvp-team-elimination",
+    "privateRooms": true,
+    "publicMatchmaking": false,
+    "supportedTeamSizes": [
+      1,
+      2
+    ],
+    "bestOf": 5,
+    "roundsToWin": 3,
+    "serverAuthoritativeDamage": true,
+    "serverDistanceValidation": true,
+    "friendlyFireBlocked": true,
+    "separateWeaponBalance": true,
+    "aiEnemiesDisabled": true,
+    "aiWingmanDisabled": true,
+    "reviveDisabled": true,
+    "coopObjectivesDisabled": true,
+    "coopRewardReceiptsDisabled": true,
+    "reconnectGraceMs": 45000,
+    "hostMigrationPreserved": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": true,
+    "frontendOnly": false,
+    "featureFlag": "PVP1_ENABLED"
   }
 }

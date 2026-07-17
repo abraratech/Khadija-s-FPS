@@ -14,6 +14,18 @@ import {
 import { OpsHub, OPS1_SERVER_INFO } from './ops_hub.js';
 import { LIVE1_PATCH, LIVE1_SCHEMA, resolveLive1Manifest } from './live1_core.js';
 import { POST_FINAL9_PATCH } from './postfinal9_economy_core.js';
+import {
+  PVP1_FEATURE_ENABLED,
+  PVP1_MODE,
+  PVP1_PATCH,
+  PVP1_SCHEMA,
+  assignPvp1Teams,
+  createPvp1MatchState,
+  isPvp1Mode,
+  normalizePvp1Mode,
+  pvp1ForfeitTeam,
+  resolvePvp1Shot
+} from './pvp1_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 import {
   BOT1_VIRTUAL_PLAYER_ID,
@@ -52,6 +64,11 @@ const CERTIFIED_FRONTEND_SHA = '5511d393d7249b5487affa3616716ccb64593e99';
 const CERTIFIED_SOURCE_SEAL = 'dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
+
+function pvp1Enabled(env) {
+  const token = String(env?.PVP1_ENABLED ?? 'true').trim().toLowerCase();
+  return !['0', 'false', 'off', 'disabled'].includes(token);
+}
 
 const POST_FINAL1_SERVER_INFO = Object.freeze({
   schema: 1,
@@ -168,6 +185,36 @@ const POST_FINAL10_SERVER_INFO = Object.freeze({
     status: 'CERTIFIED'
   }),
   finalProductCertification: 'VERSION_1_0',
+  protocolUnchanged: true,
+  workerChangeRequired: true,
+  frontendOnly: false
+});
+
+const PVP1_SERVER_INFO = Object.freeze({
+  schema: PVP1_SCHEMA,
+  patch: PVP1_PATCH,
+  productVersion: '1.1.0-pvp1',
+  sourceBaselineSha: 'ddbdc3a4b478aa26a515e2dd8dbfc9449885c466',
+  certifiedFrontendBaselineSha: CERTIFIED_FRONTEND_SHA,
+  featureEnabled: PVP1_FEATURE_ENABLED,
+  featureFlag: 'PVP1_ENABLED',
+  mode: PVP1_MODE,
+  privateRooms: true,
+  publicMatchmaking: false,
+  supportedTeamSizes: Object.freeze([1, 2]),
+  bestOf: 5,
+  roundsToWin: 3,
+  serverAuthoritativeDamage: true,
+  serverDistanceValidation: true,
+  friendlyFireBlocked: true,
+  separateWeaponBalance: true,
+  aiEnemiesDisabled: true,
+  aiWingmanDisabled: true,
+  reviveDisabled: true,
+  coopObjectivesDisabled: true,
+  coopRewardReceiptsDisabled: true,
+  reconnectGraceMs: DISCONNECT_GRACE_MS,
+  hostMigrationPreserved: true,
   protocolUnchanged: true,
   workerChangeRequired: true,
   frontendOnly: false
@@ -644,7 +691,11 @@ function publicPlayer(player) {
     catchUpScore: Math.max(0, Math.floor(Number(player.catchUpScore) || 0)),
     connectionEpoch: player.isBot === true
       ? 0
-      : Math.max(1, Math.floor(Number(player.connectionEpoch) || 1))
+      : Math.max(1, Math.floor(Number(player.connectionEpoch) || 1)),
+    team: ['ALPHA', 'BRAVO'].includes(String(player.team || '').toUpperCase())
+      ? String(player.team).toUpperCase()
+      : null,
+    pvpSlot: Math.max(0, Math.floor(Number(player.pvpSlot) || 0))
   };
 }
 
@@ -663,9 +714,10 @@ function defaultRoom(roomCode) {
     sessionId: makeId('session'),
     status: 'waiting',
     hostPlayerId: null,
-    settings: { maxPlayers: MAX_PLAYERS, mapId: 'grid_bunker', difficulty: 1, privacy: 'private', publicListing: false, locked: false, allowLateJoin: true },
+    settings: { maxPlayers: MAX_PLAYERS, mapId: 'grid_bunker', difficulty: 1, privacy: 'private', publicListing: false, locked: false, allowLateJoin: true, gameMode: 'coop' },
     players: {}, virtualPlayers: {}, kickedPlayers: {}, directoryAdmissions: {},
     runId: null,
+    pvp: null,
     authorityEpoch: 0,
     authorityCheckpoint: null,
     finalSummary: null,
@@ -705,6 +757,16 @@ export class ArenaRoom extends DurableObject {
           this.room.settings.allowLateJoin !== false;
         this.room.settings.publicListing =
           this.room.settings.publicListing === true;
+        this.room.settings.gameMode = normalizePvp1Mode(
+          this.room.settings.gameMode
+        );
+        if (isPvp1Mode(this.room.settings.gameMode)) {
+          this.room.settings.maxPlayers = PVP1_FEATURE_ENABLED ? 4 : 2;
+          this.room.settings.publicListing = false;
+          this.room.settings.privacy = 'private';
+          this.room.settings.allowLateJoin = false;
+        }
+        this.room.pvp ||= null;
         this.room.kickedPlayers ||= {};
         this.room.directoryAdmissions ||= {};
         this.room.virtualPlayers ||= {};
@@ -848,7 +910,8 @@ export class ArenaRoom extends DurableObject {
         privacy: 'public',
         publicListing: false,
         locked: false,
-        allowLateJoin: true
+        allowLateJoin: true,
+        gameMode: 'coop'
       };
       this.room.matchmaking = {
         matchId,
@@ -921,6 +984,9 @@ export class ArenaRoom extends DurableObject {
     const playerId = String(url.searchParams.get('playerId') || '').slice(0, 160);
     const displayName = safeName(url.searchParams.get('name'));
     const mode = url.searchParams.get('mode') === 'create' ? 'create' : 'join';
+    const requestedGameMode = normalizePvp1Mode(
+      url.searchParams.get('gameMode')
+    );
     const reconnectToken = String(
       url.searchParams.get('reconnectToken') || ''
     ).slice(0, 160);
@@ -1027,9 +1093,27 @@ export class ArenaRoom extends DurableObject {
       )
     ) {
       this.room = defaultRoom(roomCode);
+      this.room.settings.gameMode = (
+        mode === 'create'
+        && PVP1_FEATURE_ENABLED
+        && pvp1Enabled(this.env)
+      )
+        ? requestedGameMode
+        : 'coop';
+      if (isPvp1Mode(this.room.settings.gameMode)) {
+        this.room.settings.maxPlayers = 4;
+        this.room.settings.privacy = 'private';
+        this.room.settings.publicListing = false;
+        this.room.settings.allowLateJoin = false;
+        this.room.virtualPlayers = {};
+      }
     }
 
-    const existing = this.room.players[playerId] || null; const connectionEpoch = Math.max(1, Math.floor(Number(existing?.connectionEpoch) || 0) + 1);
+    const existing = this.room.players[playerId] || null;
+    const connectionEpoch = Math.max(
+      1,
+      Math.floor(Number(existing?.connectionEpoch) || 0) + 1
+    );
     const isLateJoin = this.room.status === 'in-run' && !existing;
     const joinedWave = Math.max(
       1,
@@ -1089,8 +1173,23 @@ export class ArenaRoom extends DurableObject {
       joinedAt: existing?.joinedAt || Date.now(), joinedWave: isLateJoin ? joinedWave : Math.max(1, Math.floor(Number(existing?.joinedWave) || 1)), lateJoin: isLateJoin || existing?.lateJoin === true, lateJoinProtectionUntil, catchUpScore,
       socialAccountId: socialIdentity?.accountId || existing?.socialAccountId || '',
       socialId: socialIdentity?.socialId || existing?.socialId || '',
+      team: existing?.team || null,
+      pvpSlot: Math.max(0, Math.floor(Number(existing?.pvpSlot) || 0)),
+      pvpPose: existing?.pvpPose || null,
       lastSeenAt: Date.now()
     };
+
+    if (isPvp1Mode(this.room.settings?.gameMode)) {
+      const assignments = assignPvp1Teams(
+        Object.values(this.room.players)
+      );
+      Object.values(this.room.players).forEach((entry) => {
+        const assignment = assignments[entry.playerId] || null;
+        entry.team = assignment?.team || null;
+        entry.pvpSlot = assignment?.slot || 0;
+      });
+      this.room.virtualPlayers = {};
+    }
 
     server.serializeAttachment({ playerId, reconnectToken: token, connectionEpoch,
       windowStartedAt: Date.now(),
@@ -1259,6 +1358,7 @@ export class ArenaRoom extends DurableObject {
       authorityEpoch: Math.max(0, Number(this.room.authorityEpoch) || 0),
       revision: this.room.revision,
       finalSummary: this.room.finalSummary || null,
+      pvp: this.room.pvp || null,
       matchmaking: this.room.matchmaking
         ? {
             public: true,
@@ -1348,6 +1448,53 @@ export class ArenaRoom extends DurableObject {
         )}`,
         serverReceivedAt: Date.now()
       };
+
+      const pvpRoom = isPvp1Mode(this.room.settings?.gameMode);
+      if (pvpRoom && relayIdentity.virtualActor) {
+        this.sendError(socket, 'AI virtual actors are disabled in PvP rooms.');
+        return;
+      }
+
+      if (
+        pvpRoom
+        && envelope.type === 'player-snapshot'
+        && envelope.payload?.state?.position
+      ) {
+        const position = envelope.payload.state.position;
+        const numeric = {
+          x: Number(position.x),
+          y: Number(position.y),
+          z: Number(position.z)
+        };
+        if (
+          Number.isFinite(numeric.x)
+          && Number.isFinite(numeric.y)
+          && Number.isFinite(numeric.z)
+        ) {
+          player.pvpPose = {
+            position: numeric,
+            updatedAt: Date.now()
+          };
+        }
+      }
+
+      if (
+        pvpRoom
+        && [
+          'world-snapshot',
+          'economy-snapshot',
+          'revive-state',
+          'coop2-state',
+          'content1-state',
+          'run-stats'
+        ].includes(envelope.type)
+      ) {
+        this.sendError(
+          socket,
+          'Co-Op authority messages are disabled in PvP rooms.'
+        );
+        return;
+      }
 
       if (relayIdentity.virtualActor) {
         this.room.virtualPlayers ||= {};
@@ -1453,6 +1600,7 @@ export class ArenaRoom extends DurableObject {
   }
 
   isTeamEliminatedReviveEnvelope(envelope) {
+    if (isPvp1Mode(this.room?.settings?.gameMode)) return false;
     if (
       envelope?.type !== 'revive-state'
       || envelope?.payload?.kind !== 'snapshot'
@@ -1475,7 +1623,11 @@ export class ArenaRoom extends DurableObject {
   }
 
 isAuthorityCheckpointEnvelope(envelope) {
-    if (!envelope || this.room?.status !== 'in-run') return false;
+    if (
+      !envelope
+      || this.room?.status !== 'in-run'
+      || isPvp1Mode(this.room?.settings?.gameMode)
+    ) return false;
     if (envelope.type === 'world-snapshot') return true;
     if (envelope.type === 'economy-snapshot') return true;
     if (
@@ -1628,6 +1780,79 @@ isAuthorityCheckpointEnvelope(envelope) {
     return attachment.messagesInWindow <= RATE_LIMIT_PER_SECOND;
   }
 
+  pvpDistanceBetweenPlayers(shooterId, targetId) {
+    const shooter = this.room?.players?.[String(shooterId || '')];
+    const target = this.room?.players?.[String(targetId || '')];
+    const left = shooter?.pvpPose?.position;
+    const right = target?.pvpPose?.position;
+    if (!left || !right) return null;
+    const dx = Number(left.x) - Number(right.x);
+    const dy = Number(left.y) - Number(right.y);
+    const dz = Number(left.z) - Number(right.z);
+    if (![dx, dy, dz].every(Number.isFinite)) return null;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  async finishPvpMatch({
+    reason = 'pvp-match-complete',
+    endedByPlayerId = null,
+    event = null
+  } = {}) {
+    if (
+      !this.room
+      || this.room.status !== 'in-run'
+      || !isPvp1Mode(this.room.settings?.gameMode)
+    ) return false;
+
+    const state = this.room.pvp || null;
+    this.room.finalSummary = state
+      ? {
+          kind: 'pvp-team-elimination',
+          patch: PVP1_PATCH,
+          runId: state.runId,
+          winnerTeam: state.winnerTeam || null,
+          reason: String(reason || state.reason || 'pvp-match-complete'),
+          rounds: {
+            ALPHA: Math.max(0, Number(state.teams?.ALPHA?.roundWins) || 0),
+            BRAVO: Math.max(0, Number(state.teams?.BRAVO?.roundWins) || 0)
+          },
+          players: Object.values(state.players || {}).map((entry) => ({
+            playerId: entry.playerId,
+            team: entry.team,
+            eliminations: Math.max(0, Number(entry.eliminations) || 0),
+            deaths: Math.max(0, Number(entry.deaths) || 0),
+            damageDealt: Math.max(0, Number(entry.damageDealt) || 0)
+          })),
+          endedAt: Date.now()
+        }
+      : null;
+
+    this.room.status = 'waiting';
+    this.room.runId = null;
+    this.room.authorityCheckpoint = null;
+
+    Object.values(this.room.players).forEach((entry) => {
+      entry.ready = entry.isHost === true && entry.connected === true;
+      entry.pvpPose = null;
+    });
+
+    await this.commit();
+    const room = this.snapshot();
+    this.broadcast({
+      kind: 'control',
+      action: 'run-ended',
+      payload: {
+        reason: String(reason || 'pvp-match-complete'),
+        endedByPlayerId,
+        event,
+        pvp: state,
+        room
+      }
+    });
+    this.broadcastRoomState();
+    return true;
+  }
+
   async finishRun({
     reason = 'ended',
     endedByPlayerId = null
@@ -1750,6 +1975,14 @@ isAuthorityCheckpointEnvelope(envelope) {
         }
       }
 
+      if (isPvp1Mode(this.room.settings?.gameMode)) {
+        this.room.settings.maxPlayers = 4;
+        this.room.settings.allowLateJoin = false;
+        this.room.settings.publicListing = false;
+        this.room.settings.privacy = 'private';
+        this.room.virtualPlayers = {};
+      }
+
       await this.commit();
       this.broadcastRoomState();
       return;
@@ -1757,6 +1990,10 @@ isAuthorityCheckpointEnvelope(envelope) {
 
 
     if (action === 'set-virtual-companion') {
+      if (isPvp1Mode(this.room.settings?.gameMode)) {
+        this.sendError(socket, 'AI Wingman is disabled in PvP rooms.');
+        return;
+      }
       if (!player.isHost) {
         this.sendError(socket, 'Only the host can configure the AI companion.');
         return;
@@ -1807,6 +2044,17 @@ isAuthorityCheckpointEnvelope(envelope) {
         return;
       }
 
+      const pvpForfeit = (
+        this.room.status === 'in-run'
+        && isPvp1Mode(this.room.settings?.gameMode)
+      )
+        ? pvp1ForfeitTeam(this.room.pvp, targetPlayerId, {
+            now: Date.now(),
+            reason: 'player-kicked-from-pvp-match'
+          })
+        : { changed: false };
+      if (pvpForfeit.changed) this.room.pvp = pvpForfeit.state;
+
       this.room.kickedPlayers ||= {};
       this.room.kickedPlayers[targetPlayerId] = {
         sessionId: this.room.sessionId,
@@ -1832,6 +2080,13 @@ isAuthorityCheckpointEnvelope(envelope) {
       );
 
       await this.commit();
+      if (pvpForfeit.changed) {
+        await this.finishPvpMatch({
+          reason: pvpForfeit.state.reason,
+          endedByPlayerId: player.playerId,
+          event: pvpForfeit.event
+        });
+      }
       this.broadcastRoomState();
       return;
     }
@@ -1874,7 +2129,83 @@ isAuthorityCheckpointEnvelope(envelope) {
       return;
     }
 
-if (action === 'start-run') {
+    if (action === 'pvp-shot') {
+      if (
+        this.room.status !== 'in-run'
+        || !isPvp1Mode(this.room.settings?.gameMode)
+        || !this.room.pvp
+      ) {
+        this.sendError(socket, 'PvP shot rejected outside an active PvP match.');
+        return;
+      }
+
+      const targetPlayerId = String(payload.targetPlayerId || '').slice(0, 160);
+      const measuredDistance = this.pvpDistanceBetweenPlayers(
+        player.playerId,
+        targetPlayerId
+      );
+      if (!Number.isFinite(measuredDistance)) {
+        socket.send(JSON.stringify({
+          kind: 'control',
+          action: 'pvp-shot-rejected',
+          payload: { reason: 'POSITION_UNAVAILABLE', retryAfterMs: 50 }
+        }));
+        return;
+      }
+      const result = resolvePvp1Shot({
+        state: this.room.pvp,
+        shooterId: player.playerId,
+        targetId: targetPlayerId,
+        weaponFamily: payload.weaponFamily,
+        shotId: payload.shotId,
+        headshot: payload.headshot === true,
+        distance: measuredDistance,
+        now: Date.now()
+      });
+
+      if (!result.accepted) {
+        socket.send(JSON.stringify({
+          kind: 'control',
+          action: 'pvp-shot-rejected',
+          payload: {
+            reason: result.reason,
+            retryAfterMs: Math.max(0, Number(result.retryAfterMs) || 0)
+          }
+        }));
+        return;
+      }
+
+      this.room.pvp = result.state;
+      if (this.room.authorityCheckpoint) {
+        this.room.authorityCheckpoint.pvp = this.room.pvp;
+        this.room.authorityCheckpoint.updatedAt = Date.now();
+      }
+      await this.commit();
+      this.broadcast({
+        kind: 'control',
+        action: 'pvp-hit-result',
+        payload: {
+          event: result.event,
+          state: this.room.pvp
+        }
+      });
+      this.broadcast({
+        kind: 'control',
+        action: 'pvp-state',
+        payload: { state: this.room.pvp }
+      });
+
+      if (result.event?.matchEnded) {
+        await this.finishPvpMatch({
+          reason: 'pvp-team-eliminated',
+          endedByPlayerId: player.playerId,
+          event: result.event
+        });
+      }
+      return;
+    }
+
+    if (action === 'start-run') {
       if (!player.isHost) {
         this.sendError(socket, 'Only the host can start the run.');
         return;
@@ -1887,20 +2218,64 @@ if (action === 'start-run') {
         return;
       }
 
+      const pvpRoom = isPvp1Mode(this.room.settings?.gameMode);
+      if (pvpRoom && !pvp1Enabled(this.env)) {
+        this.sendError(socket, 'PvP is temporarily disabled. Co-Op remains available.');
+        return;
+      }
+      if (pvpRoom && connected.length < 2) {
+        this.sendError(socket, 'Team Elimination requires at least two players.');
+        return;
+      }
+
       this.room.status = 'in-run';
       this.room.runId = makeId('run');
       this.room.authorityEpoch = 0;
       this.room.finalSummary = null;
-      this.room.authorityCheckpoint = {
-        runId: this.room.runId,
-        authorityEpoch: 0, authorityConnectionEpoch: Math.max(1, Math.floor(Number(player.connectionEpoch) || 1)),
-        updatedAt: Date.now(),
-        world: null,
-        economy: null,
-        revive: null,
-        stats: null,
-        finalSummary: null
-      };
+
+      if (pvpRoom) {
+        this.room.virtualPlayers = {};
+        this.room.settings.allowLateJoin = false;
+        this.room.settings.publicListing = false;
+        const assignments = assignPvp1Teams(connected);
+        connected.forEach((entry) => {
+          const assignment = assignments[entry.playerId];
+          entry.team = assignment?.team || null;
+          entry.pvpSlot = assignment?.slot || 0;
+          entry.pvpPose = null;
+        });
+        this.room.pvp = createPvp1MatchState({
+          runId: this.room.runId,
+          players: connected,
+          now: Date.now()
+        });
+        this.room.authorityCheckpoint = {
+          runId: this.room.runId,
+          authorityEpoch: 0,
+          authorityConnectionEpoch: Math.max(
+            1,
+            Math.floor(Number(player.connectionEpoch) || 1)
+          ),
+          updatedAt: Date.now(),
+          pvp: this.room.pvp
+        };
+      } else {
+        this.room.pvp = null;
+        this.room.authorityCheckpoint = {
+          runId: this.room.runId,
+          authorityEpoch: 0,
+          authorityConnectionEpoch: Math.max(
+            1,
+            Math.floor(Number(player.connectionEpoch) || 1)
+          ),
+          updatedAt: Date.now(),
+          world: null,
+          economy: null,
+          revive: null,
+          stats: null,
+          finalSummary: null
+        };
+      }
       await this.commit();
 
       this.broadcast({
@@ -1911,15 +2286,28 @@ if (action === 'start-run') {
           runId: this.room.runId,
           mapId: this.room.settings.mapId,
           difficulty: this.room.settings.difficulty,
+          gameMode: this.room.settings.gameMode,
+          pvp: this.room.pvp,
           authorityEpoch: this.room.authorityEpoch,
           serverTime: Date.now()
         }
       });
+      if (pvpRoom) {
+        this.broadcast({
+          kind: 'control',
+          action: 'pvp-state',
+          payload: { state: this.room.pvp }
+        });
+      }
       this.broadcastRoomState();
       return;
     }
 
     if (action === 'player-death') {
+      if (isPvp1Mode(this.room.settings?.gameMode)) {
+        this.broadcastRoomState();
+        return;
+      }
       // Individual down/bleedout state is authoritative in revive snapshots.
       // Never finish the whole co-op run from a single client death notice.
       this.broadcastRoomState();
@@ -1928,6 +2316,21 @@ if (action === 'start-run') {
 
     if (action === 'end-run') {
       if (!player.isHost) return;
+      if (isPvp1Mode(this.room.settings?.gameMode)) {
+        const forfeited = pvp1ForfeitTeam(this.room.pvp, player.playerId, {
+          now: Date.now(),
+          reason: String(payload.reason || 'host-ended-pvp-match')
+        });
+        if (forfeited.changed) {
+          this.room.pvp = forfeited.state;
+          await this.finishPvpMatch({
+            reason: forfeited.state.reason,
+            endedByPlayerId: player.playerId,
+            event: forfeited.event
+          });
+        }
+        return;
+      }
       await this.finishRun({
         reason: String(payload.reason || 'ended'),
         endedByPlayerId: player.playerId
@@ -1939,6 +2342,16 @@ if (action === 'start-run') {
       const leavingPlayerId = player.playerId;
       const wasHost = player.isHost === true;
       const previousStatus = this.room.status;
+      const pvpForfeit = (
+        previousStatus === 'in-run'
+        && isPvp1Mode(this.room.settings?.gameMode)
+      )
+        ? pvp1ForfeitTeam(this.room.pvp, leavingPlayerId, {
+            now: Date.now(),
+            reason: 'player-left-pvp-match'
+          })
+        : { changed: false };
+      if (pvpForfeit.changed) this.room.pvp = pvpForfeit.state;
       delete this.room.players[leavingPlayerId];
       const checkpoint = this.room.authorityCheckpoint;
       if (previousStatus === 'in-run') {
@@ -1978,6 +2391,14 @@ if (action === 'start-run') {
       }
 
       await this.commit();
+
+      if (pvpForfeit.changed) {
+        await this.finishPvpMatch({
+          reason: pvpForfeit.state.reason,
+          endedByPlayerId: leavingPlayerId,
+          event: pvpForfeit.event
+        });
+      }
 
       if (wasHost && replacement && previousStatus === 'in-run') {
         this.broadcastHostMigration({
@@ -2144,12 +2565,27 @@ if (action === 'start-run') {
     let changed = this.cleanupDirectoryAdmissions(now);
     const expiredPlayerIds = [];
 
+    let pvpForfeit = null;
     Object.entries(this.room.players).forEach(([playerId, player]) => {
       if (
         player.connected === false
         && Number(player.disconnectExpiresAt || 0) <= now
       ) {
         expiredPlayerIds.push(playerId);
+        if (
+          !pvpForfeit
+          && this.room.status === 'in-run'
+          && isPvp1Mode(this.room.settings?.gameMode)
+        ) {
+          const result = pvp1ForfeitTeam(this.room.pvp, playerId, {
+            now,
+            reason: 'pvp-reconnect-grace-expired'
+          });
+          if (result.changed) {
+            pvpForfeit = result;
+            this.room.pvp = result.state;
+          }
+        }
         delete this.room.players[playerId];
         changed = true;
       }
@@ -2183,6 +2619,15 @@ if (action === 'start-run') {
 
     if (changed) {
       await this.commit();
+      if (pvpForfeit?.changed) {
+        await this.finishPvpMatch({
+          reason: pvpForfeit.state.reason,
+          endedByPlayerId: pvpForfeit.event?.forfeitingPlayerId || null,
+          event: pvpForfeit.event
+        });
+        await this.scheduleCleanup();
+        return;
+      }
       if (migrated && this.room.status === 'in-run') {
         this.broadcastHostMigration({
           previousHostPlayerId: null,
@@ -2389,6 +2834,7 @@ export default {
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
+        pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2429,6 +2875,7 @@ export default {
         productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
+        pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

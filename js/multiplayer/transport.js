@@ -87,7 +87,8 @@ export class MultiplayerTransport {
       playerId: options.playerId || null,
       displayName: options.displayName || null,
       reconnectAttempt: this.reconnectAttempt,
-      queuedMessages: this.outboundQueue.length
+      queuedMessages: this.outboundQueue.length,
+      gameMode: options.gameMode || 'coop'
     };
   }
 
@@ -118,6 +119,9 @@ export class MultiplayerTransport {
     const displayName = String(options.displayName || 'Player').trim().slice(0, 24);
     const joinMode = options.joinMode === 'create' ? 'create' : 'join';
     const normalizedUrl = normalizeWebSocketServerUrl(options.serverUrl);
+    const gameMode = String(options.gameMode || 'coop').trim().toLowerCase() === 'pvp-team-elimination'
+      ? 'pvp-team-elimination'
+      : 'coop';
 
     if (roomCode.length !== 6) {
       throw new TypeError('Room code must contain six letters or numbers.');
@@ -150,6 +154,7 @@ export class MultiplayerTransport {
       playerId,
       displayName: displayName || 'Player',
       joinMode,
+      gameMode,
       reconnectToken: options.reconnectToken || null,
       admissionToken: options.admissionToken || null,
       socialTicket: typeof socialTicket === 'string'
@@ -171,6 +176,9 @@ export class MultiplayerTransport {
     url.searchParams.set('playerId', options.playerId);
     url.searchParams.set('name', options.displayName);
     url.searchParams.set('mode', options.joinMode);
+    if (options.joinMode === 'create') {
+      url.searchParams.set('gameMode', options.gameMode || 'coop');
+    }
     if (options.reconnectToken) {
       url.searchParams.set('reconnectToken', options.reconnectToken);
     }

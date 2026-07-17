@@ -65,6 +65,7 @@ let fireCooldown = 0;
 let flashVisibleT = 0;
 const activeShops = [];
 let multiplayerEconomy = null;
+let multiplayerPvp = null;
 let networkShotSequence = 0;
 const openedNetworkDoorIds = new Set();
 const networkRepairAwards = new Map();
@@ -80,6 +81,12 @@ const combatReliability = {
 
 export function configureMultiplayerEconomy(config = null) {
   multiplayerEconomy = config && typeof config === 'object'
+    ? config
+    : null;
+}
+
+export function configureMultiplayerPvp(config = null) {
+  multiplayerPvp = config && typeof config === 'object'
     ? config
     : null;
 }
@@ -2947,7 +2954,6 @@ export function shoot() {
   applyShotCameraAndGunKick(w, feel);
 
   // C5: reuse raycast arrays/vectors instead of allocating new arrays every shot.
-  const hitTargets = buildShotTargets();
   const shotContext = {
     weapon: w,
     feel,
@@ -2955,6 +2961,22 @@ export function shoot() {
     scoredEnemies: new Set(),
     directorHitRegistered: false
   };
+
+  if (multiplayerPvp?.isActive?.() === true) {
+    const handled = multiplayerPvp.fireShot?.({
+      camera,
+      weaponFamily: getWeaponFamily(w),
+      weaponKey: w.key || w.name || '',
+      shotId: shotContext.shotId,
+      maximumDistance: 180
+    }) === true;
+    if (handled) {
+      if (w.ammo <= 0) startReload();
+      return;
+    }
+  }
+
+  const hitTargets = buildShotTargets();
 
   if (isShotgunWeapon(w)) {
     const pelletCount = getShotgunPelletCount(w);

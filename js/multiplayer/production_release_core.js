@@ -7,6 +7,15 @@ import {
   POST_FINAL10_SOURCE_BASELINE_SHA,
   POST_FINAL10_CERTIFIED_FRONTEND_BASELINE_SHA
 } from '../postfinal10_core.js';
+import {
+  PVP1_CERTIFIED_FRONTEND_BASELINE_SHA,
+  PVP1_FEATURE_ENABLED,
+  PVP1_MODE,
+  PVP1_PATCH,
+  PVP1_PRODUCT_VERSION,
+  PVP1_SCHEMA,
+  PVP1_SOURCE_BASELINE_SHA
+} from './pvp1_core.js';
 
 export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'final2-r1-full-product-certification';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
@@ -81,6 +90,35 @@ export function createMultiplayerFrontendReleaseManifest() {
         productionRuntimeFiles: 252,
         status: 'CERTIFIED'
       })
+    }),
+    pvp1: Object.freeze({
+      schema: PVP1_SCHEMA,
+      patch: PVP1_PATCH,
+      productVersion: PVP1_PRODUCT_VERSION,
+      sourceBaselineSha: PVP1_SOURCE_BASELINE_SHA,
+      certifiedFrontendBaselineSha: PVP1_CERTIFIED_FRONTEND_BASELINE_SHA,
+      featureEnabled: PVP1_FEATURE_ENABLED,
+      featureFlag: 'PVP1_ENABLED',
+      mode: PVP1_MODE,
+      privateRooms: true,
+      publicMatchmaking: false,
+      supportedTeamSizes: Object.freeze([1, 2]),
+      bestOf: 5,
+      roundsToWin: 3,
+      serverAuthoritativeDamage: true,
+      serverDistanceValidation: true,
+      friendlyFireBlocked: true,
+      separateWeaponBalance: true,
+      aiEnemiesDisabled: true,
+      aiWingmanDisabled: true,
+      reviveDisabled: true,
+      coopObjectivesDisabled: true,
+      coopRewardReceiptsDisabled: true,
+      reconnectGraceMs: 45000,
+      hostMigrationPreserved: true,
+      protocolUnchanged: true,
+      workerChangeRequired: true,
+      frontendOnly: false
     })
   });
 }
@@ -115,7 +153,17 @@ export function evaluateMultiplayerProductionRelease({ workerManifest = null, fr
     ['VERSION1_JAVASCRIPT_CHECK_COUNT_MISMATCH','Version 1.0 JavaScript syntax-check count',finiteInteger(frontend.version1Certification?.certification?.javascriptSyntaxChecks),finiteInteger(worker.version1Certification?.certification?.javascriptSyntaxChecks,-1)],
     ['VERSION1_FRONTEND_TEST_COUNT_MISMATCH','Version 1.0 frontend deterministic-test count',finiteInteger(frontend.version1Certification?.certification?.frontendDeterministicTests),finiteInteger(worker.version1Certification?.certification?.frontendDeterministicTests,-1)],
     ['VERSION1_WORKER_TEST_COUNT_MISMATCH','Version 1.0 Worker deterministic-test count',finiteInteger(frontend.version1Certification?.certification?.workerDeterministicTests),finiteInteger(worker.version1Certification?.certification?.workerDeterministicTests,-1)],
-    ['VERSION1_RUNTIME_FILE_COUNT_MISMATCH','Version 1.0 production runtime-file count',finiteInteger(frontend.version1Certification?.certification?.productionRuntimeFiles),finiteInteger(worker.version1Certification?.certification?.productionRuntimeFiles,-1)]
+    ['VERSION1_RUNTIME_FILE_COUNT_MISMATCH','Version 1.0 production runtime-file count',finiteInteger(frontend.version1Certification?.certification?.productionRuntimeFiles),finiteInteger(worker.version1Certification?.certification?.productionRuntimeFiles,-1)],
+    ['PVP1_SCHEMA_MISMATCH','PvP schema',finiteInteger(frontend.pvp1?.schema),finiteInteger(worker.pvp1?.schema,-1)],
+    ['PVP1_PATCH_MISMATCH','PvP patch',cleanText(frontend.pvp1?.patch),cleanText(worker.pvp1?.patch,'missing')],
+    ['PVP1_PRODUCT_VERSION_MISMATCH','PvP product version',cleanText(frontend.pvp1?.productVersion),cleanText(worker.pvp1?.productVersion,'missing')],
+    ['PVP1_SOURCE_BASELINE_MISMATCH','PvP source baseline',cleanText(frontend.pvp1?.sourceBaselineSha),cleanText(worker.pvp1?.sourceBaselineSha,'missing')],
+    ['PVP1_CERTIFIED_FRONTEND_BASELINE_MISMATCH','PvP certified frontend baseline',cleanText(frontend.pvp1?.certifiedFrontendBaselineSha),cleanText(worker.pvp1?.certifiedFrontendBaselineSha,'missing')],
+    ['PVP1_MODE_MISMATCH','PvP room mode',cleanText(frontend.pvp1?.mode),cleanText(worker.pvp1?.mode,'missing')],
+    ['PVP1_PRIVATE_ROOM_POLICY_MISMATCH','PvP private-room policy',frontend.pvp1?.privateRooms === true,worker.pvp1?.privateRooms === true],
+    ['PVP1_PUBLIC_MATCHMAKING_POLICY_MISMATCH','PvP public-matchmaking policy',frontend.pvp1?.publicMatchmaking === true,worker.pvp1?.publicMatchmaking === true],
+    ['PVP1_SERVER_DAMAGE_POLICY_MISMATCH','PvP server-authoritative damage policy',frontend.pvp1?.serverAuthoritativeDamage === true,worker.pvp1?.serverAuthoritativeDamage === true],
+    ['PVP1_FRIENDLY_FIRE_POLICY_MISMATCH','PvP friendly-fire policy',frontend.pvp1?.friendlyFireBlocked === true,worker.pvp1?.friendlyFireBlocked === true]
   ]) if (expected !== received) errors.push(finding(code, `Frontend and Worker ${label} do not match.`, { expected, received }));
   if (!cleanText(worker.deployedAt)) warnings.push(finding('WORKER_DEPLOYED_AT_MISSING', 'The Worker release manifest does not include a deployment timestamp.'));
   const status = errors.length > 0 ? 'FAIL' : warnings.length > 0 ? 'WARN' : 'PASS';

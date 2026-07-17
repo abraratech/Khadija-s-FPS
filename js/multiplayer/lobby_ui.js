@@ -12,6 +12,7 @@ const MATCH3_ROOM_STATUS_STORAGE_KEY = 'ka_match3_room_status';
 const MATCH3_ROOM_SCOPE_STORAGE_KEY = 'ka_match3_room_scope';
 const MATCH3_ROOM_BOT_STORAGE_KEY = 'ka_match3_room_bot';
 const COOP2_ROLE_STORAGE_KEY = 'ka_coop2_role_v1';
+const PVP1_PRIVATE_MODE_STORAGE_KEY = 'ka_pvp1_private_room_mode';
 
 function escapeForId(value) {
   return String(value || '').replace(/[^a-z0-9_-]/gi, '_');
@@ -112,7 +113,7 @@ export class MultiplayerLobbyUI {
         <header class="ka-coop-header">
           <div>
             <span class="ka-coop-kicker">KHADIJA PROTOCOL</span>
-            <h2 id="ka-coop-title">CO-OP MULTIPLAYER</h2>
+            <h2 id="ka-coop-title">ONLINE MULTIPLAYER</h2>
           </div>
           <button id="ka-coop-close" class="ka-coop-icon-btn" type="button" aria-label="Close">×</button>
         </header>
@@ -121,9 +122,9 @@ export class MultiplayerLobbyUI {
 
         <div id="ka-coop-connect-view">
           <p class="ka-coop-note">
-            Create private rooms, browse public operations, or use Quick Match.
-            Rooms synchronize players, shared enemies, damage, waves, progression,
-            reconnect recovery, and coordinated run endings.
+            Create isolated private Co-Op or Team Elimination rooms. Public
+            matchmaking remains Co-Op only. Existing Co-Op progression, enemies,
+            operations, reconnect recovery, and rewards remain unchanged.
           </p>
 
           <label class="ka-coop-field">
@@ -157,9 +158,9 @@ export class MultiplayerLobbyUI {
               <span class="ka-matchmaking-region">REGION-AWARE</span>
             </div>
             <p class="ka-matchmaking-copy">
-              Find a compatible operative using the current arena, difficulty,
-              protocol and game build. Regional matches are preferred before
-              global search expands.
+              Find a compatible Co-Op operative using the current arena,
+              difficulty, protocol and game build. PvP is private-room only
+              during PVP.1 certification.
             </p>
             <div class="ka-matchmaking-preferences">
               <label class="ka-coop-field">
@@ -249,6 +250,18 @@ export class MultiplayerLobbyUI {
 
           <div class="ka-coop-private-divider"><span>PRIVATE ROOMS</span></div>
 
+          <label class="ka-coop-field ka-pvp1-private-mode">
+            <span>Private room mode</span>
+            <select id="ka-private-game-mode">
+              <option value="coop">Co-Op Operations</option>
+              <option value="pvp-team-elimination">PvP · Team Elimination (1v1 / 2v2)</option>
+            </select>
+          </label>
+          <p id="ka-pvp1-private-note" class="ka-pvp1-private-note">
+            PvP uses isolated rooms, separate damage rules, no AI enemies, no Wingman,
+            and no Co-Op reward receipts.
+          </p>
+
           <div class="ka-coop-connect-grid">
             <button id="ka-coop-create" class="ka-coop-primary" type="button">CREATE PRIVATE ROOM</button>
             <div class="ka-coop-join-row">
@@ -325,6 +338,8 @@ export class MultiplayerLobbyUI {
       matchmakingBot: modal.querySelector('#ka-matchmaking-bot'),
       matchmakingCancel: modal.querySelector('#ka-matchmaking-cancel'),
       create: modal.querySelector('#ka-coop-create'),
+      privateGameMode: modal.querySelector('#ka-private-game-mode'),
+      privateModeNote: modal.querySelector('#ka-pvp1-private-note'),
       codeInput: modal.querySelector('#ka-coop-code-input'),
       join: modal.querySelector('#ka-coop-join'),
       roomCode: modal.querySelector('#ka-coop-code'),
@@ -348,6 +363,10 @@ export class MultiplayerLobbyUI {
 
         this.installHostControls(); this.elements.name.value = readStored(NAME_STORAGE_KEY, 'Player');
     this.elements.coop2Role.value = readStored(COOP2_ROLE_STORAGE_KEY, 'VANGUARD');
+    this.elements.privateGameMode.value = readStored(
+      PVP1_PRIVATE_MODE_STORAGE_KEY,
+      'coop'
+    );
     this.elements.server.value = readStored(
       SERVER_STORAGE_KEY,
       'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
@@ -642,9 +661,14 @@ bindEvents() {
 
     this.elements.create.addEventListener('click', () => {
       this.saveIdentity();
+      writeStored(
+        PVP1_PRIVATE_MODE_STORAGE_KEY,
+        this.elements.privateGameMode.value
+      );
       this.actions.createRoom?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value
+        serverUrl: this.elements.server.value,
+        gameMode: this.elements.privateGameMode.value
       });
     });
 
@@ -777,6 +801,21 @@ bindEvents() {
 
     const room = nextState.room;
     const online = Boolean(room && nextState.connected);
+    const isPvp = room?.settings?.gameMode === 'pvp-team-elimination';
+    const pvpWorkerEnabled = (
+      nextState.productionRelease?.worker?.pvp1?.featureEnabled !== false
+    );
+    if (
+      !pvpWorkerEnabled
+      && this.elements.privateGameMode?.value === 'pvp-team-elimination'
+    ) {
+      this.elements.privateGameMode.value = 'coop';
+    }
+    if (this.elements.privateModeNote) {
+      this.elements.privateModeNote.textContent = pvpWorkerEnabled
+        ? 'PvP uses isolated rooms, separate damage rules, no AI enemies, no Wingman, and no Co-Op reward receipts.'
+        : 'PvP is temporarily disabled by the Worker. Solo and Co-Op remain available.';
+    }
     this.elements.connectView.hidden = online;
     this.elements.roomView.hidden = !online;
 
@@ -789,7 +828,7 @@ bindEvents() {
     let statusText = releaseUi.statusText;
     let tone = releaseUi.tone;
     if (online && room.status === 'in-run') {
-      statusText = 'CO-OP RUN ACTIVE';
+      statusText = isPvp ? 'PVP TEAM ELIMINATION ACTIVE' : 'CO-OP RUN ACTIVE';
     } else if (nextState.transportMode === 'online' && nextState.transportState === 'connected' && !online && releaseUi.status !== 'FAIL') {
       statusText = 'AWAITING ROOM CONFIRMATION…';
       tone = 'warning';
@@ -798,8 +837,8 @@ bindEvents() {
     this.elements.status.dataset.tone = tone;
     this.elements.openButton.dataset.online = online ? 'true' : 'false';
     this.elements.openButton.textContent = online
-      ? `CO-OP · ${room.roomCode || 'ONLINE'}`
-      : 'CO-OP';
+      ? `${isPvp ? 'PVP' : 'CO-OP'} · ${room.roomCode || 'ONLINE'}`
+      : 'CO-OP / PVP';
 
     const matchmaking = nextState.matchmaking || { status: 'idle' };
     const matchmakingUi = matchmakingStatusPresentation(matchmaking);
@@ -900,6 +939,7 @@ bindEvents() {
     }
 
     this.elements.create.disabled = disabled || matchmakingActive || directoryActive;
+    this.elements.privateGameMode.disabled = disabled || matchmakingActive || directoryActive || !pvpWorkerEnabled;
     this.elements.join.disabled = disabled || matchmakingActive || directoryActive;
     this.elements.releaseRetry.hidden = !releaseUi.retryVisible || online;
     this.elements.releaseRetry.disabled = releaseUi.retryDisabled || nextState.connecting || online;
@@ -939,11 +979,14 @@ bindEvents() {
 
       const role = document.createElement('span');
       role.className = 'ka-coop-player-role';
-      role.textContent = player.isBot
-        ? 'AI WINGMATE'
-        : player.isHost
-          ? 'HOST'
-          : 'OPERATIVE';
+      role.textContent = isPvp
+        ? `${player.team || 'UNASSIGNED'}${player.isHost ? ' · HOST' : ''}`
+        : player.isBot
+          ? 'AI WINGMATE'
+          : player.isHost
+            ? 'HOST'
+            : 'OPERATIVE';
+      row.dataset.team = isPvp ? String(player.team || '') : '';
 
       identity.append(slot, name, role);
 
@@ -998,7 +1041,7 @@ this.elements.playerList.appendChild(row);
       1
     );
     this.elements.map.disabled = !isHost || room.status === 'in-run';
-    this.elements.difficulty.disabled = !isHost || room.status === 'in-run';
+    this.elements.difficulty.disabled = isPvp || !isHost || room.status === 'in-run';
     if (this.elements.hostControls) {
       this.elements.hostControls.hidden = !isHost;
     }
@@ -1014,14 +1057,16 @@ this.elements.playerList.appendChild(row);
       this.elements.roomLocked.disabled = !isHost;
     }
     if (this.elements.allowLateJoin) {
-      this.elements.allowLateJoin.checked =
-        room.settings?.allowLateJoin !== false;
-      this.elements.allowLateJoin.disabled = !isHost;
+      this.elements.allowLateJoin.checked = isPvp
+        ? false
+        : room.settings?.allowLateJoin !== false;
+      this.elements.allowLateJoin.disabled = isPvp || !isHost;
     }
     if (this.elements.publicListing) {
-      this.elements.publicListing.checked =
-        room.settings?.publicListing === true;
-      this.elements.publicListing.disabled = !isHost;
+      this.elements.publicListing.checked = isPvp
+        ? false
+        : room.settings?.publicListing === true;
+      this.elements.publicListing.disabled = isPvp || !isHost;
     }
 
     const botPresent = connectedPlayers.some((player) => player.isBot === true);
@@ -1032,7 +1077,7 @@ this.elements.playerList.appendChild(row);
       this.elements.maxPlayers.value = '2';
       this.elements.maxPlayers.disabled = true;
     }
-    const teamOptionsAvailable = isHost && room.status !== 'in-run';
+    const teamOptionsAvailable = !isPvp && isHost && room.status !== 'in-run';
     const canFindPublicAlly = teamOptionsAvailable && connectedHumanCount < 2;
     const canCallWingman = (
       teamOptionsAvailable && !botPresent && connectedHumanCount <= 2
@@ -1067,10 +1112,14 @@ this.elements.playerList.appendChild(row);
     this.elements.ready.dataset.ready = local?.ready ? 'true' : 'false';
     this.elements.ready.disabled = room.status === 'in-run';
 
+    const pvpHasOpponents = !isPvp || connectedHumanCount >= 2;
+    const canStart = allReady && pvpHasOpponents;
     this.elements.start.hidden = !isHost;
-    this.elements.start.disabled = !allReady || room.status === 'in-run';
-    this.elements.start.textContent = allReady
-      ? 'START CO-OP RUN'
-      : 'WAITING FOR READY';
+    this.elements.start.disabled = !canStart || room.status === 'in-run';
+    this.elements.start.textContent = canStart
+      ? (isPvp ? 'START TEAM ELIMINATION' : 'START CO-OP RUN')
+      : (isPvp && connectedHumanCount < 2
+          ? 'WAITING FOR OPPONENT'
+          : 'WAITING FOR READY');
   }
 }

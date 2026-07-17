@@ -1132,3 +1132,104 @@
     display: none;
   }
 }
+
+
+/* PVP.1 R1 — isolated Team Elimination presentation. */
+.ka-pvp1-private-mode {
+  margin-top: 0.75rem;
+}
+.ka-pvp1-private-note {
+  margin: -0.35rem 0 0.85rem;
+  color: rgba(210, 229, 236, 0.72);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.ka-coop-player[data-team="ALPHA"] {
+  border-inline-start: 3px solid #22d3ee;
+}
+.ka-coop-player[data-team="BRAVO"] {
+  border-inline-start: 3px solid #fb7185;
+}
+.ka-pvp1-hud {
+  position: fixed;
+  z-index: 92;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  width: min(32rem, calc(100vw - 1.25rem));
+  transform: translateX(-50%);
+  border: 1px solid rgba(119, 220, 244, 0.48);
+  border-radius: 0.8rem;
+  background: linear-gradient(180deg, rgba(3, 12, 18, 0.94), rgba(5, 19, 28, 0.86));
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.38);
+  color: #e9f8fb;
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+.ka-pvp1-hud[hidden] {
+  display: none;
+}
+.ka-pvp1-mode {
+  padding: 0.36rem 0.7rem 0.2rem;
+  color: #9be9f7;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+.ka-pvp1-score {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+}
+.ka-pvp1-score [data-pvp-team="ALPHA"] {
+  color: #67e8f9;
+  text-align: right;
+}
+.ka-pvp1-score [data-pvp-team="BRAVO"] {
+  color: #fda4af;
+  text-align: left;
+}
+.ka-pvp1-score strong {
+  display: inline-grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  margin-inline: 0.25rem;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #fff;
+}
+.ka-pvp1-score b {
+  color: #fff;
+  font-size: 0.73rem;
+}
+.ka-pvp1-status {
+  padding: 0.25rem 0.7rem 0.46rem;
+  border-top: 1px solid rgba(119, 220, 244, 0.16);
+  color: #ffe29a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+@media (max-width: 640px) {
+  .ka-pvp1-hud {
+    top: max(0.35rem, env(safe-area-inset-top));
+    width: calc(100vw - 0.7rem);
+  }
+  .ka-pvp1-mode {
+    font-size: 0.58rem;
+  }
+  .ka-pvp1-score {
+    gap: 0.35rem;
+    padding-inline: 0.45rem;
+    font-size: 0.68rem;
+  }
+  .ka-pvp1-status {
+    font-size: 0.62rem;
+  }
+}

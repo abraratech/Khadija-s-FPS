@@ -4,7 +4,7 @@
   "protocol": 6,
   "build": "final2-consolidated-production-r1",
   "patch": "final2-r1-full-product-certification",
-  "certifiedBaselineSha": "cfc5a0e3c5e11fac0bc7c6f1f84e372ca8fda91d",
+  "certifiedBaselineSha": "5511d393d7249b5487affa3616716ccb64593e99",
   "releaseStatus": "CERTIFIED",
   "workerUrl": "https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev",
   "leaderboards": {
@@ -312,8 +312,8 @@
     "payToWin": false
   },
   "operations": {
-    "schema": 2,
-    "patch": "post-final5-r1-moderation-player-safety-operations",
+    "schema": 3,
+    "patch": "post-final6-r1-production-operations-hardening",
     "publicEndpoints": [
       "/ops/health",
       "/ops/privacy",
@@ -355,9 +355,24 @@
     "playerAppeals": true,
     "reporterStatusPrivacy": "received-or-review-complete-only",
     "appealRetentionDays": 365,
-    "authenticatedAccountRestrictionEnforcement": true
+    "authenticatedAccountRestrictionEnforcement": true,
+    "administratorPasskeys": true,
+    "administratorRoles": [
+      "viewer",
+      "moderator",
+      "senior-moderator",
+      "owner"
+    ],
+    "administratorSessionHours": 8,
+    "sessionRevocation": true,
+    "auditExport": [
+      "json",
+      "csv"
+    ],
+    "optionalWebhookAlerts": true,
+    "secretValuesExposed": false
   },
-  "releaseLabel": "POST-FINAL.5 Moderation & Player Safety Operations",
+  "releaseLabel": "POST-FINAL.6 R1 \u2014 Production Operations Hardening",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -512,6 +527,42 @@
     "authenticatedOnlineRestrictionEnforcement": true,
     "playerAppeals": true,
     "reporterStatusPrivacy": "received-or-review-complete-only",
+    "protocolUnchanged": true,
+    "workerChangeRequired": true
+  },
+  "postFinal6": {
+    "schema": 1,
+    "patch": "post-final6-r1-production-operations-hardening",
+    "sourceBaselineSha": "5511d393d7249b5487affa3616716ccb64593e99",
+    "administratorAuthentication": "passkey",
+    "legacyAdminTokenUse": "first-owner-bootstrap-only",
+    "administratorRoles": [
+      "viewer",
+      "moderator",
+      "senior-moderator",
+      "owner"
+    ],
+    "administratorSessionHours": 8,
+    "sessionRevocation": true,
+    "staffInvitations": true,
+    "additionalPasskeys": true,
+    "destructiveActionConfirmation": true,
+    "moderatorAssignment": true,
+    "internalCaseNotes": true,
+    "playerCaseTimeline": true,
+    "queueAgeAndPriority": true,
+    "restrictionExpirationManagement": true,
+    "auditExport": [
+      "json",
+      "csv"
+    ],
+    "optionalWebhookAlerts": true,
+    "webhookPayloadPrivacyReduced": true,
+    "secretPresenceVerification": true,
+    "operationalHealthMetrics": true,
+    "reportForwardRetryVisibility": true,
+    "frontendWorkerCompatibilityVerification": true,
+    "manualDeploymentOnly": true,
     "protocolUnchanged": true,
     "workerChangeRequired": true
   }

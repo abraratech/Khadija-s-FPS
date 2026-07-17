@@ -32,7 +32,7 @@ assert.match(core, /redactOpsText/);
 assert.match(core, /OPS1_MAX_QUEUE = 24/);
 
 assert.equal(release.patch, 'final2-r1-full-product-certification');
-assert.equal(release.operations.patch, 'post-final5-r1-moderation-player-safety-operations');
+assert.equal(release.operations.patch, 'post-final6-r1-production-operations-hardening');
 assert.equal(release.operations.rawIpStored, false);
 assert.equal(release.operations.rawEmailStored, false);
 assert.equal(release.operations.chatTranscriptCollectedByDefault, false);

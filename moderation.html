@@ -16,30 +16,77 @@
       <div>
         <span>KHADIJA'S ARENA · STAFF OPERATIONS</span>
         <h1>MODERATION COMMAND</h1>
-        <p>Privacy-reduced report review, account restrictions, appeals and audit history.</p>
+        <p>Passkey-protected report review, account restrictions, appeals, staff roles and production health.</p>
       </div>
       <div class="ka-mod-header-actions">
         <a href="index.html">RETURN TO GAME</a>
-        <button id="mod-refresh" type="button">REFRESH</button>
-        <button id="mod-lock" type="button">LOCK</button>
+        <button id="mod-refresh" type="button" disabled>REFRESH</button>
+        <button id="mod-lock" type="button" disabled>LOCK</button>
       </div>
     </header>
 
     <section class="ka-mod-auth" id="mod-auth-panel">
-      <div>
-        <strong>ADMINISTRATOR AUTHENTICATION</strong>
-        <small>The token is sent only as a Bearer header to the protected Worker API. It is never included in the production manifest.</small>
+      <div class="ka-mod-auth-copy">
+        <strong>STAFF PASSKEY AUTHENTICATION</strong>
+        <small>Administrator sessions expire after eight hours and can be revoked. The legacy secret is used only to enroll the first Owner.</small>
+        <output id="mod-auth-status">CHECKING SECURITY STATUS…</output>
       </div>
-      <label>
-        <span>OPS admin token</span>
-        <input id="mod-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste OPS_ADMIN_TOKEN"/>
-      </label>
-      <label class="ka-mod-check"><input id="mod-remember" type="checkbox" checked/> Keep token for this browser tab only</label>
-      <button id="mod-connect" type="button">UNLOCK MODERATION</button>
-      <output id="mod-auth-status">LOCKED</output>
+
+      <div class="ka-mod-auth-grid">
+        <form id="mod-signin-form" class="ka-mod-auth-card">
+          <span>RETURNING STAFF</span>
+          <label>Staff handle
+            <input id="mod-signin-handle" autocomplete="username webauthn" spellcheck="false" placeholder="owner or moderator.handle"/>
+          </label>
+          <button type="submit">SIGN IN WITH PASSKEY</button>
+        </form>
+
+        <form id="mod-enroll-form" class="ka-mod-auth-card">
+          <span>STAFF INVITATION</span>
+          <label>One-time invitation code
+            <input id="mod-enroll-code" type="password" autocomplete="one-time-code" spellcheck="false" placeholder="Paste invitation code"/>
+          </label>
+          <label>Passkey name
+            <input id="mod-enroll-passkey-name" maxlength="48" placeholder="Work laptop"/>
+          </label>
+          <button type="submit">ENROLL STAFF PASSKEY</button>
+        </form>
+
+        <form id="mod-bootstrap-form" class="ka-mod-auth-card" hidden>
+          <span>FIRST OWNER BOOTSTRAP</span>
+          <label>Owner handle
+            <input id="mod-bootstrap-handle" autocomplete="username" spellcheck="false" value="owner"/>
+          </label>
+          <label>Display name
+            <input id="mod-bootstrap-display-name" maxlength="48" value="Arena Owner"/>
+          </label>
+          <label>Break-glass OPS token
+            <input id="mod-bootstrap-token" type="password" autocomplete="off" spellcheck="false" placeholder="OPS_ADMIN_TOKEN"/>
+          </label>
+          <label>Passkey name
+            <input id="mod-bootstrap-passkey-name" maxlength="48" value="Primary Owner Passkey"/>
+          </label>
+          <button type="submit">CREATE OWNER PASSKEY</button>
+        </form>
+      </div>
     </section>
 
     <section id="mod-console" class="ka-mod-console" hidden>
+      <section class="ka-mod-session-bar">
+        <div>
+          <span id="mod-session-name">STAFF</span>
+          <strong id="mod-session-role">VIEWER</strong>
+        </div>
+        <div>
+          <span>SESSION EXPIRES</span>
+          <strong id="mod-session-expiry">—</strong>
+        </div>
+        <div>
+          <span>WORKER / FRONTEND</span>
+          <strong id="mod-compatibility">CHECKING</strong>
+        </div>
+      </section>
+
       <div class="ka-mod-alert" id="mod-alert" data-active="false">NO QUEUE ALERTS</div>
       <section class="ka-mod-summary" id="mod-summary"></section>
 
@@ -48,10 +95,16 @@
         <button type="button" data-tab="appeals">APPEALS <span id="mod-appeal-count">0</span></button>
         <button type="button" data-tab="restrictions">RESTRICTIONS <span id="mod-restriction-count">0</span></button>
         <button type="button" data-tab="audit">AUDIT</button>
+        <button type="button" data-tab="platform">PLATFORM</button>
+        <button type="button" data-tab="staff">STAFF</button>
+        <button type="button" data-tab="sessions">SESSIONS</button>
       </nav>
 
       <section class="ka-mod-view" data-view="reports">
         <div class="ka-mod-toolbar">
+          <label>Search
+            <input id="mod-report-search" maxlength="120" placeholder="Report ID, target hash, category…"/>
+          </label>
           <label>Status
             <select id="mod-report-status">
               <option value="">All</option>
@@ -71,6 +124,12 @@
               <option value="inappropriate-name">Inappropriate name</option>
               <option value="spam">Spam</option>
               <option value="other">Other</option>
+            </select>
+          </label>
+          <label>Assignment
+            <select id="mod-report-assigned">
+              <option value="">All staff</option>
+              <option value="__unassigned">Unassigned</option>
             </select>
           </label>
         </div>
@@ -98,10 +157,45 @@
       </section>
 
       <section class="ka-mod-view" data-view="audit" hidden>
+        <div class="ka-mod-toolbar">
+          <button type="button" id="mod-export-json">EXPORT JSON</button>
+          <button type="button" id="mod-export-csv">EXPORT CSV</button>
+        </div>
         <div id="mod-audit" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="platform" hidden>
+        <div id="mod-platform" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="staff" hidden>
+        <form id="mod-invite-form" class="ka-mod-inline-form">
+          <strong>INVITE STAFF MEMBER</strong>
+          <label>Handle<input id="mod-invite-handle" maxlength="32" placeholder="moderator.name"/></label>
+          <label>Display name<input id="mod-invite-name" maxlength="48" placeholder="Moderator Name"/></label>
+          <label>Role
+            <select id="mod-invite-role">
+              <option value="viewer">Viewer</option>
+              <option value="moderator">Moderator</option>
+              <option value="senior-moderator">Senior Moderator</option>
+              <option value="owner">Owner</option>
+            </select>
+          </label>
+          <button type="submit">CREATE ONE-TIME INVITE</button>
+          <output id="mod-invite-output"></output>
+        </form>
+        <div class="ka-mod-toolbar">
+          <button type="button" id="mod-add-passkey">ADD MY PASSKEY</button>
+        </div>
+        <div id="mod-staff" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="sessions" hidden>
+        <div id="mod-sessions" class="ka-mod-list"></div>
       </section>
     </section>
   </main>
+
   <dialog id="mod-action-dialog">
     <form method="dialog" id="mod-action-form">
       <header>
@@ -110,11 +204,12 @@
       </header>
       <input id="mod-action-id" type="hidden"/>
       <input id="mod-action-type" type="hidden"/>
-      <label>Decision
-        <select id="mod-action-choice"></select>
-      </label>
+      <label>Decision<select id="mod-action-choice"></select></label>
       <label>Administrator note
         <textarea id="mod-action-note" maxlength="240" placeholder="Required for punitive actions; stored in the protected audit log"></textarea>
+      </label>
+      <label id="mod-action-confirm-wrap" hidden>Type the exact subject ID to confirm
+        <input id="mod-action-confirm" autocomplete="off" spellcheck="false"/>
       </label>
       <div class="ka-mod-dialog-actions">
         <button value="cancel" type="button" id="mod-action-cancel">CANCEL</button>
@@ -122,6 +217,23 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="mod-note-dialog">
+    <form method="dialog" id="mod-note-form">
+      <header><div><span>INTERNAL CASE NOTE</span><strong id="mod-note-title">REPORT</strong></div><button value="cancel" aria-label="Close">×</button></header>
+      <input id="mod-note-report-id" type="hidden"/>
+      <label>Private moderator note<textarea id="mod-note-text" maxlength="500" required></textarea></label>
+      <div class="ka-mod-dialog-actions"><button type="button" id="mod-note-cancel">CANCEL</button><button type="submit">SAVE NOTE</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="mod-case-dialog">
+    <form method="dialog">
+      <header><div><span>PLAYER CASE TIMELINE</span><strong id="mod-case-title">CASE</strong></div><button value="cancel" aria-label="Close">×</button></header>
+      <div id="mod-case-content" class="ka-mod-list"></div>
+    </form>
+  </dialog>
+
   <script type="module" src="js/moderation_admin.js"></script>
 </body>
 </html>

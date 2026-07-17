@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  OPS1_SERVER_PATCH,
+  POST_FINAL5_SERVER_PATCH,
   applyModerationAppealAction,
   moderationReportGroup,
   moderationReporterHistory,
@@ -8,7 +8,7 @@ import {
   normalizeModerationReport
 } from './ops1_core.js';
 
-assert.equal(OPS1_SERVER_PATCH, 'post-final5-r1-moderation-player-safety-operations');
+assert.equal(POST_FINAL5_SERVER_PATCH, 'post-final5-r1-moderation-player-safety-operations');
 const now = Date.UTC(2026, 6, 16, 21, 0, 0);
 const reports = [
   normalizeModerationReport({ reportId: 'r1', category: 'cheating', status: 'dismissed', createdAt: now - 3000 }, { now, reporterHash: 'same-reporter', targetHash: 'target-a' }),

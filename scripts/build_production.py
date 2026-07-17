@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Khadija's Arena FINAL.2 production-only static asset directory.
+"""Build the Khadija's Arena production-only static asset directory.
 
 Copies only runtime frontend files. Tests, source maps, Worker source,
 repository tooling, previews, diagnostics, secrets, and development metadata
@@ -22,6 +22,8 @@ POST_FINAL2_PATCH = "post-final2-r1-coop-audio-awareness"
 POST_FINAL3_PATCH = "post-final3-r1-squad-command-team-intelligence"
 POST_FINAL4_PATCH = "post-final4-r1-dynamic-operations-objective-director"
 POST_FINAL5_PATCH = "post-final5-r1-moderation-player-safety-operations"
+POST_FINAL6_PATCH = "post-final6-r1-production-operations-hardening"
+POST_FINAL6_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
@@ -119,8 +121,8 @@ def main() -> None:
         "certified_source_seal": SOURCE_SEAL,
         "certification": {
             "status": "CERTIFIED",
-            "deterministic_tests": 125,
-            "javascript_syntax_checks": 363,
+            "deterministic_tests": 127,
+            "javascript_syntax_checks": 369,
             "map_hero_checks": 6,
             "voice_runtime_removed": True,
             "administrator_tools_included": True,
@@ -192,6 +194,32 @@ def main() -> None:
             "protocol_unchanged": True,
             "worker_change_required": True
         },
+        "post_final6": {
+            "schema": 1,
+            "patch": POST_FINAL6_PATCH,
+            "source_baseline_sha": POST_FINAL6_BASELINE_SHA,
+            "administrator_authentication": "passkey",
+            "legacy_token_use": "first-owner-bootstrap-only",
+            "administrator_roles": [
+                "viewer", "moderator", "senior-moderator", "owner"
+            ],
+            "administrator_session_hours": 8,
+            "session_revocation": True,
+            "staff_invitations": True,
+            "destructive_action_confirmation": True,
+            "moderator_assignment": True,
+            "internal_case_notes": True,
+            "case_timeline": True,
+            "restriction_expiration_management": True,
+            "audit_export": ["json", "csv"],
+            "optional_webhook_alerts": True,
+            "secret_values_included": False,
+            "operational_visibility": True,
+            "frontend_worker_compatibility": True,
+            "manual_deployment_only": True,
+            "protocol_unchanged": True,
+            "worker_change_required": True
+        },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),
         "policy": {
@@ -203,7 +231,9 @@ def main() -> None:
             "source_maps_included": False,
             "voice_runtime_included": False,
             "protected_moderation_client_included": True,
-            "administrator_credentials_included": False
+            "administrator_credentials_included": False,
+            "administrator_passkey_client_included": True,
+            "legacy_shared_token_dashboard_authentication": False
         },
         "files": dict(sorted(copied.items()))
     }

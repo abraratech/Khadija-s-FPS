@@ -1,8 +1,8 @@
 // OPS.1 R1 — Worker operational safety, aggregation and moderation core.
 
-export const OPS1_SERVER_SCHEMA = 2;
-export const OPS1_SERVER_PATCH = 'post-final5-r1-moderation-player-safety-operations';
-export const POST_FINAL5_SERVER_PATCH = OPS1_SERVER_PATCH;
+export const OPS1_SERVER_SCHEMA = 3;
+export const OPS1_SERVER_PATCH = 'post-final6-r1-production-operations-hardening';
+export const POST_FINAL5_SERVER_PATCH = 'post-final5-r1-moderation-player-safety-operations';
 export const OPS1_EVENT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 export const OPS1_REPORT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 export const OPS1_AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
@@ -335,6 +335,19 @@ export function normalizeModerationReport(input = {}, {
     },
     status: REPORT_STATUSES.has(input.status) ? input.status : 'pending',
     action: MODERATION_ACTIONS.has(input.action) ? input.action : 'none',
+    assignedToAdminId: cleanOpsString(input.assignedToAdminId, '', 120),
+    internalNotes: Array.isArray(input.internalNotes)
+      ? input.internalNotes
+          .filter((entry) => entry && typeof entry === 'object')
+          .slice(-50)
+          .map((entry) => ({
+            noteId: cleanOpsString(entry.noteId, '', 120),
+            actorHash: cleanOpsString(entry.actorHash, '', 64),
+            actorAdminId: cleanOpsString(entry.actorAdminId, '', 120),
+            text: redactOpsServerText(entry.text, 500),
+            createdAt: Math.max(0, Math.floor(finite(entry.createdAt, now)))
+          }))
+      : [],
     createdAt: Math.max(0, Math.floor(finite(input.createdAt, now))),
     updatedAt: Math.max(0, Math.floor(finite(input.updatedAt, now))),
     expiresAt: Math.max(

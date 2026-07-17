@@ -207,6 +207,13 @@ export class SocialHub extends DurableObject {
     const url = new URL(request.url);
     try {
       if (
+        request.headers.get('x-ka-internal-ops') === '1'
+        && request.method === 'GET'
+        && url.pathname === '/internal/social/ops/summary'
+      ) {
+        return await this.internalOpsSummary();
+      }
+      if (
         request.headers.get('x-ka-internal-room-social') === '1'
         || request.headers.get('x-ka-internal-matchmaking-social') === '1'
       ) {
@@ -257,6 +264,29 @@ export class SocialHub extends DurableObject {
                   : 500;
       return responseJson({ ok: false, error: code }, { status });
     }
+  }
+
+  async internalOpsSummary() {
+    const [forwardQueue, reports, profiles] = await Promise.all([
+      this.ctx.storage.list({ prefix: 'report-forward:' }),
+      this.ctx.storage.list({ prefix: 'report:' }),
+      this.ctx.storage.list({ prefix: 'profile:' })
+    ]);
+    const now = Date.now();
+    const retryEntries = [...forwardQueue.values()];
+    return responseJson({
+      ok: true,
+      patch: SOCIAL1_SERVER_PATCH,
+      available: true,
+      retryingReports: retryEntries.length,
+      reportForwardFailures: retryEntries.filter((entry) => Number(entry?.attempts || 0) > 0).length,
+      oldestRetryAt: retryEntries.length
+        ? Math.min(...retryEntries.map((entry) => Number(entry?.createdAt || now)))
+        : 0,
+      storedReports: reports.size,
+      socialProfiles: profiles.size,
+      generatedAt: now
+    });
   }
 
   async cloudAuthenticate(request, { allowRestricted = false } = {}) {

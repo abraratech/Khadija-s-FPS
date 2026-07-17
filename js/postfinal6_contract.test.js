@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const root = new URL('../', import.meta.url);
+const moderation = fs.readFileSync(new URL('moderation.html', root), 'utf8');
+const admin = fs.readFileSync(new URL('js/moderation_admin.js', root), 'utf8');
+const adminCore = fs.readFileSync(new URL('js/moderation_admin_core.js', root), 'utf8');
+const build = fs.readFileSync(new URL('scripts/build_production.py', root), 'utf8');
+const verifier = fs.readFileSync(new URL('scripts/verify_post_final6.py', root), 'utf8');
+const release = JSON.parse(fs.readFileSync(new URL('multiplayer-release.json', root), 'utf8'));
+
+assert.ok(moderation.includes('STAFF PASSKEY AUTHENTICATION'));
+assert.ok(moderation.includes('FIRST OWNER BOOTSTRAP'));
+assert.ok(moderation.includes('STAFF INVITATION'));
+assert.ok(moderation.includes('id="mod-platform"'));
+assert.ok(moderation.includes('id="mod-staff"'));
+assert.ok(moderation.includes('id="mod-sessions"'));
+assert.ok(admin.includes('/ops/admin/auth/login/options'));
+assert.ok(admin.includes('/ops/admin/auth/bootstrap/options'));
+assert.ok(admin.includes('/ops/admin/auth/enroll/options'));
+assert.ok(admin.includes('/ops/admin/reports/assign'));
+assert.ok(admin.includes('/ops/admin/reports/note'));
+assert.ok(admin.includes('/ops/admin/audit/export'));
+assert.ok(admin.includes('/ops/admin/platform'));
+assert.ok(admin.includes('/ops/admin/staff/invite'));
+assert.ok(admin.includes('/ops/admin/sessions/revoke'));
+assert.ok(adminCore.includes('navigator') === false);
+assert.ok(build.includes('POST_FINAL6_PATCH'));
+assert.ok(verifier.includes('READ-ONLY'));
+assert.equal(release.postFinal6.patch, 'post-final6-r1-production-operations-hardening');
+assert.equal(release.postFinal6.administratorAuthentication, 'passkey');
+assert.equal(release.postFinal6.manualDeploymentOnly, true);
+assert.equal(release.postFinal6.protocolUnchanged, true);
+assert.equal(release.protocol, 6);
+console.log('POST-FINAL.6 frontend contract tests passed');

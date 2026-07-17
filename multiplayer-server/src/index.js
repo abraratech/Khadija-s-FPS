@@ -47,7 +47,7 @@ export { SocialHub };
 const SERVER_PROTOCOL = 6;
 const SERVER_BUILD = 'final2-consolidated-production-r1';
 const SERVER_PATCH = 'final2-r1-full-product-certification';
-const CERTIFIED_FRONTEND_SHA = 'cfc5a0e3c5e11fac0bc7c6f1f84e372ca8fda91d';
+const CERTIFIED_FRONTEND_SHA = '5511d393d7249b5487affa3616716ccb64593e99';
 const CERTIFIED_SOURCE_SEAL = 'dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e';
 const RELEASE_STATUS = 'CERTIFIED';
 const COMPATIBLE_PROTOCOLS = new Set([5, 6]);
@@ -85,6 +85,29 @@ const POST_FINAL5_SERVER_INFO = Object.freeze({
   accountRestrictionEnforcement: 'authenticated-online-surfaces',
   playerAppeals: true,
   reporterStatusPrivacy: 'received-or-review-complete-only',
+  protocolUnchanged: true,
+  workerChangeRequired: true
+});
+
+const POST_FINAL6_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'post-final6-r1-production-operations-hardening',
+  sourceBaselineSha: CERTIFIED_FRONTEND_SHA,
+  administratorAuthentication: 'passkey',
+  administratorRoles: ['viewer', 'moderator', 'senior-moderator', 'owner'],
+  administratorSessionHours: 8,
+  sessionRevocation: true,
+  staffInvitations: true,
+  destructiveActionConfirmation: true,
+  moderatorAssignment: true,
+  internalCaseNotes: true,
+  caseTimeline: true,
+  restrictionExpiryManagement: true,
+  auditExport: ['json', 'csv'],
+  optionalWebhookAlerts: true,
+  secretPresenceOnly: true,
+  operationalVisibility: true,
+  pagesWorkerCompatibilityVerification: true,
   protocolUnchanged: true,
   workerChangeRequired: true
 });
@@ -437,6 +460,13 @@ async function proxyOpsRequest(request, env) {
       String(request.cf?.country || 'ZZ').toUpperCase()
     );
     headers.set('x-ka-ops-key', await shortRequestHash(request));
+    const requestOrigin = String(request.headers.get('origin') || '').trim();
+    if (requestOrigin) {
+      headers.set('x-ka-origin', requestOrigin);
+      try {
+        headers.set('x-ka-rp-id', new URL(requestOrigin).hostname);
+      } catch {}
+    }
     headers.delete('cf-connecting-ip');
     const internal = new Request(
       `https://ops.internal${sourceUrl.pathname}${sourceUrl.search}`,
@@ -2295,6 +2325,7 @@ export default {
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
+        productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2332,6 +2363,7 @@ export default {
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
         playerSafetyOperations: POST_FINAL5_SERVER_INFO,
+        productionOperationsHardening: POST_FINAL6_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

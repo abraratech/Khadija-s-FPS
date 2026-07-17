@@ -1,13 +1,16 @@
 // OPS.1 R1 — Worker operational safety, aggregation and moderation core.
 
-export const OPS1_SERVER_SCHEMA = 1;
-export const OPS1_SERVER_PATCH = 'ops1-r1-production-operations-privacy-telemetry';
+export const OPS1_SERVER_SCHEMA = 2;
+export const OPS1_SERVER_PATCH = 'post-final5-r1-moderation-player-safety-operations';
+export const POST_FINAL5_SERVER_PATCH = OPS1_SERVER_PATCH;
 export const OPS1_EVENT_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 export const OPS1_REPORT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 export const OPS1_AUDIT_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+export const OPS1_APPEAL_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
 export const OPS1_MAX_BODY_BYTES = 16_384;
 export const OPS1_MAX_RECENT_ERRORS = 120;
 export const OPS1_MAX_REPORTS = 500;
+export const OPS1_MAX_APPEALS = 500;
 
 const EVENT_TYPES = new Set([
   'client-crash',
@@ -48,6 +51,19 @@ const MODERATION_ACTIONS = new Set([
   'suspension',
   'ban',
   'dismissed'
+]);
+const APPEAL_STATUSES = new Set([
+  'pending',
+  'reviewing',
+  'upheld',
+  'reduced',
+  'lifted'
+]);
+const APPEAL_ACTIONS = new Set([
+  'none',
+  'uphold',
+  'reduce',
+  'lift'
 ]);
 const CONTEXT_KEYS = Object.freeze([
   'route',
@@ -358,6 +374,8 @@ export function applyModerationAction(reportValue, actionValue = {}, {
         `audit-${Math.floor(Number(now))}`,
         120
       ),
+      subjectType: 'report',
+      subjectId: report.reportId,
       reportId: report.reportId,
       status,
       action,
@@ -392,6 +410,128 @@ export function moderationRestrictionForAction(actionValue = {}, {
     reason: redactOpsServerText(actionValue.note, 160),
     createdAt: Math.floor(Number(now)),
     expiresAt: durationMs > 0 ? Math.floor(Number(now) + durationMs) : 0
+  });
+}
+
+
+export function normalizeModerationAppeal(input = {}, {
+  now = Date.now(),
+  targetHash = ''
+} = {}) {
+  const status = APPEAL_STATUSES.has(input.status) ? input.status : 'pending';
+  const action = APPEAL_ACTIONS.has(input.action) ? input.action : 'none';
+  return Object.freeze({
+    appealId: cleanOpsString(input.appealId, `appeal-${Math.floor(Number(now))}`, 120),
+    reportId: cleanOpsString(input.reportId, '', 120),
+    targetHash: cleanOpsString(targetHash || input.targetHash, '', 64),
+    note: redactOpsServerText(input.note, 500),
+    status,
+    action,
+    createdAt: Math.max(0, Math.floor(finite(input.createdAt, now))),
+    updatedAt: Math.max(0, Math.floor(finite(input.updatedAt, now))),
+    expiresAt: Math.max(
+      Math.floor(Number(now)),
+      Math.floor(finite(input.expiresAt, Number(now) + OPS1_APPEAL_RETENTION_MS))
+    )
+  });
+}
+
+export function applyModerationAppealAction(appealValue, actionValue = {}, {
+  now = Date.now(),
+  actorHash = ''
+} = {}) {
+  const appeal = normalizeModerationAppeal(appealValue, {
+    now,
+    targetHash: appealValue?.targetHash
+  });
+  const action = APPEAL_ACTIONS.has(actionValue.action)
+    ? actionValue.action
+    : 'none';
+  const status = APPEAL_STATUSES.has(actionValue.status)
+    ? actionValue.status
+    : action === 'uphold'
+      ? 'upheld'
+      : action === 'reduce'
+        ? 'reduced'
+        : action === 'lift'
+          ? 'lifted'
+          : 'reviewing';
+  return {
+    appeal: {
+      ...appeal,
+      status,
+      action,
+      updatedAt: Math.floor(Number(now))
+    },
+    audit: {
+      auditId: cleanOpsString(
+        actionValue.auditId,
+        `audit-${Math.floor(Number(now))}`,
+        120
+      ),
+      subjectType: 'appeal',
+      subjectId: appeal.appealId,
+      appealId: appeal.appealId,
+      reportId: appeal.reportId,
+      status,
+      action,
+      note: redactOpsServerText(actionValue.note, 240),
+      actorHash: cleanOpsString(actorHash, '', 64),
+      createdAt: Math.floor(Number(now)),
+      expiresAt: Math.floor(Number(now) + OPS1_AUDIT_RETENTION_MS)
+    }
+  };
+}
+
+export function moderationReporterHistory(reports = [], reporterHash = '') {
+  const cleanHash = cleanOpsString(reporterHash, '', 64);
+  const matching = (Array.isArray(reports) ? reports : []).filter(
+    (report) => cleanOpsString(report?.reporterHash, '', 64) === cleanHash
+  );
+  const total = matching.length;
+  const dismissed = matching.filter((report) => report?.status === 'dismissed').length;
+  const actioned = matching.filter((report) => report?.status === 'actioned').length;
+  const open = matching.filter((report) => ['pending', 'reviewing'].includes(report?.status)).length;
+  const resolved = dismissed + actioned;
+  const dismissalRate = resolved > 0 ? dismissed / resolved : 0;
+  const risk = total >= 8 && dismissed >= 6 && dismissalRate >= 0.75
+    ? 'high'
+    : total >= 4 && dismissed >= 3 && dismissalRate >= 0.6
+      ? 'watch'
+      : 'normal';
+  return Object.freeze({
+    total,
+    open,
+    actioned,
+    dismissed,
+    dismissalRate: Math.round(dismissalRate * 1000) / 1000,
+    risk,
+    automaticPenalty: false
+  });
+}
+
+export function moderationReportGroup(reports = [], reportValue = {}) {
+  const report = normalizeModerationReport(reportValue, {
+    now: reportValue?.updatedAt || reportValue?.createdAt || Date.now(),
+    reporterHash: reportValue?.reporterHash,
+    targetHash: reportValue?.targetHash
+  });
+  const recentFloor = Number(report.createdAt || 0) - 30 * 24 * 60 * 60 * 1000;
+  const matching = (Array.isArray(reports) ? reports : []).filter((candidate) => (
+    candidate?.targetHash === report.targetHash
+    && candidate?.category === report.category
+    && Number(candidate?.createdAt || 0) >= recentFloor
+    && Math.abs(Number(candidate?.createdAt || 0) - Number(report.createdAt || 0)) <= 30 * 24 * 60 * 60 * 1000
+  ));
+  const reporters = new Set(matching.map((entry) => entry?.reporterHash).filter(Boolean));
+  const times = matching.map((entry) => Number(entry?.createdAt || 0)).filter((entry) => entry > 0);
+  return Object.freeze({
+    key: `${report.targetHash}:${report.category}`,
+    count: matching.length,
+    uniqueReporters: reporters.size,
+    oldestAt: times.length ? Math.min(...times) : report.createdAt,
+    newestAt: times.length ? Math.max(...times) : report.createdAt,
+    coordinatedSignal: matching.length >= 3 && reporters.size >= 2
   });
 }
 

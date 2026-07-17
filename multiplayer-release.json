@@ -167,14 +167,21 @@
       "/social/party/leave",
       "/social/party/kick",
       "/social/party/transfer",
-      "/social/party/matchmaking-ticket"
+      "/social/party/matchmaking-ticket",
+      "/social/safety/status",
+      "/social/appeals/create"
     ],
     "matchmakingIntegration": {
       "partyTicketEndpoint": "/social/party/matchmaking-ticket",
       "leaderOwned": true,
       "ticketTtlMs": 120000,
       "maxGameplayPartyHumans": 2
-    }
+    },
+    "reportForwardRetry": true,
+    "reporterStatus": true,
+    "appeals": true,
+    "restrictedAccountsCanAccessSafetyCenter": true,
+    "authenticatedRestrictionEnforcedOnTickets": true
   },
   "matchmaking": {
     "schema": 2,
@@ -305,8 +312,8 @@
     "payToWin": false
   },
   "operations": {
-    "schema": 1,
-    "patch": "ops1-r1-production-operations-privacy-telemetry",
+    "schema": 2,
+    "patch": "post-final5-r1-moderation-player-safety-operations",
     "publicEndpoints": [
       "/ops/health",
       "/ops/privacy",
@@ -316,6 +323,9 @@
       "/ops/admin/summary",
       "/ops/admin/reports",
       "/ops/admin/reports/action",
+      "/ops/admin/appeals",
+      "/ops/admin/appeals/action",
+      "/ops/admin/restrictions",
       "/ops/admin/audit"
     ],
     "privacyAwareCrashReporting": true,
@@ -334,9 +344,20 @@
     "reportRetentionDays": 180,
     "telemetryFailureBlocksGameplay": false,
     "voiceChat": false,
-    "textChat": true
+    "textChat": true,
+    "protectedModerationDashboard": true,
+    "pendingQueueAlerts": true,
+    "privacyReducedPlayerHistory": true,
+    "duplicateReportGrouping": true,
+    "falseReportAbuseSignals": true,
+    "automaticFalseReportPenalty": false,
+    "reportForwardRetryQueue": true,
+    "playerAppeals": true,
+    "reporterStatusPrivacy": "received-or-review-complete-only",
+    "appealRetentionDays": 365,
+    "authenticatedAccountRestrictionEnforcement": true
   },
-  "releaseLabel": "FINAL.2 Consolidated Production Release",
+  "releaseLabel": "POST-FINAL.5 Moderation & Player Safety Operations",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -362,11 +383,12 @@
     "voiceRuntimeRemoved": true,
     "developmentArtifactsExcluded": true,
     "workerSourceExcludedFromPages": true,
-    "administratorToolsExcludedFromPages": true,
+    "administratorToolsExcludedFromPages": false,
     "secretsExcludedFromPages": true,
     "crawlerLowProfilePreserved": true,
     "baseModesPreserved": true,
-    "rollbackReady": true
+    "rollbackReady": true,
+    "protectedAdministratorToolIncluded": true
   },
   "postFinalHotfix": {
     "schema": 1,
@@ -436,5 +458,61 @@
     "hostMigrationUsesExistingTacticalPingRebroadcast": true,
     "protocolUnchanged": true,
     "workerChangeRequired": false
+  },
+  "dynamicOperationsObjectiveDirector": {
+    "schema": 1,
+    "patch": "post-final4-r1-dynamic-operations-objective-director",
+    "combinedRelease": true,
+    "operationTypes": [
+      "PRIORITY_TARGET",
+      "DEFEND_ZONE",
+      "RESTORE_EQUIPMENT",
+      "RETRIEVE_DELIVER",
+      "RESCUE_SURVIVOR",
+      "EXTRACTION_HOLDOUT"
+    ],
+    "survivalFallback": true,
+    "mapAuthoredSafeAnchors": 6,
+    "deterministicObjectiveDirector": true,
+    "repeatSuppression": true,
+    "soloCoopDifficultyScaling": true,
+    "aiWingmanObjectiveResponse": true,
+    "humanSquadCommandsOverrideDirector": true,
+    "objectiveHud": {
+      "progress": true,
+      "timer": true,
+      "distance": true,
+      "direction": true,
+      "teamContribution": true,
+      "compactMode": true,
+      "mobileResponsive": true
+    },
+    "worldMarkers": true,
+    "audioAndCaptionCompatible": true,
+    "teamRewardsOnceOnly": true,
+    "runSummaryIntegration": true,
+    "lateJoinAndReconnectViaContent1Snapshot": true,
+    "hostMigrationViaContent1Checkpoint": true,
+    "existingContent1Transport": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false
+  },
+  "postFinal5": {
+    "schema": 1,
+    "patch": "post-final5-r1-moderation-player-safety-operations",
+    "combinedRelease": true,
+    "moderationDashboard": "moderation.html",
+    "adminBearerTokenRequired": true,
+    "pendingReportAlerts": true,
+    "privacyReducedReportHistory": true,
+    "duplicateReportGrouping": true,
+    "falseReportAbuseSignals": true,
+    "automaticFalseReportPenalty": false,
+    "reportForwardRetryQueue": true,
+    "authenticatedOnlineRestrictionEnforcement": true,
+    "playerAppeals": true,
+    "reporterStatusPrivacy": "received-or-review-complete-only",
+    "protocolUnchanged": true,
+    "workerChangeRequired": true
   }
 }

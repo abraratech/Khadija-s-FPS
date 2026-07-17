@@ -316,6 +316,7 @@ export function initializeMultiplayerFoundation(
     reviveAdapter = null,
     tacticalAdapter = null,
     statsAdapter = null,
+    contentAdapter = null,
     botAdapter = null
   } = {}
 ) {
@@ -445,6 +446,76 @@ export function initializeMultiplayerFoundation(
     eventBus: multiplayerEvents,
     runtime: multiplayerRuntime,
     session: multiplayerSession,
+    scene,
+    player,
+    getParticipants: (now = performance.now()) => {
+      const room = multiplayerRuntime?.room?.getSnapshot?.() || null;
+      const revivePlayers = reviveManager?.getSnapshot?.()?.state?.players || [];
+      const reviveById = new Map(
+        revivePlayers
+          .filter((entry) => entry?.playerId)
+          .map((entry) => [entry.playerId, entry])
+      );
+      const botSnapshot = botManager?.getSnapshot?.() || null;
+      return (room?.players || []).map((entry) => {
+        const reviveState = reviveById.get(entry.playerId) || null;
+        const sampled = entry.playerId === multiplayerRuntime?.localPlayerId
+          ? null
+          : multiplayerRuntime?.sampleRemotePlayer?.(entry.playerId, now);
+        const botState = entry.isBot === true
+          ? botSnapshot?.state || null
+          : null;
+        const local = entry.playerId === multiplayerRuntime?.localPlayerId;
+        const position = local
+          ? player?.pos
+          : (botState?.position || sampled?.state?.position || reviveState?.position || null);
+        const lifeState = String(
+          reviveState?.lifeState
+          || botState?.lifeState
+          || sampled?.state?.lifeState
+          || 'ACTIVE'
+        ).toUpperCase();
+        return {
+          playerId: entry.playerId,
+          displayName: entry.displayName,
+          isLocal: local,
+          isBot: entry.isBot === true,
+          connected: entry.connected !== false,
+          alive: lifeState === 'ACTIVE' && (local ? player?.alive !== false : botState?.alive !== false),
+          lifeState,
+          position
+        };
+      }).filter((entry) => entry.playerId && entry.position);
+    },
+    getBotSnapshot: () => botManager?.getSnapshot?.() || null,
+    getActiveEnemies: worldAdapter?.getActiveEnemies || (() => []),
+    awardTeamObjective: ({ points = 0, label = 'OBJECTIVE COMPLETE' } = {}) => {
+      const reward = Math.max(0, Math.floor(Number(points) || 0));
+      if (reward <= 0) return false;
+      if (multiplayerSession?.mode === 'host' && multiplayerSession?.run?.active === true) {
+        const humans = (multiplayerRuntime?.room?.getSnapshot?.()?.players || [])
+          .filter((entry) => entry?.playerId && entry.isBot !== true && entry.connected !== false);
+        let awarded = false;
+        humans.forEach((entry) => {
+          awarded = economyManager?.awardCombat?.({
+            playerId: entry.playerId,
+            points: reward,
+            kills: 0,
+            label
+          }) === true || awarded;
+        });
+        return awarded;
+      }
+      return contentAdapter?.awardLocalPoints?.({ points: reward, label }) === true;
+    },
+    handleObjectiveDirective: (directive) => (
+      botManager?.handleObjectiveDirective?.(directive) || false
+    ),
+    getInteractLabel: (
+      contentAdapter?.getInteractLabel
+      || reviveAdapter?.getInteractLabel
+      || (() => 'INTERACT')
+    ),
     showToast: (
       botAdapter?.showToast
       || reviveAdapter?.showToast
@@ -1097,7 +1168,8 @@ export function syncMultiplayerFrame(
     dt = 0,
     now = performance.now(),
     lookDeltaX = 0,
-    lookDeltaY = 0
+    lookDeltaY = 0,
+    interactHeld = false
   } = {}
 ) {
   if (!initialized) return null;
@@ -1118,7 +1190,16 @@ export function syncMultiplayerFrame(
   squadIntentHud?.update(now);
   coopAudioManager?.update(now);
   networkHud?.update(now);
-  multiplayerReleaseGuard?.update(now); coopStatsManager?.update(now); coop2Manager?.update(now); content1Manager?.update(dt, { player, wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1 }); coopScoreboard?.update(now);
+  multiplayerReleaseGuard?.update(now);
+  coopStatsManager?.update(now);
+  coop2Manager?.update(now);
+  content1Manager?.update(dt, {
+    player,
+    wave: sharedWorldManager?.adapter?.getCurrentWave?.() || 1,
+    interactHeld: interactHeld === true,
+    now
+  });
+  coopScoreboard?.update(now);
   return { state, input };
 }
 

@@ -1,12 +1,24 @@
 // js/content1.js
-// CONTENT.1 R1 — runtime operation HUD, encounter authority and multiplayer sync.
+// CONTENT.1 + POST-FINAL.4 — operation runtime, dynamic objective director,
+// authored world markers, AI directives, rewards, and multiplayer sync.
 
+import * as THREE from 'three';
 import {
   CONTENT1_OPERATION_XP,
   CONTENT1_PATCH,
   Content1Authority
 } from './content1_core.js';
+import {
+  POST_FINAL4_OPERATION_KINDS,
+  POST_FINAL4_OPERATION_STATUS,
+  POST_FINAL4_PATCH,
+  PostFinal4ObjectiveDirector,
+  pointInsidePostFinal4Anchor
+} from './postfinal4_objective_core.js';
 import { recordProgressionContentOperation } from './progression.js';
+import { recordRunDynamicOperation } from './run_summary.js';
+import { recordChallengeObjective } from './challenges.js';
+import { playUISound, playTeamAlertCue } from './audio.js';
 import { getLive1RunDirective } from './live1_state.js';
 import { MULTIPLAYER_EVENTS } from './multiplayer/event_bus.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './multiplayer/runtime.js';
@@ -15,6 +27,10 @@ const SNAPSHOT_INTERVAL_MS = 300;
 const SNAPSHOT_REQUEST_INTERVAL_MS = 1000;
 const COMMAND_INTERVAL_MS = 45;
 const ZONE_TICK_INTERVAL_MS = 1000;
+const INTERACT_TICK_INTERVAL_MS = 250;
+const SURVIVOR_TICK_INTERVAL_MS = 200;
+const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'RANGED']);
+const OBJECTIVE_HUD_KEY = 'ka_objective_hud_mode_v1';
 
 function nowMs() {
   return (
@@ -37,12 +53,13 @@ function finite(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function flatDistance(a, b) {
+  if (!a || !b) return Number.POSITIVE_INFINITY;
+  return Math.hypot(finite(a.x) - finite(b.x), finite(a.z) - finite(b.z));
+}
+
 function flatInside(position, anchor) {
-  if (!position || !anchor) return false;
-  const dx = finite(position.x) - finite(anchor.x);
-  const dz = finite(position.z) - finite(anchor.z);
-  const radius = Math.max(1, finite(anchor.radius, 8));
-  return dx * dx + dz * dz <= radius * radius;
+  return pointInsidePostFinal4Anchor(position, anchor);
 }
 
 function roleColor(mapId) {
@@ -57,31 +74,133 @@ function roleColor(mapId) {
   return colors[String(mapId || '')] || '#00d4ff';
 }
 
+function operationProgressText(operation) {
+  if (!operation) return 'STANDBY';
+  if (operation.status === POST_FINAL4_OPERATION_STATUS.COMPLETE) return 'COMPLETE';
+  if (operation.status === POST_FINAL4_OPERATION_STATUS.FAILED) return 'FAILED';
+  if (operation.kind === POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET) {
+    return operation.targetEnemyId ? 'TARGET MARKED' : 'LOCATING TARGET';
+  }
+  if (operation.kind === POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR && operation.stage === 'ESCORT') {
+    return 'ESCORT TO EXTRACTION';
+  }
+  const secondsKind = [
+    POST_FINAL4_OPERATION_KINDS.DEFEND_ZONE,
+    POST_FINAL4_OPERATION_KINDS.EXTRACTION_HOLDOUT,
+    POST_FINAL4_OPERATION_KINDS.RESTORE_EQUIPMENT,
+    POST_FINAL4_OPERATION_KINDS.RETRIEVE_DELIVER,
+    POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR
+  ].includes(operation.kind);
+  return `${operation.stage} · ${Math.floor(finite(operation.stageProgress))}/${Math.ceil(finite(operation.stageTarget))}${secondsKind ? 's' : ''}`;
+}
+
+function arrowForTarget(player, anchor) {
+  if (!player?.pos || !anchor) return '•';
+  const dx = finite(anchor.x) - finite(player.pos.x);
+  const dz = finite(anchor.z) - finite(player.pos.z);
+  const targetYaw = Math.atan2(-dx, -dz);
+  let relative = targetYaw - finite(player.yaw);
+  relative = Math.atan2(Math.sin(relative), Math.cos(relative));
+  const eighth = Math.PI / 4;
+  const index = Math.round(relative / eighth);
+  const arrows = ['↑', '↖', '←', '↙', '↓', '↘', '→', '↗'];
+  return arrows[(index + 8) % 8] || '↑';
+}
+
+function normalizeParticipant(entry = {}) {
+  return {
+    playerId: cleanText(entry.playerId, '', 160),
+    displayName: cleanText(entry.displayName, entry.isBot ? 'AI WINGMAN' : 'OPERATIVE', 80),
+    isLocal: entry.isLocal === true,
+    isBot: entry.isBot === true,
+    connected: entry.connected !== false,
+    alive: entry.alive !== false && String(entry.lifeState || 'ACTIVE').toUpperCase() === 'ACTIVE',
+    lifeState: cleanText(entry.lifeState, entry.alive === false ? 'DOWNED' : 'ACTIVE', 30).toUpperCase(),
+    position: entry.position ? {
+      x: finite(entry.position.x),
+      y: finite(entry.position.y),
+      z: finite(entry.position.z)
+    } : null
+  };
+}
+
+function tintEnemyForPriority(enemy, enabled = true) {
+  if (!enemy?.mesh) return;
+  enemy.isPostFinal4Priority = enabled === true;
+  enemy.mesh.traverse?.((child) => {
+    const materials = Array.isArray(child?.material)
+      ? child.material
+      : (child?.material ? [child.material] : []);
+    materials.forEach((material) => {
+      if (!material?.emissive?.setHex) return;
+      if (enabled) {
+        material.emissive.setHex(0x00d4ff);
+        material.emissiveIntensity = Math.max(finite(material.emissiveIntensity), 0.55);
+      }
+    });
+  });
+}
+
 export class Content1Manager {
   constructor({
     eventBus,
     runtime,
     session,
-    showToast = () => {}
+    showToast = () => {},
+    scene = null,
+    player = null,
+    getParticipants = () => [],
+    getBotSnapshot = () => null,
+    getActiveEnemies = () => [],
+    awardTeamObjective = () => false,
+    handleObjectiveDirective = () => false,
+    getInteractLabel = () => 'INTERACT'
   } = {}) {
     this.eventBus = eventBus;
     this.runtime = runtime;
     this.session = session;
     this.showToast = showToast;
+    this.scene = scene;
+    this.player = player;
+    this.getParticipants = getParticipants;
+    this.getBotSnapshot = getBotSnapshot;
+    this.getActiveEnemies = getActiveEnemies;
+    this.awardTeamObjective = awardTeamObjective;
+    this.handleObjectiveDirective = handleObjectiveDirective;
+    this.getInteractLabel = getInteractLabel;
     this.core = new Content1Authority();
+    this.objectiveDirector = new PostFinal4ObjectiveDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotRequestedAt = -Infinity;
     this.lastCommandSentAt = -Infinity;
     this.lastZoneTickAt = -Infinity;
+    this.lastInteractTickAt = -Infinity;
+    this.lastBotInteractTickAt = -Infinity;
+    this.lastSurvivorTickAt = -Infinity;
     this.actionSerial = 0;
     this.currentWave = 1;
     this.awardedCompletionIds = new Set();
+    this.teamRewardedCompletionIds = new Set();
+    this.warnedOperationIds = new Set();
+    this.lastObservedOperationId = null;
+    this.lastObservedOperationStatus = null;
+    this.lastObservedOperationStage = null;
     this.hud = null;
     this.hudOperation = null;
+    this.hudDescription = null;
     this.hudProgress = null;
+    this.hudMeta = null;
+    this.hudTeam = null;
     this.hudEncounter = null;
+    this.objectiveGroup = null;
+    this.primaryRing = null;
+    this.secondaryRing = null;
+    this.primaryBeam = null;
+    this.secondaryBeam = null;
+    this.survivorMarker = null;
+    this.visualOperationId = null;
     this.unsubscribe = [];
 
     this.unsubscribe.push(
@@ -94,11 +213,9 @@ export class Content1Manager {
       this.eventBus?.on(
         MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED,
         () => {
-          if (
-            this.active
-            && this.isOnline()
-            && !this.isAuthority()
-          ) this.requestSnapshot();
+          if (this.active && this.isOnline() && !this.isAuthority()) {
+            this.requestSnapshot();
+          }
         }
       ) || (() => {})
     );
@@ -111,28 +228,24 @@ export class Content1Manager {
         this.recordAction(kind, detail);
       };
       window.addEventListener('ka:coop2-action', onCoopAction);
-      this.unsubscribe.push(() => {
-        window.removeEventListener('ka:coop2-action', onCoopAction);
-      });
+      this.unsubscribe.push(() => window.removeEventListener('ka:coop2-action', onCoopAction));
 
       window.KAGetContent1Snapshot = () => this.getSnapshot();
       window.KAGetContent1EncounterDirective = () => (
-        this.isAuthority()
-          ? this.core.getEncounterDirective()
-          : this.directiveFromSnapshot()
+        this.isAuthority() ? this.core.getEncounterDirective() : this.directiveFromSnapshot()
       );
+      window.KAGetPostFinal4Objective = () => this.getSnapshot()?.postFinal4 || null;
       window.KAContent1EnemySpawned = (enemy) => this.prepareEnemySpawn(enemy);
       window.KAContent1EnemyKilled = (details) => this.recordEnemyKill(details);
       window.KAContent1WaveStarted = (wave) => this.startWave(wave);
       window.KAContent1WaveCleared = (details) => this.recordWaveClear(details);
+      this.bindHudModeControl();
     }
   }
 
   isOnline() {
-    return (
-      this.session?.run?.active === true
-      && ['host', 'client'].includes(this.session?.mode)
-    );
+    return this.session?.run?.active === true
+      && ['host', 'client'].includes(this.session?.mode);
   }
 
   isAuthority() {
@@ -143,38 +256,55 @@ export class Content1Manager {
     return this.runtime?.localPlayerId || 'local';
   }
 
-  beginRun({
-    runId = '',
-    mapId = 'grid_bunker',
-    difficulty = 1
-  } = {}) {
+  participants(now = nowMs()) {
+    const raw = this.getParticipants?.(now) || [];
+    return raw.map(normalizeParticipant).filter((entry) => entry.playerId && entry.position);
+  }
+
+  beginRun({ runId = '', mapId = 'grid_bunker', difficulty = 1 } = {}) {
     const sessionRun = this.session?.run || {};
+    const resolvedRunId = cleanText(sessionRun.runId || runId, `content-${Date.now()}`, 160);
+    const resolvedMapId = cleanText(sessionRun.mapId || mapId, 'grid_bunker', 80);
+    const resolvedDifficulty = finite(sessionRun.difficulty, difficulty);
+    const humans = Math.max(1, this.participants().filter((entry) => !entry.isBot).length);
     this.active = true;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
     this.lastSnapshotRequestedAt = -Infinity;
     this.lastCommandSentAt = -Infinity;
     this.lastZoneTickAt = -Infinity;
+    this.lastInteractTickAt = -Infinity;
+    this.lastBotInteractTickAt = -Infinity;
+    this.lastSurvivorTickAt = -Infinity;
     this.currentWave = 1;
     this.actionSerial = 0;
     this.awardedCompletionIds.clear();
+    this.teamRewardedCompletionIds.clear();
+    this.warnedOperationIds.clear();
+    this.lastObservedOperationId = null;
+    this.lastObservedOperationStatus = null;
+    this.lastObservedOperationStage = null;
     this.core.reset({
-      runId: cleanText(sessionRun.runId || runId, `content-${Date.now()}`, 160),
-      mapId: cleanText(sessionRun.mapId || mapId, 'grid_bunker', 80),
-      difficulty: finite(sessionRun.difficulty, difficulty),
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
       authorityEpoch: finite(this.runtime?.authorityEpoch, 0),
-      live: getLive1RunDirective(
-        cleanText(sessionRun.mapId || mapId, 'grid_bunker', 80)
-      ),
+      live: getLive1RunDirective(resolvedMapId),
       now: nowMs()
     });
+    this.objectiveDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
+      playerCount: humans,
+      now: Date.now()
+    });
     this.ensureHud();
+    this.clearObjectiveVisuals();
+    this.consumeAuthorityEvents();
     this.updateHud(true);
-    if (this.isOnline() && !this.isAuthority()) {
-      this.requestSnapshot(true);
-    } else {
-      this.publishSnapshot(true);
-    }
+    if (this.isOnline() && !this.isAuthority()) this.requestSnapshot(true);
+    else this.publishSnapshot(true);
     return this.getSnapshot();
   }
 
@@ -182,6 +312,12 @@ export class Content1Manager {
     this.active = false;
     this.latestSnapshot = null;
     this.hideHud();
+    this.clearObjectiveVisuals();
+    this.handleObjectiveDirective?.(null);
+    this.warnedOperationIds.clear();
+    this.lastObservedOperationId = null;
+    this.lastObservedOperationStatus = null;
+    this.lastObservedOperationStage = null;
   }
 
   nextEventId(kind) {
@@ -196,43 +332,37 @@ export class Content1Manager {
 
   sendCommand(payload, force = false) {
     const now = nowMs();
-    if (!force && now - this.lastCommandSentAt < COMMAND_INTERVAL_MS) {
-      return null;
-    }
+    if (!force && now - this.lastCommandSentAt < COMMAND_INTERVAL_MS) return null;
     this.lastCommandSentAt = now;
-    return this.runtime?.sendContent1State?.({
-      kind: 'command',
-      ...payload
-    }) || null;
+    return this.runtime?.sendContent1State?.({ kind: 'command', ...payload }) || null;
   }
 
   requestSnapshot(force = false) {
     const now = nowMs();
-    if (
-      !force
-      && now - this.lastSnapshotRequestedAt < SNAPSHOT_REQUEST_INTERVAL_MS
-    ) return null;
+    if (!force && now - this.lastSnapshotRequestedAt < SNAPSHOT_REQUEST_INTERVAL_MS) return null;
     this.lastSnapshotRequestedAt = now;
     return this.sendCommand({ action: 'SNAPSHOT_REQUEST' }, true);
+  }
+
+  buildSnapshot(now = nowMs()) {
+    const base = this.core.update(now);
+    const postFinal4 = this.objectiveDirector.update(Date.now());
+    return { ...base, postFinal4 };
   }
 
   publishSnapshot(force = false) {
     if (!this.active || !this.isAuthority()) return null;
     const now = nowMs();
-    if (!force && now - this.lastSnapshotSentAt < SNAPSHOT_INTERVAL_MS) {
-      return null;
-    }
+    if (!force && now - this.lastSnapshotSentAt < SNAPSHOT_INTERVAL_MS) return null;
     this.lastSnapshotSentAt = now;
-    const snapshot = this.core.update(now);
+    const snapshot = this.buildSnapshot(now);
     this.latestSnapshot = clone(snapshot);
     const envelope = this.isOnline()
-      ? this.runtime?.sendContent1State?.({
-          kind: 'snapshot',
-          snapshot
-        })
+      ? this.runtime?.sendContent1State?.({ kind: 'snapshot', snapshot })
       : null;
-    this.applyLocalOperationReward();
+    this.applyLocalOperationRewards();
     this.updateHud(force);
+    this.updateObjectiveVisuals(now);
     return envelope || snapshot;
   }
 
@@ -244,25 +374,27 @@ export class Content1Manager {
       kind: normalizedKind,
       amount: Math.max(0, finite(details.amount, 1)),
       healthRatio: Math.max(0, Math.min(1, finite(details.healthRatio, 0))),
-      enemyId: cleanText(details.enemyId, '', 160),
-      eventId: cleanText(
-        details.eventId,
-        this.nextEventId(normalizedKind),
-        220
-      ),
+      enemyId: cleanText(details.enemyId, '', 180),
+      position: details.position ? clone(details.position) : null,
+      reason: cleanText(details.reason, '', 160),
+      actorIds: Array.isArray(details.actorIds) ? details.actorIds : undefined,
+      eventId: cleanText(details.eventId, this.nextEventId(normalizedKind), 240),
       at: Math.max(0, finite(details.at, nowMs()))
     };
+    const actorId = cleanText(details.actorId, this.localPlayerId(), 160);
 
     if (this.isAuthority()) {
-      const accepted = this.core.recordAction({
+      const baseAccepted = this.core.recordAction({ ...action, actorId });
+      const dynamicAccepted = this.objectiveDirector.recordAction({
         ...action,
-        actorId: details.actorId || this.localPlayerId()
+        actorId,
+        at: Date.now()
       });
-      if (accepted) {
+      if (baseAccepted || dynamicAccepted) {
         this.consumeAuthorityEvents();
         this.publishSnapshot(true);
       }
-      return accepted;
+      return baseAccepted || dynamicAccepted;
     }
 
     return Boolean(this.sendCommand({
@@ -271,11 +403,7 @@ export class Content1Manager {
     }));
   }
 
-  recordWaveClear({
-    wave = this.currentWave,
-    health = 0,
-    maxHealth = 100
-  } = {}) {
+  recordWaveClear({ wave = this.currentWave, health = 0, maxHealth = 100 } = {}) {
     const ratio = Math.max(0, finite(health)) / Math.max(1, finite(maxHealth, 100));
     return this.recordAction('WAVE_CLEAR', {
       amount: 1,
@@ -291,25 +419,27 @@ export class Content1Manager {
       return this.core.state.encounter;
     }
     this.currentWave = normalizedWave;
+    const humans = Math.max(
+      1,
+      this.participants().filter((entry) => !entry.isBot && entry.connected).length
+    );
+    this.objectiveDirector.state.playerCount = humans;
     const encounter = this.core.startWave(normalizedWave, nowMs());
+    this.objectiveDirector.startWave(normalizedWave, Date.now());
     this.consumeAuthorityEvents();
     this.publishSnapshot(true);
     return encounter;
   }
 
-  recordEnemyKill({
-    enemyId = '',
-    elite = false,
-    headshot = false,
-    actorId = ''
-  } = {}) {
+  recordEnemyKill({ enemyId = '', elite = false, headshot = false, actorId = '' } = {}) {
     const baseId = cleanText(
       enemyId,
       `enemy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-      160
+      180
     );
     this.recordAction('KILL', {
       actorId,
+      enemyId: baseId,
       amount: 1,
       headshot,
       eventId: `${this.session?.run?.runId || 'run'}:content-kill:${baseId}`
@@ -327,66 +457,99 @@ export class Content1Manager {
 
   prepareEnemySpawn(enemy) {
     if (!this.active || !this.isAuthority() || !enemy) return false;
-    const directive = this.core.getEncounterDirective();
-    if (!directive.elitePending) return false;
-    const type = cleanText(enemy.type, '', 40).toUpperCase();
-    if (type === 'CRAWLER' || type === 'EXPLODER') return false;
-    const enemyId = cleanText(
-      enemy.networkId || enemy.content1Id,
-      `elite-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      160
-    );
-    if (!this.core.markEliteSpawned(enemyId, nowMs())) return false;
+    let changed = false;
+    const dynamic = this.objectiveDirector.state.current;
+    if (
+      dynamic?.status === POST_FINAL4_OPERATION_STATUS.ACTIVE
+      && dynamic.kind === POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET
+      && !dynamic.targetEnemyId
+      && PRIORITY_TYPES.has(cleanText(enemy.type, '', 40).toUpperCase())
+    ) {
+      const targetId = cleanText(
+        enemy.networkId || enemy.content1Id,
+        `priority-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        180
+      );
+      enemy.content1Id = targetId;
+      enemy.isPostFinal4Priority = true;
+      enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * 1.35));
+      enemy.health = enemy.maxHealth;
+      enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 1.5);
+      tintEnemyForPriority(enemy, true);
+      changed = this.objectiveDirector.assignPriorityTarget({
+        enemyId: targetId,
+        position: enemy.mesh?.position,
+        label: `${cleanText(enemy.type, 'HOSTILE', 40)} PRIORITY`
+      }, Date.now()) || changed;
+    }
 
-    enemy.content1Id = enemyId;
-    enemy.isContent1Elite = true;
-    enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * 1.65));
-    enemy.health = enemy.maxHealth;
-    enemy.speed = finite(enemy.speed, 1) * 1.08;
-    enemy.damage = Math.max(1, Math.round(finite(enemy.damage, 1) * 1.08));
-    enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 2);
-    enemy.headshotReward = Math.round(finite(enemy.headshotReward, 100) * 1.65);
-    enemy.mesh?.traverse?.((child) => {
-      if (!child?.material) return;
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      materials.forEach((material) => {
-        if (material?.emissive?.setHex) {
-          material.emissive.setHex(0xff8a22);
-          material.emissiveIntensity = Math.max(
-            finite(material.emissiveIntensity, 0),
-            0.38
-          );
+    const directive = this.core.getEncounterDirective();
+    if (directive.elitePending) {
+      const type = cleanText(enemy.type, '', 40).toUpperCase();
+      if (type !== 'CRAWLER' && type !== 'EXPLODER') {
+        const enemyId = cleanText(
+          enemy.networkId || enemy.content1Id,
+          `elite-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+          180
+        );
+        if (this.core.markEliteSpawned(enemyId, nowMs())) {
+          enemy.content1Id = enemyId;
+          enemy.isContent1Elite = true;
+          enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * 1.65));
+          enemy.health = enemy.maxHealth;
+          enemy.speed = finite(enemy.speed, 1) * 1.08;
+          enemy.damage = Math.max(1, Math.round(finite(enemy.damage, 1) * 1.08));
+          enemy.scoreReward = Math.round(finite(enemy.scoreReward, 50) * 2);
+          enemy.headshotReward = Math.round(finite(enemy.headshotReward, 100) * 1.65);
+          enemy.mesh?.traverse?.((child) => {
+            const materials = Array.isArray(child?.material)
+              ? child.material
+              : (child?.material ? [child.material] : []);
+            materials.forEach((material) => {
+              if (material?.emissive?.setHex) {
+                material.emissive.setHex(0xff8a22);
+                material.emissiveIntensity = Math.max(finite(material.emissiveIntensity), 0.38);
+              }
+            });
+          });
+          changed = true;
         }
-      });
-    });
-    this.consumeAuthorityEvents();
-    this.publishSnapshot(true);
-    return true;
+      }
+    }
+
+    if (changed) {
+      this.consumeAuthorityEvents();
+      this.publishSnapshot(true);
+    }
+    return changed;
   }
 
-  handleHostMigration({
-    authorityEpoch = 0,
-    checkpoint = null,
-    becameHost = false
-  } = {}) {
+  handleHostMigration({ authorityEpoch = 0, checkpoint = null, becameHost = false } = {}) {
     if (!this.active) return false;
     const snapshot = checkpoint?.content1 || null;
     if (snapshot) {
       this.core.replaceSnapshot(snapshot, nowMs());
-      this.latestSnapshot = clone(this.core.getSnapshot(nowMs()));
+      if (snapshot.postFinal4) this.objectiveDirector.replaceSnapshot(snapshot.postFinal4, Date.now());
+      this.latestSnapshot = clone(this.buildSnapshot(nowMs()));
     }
     this.core.state.authorityEpoch = Math.max(
-      finite(this.core.state.authorityEpoch, 0),
-      finite(authorityEpoch, 0)
+      finite(this.core.state.authorityEpoch),
+      finite(authorityEpoch)
     );
-    if (becameHost) {
-      this.publishSnapshot(true);
-    } else if (this.isOnline()) {
-      this.requestSnapshot(true);
-    }
-    this.applyLocalOperationReward();
+    if (becameHost) this.publishSnapshot(true);
+    else if (this.isOnline()) this.requestSnapshot(true);
+    this.applyLocalOperationRewards();
     this.updateHud(true);
+    this.updateObjectiveVisuals(nowMs());
     return true;
+  }
+
+  validateRemoteDynamicAction(action, actorId) {
+    const operation = this.objectiveDirector.state.current;
+    if (!operation || operation.status !== POST_FINAL4_OPERATION_STATUS.ACTIVE) return false;
+    if (cleanText(action.kind, '', 40).toUpperCase() !== 'INTERACT_TICK') return true;
+    const participant = this.participants().find((entry) => entry.playerId === actorId);
+    return Boolean(participant?.alive && flatInside(participant.position, operation.anchor));
   }
 
   handleEnvelope(envelope) {
@@ -395,22 +558,25 @@ export class Content1Manager {
 
     if (payload.kind === 'command') {
       if (!this.isAuthority()) return false;
-      const actorId = envelope.playerId;
+      const actorId = cleanText(envelope.playerId, '', 160);
       if (!actorId) return false;
       if (payload.action === 'SNAPSHOT_REQUEST') {
         this.publishSnapshot(true);
         return true;
       }
       if (payload.action === 'OPERATION_ACTION' && payload.operationAction) {
-        const accepted = this.core.recordAction({
-          ...payload.operationAction,
-          actorId
+        if (!this.validateRemoteDynamicAction(payload.operationAction, actorId)) return false;
+        const action = { ...payload.operationAction, actorId };
+        const baseAccepted = this.core.recordAction(action);
+        const dynamicAccepted = this.objectiveDirector.recordAction({
+          ...action,
+          at: Date.now()
         });
-        if (accepted) {
+        if (baseAccepted || dynamicAccepted) {
           this.consumeAuthorityEvents();
           this.publishSnapshot(true);
         }
-        return accepted;
+        return baseAccepted || dynamicAccepted;
       }
       return false;
     }
@@ -421,78 +587,310 @@ export class Content1Manager {
       || envelope.playerId !== this.session?.hostPlayerId
     ) return false;
     if (!this.core.replaceSnapshot(payload.snapshot, nowMs())) return false;
-    this.latestSnapshot = clone(this.core.getSnapshot(nowMs()));
-    this.applyLocalOperationReward();
+    if (payload.snapshot?.postFinal4) {
+      this.objectiveDirector.replaceSnapshot(payload.snapshot.postFinal4, Date.now());
+    }
+    this.latestSnapshot = clone({
+      ...this.core.getSnapshot(nowMs()),
+      postFinal4: this.objectiveDirector.getSnapshot(Date.now())
+    });
+    this.applyLocalOperationRewards();
+    this.observeDynamicOperation(this.latestSnapshot, { transitions: true });
     this.updateHud(true);
+    this.updateObjectiveVisuals(nowMs());
+    this.handleObjectiveDirective?.(this.objectiveDirector.getDirective());
     return true;
   }
 
   update(dt = 0, {
-    player = null,
-    wave = this.currentWave
+    player = this.player,
+    wave = this.currentWave,
+    interactHeld = false,
+    now = nowMs()
   } = {}) {
     if (!this.active) return null;
     const normalizedWave = Math.max(1, Math.floor(finite(wave, 1)));
-    if (this.isAuthority() && normalizedWave !== this.currentWave) {
-      this.startWave(normalizedWave);
-    }
+    if (this.isAuthority() && normalizedWave !== this.currentWave) this.startWave(normalizedWave);
 
-    const snapshot = this.isAuthority()
-      ? this.core.getSnapshot(nowMs())
-      : this.latestSnapshot;
-    const operation = snapshot?.operation;
+    const snapshot = this.getSnapshot();
+    const baseOperation = snapshot?.operation;
+    const participants = this.participants(now);
+    const activeParticipants = participants.filter((entry) => entry.connected && entry.alive);
+
     if (
       this.isAuthority()
-      && operation?.kind === 'ZONE_TIME'
-      && !operation.completed
-      && flatInside(player?.pos || player?.position, operation.anchor)
+      && baseOperation?.kind === 'ZONE_TIME'
+      && !baseOperation.completed
+      && activeParticipants.some((entry) => flatInside(entry.position, baseOperation.anchor))
+      && now - this.lastZoneTickAt >= ZONE_TICK_INTERVAL_MS
     ) {
-      const now = nowMs();
-      if (now - this.lastZoneTickAt >= ZONE_TICK_INTERVAL_MS) {
+      this.lastZoneTickAt = now;
+      this.recordAction('ZONE_TICK', {
+        amount: 1,
+        actorId: activeParticipants.find((entry) => flatInside(entry.position, baseOperation.anchor))?.playerId,
+        eventId: `${snapshot.runId}:zone:${Math.floor(now / ZONE_TICK_INTERVAL_MS)}`
+      });
+    }
+
+    this.updateDynamicRuntime(Math.max(0, Math.min(0.1, finite(dt))), {
+      player,
+      interactHeld: interactHeld === true,
+      participants: activeParticipants,
+      now
+    });
+
+    if (this.isAuthority()) {
+      this.objectiveDirector.update(Date.now());
+      this.consumeAuthorityEvents();
+      this.publishSnapshot(false);
+    }
+    else if (this.isOnline()) this.requestSnapshot(false);
+    const finalSnapshot = this.getSnapshot();
+    this.observeDynamicOperation(finalSnapshot, { transitions: !this.isAuthority() });
+    this.updateHud(false);
+    this.updateObjectiveVisuals(now);
+    this.handleObjectiveDirective?.(this.objectiveDirector.getDirective());
+    return finalSnapshot;
+  }
+
+  updateDynamicRuntime(dt, { player, interactHeld, participants, now }) {
+    const operation = this.objectiveDirector.state.current;
+    if (!operation || operation.status !== POST_FINAL4_OPERATION_STATUS.ACTIVE) return;
+
+    if (
+      this.isAuthority()
+      && [POST_FINAL4_OPERATION_KINDS.DEFEND_ZONE, POST_FINAL4_OPERATION_KINDS.EXTRACTION_HOLDOUT]
+        .includes(operation.kind)
+      && now - this.lastZoneTickAt >= ZONE_TICK_INTERVAL_MS
+    ) {
+      const inside = participants.filter((entry) => flatInside(entry.position, operation.anchor));
+      if (inside.length) {
         this.lastZoneTickAt = now;
         this.recordAction('ZONE_TICK', {
           amount: 1,
-          eventId: `${snapshot.runId}:zone:${Math.floor(now / ZONE_TICK_INTERVAL_MS)}`
+          actorIds: inside.map((entry) => entry.playerId),
+          actorId: inside[0].playerId,
+          eventId: `${operation.operationId}:hold:${Math.floor(now / ZONE_TICK_INTERVAL_MS)}`,
+          at: now
         });
       }
     }
 
-    if (this.isAuthority()) this.publishSnapshot(false);
-    else if (this.isOnline()) this.requestSnapshot(false);
-    this.updateHud(false);
-    return this.getSnapshot();
+    const local = participants.find((entry) => entry.isLocal)
+      || participants.find((entry) => entry.playerId === this.localPlayerId());
+    const interactObjective = [
+      POST_FINAL4_OPERATION_KINDS.RESTORE_EQUIPMENT,
+      POST_FINAL4_OPERATION_KINDS.RETRIEVE_DELIVER,
+      POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR
+    ].includes(operation.kind) && operation.stage !== 'ESCORT';
+
+    if (
+      interactObjective
+      && interactHeld
+      && local?.alive
+      && flatInside(local.position, operation.anchor)
+      && now - this.lastInteractTickAt >= INTERACT_TICK_INTERVAL_MS
+    ) {
+      this.lastInteractTickAt = now;
+      this.recordAction('INTERACT_TICK', {
+        amount: INTERACT_TICK_INTERVAL_MS / 1000,
+        actorId: local.playerId,
+        eventId: `${operation.operationId}:interact:${local.playerId}:${Math.floor(now / INTERACT_TICK_INTERVAL_MS)}`,
+        at: now
+      });
+    }
+
+    if (this.isAuthority() && interactObjective && now - this.lastBotInteractTickAt >= INTERACT_TICK_INTERVAL_MS) {
+      const bot = participants.find((entry) => entry.isBot && flatInside(entry.position, operation.anchor));
+      if (bot) {
+        this.lastBotInteractTickAt = now;
+        this.recordAction('INTERACT_TICK', {
+          amount: INTERACT_TICK_INTERVAL_MS / 1000,
+          actorId: bot.playerId,
+          eventId: `${operation.operationId}:bot-interact:${Math.floor(now / INTERACT_TICK_INTERVAL_MS)}`,
+          at: now
+        });
+      }
+    }
+
+    if (
+      this.isAuthority()
+      && operation.kind === POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR
+      && operation.stage === 'ESCORT'
+      && now - this.lastSurvivorTickAt >= SURVIVOR_TICK_INTERVAL_MS
+    ) {
+      const survivor = operation.survivorPosition || operation.anchor;
+      let leader = participants.find((entry) => entry.playerId === operation.survivorLeaderId);
+      if (!leader?.alive) {
+        leader = participants
+          .filter((entry) => entry.alive)
+          .sort((a, b) => flatDistance(a.position, survivor) - flatDistance(b.position, survivor))[0];
+      }
+      if (leader?.position) {
+        this.lastSurvivorTickAt = now;
+        const step = Math.min(1, dt * 2.4 / Math.max(0.001, flatDistance(survivor, leader.position)));
+        const nextPosition = {
+          x: finite(survivor.x) + (finite(leader.position.x) - finite(survivor.x)) * step,
+          y: 0,
+          z: finite(survivor.z) + (finite(leader.position.z) - finite(survivor.z)) * step
+        };
+        this.recordAction('SURVIVOR_POSITION', {
+          amount: SURVIVOR_TICK_INTERVAL_MS / 1000,
+          actorId: leader.playerId,
+          position: nextPosition,
+          eventId: `${operation.operationId}:escort:${Math.floor(now / SURVIVOR_TICK_INTERVAL_MS)}`,
+          at: now
+        });
+      }
+    }
+  }
+
+  observeDynamicOperation(snapshot, { transitions = false } = {}) {
+    const operation = snapshot?.postFinal4?.current || null;
+    if (!operation) return false;
+    const operationChanged = operation.operationId !== this.lastObservedOperationId;
+    const statusChanged = !operationChanged
+      && operation.status !== this.lastObservedOperationStatus;
+    const stageChanged = !operationChanged
+      && operation.stage !== this.lastObservedOperationStage;
+
+    if (transitions && operationChanged) {
+      this.showToast?.(`${operation.optional ? 'BONUS ' : ''}OPERATION · ${operation.label}`);
+      playUISound('warning', 0.16, true, {
+        cooldownKey: `postfinal4_remote_assign_${operation.operationId}`,
+        cooldownMs: 800,
+        pitchMin: 1.02,
+        pitchMax: 1.13
+      });
+    } else if (transitions && statusChanged) {
+      if (operation.status === POST_FINAL4_OPERATION_STATUS.COMPLETE) {
+        this.showToast?.(`OPERATION COMPLETE · ${operation.label}`);
+        playUISound('waveClear', 0.42, true, {
+          cooldownKey: `postfinal4_remote_complete_${operation.operationId}`,
+          cooldownMs: 1200,
+          pitchMin: 1.05,
+          pitchMax: 1.18
+        });
+      } else if (operation.status === POST_FINAL4_OPERATION_STATUS.FAILED) {
+        this.showToast?.(`OPERATION FAILED · ${operation.failureReason || 'WINDOW EXPIRED'}`);
+        playUISound('warning', 0.27, true, {
+          cooldownKey: `postfinal4_remote_fail_${operation.operationId}`,
+          cooldownMs: 1200,
+          pitchMin: 0.68,
+          pitchMax: 0.82
+        });
+      }
+    } else if (transitions && stageChanged) {
+      this.showToast?.(`${operation.label} · ${operation.stage}`);
+    }
+
+    if (
+      operation.status === POST_FINAL4_OPERATION_STATUS.ACTIVE
+      && finite(operation.remainingMs) > 0
+      && finite(operation.remainingMs) <= 20000
+      && !this.warnedOperationIds.has(operation.operationId)
+    ) {
+      this.warnedOperationIds.add(operation.operationId);
+      this.showToast?.(`OBJECTIVE WARNING · ${Math.ceil(finite(operation.remainingMs) / 1000)} SECONDS`);
+      playUISound('warning', 0.24, true, {
+        cooldownKey: `postfinal4_warning_${operation.operationId}`,
+        cooldownMs: 20000,
+        pitchMin: 0.76,
+        pitchMax: 0.88
+      });
+    }
+
+    this.lastObservedOperationId = operation.operationId;
+    this.lastObservedOperationStatus = operation.status;
+    this.lastObservedOperationStage = operation.stage;
+    return true;
   }
 
   consumeAuthorityEvents() {
-    const events = this.core.consumeEvents();
+    const events = [
+      ...this.core.consumeEvents(),
+      ...this.objectiveDirector.consumeEvents()
+    ];
     for (const event of events) {
       if (event.type === 'ENCOUNTER_STARTED') {
         this.showToast?.(event.encounter?.announcement || 'ENCOUNTER ACTIVE');
       } else if (event.type === 'ELITE_SPAWNED') {
         this.showToast?.('ELITE TARGET DEPLOYED');
       } else if (event.type === 'OPERATION_COMPLETED') {
-        this.showToast?.(
-          `OPERATION COMPLETE · ${event.operation?.label || 'ARENA OPERATION'}`
-        );
+        this.showToast?.(`OPERATION COMPLETE · ${event.operation?.label || 'ARENA OPERATION'}`);
+      } else if (event.type === 'DYNAMIC_OPERATION_ASSIGNED') {
+        this.showToast?.(`${event.operation?.optional ? 'BONUS ' : ''}OPERATION · ${event.operation?.label || 'OBJECTIVE ASSIGNED'}`);
+        playUISound('warning', 0.18, true, {
+          cooldownKey: 'postfinal4_assigned', cooldownMs: 900, pitchMin: 1.02, pitchMax: 1.14
+        });
+      } else if (event.type === 'DYNAMIC_PRIORITY_ASSIGNED') {
+        this.showToast?.(`PRIORITY TARGET · ${event.operation?.targetEnemyLabel || 'HOSTILE MARKED'}`);
+        playTeamAlertCue('ENEMY_MARK', { cooldownKey: 'postfinal4_priority', cooldownMs: 1200 });
+      } else if (event.type === 'DYNAMIC_OPERATION_STAGE_CHANGED') {
+        this.showToast?.(`${event.operation?.label || 'OPERATION'} · ${event.operation?.stage || 'NEXT STAGE'}`);
+        playUISound('warning', 0.14, true, {
+          cooldownKey: `postfinal4_stage_${event.operation?.stage}`, cooldownMs: 700, pitchMin: 1.04, pitchMax: 1.16
+        });
+      } else if (event.type === 'DYNAMIC_OPERATION_COMPLETED') {
+        this.showToast?.(`OPERATION COMPLETE · ${event.operation?.label || 'DYNAMIC OPERATION'}`);
+        playUISound('waveClear', 0.45, true, {
+          cooldownKey: 'postfinal4_complete', cooldownMs: 1500, pitchMin: 1.05, pitchMax: 1.18
+        });
+      } else if (event.type === 'DYNAMIC_OPERATION_FAILED') {
+        this.showToast?.(`OPERATION FAILED · ${event.reason || 'WINDOW EXPIRED'}`);
+        playUISound('warning', 0.28, true, {
+          cooldownKey: 'postfinal4_failed', cooldownMs: 1500, pitchMin: 0.68, pitchMax: 0.82
+        });
       }
     }
-    this.applyLocalOperationReward();
+    this.applyLocalOperationRewards();
     return events;
   }
 
-  applyLocalOperationReward() {
-    const operation = this.getSnapshot()?.operation;
-    if (!operation?.completed || !operation.completionId) return false;
-    if (this.awardedCompletionIds.has(operation.completionId)) return false;
-    this.awardedCompletionIds.add(operation.completionId);
-    recordProgressionContentOperation({
-      operationId: operation.id,
-      completionId: operation.completionId,
-      xp: operation.xp || CONTENT1_OPERATION_XP
+  applyLocalOperationRewards() {
+    const snapshot = this.getSnapshot();
+    const base = snapshot?.operation;
+    if (base?.completed && base.completionId && !this.awardedCompletionIds.has(base.completionId)) {
+      this.awardedCompletionIds.add(base.completionId);
+      recordProgressionContentOperation({
+        operationId: base.id,
+        completionId: base.completionId,
+        xp: base.xp || CONTENT1_OPERATION_XP
+      });
+      this.showToast?.(`${String(base.label || 'OPERATION').toUpperCase()} · +${base.xp || CONTENT1_OPERATION_XP} XP`);
+    }
+
+    const completed = snapshot?.postFinal4?.completed || [];
+    completed.forEach((operation) => {
+      if (!operation?.completionId) return;
+      if (!this.awardedCompletionIds.has(operation.completionId)) {
+        this.awardedCompletionIds.add(operation.completionId);
+        recordProgressionContentOperation({
+          operationId: operation.operationId,
+          completionId: operation.completionId,
+          xp: operation.xp || CONTENT1_OPERATION_XP
+        });
+        recordRunDynamicOperation({
+          operationId: operation.operationId,
+          label: operation.label,
+          optional: operation.optional === true,
+          rewardPoints: operation.rewardPoints,
+          contributors: operation.contributors,
+          localPlayerId: this.localPlayerId()
+        });
+        recordChallengeObjective();
+      }
+      if (this.isAuthority() && !this.teamRewardedCompletionIds.has(operation.completionId)) {
+        this.teamRewardedCompletionIds.add(operation.completionId);
+        this.awardTeamObjective?.({
+          completionId: operation.completionId,
+          operationId: operation.operationId,
+          points: Math.max(0, Math.floor(finite(operation.rewardPoints))),
+          label: cleanText(operation.label, 'OBJECTIVE COMPLETE', 80),
+          contributors: clone(operation.contributors || {})
+        });
+      }
     });
-    this.showToast?.(
-      `${String(operation.label || 'OPERATION').toUpperCase()} · +${operation.xp || CONTENT1_OPERATION_XP} XP`
-    );
     return true;
   }
 
@@ -505,18 +903,30 @@ export class Content1Manager {
       wave: Math.max(1, Math.floor(finite(encounter?.wave, 1))),
       weightMultipliers: Object.freeze({ ...(encounter?.weights || {}) }),
       elitePending: this.latestSnapshot?.elite?.pending === true,
-      eliteActiveIds: Object.freeze([
-        ...(this.latestSnapshot?.elite?.activeIds || [])
-      ])
+      eliteActiveIds: Object.freeze([...(this.latestSnapshot?.elite?.activeIds || [])])
     });
   }
 
   getSnapshot() {
-    return clone(
-      this.isAuthority()
-        ? this.core.getSnapshot(nowMs())
-        : this.latestSnapshot
-    );
+    if (this.isAuthority()) return clone(this.buildSnapshot(nowMs()));
+    return clone(this.latestSnapshot);
+  }
+
+  bindHudModeControl() {
+    if (typeof document === 'undefined') return;
+    const select = document.getElementById('objective-hud-mode-select');
+    if (!select || select.dataset.kaBound === '1') return;
+    select.dataset.kaBound = '1';
+    let saved = 'full';
+    try { saved = localStorage.getItem(OBJECTIVE_HUD_KEY) || 'full'; } catch { /* restricted storage */ }
+    select.value = saved === 'compact' ? 'compact' : 'full';
+    document.body?.classList.toggle('ka-objective-hud-compact', select.value === 'compact');
+    select.addEventListener('change', () => {
+      const value = select.value === 'compact' ? 'compact' : 'full';
+      try { localStorage.setItem(OBJECTIVE_HUD_KEY, value); } catch { /* restricted storage */ }
+      document.body?.classList.toggle('ka-objective-hud-compact', value === 'compact');
+      this.updateHud(true);
+    });
   }
 
   ensureHud() {
@@ -524,17 +934,23 @@ export class Content1Manager {
     if (this.hud?.isConnected) return this.hud;
     const hud = document.createElement('section');
     hud.id = 'ka-content1-hud';
-    hud.className = 'ka-content1-hud';
+    hud.className = 'ka-content1-hud ka-postfinal4-hud';
     hud.innerHTML = `
-      <div class="ka-content1-kicker">ARENA OPERATION</div>
+      <div class="ka-content1-kicker">DYNAMIC OPERATION</div>
       <div class="ka-content1-operation">STANDBY</div>
+      <div class="ka-postfinal4-description">OBJECTIVE DIRECTOR INITIALIZING</div>
       <div class="ka-content1-progress">0 / 0</div>
+      <div class="ka-postfinal4-meta">• 0m · 0:00</div>
+      <div class="ka-postfinal4-team">TEAM CONTRIBUTION · STANDBY</div>
       <div class="ka-content1-encounter">STANDARD PRESSURE</div>
     `;
     document.body.appendChild(hud);
     this.hud = hud;
     this.hudOperation = hud.querySelector('.ka-content1-operation');
+    this.hudDescription = hud.querySelector('.ka-postfinal4-description');
     this.hudProgress = hud.querySelector('.ka-content1-progress');
+    this.hudMeta = hud.querySelector('.ka-postfinal4-meta');
+    this.hudTeam = hud.querySelector('.ka-postfinal4-team');
     this.hudEncounter = hud.querySelector('.ka-content1-encounter');
     return hud;
   }
@@ -547,21 +963,40 @@ export class Content1Manager {
       this.hideHud();
       return;
     }
+    this.bindHudModeControl();
     hud.hidden = false;
     hud.style.setProperty('--ka-content1-accent', roleColor(snapshot.mapId));
-    const operation = snapshot.operation || {};
-    const progress = Math.min(
-      finite(operation.target, 0),
-      finite(operation.progress, 0)
-    );
+    const operation = snapshot.postFinal4?.current;
     if (this.hudOperation) {
-      this.hudOperation.textContent = operation.completed
-        ? `${operation.label || 'OPERATION'} · COMPLETE`
-        : operation.label || 'ARENA OPERATION';
+      const prefix = operation?.optional ? 'BONUS · ' : '';
+      this.hudOperation.textContent = operation
+        ? `${prefix}${operation.label}${operation.status === 'COMPLETE' ? ' · COMPLETE' : ''}`
+        : 'OBJECTIVE DIRECTOR STANDBY';
     }
-    if (this.hudProgress) {
-      const unit = operation.kind === 'ZONE_TIME' ? ' SEC' : '';
-      this.hudProgress.textContent = `${Math.floor(progress)} / ${Math.floor(finite(operation.target, 0))}${unit}`;
+    if (this.hudDescription) {
+      this.hudDescription.textContent = operation?.description || 'No dynamic operation is active.';
+    }
+    if (this.hudProgress) this.hudProgress.textContent = operationProgressText(operation);
+    if (this.hudMeta) {
+      const distance = operation?.anchor && this.player?.pos
+        ? Math.round(flatDistance(this.player.pos, operation.anchor))
+        : 0;
+      const remaining = Math.max(0, Math.ceil(finite(operation?.remainingMs) / 1000));
+      const minutes = Math.floor(remaining / 60);
+      const seconds = String(remaining % 60).padStart(2, '0');
+      this.hudMeta.textContent = operation
+        ? `${arrowForTarget(this.player, operation.anchor)} ${distance}m · ${minutes}:${seconds} · ${operation.stage}`
+        : '• 0m · 0:00';
+    }
+    if (this.hudTeam) {
+      const contributors = Object.entries(operation?.contributors || {})
+        .sort((a, b) => finite(b[1]) - finite(a[1]));
+      const top = contributors[0];
+      const participant = top ? this.participants().find((entry) => entry.playerId === top[0]) : null;
+      const localValue = finite(operation?.contributors?.[this.localPlayerId()]);
+      this.hudTeam.textContent = contributors.length
+        ? `TEAM · YOU ${Math.round(localValue)} · TOP ${participant?.displayName || top[0]} ${Math.round(finite(top[1]))}`
+        : `TEAM CONTRIBUTION · HOLD ${this.getInteractLabel?.() || 'INTERACT'} WHEN PROMPTED`;
     }
     if (this.hudEncounter) {
       const encounter = snapshot.encounter;
@@ -573,6 +1008,122 @@ export class Content1Manager {
     setTimeout(() => hud.classList.remove('ka-content1-hud-pulse'), 280);
   }
 
+  ensureObjectiveVisuals(operation) {
+    if (!this.scene || !operation) return;
+    if (this.objectiveGroup && this.visualOperationId === operation.operationId) return;
+    this.clearObjectiveVisuals();
+    this.objectiveGroup = new THREE.Group();
+    this.objectiveGroup.name = 'postfinal4_objective_markers';
+    this.primaryRing = this.createRing(operation.anchor, 0x00d4ff, 0.44);
+    this.secondaryRing = this.createRing(operation.secondaryAnchor, 0x22ff88, 0.22);
+    this.primaryBeam = this.createBeam(operation.anchor, 0x00d4ff);
+    this.secondaryBeam = this.createBeam(operation.secondaryAnchor, 0x22ff88);
+    this.objectiveGroup.add(this.primaryRing, this.secondaryRing, this.primaryBeam, this.secondaryBeam);
+    if (operation.kind === POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR) {
+      const geometry = new THREE.SphereGeometry(0.45, 12, 8);
+      const material = new THREE.MeshBasicMaterial({ color: 0x7df2a5, transparent: true, opacity: 0.82 });
+      this.survivorMarker = new THREE.Mesh(geometry, material);
+      this.survivorMarker.name = 'postfinal4_survivor_marker';
+      this.objectiveGroup.add(this.survivorMarker);
+    }
+    this.scene.add(this.objectiveGroup);
+    this.visualOperationId = operation.operationId;
+  }
+
+  createRing(anchor, color, opacity) {
+    const geometry = new THREE.RingGeometry(
+      Math.max(1, finite(anchor?.radius, 6) - 0.25),
+      Math.max(1.2, finite(anchor?.radius, 6)),
+      64
+    );
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(finite(anchor?.x), 0.08, finite(anchor?.z));
+    return mesh;
+  }
+
+  createBeam(anchor, color) {
+    const geometry = new THREE.CylinderGeometry(0.08, 0.28, 5.5, 12, 1, true);
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.20,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(finite(anchor?.x), 2.75, finite(anchor?.z));
+    return mesh;
+  }
+
+  updateObjectiveVisuals(now = nowMs()) {
+    const operation = this.getSnapshot()?.postFinal4?.current;
+    if (!operation || operation.status !== POST_FINAL4_OPERATION_STATUS.ACTIVE) {
+      this.clearObjectiveVisuals();
+      return;
+    }
+    this.ensureObjectiveVisuals(operation);
+    const activeAnchor = operation.anchor;
+    if (this.primaryRing) {
+      this.primaryRing.position.x = finite(activeAnchor.x);
+      this.primaryRing.position.z = finite(activeAnchor.z);
+      this.primaryRing.material.opacity = 0.34 + Math.sin(now * 0.006) * 0.12;
+      this.primaryRing.rotation.z += 0.002;
+    }
+    if (this.primaryBeam) {
+      this.primaryBeam.position.x = finite(activeAnchor.x);
+      this.primaryBeam.position.z = finite(activeAnchor.z);
+      this.primaryBeam.material.opacity = 0.14 + Math.sin(now * 0.004) * 0.06;
+    }
+    const secondaryVisible = [
+      POST_FINAL4_OPERATION_KINDS.RETRIEVE_DELIVER,
+      POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR,
+      POST_FINAL4_OPERATION_KINDS.EXTRACTION_HOLDOUT
+    ].includes(operation.kind);
+    if (this.secondaryRing) this.secondaryRing.visible = secondaryVisible;
+    if (this.secondaryBeam) this.secondaryBeam.visible = secondaryVisible;
+    if (this.survivorMarker) {
+      const survivor = operation.survivorPosition || operation.anchor;
+      this.survivorMarker.position.set(finite(survivor.x), 0.72, finite(survivor.z));
+      this.survivorMarker.position.y += Math.sin(now * 0.005) * 0.08;
+    }
+    if (operation.kind === POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET && operation.targetEnemyId) {
+      const target = (this.getActiveEnemies?.() || []).find((enemy) => (
+        String(enemy?.content1Id || enemy?.networkId || enemy?.networkEnemyId || '') === operation.targetEnemyId
+      ));
+      if (target?.mesh?.position) {
+        this.primaryRing.position.x = target.mesh.position.x;
+        this.primaryRing.position.z = target.mesh.position.z;
+        this.primaryBeam.position.x = target.mesh.position.x;
+        this.primaryBeam.position.z = target.mesh.position.z;
+      }
+    }
+  }
+
+  clearObjectiveVisuals() {
+    if (!this.objectiveGroup) return;
+    this.objectiveGroup.traverse?.((child) => {
+      child.geometry?.dispose?.();
+      const materials = Array.isArray(child.material) ? child.material : (child.material ? [child.material] : []);
+      materials.forEach((material) => material?.dispose?.());
+    });
+    this.objectiveGroup.parent?.remove?.(this.objectiveGroup);
+    this.objectiveGroup = null;
+    this.primaryRing = null;
+    this.secondaryRing = null;
+    this.primaryBeam = null;
+    this.secondaryBeam = null;
+    this.survivorMarker = null;
+    this.visualOperationId = null;
+  }
+
   hideHud() {
     if (this.hud) this.hud.hidden = true;
   }
@@ -581,5 +1132,6 @@ export class Content1Manager {
     this.unsubscribe.splice(0).forEach((fn) => fn?.());
     this.hud?.remove?.();
     this.hud = null;
+    this.clearObjectiveVisuals();
   }
 }

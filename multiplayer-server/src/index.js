@@ -73,6 +73,22 @@ const POST_FINAL2_R1_2_SERVER_INFO = Object.freeze({
   baseFinal2IdentityPreserved: true
 });
 
+const POST_FINAL5_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'post-final5-r1-moderation-player-safety-operations',
+  protectedModerationDashboard: true,
+  pendingQueueAlerts: true,
+  privacyReducedReportHistory: true,
+  duplicateReportGrouping: true,
+  falseReportAbuseSignals: true,
+  reportForwardRetryQueue: true,
+  accountRestrictionEnforcement: 'authenticated-online-surfaces',
+  playerAppeals: true,
+  reporterStatusPrivacy: 'received-or-review-complete-only',
+  protocolUnchanged: true,
+  workerChangeRequired: true
+});
+
 const FINAL2_SERVER_INFO = Object.freeze({
   schema: 1,
   patch: SERVER_PATCH,
@@ -86,7 +102,8 @@ const FINAL2_SERVER_INFO = Object.freeze({
   voiceRuntimeRemoved: true,
   developmentArtifactsExcluded: true,
   workerSourceExcludedFromPages: true,
-  administratorToolsExcludedFromPages: true,
+  administratorToolsExcludedFromPages: false,
+  protectedAdministratorToolIncluded: true,
   secretsExcludedFromPages: true,
   crawlerLowProfilePreserved: true,
   baseModesPreserved: true,
@@ -2277,6 +2294,7 @@ export default {
         operations: OPS1_SERVER_INFO,
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
+        playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -2313,6 +2331,7 @@ export default {
         operations: OPS1_SERVER_INFO,
         postFinalHotfix: POST_FINAL1_SERVER_INFO,
         socialSessionHotfix: POST_FINAL2_R1_2_SERVER_INFO,
+        playerSafetyOperations: POST_FINAL5_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

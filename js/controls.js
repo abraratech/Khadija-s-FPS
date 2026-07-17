@@ -68,6 +68,7 @@ const gamepadState = {
   aimHeld: false,
   jumpPressed: false,
   reloadPressed: false,
+  interactHeld: false,
   interactPressed: false,
   switchPressed: false,
   pausePressed: false,
@@ -538,6 +539,7 @@ export function pollGamepadInput() {
     aimHeld: false,
     jumpPressed: false,
     reloadPressed: false,
+    interactHeld: false,
     interactPressed: false,
     switchPressed: false,
     pausePressed: false,
@@ -578,6 +580,7 @@ export function pollGamepadInput() {
   gamepadState.jumpHeld = buttonValue(gamepad, 0) >= 0.5;
   gamepadState.reloadPressed = buttonPressed(gamepad, 2);
   gamepadState.switchPressed = buttonPressed(gamepad, 3);
+  gamepadState.interactHeld = buttonValue(gamepad, 5) >= 0.5 || buttonValue(gamepad, 4) >= 0.5;
   gamepadState.interactPressed = buttonPressed(gamepad, 5) || buttonPressed(gamepad, 4);
   gamepadState.aimHeld = buttonValue(gamepad, 6) >= 0.28;
   gamepadState.fireHeld = buttonValue(gamepad, 7) >= 0.28;
@@ -608,7 +611,8 @@ export function populateFrameKeys(baseKeys, gamepadInput, outKeys) {
     CONTROL_ACTIONS.JUMP,
     CONTROL_ACTIONS.SPRINT,
     CONTROL_ACTIONS.FIRE,
-    CONTROL_ACTIONS.AIM
+    CONTROL_ACTIONS.AIM,
+    CONTROL_ACTIONS.INTERACT
   ];
 
   actions.forEach((action) => {
@@ -624,6 +628,10 @@ export function populateFrameKeys(baseKeys, gamepadInput, outKeys) {
   out.ShiftLeft = out.ShiftLeft || Boolean(gamepadInput?.sprintHeld);
   out.MousedownLeft = Boolean(out.MousedownLeft || baseKeys?.MousedownLeft || gamepadInput?.fireHeld);
   out.MousedownRight = Boolean(out.MousedownRight || baseKeys?.MousedownRight || gamepadInput?.aimHeld);
+  const interactCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
+  if (interactCode) {
+    out[interactCode] = Boolean(out[interactCode] || gamepadInput?.interactHeld);
+  }
 
   return out;
 }

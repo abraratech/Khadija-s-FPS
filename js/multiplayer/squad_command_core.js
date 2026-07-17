@@ -183,7 +183,7 @@ export function chooseCommandEnemyTarget(enemies = [], command = null) {
 
   if (command.targetId) {
     const exact = valid.find((enemy) => String(
-      enemy.networkEnemyId || enemy.enemyId || enemy.id || enemy.mesh?.uuid || enemy.type || ''
+      enemy.content1Id || enemy.networkId || enemy.networkEnemyId || enemy.enemyId || enemy.id || enemy.mesh?.uuid || enemy.type || ''
     ) === command.targetId);
     if (exact) return exact;
   }

@@ -297,7 +297,9 @@ forceAuthoritativeSnapshot(reason = 'manual') {
       attackState: String(enemy.attackState || 'IDLE'),
       attackAnimT: Number(enemy.attackAnimT || 0),
       hitReactT: Number(enemy.hitReactT || 0),
-      targetPlayerId: enemy.targetPlayerId || null
+      targetPlayerId: enemy.targetPlayerId || null,
+      content1Id: enemy.content1Id || null,
+      objectivePriority: enemy.isPostFinal4Priority === true
     };
   }
 
@@ -398,6 +400,8 @@ forceAuthoritativeSnapshot(reason = 'manual') {
       attackAnimT: Number(state.attackAnimT || 0),
       hitReactT: Number(state.hitReactT || 0),
       targetPlayerId: state.targetPlayerId || null,
+      content1Id: state.content1Id || null,
+      isPostFinal4Priority: state.objectivePriority === true,
       handleNetworkHit: (hit) => {
                 const predictedDamage = Math.max(1, Math.min(
                     MAX_REMOTE_DAMAGE,
@@ -480,6 +484,20 @@ forceAuthoritativeSnapshot(reason = 'manual') {
             Number(proxy.hitReactT || 0)
         );
         proxy.targetPlayerId = state.targetPlayerId || null;
+        proxy.content1Id = state.content1Id || null;
+        proxy.isPostFinal4Priority = state.objectivePriority === true;
+        proxy.visual?.traverse?.((child) => {
+          const materials = Array.isArray(child?.material)
+            ? child.material
+            : (child?.material ? [child.material] : []);
+          materials.forEach((material) => {
+            if (!material?.emissive?.setHex) return;
+            if (proxy.isPostFinal4Priority) {
+              material.emissive.setHex(0x00d4ff);
+              material.emissiveIntensity = Math.max(Number(material.emissiveIntensity) || 0, 0.42);
+            }
+          });
+        });
         proxy.targetPosition.set(
             Number(state.position?.x || 0),
             Number(state.position?.y || 0),

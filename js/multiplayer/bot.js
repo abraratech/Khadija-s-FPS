@@ -120,6 +120,7 @@ export class MultiplayerBotManager {
     this.currentTargetId = null;
     this.targetAcquiredAt = -Infinity;
     this.squadCommand = null;
+    this.objectiveCommand = null;
     this.squadCommandSequence = 0;
     this.lastTeamEnemyMarkAt = -Infinity;
     this.lastSquadCommandToastAt = -Infinity;
@@ -269,6 +270,7 @@ export class MultiplayerBotManager {
     this.currentTargetId = null;
     this.targetAcquiredAt = -Infinity;
     this.squadCommand = null;
+    this.objectiveCommand = null;
     this.squadCommandSequence = 0;
     this.holdPosition = null;
     this.burstShots = 0;
@@ -306,6 +308,7 @@ export class MultiplayerBotManager {
 
     this.releaseReviveHold(nowMs());
     this.squadCommand = null;
+    this.objectiveCommand = null;
     this.active = false;
     this.remotePlayers?.removePlayer?.(BOT1_PLAYER_ID);
     this.runtime?.removeRemotePlayer?.(BOT1_PLAYER_ID);
@@ -986,6 +989,93 @@ export class MultiplayerBotManager {
     return true;
   }
 
+  handleObjectiveDirective(directive, receivedAt = nowMs()) {
+    if (!directive || !this.active || !this.runActive || !this.isAuthority()) {
+      this.objectiveCommand = null;
+      return false;
+    }
+
+    const kind = String(directive.kind || '').toUpperCase();
+    const stage = String(directive.stage || '').toUpperCase();
+    let type = TACTICAL_PING_TYPES.MOVE;
+    let position = directive.position || null;
+    let targetId = directive.targetId || null;
+
+    if (kind === 'PRIORITY_TARGET') {
+      type = TACTICAL_PING_TYPES.ENEMY;
+    } else if (kind === 'DEFEND_ZONE' || kind === 'EXTRACTION_HOLDOUT') {
+      type = TACTICAL_PING_TYPES.DEFEND;
+    } else if (kind === 'RESCUE_SURVIVOR' && stage === 'ESCORT') {
+      type = TACTICAL_PING_TYPES.MOVE;
+      position = directive.secondaryPosition || directive.position;
+    } else if ([
+      'RESTORE_EQUIPMENT',
+      'RETRIEVE_DELIVER',
+      'RESCUE_SURVIVOR'
+    ].includes(kind)) {
+      type = TACTICAL_PING_TYPES.INTERACT;
+    } else if (kind === 'SURVIVAL_FALLBACK') {
+      type = TACTICAL_PING_TYPES.DEFEND;
+    }
+
+    if (!position) {
+      this.objectiveCommand = null;
+      return false;
+    }
+
+    const commandId = `objective:${String(directive.operationId || 'operation')}:${stage}:${String(targetId || '')}`;
+    const remainingMs = Math.max(
+      1200,
+      (Number(directive.expiresAt) || Date.now() + 5000) - Date.now()
+    );
+    const expiresAt = receivedAt + remainingMs;
+    this.objectiveCommand = Object.freeze({
+      commandId,
+      type,
+      priority: 25,
+      status: type === TACTICAL_PING_TYPES.DEFEND
+        ? SQUAD_COMMAND_STATUS.DEFENDING
+        : (type === TACTICAL_PING_TYPES.INTERACT
+          ? SQUAD_COMMAND_STATUS.INTERACTING
+          : (type === TACTICAL_PING_TYPES.ENEMY
+            ? SQUAD_COMMAND_STATUS.ENGAGING
+            : SQUAD_COMMAND_STATUS.MOVING)),
+      acknowledgement: 'OBJECTIVE DIRECTIVE ACKNOWLEDGED',
+      ownerPlayerId: 'postfinal4-objective-director',
+      ownerName: 'OBJECTIVE DIRECTOR',
+      position: clonePosition(position),
+      targetId: targetId ? String(targetId).slice(0, 96) : null,
+      createdAt: receivedAt,
+      expiresAt,
+      createdAtEpochMs: Date.now(),
+      expiresAtEpochMs: Date.now() + Math.max(1200, expiresAt - receivedAt),
+      objectiveDirector: true,
+      operationId: String(directive.operationId || '').slice(0, 180),
+      objectiveKind: kind,
+      objectiveStage: stage
+    });
+
+    if (!this.squadCommand) {
+      if (type === TACTICAL_PING_TYPES.DEFEND) {
+        this.holdPosition = clonePosition(position);
+      } else if (this.holdPosition && this.state.squadIntentOwnerPlayerId === 'postfinal4-objective-director') {
+        this.holdPosition = null;
+      }
+      this.syncSquadIntentState(this.objectiveCommand, this.objectiveCommand.status);
+    }
+    return true;
+  }
+
+  refreshObjectiveCommand(now = nowMs()) {
+    if (!this.objectiveCommand) return null;
+    if (!squadCommandIsActive(this.objectiveCommand, now)) {
+      this.objectiveCommand = null;
+      if (!this.squadCommand) this.holdPosition = null;
+      return null;
+    }
+    return this.objectiveCommand;
+  }
+
   handleTacticalCommand(ping, { receivedAt = nowMs() } = {}) {
     if (!this.active || !this.runActive || !this.isAuthority()) {
       return { accepted: false, reason: 'not-authority' };
@@ -1084,7 +1174,8 @@ export class MultiplayerBotManager {
     this.lastUpdateAt = now;
 
     const enemies = livingEnemies(this.getActiveEnemies?.() || []);
-    const activeCommand = this.refreshSquadCommand(now);
+    const activeCommand = this.refreshSquadCommand(now)
+      || this.refreshObjectiveCommand(now);
     const humanCount = this.connectedHumanCount();
     // R2.7: do not auto-stand-down for the supported host + ally team.
     this.pendingHumanReplacement = false;
@@ -1170,16 +1261,28 @@ export class MultiplayerBotManager {
         if (downed) this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.REVIVING);
         else this.finishSquadCommand(SQUAD_COMMAND_STATUS.UNAVAILABLE, now, 'NO DOWNED OPERATIVE FOUND');
       } else if (commandType === TACTICAL_PING_TYPES.ENEMY) {
-        if (commandedTarget) this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.ENGAGING);
-        else this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'MARKED THREAT CLEARED');
+        if (commandedTarget || activeCommand.objectiveDirector === true) {
+          this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.ENGAGING);
+        } else {
+          this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'MARKED THREAT CLEARED');
+        }
       } else if ([TACTICAL_PING_TYPES.INTERACT, TACTICAL_PING_TYPES.BUY_OPEN].includes(commandType)) {
-        if (commandReached(activeCommand, this.state.position, 2.0)) {
+        if (activeCommand.objectiveDirector === true) {
+          this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.INTERACTING);
+        } else if (commandReached(activeCommand, this.state.position, 2.0)) {
           this.finishSquadCommand(SQUAD_COMMAND_STATUS.UNAVAILABLE, now, 'CANNOT OPERATE INTERACTABLE');
         } else {
           this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.INTERACTING);
         }
       } else if (commandType === TACTICAL_PING_TYPES.MOVE) {
-        if (commandReached(activeCommand, this.state.position, 1.8)) {
+        if (activeCommand.objectiveDirector === true) {
+          this.syncSquadIntentState(
+            activeCommand,
+            commandReached(activeCommand, this.state.position, 1.8)
+              ? SQUAD_COMMAND_STATUS.COMPLETE
+              : SQUAD_COMMAND_STATUS.MOVING
+          );
+        } else if (commandReached(activeCommand, this.state.position, 1.8)) {
           this.finishSquadCommand(SQUAD_COMMAND_STATUS.COMPLETE, now, 'MOVE COMPLETE');
         } else {
           this.syncSquadIntentState(activeCommand, SQUAD_COMMAND_STATUS.MOVING);
@@ -1275,6 +1378,10 @@ export class MultiplayerBotManager {
       squadCommand: this.squadCommand ? {
         ...this.squadCommand,
         position: clonePosition(this.squadCommand.position)
+      } : null,
+      objectiveCommand: this.objectiveCommand ? {
+        ...this.objectiveCommand,
+        position: clonePosition(this.objectiveCommand.position)
       } : null,
       state: {
         ...this.state,

@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+  OPS1_APPEAL_RETENTION_MS,
   OPS1_EVENT_RETENTION_MS,
   OPS1_MAX_BODY_BYTES,
   OPS1_MAX_RECENT_ERRORS,
@@ -8,9 +9,13 @@ import {
   OPS1_SERVER_SCHEMA,
   addEventToOpsBucket,
   applyModerationAction,
+  applyModerationAppealAction,
   cleanOpsString,
   consumeOpsRate,
+  normalizeModerationAppeal,
   normalizeModerationReport,
+  moderationReportGroup,
+  moderationReporterHistory,
   moderationRestrictionForAction,
   normalizeOpsRateState,
   normalizeOpsServerEvent,
@@ -35,6 +40,14 @@ export const OPS1_SERVER_INFO = Object.freeze({
   chatTranscriptCollectedByDefault: false,
   eventRetentionDays: 14,
   reportRetentionDays: 180,
+  appealRetentionDays: 365,
+  moderationDashboard: true,
+  duplicateReportGrouping: true,
+  falseReportSignals: true,
+  reportForwardRetry: true,
+  reporterStatus: true,
+  appeals: true,
+  accountWideAuthenticatedRestriction: true,
   telemetryFailureBlocksGameplay: false
 });
 
@@ -94,6 +107,10 @@ function auditKey(createdAt, auditId) {
   return `audit:${String(createdAt).padStart(16, '0')}:${auditId}`;
 }
 
+function appealKey(appealId) {
+  return `appeal:${appealId}`;
+}
+
 function errorKey(receivedAt, eventId) {
   return `error:${String(receivedAt).padStart(16, '0')}:${eventId}`;
 }
@@ -138,6 +155,12 @@ export class OpsHub extends DurableObject {
         if (url.pathname === '/internal/ops/moderation/check') {
           return this.checkModerationRestriction(request);
         }
+        if (url.pathname === '/internal/ops/moderation/status') {
+          return this.moderationStatus(request);
+        }
+        if (url.pathname === '/internal/ops/moderation/appeal') {
+          return this.ingestModerationAppeal(request);
+        }
         return responseJson(
           { ok: false, error: 'OPS_INTERNAL_ENDPOINT_NOT_FOUND' },
           { status: 404 }
@@ -177,6 +200,24 @@ export class OpsHub extends DurableObject {
           && url.pathname === '/ops/admin/reports/action'
         ) {
           return this.adminReportAction(request);
+        }
+        if (
+          request.method === 'GET'
+          && url.pathname === '/ops/admin/appeals'
+        ) {
+          return this.adminAppeals(url);
+        }
+        if (
+          request.method === 'POST'
+          && url.pathname === '/ops/admin/appeals/action'
+        ) {
+          return this.adminAppealAction(request);
+        }
+        if (
+          request.method === 'GET'
+          && url.pathname === '/ops/admin/restrictions'
+        ) {
+          return this.adminRestrictions();
         }
         if (
           request.method === 'GET'
@@ -437,6 +478,129 @@ export class OpsHub extends DurableObject {
     });
   }
 
+
+  async moderationStatus(request) {
+    const payload = await requestJson(request);
+    const accountId = cleanOpsString(payload.accountId, '', 140);
+    if (!accountId) throw new Error('OPS_ACCOUNT_ID_INVALID');
+    const [reporterHash, targetHash] = await Promise.all([
+      shortHash(`reporter:${accountId}`),
+      shortHash(`target:${accountId}`)
+    ]);
+    const [reportsListed, appealsListed, restriction] = await Promise.all([
+      this.ctx.storage.list({ prefix: 'report:' }),
+      this.ctx.storage.list({ prefix: 'appeal:' }),
+      this.ctx.storage.get(restrictionKey(targetHash))
+    ]);
+    const now = Date.now();
+    let activeRestriction = restriction || null;
+    if (
+      activeRestriction
+      && Number(activeRestriction.expiresAt || 0) > 0
+      && Number(activeRestriction.expiresAt) <= now
+    ) {
+      await this.ctx.storage.delete(restrictionKey(targetHash));
+      activeRestriction = null;
+    }
+    const reports = [...reportsListed.values()]
+      .filter((report) => report?.reporterHash === reporterHash)
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+      .slice(0, 24)
+      .map((report) => ({
+        reportId: report.reportId,
+        category: report.category,
+        status: ['actioned', 'dismissed'].includes(report.status)
+          ? 'review-complete'
+          : 'received',
+        createdAt: report.createdAt,
+        updatedAt: report.updatedAt
+      }));
+    const appeals = [...appealsListed.values()]
+      .filter((appeal) => appeal?.targetHash === targetHash)
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+      .slice(0, 12)
+      .map((appeal) => ({
+        appealId: appeal.appealId,
+        reportId: appeal.reportId,
+        status: appeal.status,
+        createdAt: appeal.createdAt,
+        updatedAt: appeal.updatedAt
+      }));
+    return responseJson({
+      ok: true,
+      patch: OPS1_SERVER_PATCH,
+      reports,
+      appeals,
+      restriction: activeRestriction
+        ? {
+            active: true,
+            action: activeRestriction.action,
+            expiresAt: Math.max(0, Number(activeRestriction.expiresAt) || 0),
+            reportId: cleanOpsString(activeRestriction.reportId, '', 120),
+            appealEligible: true
+          }
+        : { active: false, action: '', expiresAt: 0, reportId: '', appealEligible: false }
+    });
+  }
+
+  async ingestModerationAppeal(request) {
+    const payload = await requestJson(request);
+    const accountId = cleanOpsString(payload.accountId, '', 140);
+    if (!accountId) throw new Error('OPS_ACCOUNT_ID_INVALID');
+    const targetHash = await shortHash(`target:${accountId}`);
+    const restriction = await this.ctx.storage.get(restrictionKey(targetHash));
+    if (!restriction) throw new Error('OPS_APPEAL_NOT_ELIGIBLE');
+    if (
+      Number(restriction.expiresAt || 0) > 0
+      && Number(restriction.expiresAt) <= Date.now()
+    ) {
+      await this.ctx.storage.delete(restrictionKey(targetHash));
+      throw new Error('OPS_APPEAL_NOT_ELIGIBLE');
+    }
+    const listed = await this.ctx.storage.list({ prefix: 'appeal:' });
+    const existing = [...listed.values()].find((appeal) => (
+      appeal?.targetHash === targetHash
+      && appeal?.reportId === restriction.reportId
+      && ['pending', 'reviewing'].includes(appeal?.status)
+    ));
+    if (existing) {
+      return responseJson({
+        ok: true,
+        duplicate: true,
+        appeal: {
+          appealId: existing.appealId,
+          reportId: existing.reportId,
+          status: existing.status,
+          createdAt: existing.createdAt,
+          updatedAt: existing.updatedAt
+        }
+      });
+    }
+    const now = Date.now();
+    const appeal = normalizeModerationAppeal({
+      appealId: `appeal-${crypto.randomUUID()}`,
+      reportId: restriction.reportId,
+      note: payload.note,
+      status: 'pending',
+      action: 'none',
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now + OPS1_APPEAL_RETENTION_MS
+    }, { now, targetHash });
+    await this.ctx.storage.put(appealKey(appeal.appealId), appeal);
+    return responseJson({
+      ok: true,
+      duplicate: false,
+      appeal: {
+        appealId: appeal.appealId,
+        reportId: appeal.reportId,
+        status: appeal.status,
+        createdAt: appeal.createdAt,
+        updatedAt: appeal.updatedAt
+      }
+    });
+  }
+
   async listBuckets() {
     const listed = await this.ctx.storage.list({ prefix: 'bucket:' });
     return [...listed.values()];
@@ -463,24 +627,37 @@ export class OpsHub extends DurableObject {
         buckets,
         pendingReports,
         now: Date.now(),
-        releasePatch: 'ops1-r1-production-operations-privacy-telemetry'
+        releasePatch: OPS1_SERVER_PATCH
       })
     );
   }
 
   async adminSummary() {
-    const [buckets, pendingReports, errors, reports] = await Promise.all([
+    const [buckets, pendingReports, errors, reportsListed, appealsListed, restrictionsListed] = await Promise.all([
       this.listBuckets(),
       this.pendingReportCount(),
       this.ctx.storage.list({ prefix: 'error:' }),
-      this.ctx.storage.list({ prefix: 'report:' })
+      this.ctx.storage.list({ prefix: 'report:' }),
+      this.ctx.storage.list({ prefix: 'appeal:' }),
+      this.ctx.storage.list({ prefix: 'restriction:' })
     ]);
+    const reports = [...reportsListed.values()];
+    const appeals = [...appealsListed.values()];
+    const openReports = reports.filter((report) => ['pending', 'reviewing'].includes(report?.status));
+    const urgentReports = openReports.filter((report) => (
+      ['hate', 'cheating'].includes(report?.category)
+      || moderationReportGroup(reports, report).coordinatedSignal
+    ));
+    const oldestPendingAt = openReports.length
+      ? Math.min(...openReports.map((report) => Number(report?.createdAt || Date.now())))
+      : 0;
+    const pendingAppeals = appeals.filter((appeal) => ['pending', 'reviewing'].includes(appeal?.status));
     return responseJson({
       ...summarizeOpsHealth({
         buckets,
         pendingReports,
         now: Date.now(),
-        releasePatch: 'ops1-r1-production-operations-privacy-telemetry'
+        releasePatch: OPS1_SERVER_PATCH
       }),
       buckets: buckets
         .sort((left, right) => Number(right.startedAt) - Number(left.startedAt))
@@ -488,25 +665,45 @@ export class OpsHub extends DurableObject {
       recentErrors: [...errors.values()]
         .sort((left, right) => Number(right.receivedAt) - Number(left.receivedAt))
         .slice(0, OPS1_MAX_RECENT_ERRORS),
-      reportCounts: [...reports.values()].reduce((output, report) => {
+      reportCounts: reports.reduce((output, report) => {
         const status = cleanOpsString(report?.status, 'pending', 24);
         output[status] = (output[status] || 0) + 1;
         return output;
-      }, {})
+      }, {}),
+      appealCounts: appeals.reduce((output, appeal) => {
+        const status = cleanOpsString(appeal?.status, 'pending', 24);
+        output[status] = (output[status] || 0) + 1;
+        return output;
+      }, {}),
+      restrictionCount: [...restrictionsListed.values()].filter((restriction) => (
+        Number(restriction?.expiresAt || 0) === 0
+        || Number(restriction?.expiresAt) > Date.now()
+      )).length,
+      moderationAlerts: {
+        pendingReports: openReports.length,
+        urgentReports: urgentReports.length,
+        pendingAppeals: pendingAppeals.length,
+        oldestPendingAt,
+        attentionRequired: openReports.length > 0 || pendingAppeals.length > 0
+      }
     });
   }
 
   async adminReports(url) {
-    const statusFilter = cleanOpsString(
-      url.searchParams.get('status'),
-      '',
-      24
-    );
+    const statusFilter = cleanOpsString(url.searchParams.get('status'), '', 24);
+    const categoryFilter = cleanOpsString(url.searchParams.get('category'), '', 40);
     const listed = await this.ctx.storage.list({ prefix: 'report:' });
-    const reports = [...listed.values()]
+    const allReports = [...listed.values()];
+    const reports = allReports
       .filter((report) => !statusFilter || report.status === statusFilter)
+      .filter((report) => !categoryFilter || report.category === categoryFilter)
       .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
-      .slice(0, 200);
+      .slice(0, 200)
+      .map((report) => ({
+        ...report,
+        group: moderationReportGroup(allReports, report),
+        reporterHistory: moderationReporterHistory(allReports, report.reporterHash)
+      }));
     return responseJson({
       ok: true,
       patch: OPS1_SERVER_PATCH,
@@ -568,6 +765,86 @@ export class OpsHub extends DurableObject {
     });
   }
 
+  async adminAppeals(url) {
+    const statusFilter = cleanOpsString(url.searchParams.get('status'), '', 24);
+    const listed = await this.ctx.storage.list({ prefix: 'appeal:' });
+    const appeals = [...listed.values()]
+      .filter((appeal) => !statusFilter || appeal.status === statusFilter)
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+      .slice(0, 200);
+    return responseJson({
+      ok: true,
+      patch: OPS1_SERVER_PATCH,
+      appeals
+    });
+  }
+
+  async adminAppealAction(request) {
+    const payload = await requestJson(request);
+    const appealId = cleanOpsString(payload.appealId, '', 120);
+    if (!appealId) throw new Error('OPS_APPEAL_ID_INVALID');
+    const current = await this.ctx.storage.get(appealKey(appealId));
+    if (!current) throw new Error('OPS_APPEAL_NOT_FOUND');
+
+    const actorHash = await shortHash(`admin:${normalizeAdminToken(request)}`);
+    const result = applyModerationAppealAction(current, {
+      auditId: `audit-${crypto.randomUUID()}`,
+      status: payload.status,
+      action: payload.action,
+      note: payload.note
+    }, {
+      now: Date.now(),
+      actorHash
+    });
+    const restrictionStorageKey = restrictionKey(result.appeal.targetHash);
+    const currentRestriction = await this.ctx.storage.get(restrictionStorageKey);
+    const writes = [
+      this.ctx.storage.put(appealKey(appealId), result.appeal),
+      this.ctx.storage.put(
+        auditKey(result.audit.createdAt, result.audit.auditId),
+        result.audit
+      )
+    ];
+    let restriction = currentRestriction || null;
+    if (result.appeal.action === 'lift') {
+      writes.push(this.ctx.storage.delete(restrictionStorageKey));
+      restriction = null;
+    } else if (result.appeal.action === 'reduce' && currentRestriction) {
+      restriction = {
+        ...currentRestriction,
+        action: 'temporary-restriction',
+        reason: redactOpsServerText(payload.note || currentRestriction.reason, 160),
+        appealId,
+        updatedAt: Date.now(),
+        expiresAt: Date.now() + 24 * 60 * 60 * 1000
+      };
+      writes.push(this.ctx.storage.put(restrictionStorageKey, restriction));
+    }
+    await Promise.all(writes);
+    return responseJson({
+      ok: true,
+      appeal: result.appeal,
+      restriction
+    });
+  }
+
+  async adminRestrictions() {
+    const listed = await this.ctx.storage.list({ prefix: 'restriction:' });
+    const now = Date.now();
+    const restrictions = [...listed.values()]
+      .filter((restriction) => (
+        Number(restriction?.expiresAt || 0) === 0
+        || Number(restriction?.expiresAt) > now
+      ))
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+      .slice(0, 200);
+    return responseJson({
+      ok: true,
+      patch: OPS1_SERVER_PATCH,
+      restrictions
+    });
+  }
+
   async adminAudit(url) {
     const limit = Math.max(
       1,
@@ -602,6 +879,7 @@ export class OpsHub extends DurableObject {
       errors,
       dedupe,
       reports,
+      appeals,
       audit,
       rates,
       restrictions
@@ -610,6 +888,7 @@ export class OpsHub extends DurableObject {
       this.ctx.storage.list({ prefix: 'error:' }),
       this.ctx.storage.list({ prefix: 'dedupe:' }),
       this.ctx.storage.list({ prefix: 'report:' }),
+      this.ctx.storage.list({ prefix: 'appeal:' }),
       this.ctx.storage.list({ prefix: 'audit:' }),
       this.ctx.storage.list({ prefix: 'rate:' }),
       this.ctx.storage.list({ prefix: 'restriction:' })
@@ -632,6 +911,9 @@ export class OpsHub extends DurableObject {
       }
     }
     for (const [key, value] of reports) {
+      if (Number(value?.expiresAt || 0) < now) removals.push(key);
+    }
+    for (const [key, value] of appeals) {
       if (Number(value?.expiresAt || 0) < now) removals.push(key);
     }
     for (const [key, value] of audit) {

@@ -1873,6 +1873,28 @@
         <button class="ka-social-btn ka-social-btn-danger" data-action="report-submit" type="button">SUBMIT REPORT</button>
       </div>
     </section>
+
+    <section class="ka-social-panel ka-social-safety-panel">
+      <div class="ka-social-panel-heading">
+        <div><h3>SAFETY CENTER</h3><small>Private report receipts, restrictions and appeals.</small></div>
+        <button class="ka-social-btn" data-action="safety-refresh" type="button">REFRESH</button>
+      </div>
+      <div id="social-safety-restriction" class="ka-social-safety-restriction" data-active="false">NO ACTIVE RESTRICTION</div>
+      <small id="social-safety-service" class="ka-social-safety-service">SAFETY STATUS VERIFYING</small>
+      <div class="ka-social-safety-section">
+        <strong>YOUR SUBMITTED REPORTS</strong>
+        <p>Only receipt and review-complete status are shown. Moderation outcomes remain private.</p>
+        <div id="social-report-status-list" class="ka-social-safety-list"></div>
+      </div>
+      <div class="ka-social-safety-section">
+        <strong>APPEALS</strong>
+        <div id="social-appeal-status-list" class="ka-social-safety-list"></div>
+        <div id="social-appeal-form" class="ka-social-appeal-form" hidden>
+          <textarea id="social-appeal-note" maxlength="500" placeholder="Explain why the restriction should be reviewed (minimum 12 characters)"></textarea>
+          <button class="ka-social-btn" data-action="appeal-submit" type="button">SUBMIT APPEAL</button>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
 <div class="ka-nav-row">
@@ -1978,6 +2000,18 @@
 <select class="ka-setting-control" id="team-alert-captions-select">
 <option value="on">On</option>
 <option value="off">Off</option>
+</select>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Objective HUD</strong>
+<small>Use the full operation panel or a compact progress-only view during combat.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="objective-hud-mode-select">
+<option value="full">Full Detail</option>
+<option value="compact">Compact</option>
 </select>
 </div>
 </div>
@@ -2591,6 +2625,10 @@
 <div><span>CHALLENGES</span><b id="final-challenges">0</b></div>
 <div><span>CONTRACT</span><b id="final-contract-status">Incomplete</b></div>
 <div><span>ACHIEVEMENTS</span><b id="final-achievements">0</b></div>
+<div><span>DYNAMIC OPS</span><b id="final-dynamic-operations">0</b></div>
+<div><span>BONUS OPS</span><b id="final-bonus-operations">0</b></div>
+<div><span>OBJECTIVE REWARDS</span><b id="final-objective-rewards">+0</b></div>
+<div><span>TOP CONTRIBUTOR</span><b id="final-objective-contributor">NONE</b></div>
 <div><span>BEST SCORE</span><b id="final-best-score">0</b></div>
 <div><span>BEST WAVE</span><b id="final-best-wave">1</b></div>
 </div>

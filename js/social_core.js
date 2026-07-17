@@ -1,5 +1,7 @@
 // SOCIAL.1 — deterministic social identity, privacy, party and safety helpers.
 
+import { normalizeSocialSafety } from './social_safety_core.js';
+
 export const SOCIAL1_PATCH = 'social1-r1-friends-parties-player-safety';
 export const SOCIAL1_SCHEMA = 1;
 export const SOCIAL1_RECENT_LIMIT = 32;
@@ -179,6 +181,7 @@ export function normalizeSocialBootstrap(value = {}, now = Date.now()) {
     partyInvites: Array.isArray(source.partyInvites)
       ? source.partyInvites.map((entry) => normalizeParty(entry, now)).filter(Boolean)
       : [],
+    safety: normalizeSocialSafety(source.safety, now),
     notifications: Array.isArray(source.notifications)
       ? source.notifications.slice(-24).map((entry) => Object.freeze({
           id: cleanSocialText(entry?.id, '', 120),

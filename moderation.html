@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <meta name="robots" content="noindex,nofollow,noarchive"/>
+  <meta name="referrer" content="no-referrer"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'"/>
+  <title>Khadija's Arena — Moderation Operations</title>
+  <link rel="icon" href="favicon.ico"/>
+  <link rel="stylesheet" href="css/moderation.css"/>
+</head>
+<body>
+  <main class="ka-mod-shell">
+    <header class="ka-mod-header">
+      <div>
+        <span>KHADIJA'S ARENA · STAFF OPERATIONS</span>
+        <h1>MODERATION COMMAND</h1>
+        <p>Privacy-reduced report review, account restrictions, appeals and audit history.</p>
+      </div>
+      <div class="ka-mod-header-actions">
+        <a href="index.html">RETURN TO GAME</a>
+        <button id="mod-refresh" type="button">REFRESH</button>
+        <button id="mod-lock" type="button">LOCK</button>
+      </div>
+    </header>
+
+    <section class="ka-mod-auth" id="mod-auth-panel">
+      <div>
+        <strong>ADMINISTRATOR AUTHENTICATION</strong>
+        <small>The token is sent only as a Bearer header to the protected Worker API. It is never included in the production manifest.</small>
+      </div>
+      <label>
+        <span>OPS admin token</span>
+        <input id="mod-token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste OPS_ADMIN_TOKEN"/>
+      </label>
+      <label class="ka-mod-check"><input id="mod-remember" type="checkbox" checked/> Keep token for this browser tab only</label>
+      <button id="mod-connect" type="button">UNLOCK MODERATION</button>
+      <output id="mod-auth-status">LOCKED</output>
+    </section>
+
+    <section id="mod-console" class="ka-mod-console" hidden>
+      <div class="ka-mod-alert" id="mod-alert" data-active="false">NO QUEUE ALERTS</div>
+      <section class="ka-mod-summary" id="mod-summary"></section>
+
+      <nav class="ka-mod-tabs" aria-label="Moderation views">
+        <button type="button" data-tab="reports" data-active="true">REPORTS <span id="mod-report-count">0</span></button>
+        <button type="button" data-tab="appeals">APPEALS <span id="mod-appeal-count">0</span></button>
+        <button type="button" data-tab="restrictions">RESTRICTIONS <span id="mod-restriction-count">0</span></button>
+        <button type="button" data-tab="audit">AUDIT</button>
+      </nav>
+
+      <section class="ka-mod-view" data-view="reports">
+        <div class="ka-mod-toolbar">
+          <label>Status
+            <select id="mod-report-status">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="reviewing">Reviewing</option>
+              <option value="actioned">Actioned</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+          </label>
+          <label>Category
+            <select id="mod-report-category">
+              <option value="">All</option>
+              <option value="harassment">Harassment</option>
+              <option value="hate">Hate</option>
+              <option value="cheating">Cheating</option>
+              <option value="griefing">Griefing</option>
+              <option value="inappropriate-name">Inappropriate name</option>
+              <option value="spam">Spam</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+        </div>
+        <div id="mod-reports" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="appeals" hidden>
+        <div class="ka-mod-toolbar">
+          <label>Status
+            <select id="mod-appeal-status">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="reviewing">Reviewing</option>
+              <option value="upheld">Upheld</option>
+              <option value="reduced">Reduced</option>
+              <option value="lifted">Lifted</option>
+            </select>
+          </label>
+        </div>
+        <div id="mod-appeals" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="restrictions" hidden>
+        <div id="mod-restrictions" class="ka-mod-list"></div>
+      </section>
+
+      <section class="ka-mod-view" data-view="audit" hidden>
+        <div id="mod-audit" class="ka-mod-list"></div>
+      </section>
+    </section>
+  </main>
+  <dialog id="mod-action-dialog">
+    <form method="dialog" id="mod-action-form">
+      <header>
+        <div><span id="mod-action-kind">REPORT ACTION</span><strong id="mod-action-title">REVIEW</strong></div>
+        <button value="cancel" aria-label="Close">×</button>
+      </header>
+      <input id="mod-action-id" type="hidden"/>
+      <input id="mod-action-type" type="hidden"/>
+      <label>Decision
+        <select id="mod-action-choice"></select>
+      </label>
+      <label>Administrator note
+        <textarea id="mod-action-note" maxlength="240" placeholder="Required for punitive actions; stored in the protected audit log"></textarea>
+      </label>
+      <div class="ka-mod-dialog-actions">
+        <button value="cancel" type="button" id="mod-action-cancel">CANCEL</button>
+        <button value="default" type="submit">APPLY DECISION</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="js/moderation_admin.js"></script>
+</body>
+</html>

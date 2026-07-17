@@ -271,3 +271,114 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* POST-FINAL.5 — Player Safety Center */
+.ka-social-safety-panel {
+  border-color: rgba(0,212,255,.28);
+  background: linear-gradient(145deg, rgba(4,20,30,.94), rgba(7,13,22,.96));
+}
+
+.ka-social-safety-restriction {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(74,255,157,.28);
+  border-radius: 10px;
+  background: rgba(7,45,30,.28);
+  color: #8dffc5;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.ka-social-safety-restriction[data-active="true"] {
+  border-color: rgba(255,92,111,.46);
+  background: rgba(75,12,24,.48);
+  color: #ffc1ca;
+}
+
+.ka-social-safety-service {
+  display: block;
+  margin: 8px 2px 0;
+  color: #7f9aa8;
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+
+.ka-social-safety-section {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+
+.ka-social-safety-section > strong {
+  color: #d9f7ff;
+  font-size: 11px;
+  letter-spacing: .1em;
+}
+
+.ka-social-safety-section > p {
+  margin: 0;
+  color: #718995;
+  font-size: 10px;
+}
+
+.ka-social-safety-list {
+  display: grid;
+  gap: 7px;
+}
+
+.ka-social-safety-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 9px;
+  background: rgba(0,0,0,.18);
+}
+
+.ka-social-safety-row div {
+  display: grid;
+  gap: 2px;
+}
+
+.ka-social-safety-row strong {
+  color: #d9edf5;
+  font-size: 10px;
+}
+
+.ka-social-safety-row small {
+  color: #718995;
+  font-size: 9px;
+}
+
+.ka-social-safety-row > span {
+  padding: 4px 7px;
+  border: 1px solid rgba(0,212,255,.28);
+  border-radius: 999px;
+  color: #7eeaff;
+  font-size: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.ka-social-safety-row > span[data-complete="true"] {
+  border-color: rgba(74,255,157,.3);
+  color: #8dffc5;
+}
+
+.ka-social-appeal-form {
+  display: grid;
+  gap: 8px;
+}
+
+.ka-social-appeal-form[hidden] {
+  display: none;
+}
+
+.ka-social-appeal-form textarea {
+  min-height: 92px;
+}

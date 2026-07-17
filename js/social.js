@@ -16,6 +16,11 @@ import {
 } from './social_core.js';
 import { setSocialRuntimeProvider } from './social_bridge.js';
 import {
+  restrictionLabel,
+  safetyAppealStatusLabel,
+  safetyReportStatusLabel
+} from './social_safety_core.js';
+import {
   getMultiplayerSocialContext,
   joinMultiplayerSocialRoom,
   multiplayerEvents
@@ -252,7 +257,9 @@ async function getIdentityTicket(context = {}) {
       }
     });
     return String(value.ticket || '').slice(0, 220) || null;
-  } catch {
+  } catch (error) {
+    const code = String(error?.code || error?.message || error || '').toUpperCase();
+    if (code.includes('RESTRICTED') || code.includes('BLOCKED')) throw error;
     return null;
   }
 }
@@ -437,6 +444,85 @@ function renderPrivacy() {
   if (recent) recent.checked = privacy.showRecentPlayers !== false;
 }
 
+function renderSafety() {
+  const safety = state.safety || {
+    available: false,
+    retryingReports: 0,
+    reports: [],
+    appeals: [],
+    restriction: { active: false }
+  };
+  const status = document.getElementById('social-safety-restriction');
+  if (status) {
+    status.textContent = restrictionLabel(safety.restriction);
+    status.dataset.active = safety.restriction?.active === true ? 'true' : 'false';
+  }
+  const service = document.getElementById('social-safety-service');
+  if (service) {
+    service.textContent = safety.available
+      ? (safety.retryingReports > 0
+          ? `${safety.retryingReports} REPORT${safety.retryingReports === 1 ? '' : 'S'} WAITING FOR SECURE FORWARD RETRY`
+          : 'SAFETY SERVICE CONNECTED')
+      : 'SAFETY STATUS TEMPORARILY UNAVAILABLE — SUBMITTED REPORTS REMAIN STORED';
+  }
+
+  const reportsRoot = document.getElementById('social-report-status-list');
+  if (reportsRoot) {
+    clearElement(reportsRoot);
+    if (!safety.reports?.length) {
+      const empty = document.createElement('small');
+      empty.className = 'ka-social-empty';
+      empty.textContent = 'No submitted reports on this account.';
+      reportsRoot.append(empty);
+    } else {
+      safety.reports.forEach((report) => {
+        const row = document.createElement('article');
+        row.className = 'ka-social-safety-row';
+        const copy = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = String(report.category || 'other').replaceAll('-', ' ').toUpperCase();
+        const meta = document.createElement('small');
+        meta.textContent = `${safetyReportStatusLabel(report.status)} · ${displayTime(report.updatedAt || report.createdAt)}`;
+        copy.append(title, meta);
+        const badge = document.createElement('span');
+        badge.textContent = safetyReportStatusLabel(report.status);
+        badge.dataset.complete = report.status === 'review-complete' ? 'true' : 'false';
+        row.append(copy, badge);
+        reportsRoot.append(row);
+      });
+    }
+  }
+
+  const appealsRoot = document.getElementById('social-appeal-status-list');
+  if (appealsRoot) {
+    clearElement(appealsRoot);
+    if (!safety.appeals?.length) {
+      const empty = document.createElement('small');
+      empty.className = 'ka-social-empty';
+      empty.textContent = 'No appeal history.';
+      appealsRoot.append(empty);
+    } else {
+      safety.appeals.forEach((appeal) => {
+        const row = document.createElement('article');
+        row.className = 'ka-social-safety-row';
+        const copy = document.createElement('div');
+        const title = document.createElement('strong');
+        title.textContent = safetyAppealStatusLabel(appeal.status);
+        const meta = document.createElement('small');
+        meta.textContent = displayTime(appeal.updatedAt || appeal.createdAt);
+        copy.append(title, meta);
+        row.append(copy);
+        appealsRoot.append(row);
+      });
+    }
+  }
+
+  const appealForm = document.getElementById('social-appeal-form');
+  if (appealForm) {
+    appealForm.hidden = !(safety.restriction?.active === true && safety.restriction?.appealEligible !== false);
+  }
+}
+
 function render() {
   if (typeof document === 'undefined') return;
   const auth = authContext();
@@ -480,6 +566,7 @@ function render() {
 
   renderParty();
   renderPrivacy();
+  renderSafety();
 
   const reportTarget = document.getElementById('social-report-target');
   if (reportTarget) {
@@ -750,6 +837,21 @@ async function handleAction(action, id = '') {
       }
       if (await mutate('/social/reports/create', report, 'REPORT SUBMITTED')) {
         const input = document.getElementById('social-report-note');
+        if (input) input.value = '';
+      }
+      break;
+    }
+    case 'safety-refresh':
+      await refreshSocial();
+      break;
+    case 'appeal-submit': {
+      const note = document.getElementById('social-appeal-note')?.value || '';
+      if (String(note).trim().length < 12) {
+        setStatus('APPEAL NOTE MUST INCLUDE AT LEAST 12 CHARACTERS', 'error');
+        break;
+      }
+      if (await mutate('/social/appeals/create', { note }, 'APPEAL SUBMITTED')) {
+        const input = document.getElementById('social-appeal-note');
         if (input) input.value = '';
       }
       break;

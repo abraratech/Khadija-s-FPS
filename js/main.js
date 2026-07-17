@@ -48,7 +48,7 @@ import {
 } from './loadout.js';
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
-import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted } from './run_summary.js';
+import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted, recordRunPointsEarned } from './run_summary.js';
 import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
 import { initSocialSystems } from './social.js';
 import { initLive1Systems, beginLive1Run, endLive1Run } from './live1.js';
@@ -197,6 +197,18 @@ initializeMultiplayerFoundation(player, {
   statsAdapter: {
     getRunSummarySnapshot,
     getWave: () => currentWave
+  },
+  contentAdapter: {
+    getInteractLabel: () => getBindingLabel(CONTROL_ACTIONS.INTERACT),
+    awardLocalPoints: ({ points = 0, label = 'OBJECTIVE COMPLETE' } = {}) => {
+      const reward = Math.max(0, Math.floor(Number(points) || 0));
+      if (reward <= 0) return false;
+      player.score = Math.max(0, Math.floor(Number(player.score) || 0) + reward);
+      updateScoreHUD(player.score);
+      recordRunPointsEarned(reward);
+      showStatusToast(`${String(label || 'OBJECTIVE COMPLETE').toUpperCase()} · +${reward} PTS`, '#7df2a5', 1800);
+      return true;
+    }
   },
   botAdapter: {
     getActiveEnemies,
@@ -1756,11 +1768,20 @@ const frameNow = performance.now();
 const frameEnemies = getActiveEnemies();
 
 updatePlayer(dt, frameKeys, mdx, mdy);
+const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
+const multiplayerInteractHeld = Boolean(
+  multiplayerInteractCode
+  && (
+    frameKeys[multiplayerInteractCode]
+    || keys[multiplayerInteractCode]
+  )
+);
 syncMultiplayerFrame(player, frameKeys, {
     dt,
     now: frameNow,
     lookDeltaX: mdx,
-    lookDeltaY: mdy
+    lookDeltaY: mdy,
+    interactHeld: multiplayerInteractHeld
   });
 updateLowHealthHeartbeat(player, dt);
 
@@ -1812,16 +1833,9 @@ updateSharedMultiplayerEconomy(frameNow);
 // The previous post-frame report allowed a stale ACTIVE snapshot or team-end
 // event to race ahead of the DOWNED registration.
 reportLocalMultiplayerDownedIfNeeded();
-const multiplayerInteractCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
-            updateMultiplayerRevive(dt, frameNow, {
-                interactHeld: Boolean(
-                    multiplayerInteractCode
-                    && (
-                        frameKeys[multiplayerInteractCode]
-                        || keys[multiplayerInteractCode]
-                    )
-                )
-            });
+updateMultiplayerRevive(dt, frameNow, {
+  interactHeld: multiplayerInteractHeld
+});
 updateGameplayReliability(dt, frameNow);
 
 const isMoving = (frameKeys['KeyW'] || frameKeys['KeyS'] || frameKeys['KeyA'] || frameKeys['KeyD']) && player.onGround;

@@ -138,7 +138,9 @@ export class MultiplayerTransport {
         displayName: displayName || 'Player',
         joinMode
       });
-    } catch {
+    } catch (error) {
+      const code = String(error?.code || error?.message || error || '').toUpperCase();
+      if (code.includes('RESTRICTED') || code.includes('BLOCKED')) throw error;
       socialTicket = null;
     }
 

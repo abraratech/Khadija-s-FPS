@@ -28,6 +28,9 @@ const encoder = new TextEncoder();
 const MAX_BODY_BYTES = 32_000;
 const REPORT_NOTE_LIMIT = 240;
 const REPORT_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
+const APPEAL_NOTE_LIMIT = 500;
+const REPORT_FORWARD_BASE_RETRY_MS = 60_000;
+const REPORT_FORWARD_MAX_RETRY_MS = 6 * 60 * 60 * 1000;
 const PARTY_ROOM_TTL_MS = 20 * 60 * 1000;
 const SOCIAL_RATE_WINDOW_MS = 60_000;
 const INTERNAL_SOCIAL_AUTH_HEADER = 'x-ka-internal-social-auth';
@@ -121,6 +124,10 @@ function partyMatchmakingTicketKey(ticket) {
 
 function reportKey(reportId) {
   return `report:${reportId}`;
+}
+
+function reportForwardKey(reportId) {
+  return `report-forward:${reportId}`;
 }
 
 function rateKey(accountId, action) {
@@ -228,6 +235,8 @@ export class SocialHub extends DurableObject {
       if (request.method === 'POST' && url.pathname === '/social/blocks/add') return await this.blockAdd(request);
       if (request.method === 'POST' && url.pathname === '/social/blocks/remove') return await this.blockRemove(request);
       if (request.method === 'POST' && url.pathname === '/social/reports/create') return await this.reportCreate(request);
+      if (request.method === 'GET' && url.pathname === '/social/safety/status') return await this.safetyStatus(request);
+      if (request.method === 'POST' && url.pathname === '/social/appeals/create') return await this.appealCreate(request);
       if (request.method === 'POST' && url.pathname === '/social/party/create') return await this.partyCreate(request);
       if (request.method === 'POST' && url.pathname === '/social/party/invite') return await this.partyInvite(request);
       if (request.method === 'POST' && url.pathname === '/social/party/respond') return await this.partyRespond(request);
@@ -250,12 +259,14 @@ export class SocialHub extends DurableObject {
     }
   }
 
-  async cloudAuthenticate(request) {
+  async cloudAuthenticate(request, { allowRestricted = false } = {}) {
     const trusted = trustedProxyAuthentication(request);
     if (trusted) {
       const moderation = await this.checkOpsRestriction(trusted.accountId);
-      if (moderation.allowed === false) throw new Error('SOCIAL_ACCOUNT_RESTRICTED');
-      return trusted;
+      if (moderation.allowed === false && !allowRestricted) {
+        throw new Error('SOCIAL_ACCOUNT_RESTRICTED');
+      }
+      return { ...trusted, moderation };
     }
     if (!this.env.CLOUD_PROFILES) {
       throw new Error('SOCIAL_AUTH_BINDING_UNAVAILABLE');
@@ -297,19 +308,20 @@ export class SocialHub extends DurableObject {
       24
     );
     const moderation = await this.checkOpsRestriction(accountId);
-    if (moderation.allowed === false) {
+    if (moderation.allowed === false && !allowRestricted) {
       throw new Error('SOCIAL_ACCOUNT_RESTRICTED');
     }
     return {
       accountId,
       displayName,
       account: value.account,
-      profile: value.profile
+      profile: value.profile,
+      moderation
     };
   }
 
   async forwardReportToOps(report) {
-    if (!this.env.OPS || !report) return false;
+    if (!this.env.OPS || !report) return { ok: false, error: 'OPS_BINDING_UNAVAILABLE' };
     try {
       const id = this.env.OPS.idFromName('global-v1');
       const response = await this.env.OPS.get(id).fetch(
@@ -322,11 +334,140 @@ export class SocialHub extends DurableObject {
           body: JSON.stringify(report)
         })
       );
-      return response.ok;
-    } catch {
+      const value = await response.json().catch(() => ({}));
+      return response.ok && value.ok !== false
+        ? { ok: true, value }
+        : { ok: false, error: cleanSocialString(value.error, `HTTP_${response.status}`, 120) };
+    } catch (error) {
       // Moderation telemetry must never block the player-facing report flow.
-      return false;
+      return { ok: false, error: cleanSocialString(error?.message, 'OPS_FORWARD_FAILED', 120) };
     }
+  }
+
+  async scheduleReportForward(report, attempts = 0) {
+    if (!report?.reportId) return false;
+    const now = Date.now();
+    const safeAttempts = Math.max(0, Math.min(20, Math.floor(Number(attempts) || 0)));
+    const delay = Math.min(
+      REPORT_FORWARD_MAX_RETRY_MS,
+      REPORT_FORWARD_BASE_RETRY_MS * (2 ** Math.min(12, safeAttempts))
+    );
+    const queued = {
+      report,
+      attempts: safeAttempts,
+      nextAttemptAt: now + delay,
+      createdAt: Math.max(0, Number(report.createdAt) || now),
+      expiresAt: Math.max(now + delay, Number(report.expiresAt) || now + REPORT_RETENTION_MS)
+    };
+    await this.ctx.storage.put(reportForwardKey(report.reportId), queued, {
+      expirationTtl: Math.max(60, Math.ceil((queued.expiresAt - now) / 1000))
+    });
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm === null || Number(alarm) > queued.nextAttemptAt) {
+      await this.ctx.storage.setAlarm(queued.nextAttemptAt);
+    }
+    return true;
+  }
+
+  async retryPendingReportForwards({ limit = 20 } = {}) {
+    const now = Date.now();
+    const listed = await this.ctx.storage.list({ prefix: 'report-forward:' });
+    const due = [...listed.entries()]
+      .filter(([, value]) => Number(value?.nextAttemptAt || 0) <= now)
+      .sort((left, right) => Number(left[1]?.nextAttemptAt || 0) - Number(right[1]?.nextAttemptAt || 0))
+      .slice(0, Math.max(1, Math.min(50, Math.floor(Number(limit) || 20))));
+    for (const [key, queued] of due) {
+      const result = await this.forwardReportToOps(queued?.report);
+      if (result.ok) {
+        await this.ctx.storage.delete(key);
+        const report = await this.ctx.storage.get(reportKey(queued.report.reportId));
+        if (report) {
+          await this.ctx.storage.put(reportKey(report.reportId), {
+            ...report,
+            opsForwardedAt: now,
+            opsForwardAttempts: Math.max(1, Number(queued.attempts || 0) + 1),
+            opsForwardError: ''
+          }, { expirationTtl: Math.max(60, Math.ceil((Number(report.expiresAt || now) - now) / 1000)) });
+        }
+      } else {
+        await this.scheduleReportForward(queued?.report, Number(queued?.attempts || 0) + 1);
+      }
+    }
+    const remaining = await this.ctx.storage.list({ prefix: 'report-forward:' });
+    const next = [...remaining.values()]
+      .map((entry) => Number(entry?.nextAttemptAt || 0))
+      .filter((entry) => entry > now)
+      .sort((left, right) => left - right)[0];
+    if (next) await this.ctx.storage.setAlarm(next);
+    return remaining.size;
+  }
+
+  async alarm() {
+    await this.retryPendingReportForwards({ limit: 30 });
+  }
+
+  async opsSafetyStatus(accountId) {
+    const cleanId = cleanAccountId(accountId);
+    if (!cleanId || !this.env.OPS) {
+      return {
+        available: false,
+        reports: [],
+        appeals: [],
+        restriction: { active: false, action: '', expiresAt: 0, reportId: '', appealEligible: false }
+      };
+    }
+    try {
+      const id = this.env.OPS.idFromName('global-v1');
+      const response = await this.env.OPS.get(id).fetch(
+        new Request('https://ops.internal/internal/ops/moderation/status', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-ka-internal-ops': '1'
+          },
+          body: JSON.stringify({ accountId: cleanId })
+        })
+      );
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok || value.ok !== true) throw new Error(value.error || 'OPS_STATUS_UNAVAILABLE');
+      return {
+        available: true,
+        reports: Array.isArray(value.reports) ? value.reports : [],
+        appeals: Array.isArray(value.appeals) ? value.appeals : [],
+        restriction: value.restriction || { active: false }
+      };
+    } catch {
+      return {
+        available: false,
+        reports: [],
+        appeals: [],
+        restriction: { active: false, action: '', expiresAt: 0, reportId: '', appealEligible: false }
+      };
+    }
+  }
+
+  async submitAppealToOps(accountId, note) {
+    const cleanId = cleanAccountId(accountId);
+    if (!cleanId || !this.env.OPS) throw new Error('SOCIAL_APPEAL_SERVICE_UNAVAILABLE');
+    const id = this.env.OPS.idFromName('global-v1');
+    const response = await this.env.OPS.get(id).fetch(
+      new Request('https://ops.internal/internal/ops/moderation/appeal', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-ka-internal-ops': '1'
+        },
+        body: JSON.stringify({
+          accountId: cleanId,
+          note: cleanSocialString(note, '', APPEAL_NOTE_LIMIT)
+        })
+      })
+    );
+    const value = await response.json().catch(() => ({}));
+    if (!response.ok || value.ok !== true) {
+      throw new Error(cleanSocialString(value.error, 'SOCIAL_APPEAL_FAILED', 120));
+    }
+    return value;
   }
 
   async checkOpsRestriction(accountId) {
@@ -569,6 +710,30 @@ export class SocialHub extends DurableObject {
       partyInvites.push(await this.publicParty(invite, self));
     }
 
+    const [opsSafety, storedReports, forwardQueue] = await Promise.all([
+      this.opsSafetyStatus(self.accountId),
+      this.ctx.storage.list({ prefix: 'report:' }),
+      this.ctx.storage.list({ prefix: 'report-forward:' })
+    ]);
+    const localReports = [...storedReports.values()]
+      .filter((report) => report?.reporterAccountId === self.accountId)
+      .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+      .slice(0, 24)
+      .map((report) => ({
+        reportId: report.reportId,
+        category: report.category,
+        status: 'received',
+        createdAt: report.createdAt,
+        updatedAt: report.opsForwardedAt || report.createdAt
+      }));
+    const safety = {
+      ...opsSafety,
+      reports: opsSafety.available ? opsSafety.reports : localReports,
+      retryingReports: [...forwardQueue.values()].filter((entry) => (
+        entry?.report?.reporterAccountId === self.accountId
+      )).length
+    };
+
     return {
       ok: true,
       patch: SOCIAL1_SERVER_PATCH,
@@ -584,15 +749,17 @@ export class SocialHub extends DurableObject {
       blocked,
       party: await this.publicParty(party, self),
       partyInvites,
+      safety,
       notifications: self.notifications
     };
   }
 
   async bootstrap(request) {
-    const auth = await this.cloudAuthenticate(request);
+    const auth = await this.cloudAuthenticate(request, { allowRestricted: true });
     if (!await this.consumeRate(auth.accountId, 'bootstrap', 90)) {
       throw new Error('SOCIAL_BOOTSTRAP_RATE_LIMITED');
     }
+    this.ctx.waitUntil(this.retryPendingReportForwards({ limit: 8 }));
     return responseJson(await this.buildBootstrap(auth));
   }
 
@@ -1099,7 +1266,23 @@ export class SocialHub extends DurableObject {
     await this.ctx.storage.put(reportKey(reportId), report, {
       expirationTtl: Math.ceil(REPORT_RETENTION_MS / 1000)
     });
-    await this.forwardReportToOps(report);
+    const forward = await this.forwardReportToOps(report);
+    if (forward.ok) {
+      await this.ctx.storage.put(reportKey(reportId), {
+        ...report,
+        opsForwardedAt: Date.now(),
+        opsForwardAttempts: 1,
+        opsForwardError: ''
+      }, { expirationTtl: Math.ceil(REPORT_RETENTION_MS / 1000) });
+    } else {
+      await this.scheduleReportForward(report, 0);
+      await this.ctx.storage.put(reportKey(reportId), {
+        ...report,
+        opsForwardedAt: 0,
+        opsForwardAttempts: 1,
+        opsForwardError: cleanSocialString(forward.error, 'OPS_FORWARD_PENDING', 120)
+      }, { expirationTtl: Math.ceil(REPORT_RETENTION_MS / 1000) });
+    }
     self.notifications.push(notification('REPORT_SUBMITTED', `Report ${reportId.slice(-8)} submitted`));
     await this.saveRecords([self]);
     return responseJson({
@@ -1109,6 +1292,39 @@ export class SocialHub extends DurableObject {
         category,
         createdAt: report.createdAt
       }
+    });
+  }
+
+  async safetyStatus(request) {
+    const auth = await this.cloudAuthenticate(request, { allowRestricted: true });
+    if (!await this.consumeRate(auth.accountId, 'safety-status', 90)) {
+      throw new Error('SOCIAL_SAFETY_STATUS_RATE_LIMITED');
+    }
+    this.ctx.waitUntil(this.retryPendingReportForwards({ limit: 8 }));
+    const bootstrap = await this.buildBootstrap(auth);
+    return responseJson({
+      ok: true,
+      patch: SOCIAL1_SERVER_PATCH,
+      safety: bootstrap.safety
+    });
+  }
+
+  async appealCreate(request) {
+    const auth = await this.cloudAuthenticate(request, { allowRestricted: true });
+    if (!await this.consumeRate(auth.accountId, 'appeal', 3, 30 * 24 * 60 * 60 * 1000)) {
+      throw new Error('SOCIAL_APPEAL_RATE_LIMITED');
+    }
+    const payload = await requestJson(request);
+    const note = cleanSocialString(payload.note, '', APPEAL_NOTE_LIMIT);
+    if (note.length < 12) throw new Error('SOCIAL_APPEAL_NOTE_REQUIRED');
+    const value = await this.submitAppealToOps(auth.accountId, note);
+    const self = await this.ensureRecord(auth.accountId, auth.displayName);
+    self.notifications.push(notification('APPEAL_SUBMITTED', 'Your appeal was received'));
+    await this.saveRecords([self]);
+    return responseJson({
+      ...(await this.buildBootstrap(auth)),
+      appeal: value.appeal || null,
+      duplicate: value.duplicate === true
     });
   }
 
@@ -1241,6 +1457,11 @@ export const SOCIAL1_SERVER_INFO = Object.freeze({
   partyLimit: SOCIAL1_PARTY_LIMIT,
   presenceTtlMs: SOCIAL1_PRESENCE_TTL_MS,
   ticketTtlMs: SOCIAL1_TICKET_TTL_MS,
+  reportForwardRetry: true,
+  reporterStatus: true,
+  appeals: true,
+  restrictedAccountsCanAccessSafetyCenter: true,
+  authenticatedRestrictionEnforcedOnTickets: true,
   endpoints: Object.freeze([
     '/social/bootstrap',
     '/social/identity/ticket',
@@ -1252,6 +1473,8 @@ export const SOCIAL1_SERVER_INFO = Object.freeze({
     '/social/blocks/add',
     '/social/blocks/remove',
     '/social/reports/create',
+    '/social/safety/status',
+    '/social/appeals/create',
     '/social/party/create',
     '/social/party/invite',
     '/social/party/respond',

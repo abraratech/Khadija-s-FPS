@@ -533,6 +533,16 @@ export function renderRunSummaryScreen() {
   setText('final-challenges', summary.challengesCompleted);
   setText('final-contract-status', objective.completed ? objective.objective?.label || 'Complete' : 'Incomplete');
   setText('final-achievements', challenges.totalUnlocked);
+  setText('final-dynamic-operations', summary.dynamicOperationsCompleted || 0);
+  setText('final-bonus-operations', summary.bonusOperationsCompleted || 0);
+  setText('final-objective-rewards', `+${Math.max(0, Math.round(Number(summary.objectiveRewardPoints) || 0))}`);
+  const topContributor = summary.topObjectiveContributor;
+  setText(
+    'final-objective-contributor',
+    topContributor
+      ? `${topContributor.isLocal ? 'YOU' : String(topContributor.playerId || 'TEAM').slice(0, 18)} · ${Math.round(Number(topContributor.contribution) || 0)}`
+      : 'NONE'
+  );
 
   const level = progression.profile.level;
   const capped = level >= progression.maxLevel || progression.profile.xpToNext <= 0;

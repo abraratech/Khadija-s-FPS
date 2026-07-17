@@ -32,6 +32,12 @@ const state = {
   weaponUpgrades: 0,
   objectivesCompleted: 0,
   challengesCompleted: 0,
+  dynamicOperationsCompleted: 0,
+  bonusOperationsCompleted: 0,
+  objectiveRewardPoints: 0,
+  objectiveContributions: {},
+  topObjectiveContributor: null,
+  lastDynamicOperation: null,
   botAssisted: false,
   leaderboardEligible: true,
   botProfile: null,
@@ -76,6 +82,12 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     weaponUpgrades: 0,
     objectivesCompleted: 0,
     challengesCompleted: 0,
+    dynamicOperationsCompleted: 0,
+    bonusOperationsCompleted: 0,
+    objectiveRewardPoints: 0,
+    objectiveContributions: {},
+    topObjectiveContributor: null,
+    lastDynamicOperation: null,
     botAssisted: false,
     leaderboardEligible: true,
     botProfile: null,
@@ -159,6 +171,64 @@ export function recordRunObjective() {
 export function recordRunChallenge() {
   if (!state.active) return;
   state.challengesCompleted++;
+}
+
+export function recordRunDynamicOperation({
+  operationId = '',
+  label = 'Dynamic operation',
+  optional = false,
+  rewardPoints = 0,
+  contributors = {},
+  localPlayerId = ''
+} = {}) {
+  if (!state.active) return getRunSummarySnapshot();
+
+  const normalizedId = String(operationId || '').slice(0, 180);
+  if (normalizedId && state.lastDynamicOperation?.operationId === normalizedId) {
+    return getRunSummarySnapshot();
+  }
+
+  state.dynamicOperationsCompleted += 1;
+  state.objectivesCompleted += 1;
+  if (optional === true) state.bonusOperationsCompleted += 1;
+  state.objectiveRewardPoints += Math.max(0, Math.round(finite(rewardPoints)));
+
+  const contributionMap = {};
+  Object.entries(contributors || {}).forEach(([playerId, amount]) => {
+    const id = String(playerId || '').slice(0, 160);
+    if (!id) return;
+    const value = Math.max(0, finite(amount));
+    contributionMap[id] = value;
+    state.objectiveContributions[id] = Math.max(
+      0,
+      finite(state.objectiveContributions[id]) + value
+    );
+  });
+
+  const ranked = Object.entries(contributionMap)
+    .sort((left, right) => right[1] - left[1]);
+  state.topObjectiveContributor = ranked.length
+    ? {
+        playerId: ranked[0][0],
+        contribution: ranked[0][1],
+        isLocal: Boolean(localPlayerId && ranked[0][0] === localPlayerId)
+      }
+    : state.topObjectiveContributor;
+
+  state.lastDynamicOperation = {
+    operationId: normalizedId,
+    label: String(label || 'Dynamic operation').slice(0, 120),
+    optional: optional === true,
+    rewardPoints: Math.max(0, Math.round(finite(rewardPoints))),
+    localContribution: Math.max(
+      0,
+      finite(contributionMap[String(localPlayerId || '')])
+    )
+  };
+  state.lastEvent = optional === true
+    ? 'BONUS OPERATION COMPLETE'
+    : 'DYNAMIC OPERATION COMPLETE';
+  return getRunSummarySnapshot();
 }
 
 export function recordRunWave(wave = 1) {

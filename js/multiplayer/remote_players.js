@@ -4,6 +4,7 @@
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
+import { roomUsesPvp1 } from './pvp1_core.js';
 import {
   SURVIVOR_OPERATOR_PATCH,
   createRemoteOperatorRig,
@@ -693,6 +694,7 @@ export class RemotePlayerManager {
   update(now = performance.now()) {
     if (!this.active) return;
 
+    const pvpRun = roomUsesPvp1(this.runtime?.room?.getSnapshot?.());
     this.avatars.forEach((avatar, playerId) => {
       const playerRecord = this.roomPlayers.get(playerId);
       const sampled = this.runtime?.sampleRemotePlayer?.(playerId, now);
@@ -750,6 +752,10 @@ export class RemotePlayerManager {
           && !isAway
           && now < remote.muzzleFlashUntil
         );
+        if (remote.label) {
+          // Competitive PvP intentionally removes overhead identity tracking.
+          remote.label.visible = !pvpRun;
+        }
         if (remote.label?.material) {
           remote.label.material.opacity = isAway ? 0.48 : 0.82;
         }

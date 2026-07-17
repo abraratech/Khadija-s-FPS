@@ -1,4 +1,5 @@
 // POST.1A R1 - player-facing co-op status HUD.
+import { PVP1_MODE, roomUsesPvp1 } from './pvp1_core.js';
 // Raw RTT/jitter/loss/reconciliation telemetry is debug-only.
 const UPDATE_INTERVAL_MS = 200;
 const QUALITY_COLORS = Object.freeze({
@@ -33,6 +34,35 @@ function lifeLabel(entry) {
   if (value === 'SPECTATING' || value === 'ELIMINATED') return 'SPECTATING';
   return 'ACTIVE';
 }
+export function resolveNetworkHudPlayerStatus({
+  gameMode = 'coop',
+  pvpEntry = null,
+  reviveEntry = null,
+  state = {},
+  connected = true
+} = {}) {
+  const pvp = String(gameMode || '').toLowerCase() === PVP1_MODE;
+  const fallbackAlive = state?.alive !== false;
+  const pvpAlive = pvpEntry
+    ? pvpEntry.alive === true
+    : fallbackAlive;
+  return Object.freeze({
+    health: pvp
+      ? safeNumber(pvpEntry?.health, safeNumber(state?.health, 100))
+      : safeNumber(reviveEntry?.health, safeNumber(state?.health, 100)),
+    maxHealth: pvp
+      ? safeNumber(pvpEntry?.maxHealth, safeNumber(state?.maxHealth, 100))
+      : safeNumber(reviveEntry?.maxHealth, safeNumber(state?.maxHealth, 100)),
+    lifeState: connected !== true
+      ? 'RECONNECTING'
+      : pvp
+        ? (pvpAlive ? 'ACTIVE' : 'SPECTATING')
+        : lifeLabel(reviveEntry),
+    team: pvp ? String(pvpEntry?.team || '').toUpperCase() : '',
+    eliminations: pvp ? Math.max(0, Math.floor(safeNumber(pvpEntry?.eliminations))) : 0,
+    deaths: pvp ? Math.max(0, Math.floor(safeNumber(pvpEntry?.deaths))) : 0
+  });
+}
 function debugNetworkMetricsEnabled() {
   try {
     return globalThis.KA_MULTIPLAYER_DEBUG === true
@@ -48,7 +78,8 @@ export class MultiplayerNetworkHud {
     players,
     getEconomySnapshot = () => null,
     getReviveSnapshot = () => null,
-    getMigrationSnapshot = () => null
+    getMigrationSnapshot = () => null,
+    getPvpSnapshot = () => null
   } = {}) {
     this.runtime = runtime;
     this.session = session;
@@ -56,6 +87,7 @@ export class MultiplayerNetworkHud {
     this.getEconomySnapshot = getEconomySnapshot;
     this.getReviveSnapshot = getReviveSnapshot;
     this.getMigrationSnapshot = getMigrationSnapshot;
+    this.getPvpSnapshot = getPvpSnapshot;
     this.root = null;
     this.lastUpdateAt = 0;
     this.lastSnapshot = null;
@@ -104,27 +136,44 @@ export class MultiplayerNetworkHud {
     const reconciliation = this.runtime?.getReconciliationSnapshot?.(Date.now()) || {};
     const localPlayerId = this.runtime?.localPlayerId || null;
     const hostPlayerId = room.hostPlayerId || this.session?.hostPlayerId || null;
+    const gameMode = roomUsesPvp1(room) ? PVP1_MODE : 'coop';
+    const livePvp = this.getPvpSnapshot?.()?.state || room?.pvp || null;
+    const pvpPlayers = livePvp?.players && typeof livePvp.players === 'object'
+      ? livePvp.players
+      : {};
     const teammates = (room.players || []).map((roomPlayer) => {
       const registered = registryById.get(roomPlayer.playerId);
       const state = registered?.state || {};
       const life = revivePlayers.get(roomPlayer.playerId);
+      const pvpEntry = pvpPlayers[roomPlayer.playerId] || null;
       const account = accounts.get(roomPlayer.playerId);
       const connected = roomPlayer.connected !== false;
+      const status = resolveNetworkHudPlayerStatus({
+        gameMode,
+        pvpEntry,
+        reviveEntry: life,
+        state,
+        connected
+      });
       return {
         playerId: roomPlayer.playerId,
         displayName: roomPlayer.displayName || registered?.displayName || 'Player',
         isLocal: roomPlayer.playerId === localPlayerId,
         isHost: roomPlayer.playerId === hostPlayerId,
         connected,
-        health: safeNumber(life?.health, safeNumber(state.health, 100)),
-        maxHealth: safeNumber(life?.maxHealth, safeNumber(state.maxHealth, 100)),
+        health: status.health,
+        maxHealth: status.maxHealth,
         score: safeNumber(account?.score, state.score ?? 0),
-        lifeState: connected ? lifeLabel(life) : 'RECONNECTING'
+        lifeState: status.lifeState,
+        team: status.team,
+        eliminations: status.eliminations,
+        deaths: status.deaths
       };
     });
     return {
       updatedAt: now,
       roomCode: room.roomCode || null,
+      gameMode,
       network,
       reconciliation,
       authorityEpoch: safeNumber(room.authorityEpoch, migration.authorityEpoch || 0),
@@ -147,7 +196,8 @@ export class MultiplayerNetworkHud {
       marginBottom: '5px', fontWeight: '700', letterSpacing: '.04em'
     });
     const title = document.createElement('span');
-    title.textContent = `CO-OP ${snapshot.roomCode || '------'}`;
+    const modeLabel = snapshot.gameMode === PVP1_MODE ? 'PVP' : 'CO-OP';
+    title.textContent = `${modeLabel} ${snapshot.roomCode || '------'}`;
     const qualityText = document.createElement('span');
     qualityText.textContent = quality;
     qualityText.style.color = QUALITY_COLORS[quality] || '#dbeeff';
@@ -195,9 +245,13 @@ export class MultiplayerNetworkHud {
       const name = document.createElement('span');
       name.textContent = `${player.displayName}${player.isLocal ? ' (YOU)' : ''}`;
       const role = document.createElement('span');
-      role.textContent = player.isHost
-        ? `HOST${player.lifeState !== 'ACTIVE' ? ` - ${player.lifeState}` : ''}`
-        : player.lifeState;
+      role.textContent = snapshot.gameMode === PVP1_MODE
+        ? [player.team || 'PVP', player.isHost ? 'HOST' : player.lifeState]
+            .filter(Boolean)
+            .join(' · ')
+        : player.isHost
+          ? `HOST${player.lifeState !== 'ACTIVE' ? ` - ${player.lifeState}` : ''}`
+          : player.lifeState;
       role.style.color = player.lifeState === 'DOWNED'
         ? '#ff6b57'
         : player.lifeState === 'RECONNECTING'
@@ -220,7 +274,9 @@ export class MultiplayerNetworkHud {
       card.appendChild(healthBar);
 
       const detail = document.createElement('div');
-      detail.textContent = `HP ${Math.round(player.health)}/${Math.round(player.maxHealth)} - ${Math.round(player.score)} pts`;
+      detail.textContent = snapshot.gameMode === PVP1_MODE
+        ? `HP ${Math.round(player.health)}/${Math.round(player.maxHealth)} · K ${player.eliminations} / D ${player.deaths}`
+        : `HP ${Math.round(player.health)}/${Math.round(player.maxHealth)} - ${Math.round(player.score)} pts`;
       detail.style.color = '#b9d8ea';
       card.appendChild(detail);
       root.appendChild(card);

@@ -548,7 +548,9 @@ export function initializeMultiplayerFoundation(
       getReviveSnapshot:
         () => reviveManager?.getSnapshot?.() || null,
       getMigrationSnapshot:
-        () => hostMigrationState.getSnapshot()
+        () => hostMigrationState.getSnapshot(),
+      getPvpSnapshot:
+        () => pvp1Manager?.getSnapshot?.() || null
     });
 
   multiplayerReleaseGuard = new MultiplayerReleaseGuard({
@@ -611,9 +613,14 @@ textChat.initialize();
 
   multiplayerEvents.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, (event) => {
     syncCoopScalingFromRoom();
-    coopScoreboard?.update?.(performance.now(), { force: true });
-
     const room = event?.payload?.room || multiplayerRuntime?.room?.getSnapshot?.();
+    if (roomUsesPvp1(room)) {
+      coopStatsManager?.clearFinalSummary?.();
+      coopScoreboard?.hideAll?.();
+    } else {
+      coopScoreboard?.update?.(performance.now(), { force: true });
+    }
+
     const nextHumans = connectedHumanIds(room);
     if (
       multiplayerSession?.run?.active === true
@@ -722,6 +729,10 @@ textChat.initialize();
         economyManager?.endRun();
         tacticalAwareness?.endRun();
         squadIntentHud?.endRun();
+      } else {
+        // Never surface a stale Co-Op summary after a competitive match.
+        coopStatsManager?.clearFinalSummary?.();
+        coopScoreboard?.hideAll?.();
       }
       pvp1Manager?.endRun?.();
       multiplayerRuntime.endRun();
@@ -741,7 +752,9 @@ textChat.initialize();
       });
 
       runEndHandler?.(details);
-      coopScoreboard?.update?.(performance.now(), { force: true });
+      if (!pvpRun) {
+        coopScoreboard?.update?.(performance.now(), { force: true });
+      }
     },
     onBotFillRequested: (details = {}) => {
       botManager?.requestFill?.(details);
@@ -985,6 +998,9 @@ export function endMultiplayerRun({
     economyManager?.endRun();
     tacticalAwareness?.endRun();
     squadIntentHud?.endRun();
+  } else {
+    coopStatsManager?.clearFinalSummary?.();
+    coopScoreboard?.hideAll?.();
   }
   pvp1Manager?.endRun?.();
   multiplayerRuntime.endRun();
@@ -995,7 +1011,9 @@ export function endMultiplayerRun({
   if (notifyServer) {
     lobbyController?.notifyRunEnded?.(reason);
   }
-  coopScoreboard?.update?.(performance.now(), { force: true });
+  if (!pvpRun) {
+    coopScoreboard?.update?.(performance.now(), { force: true });
+  }
 
   return multiplayerSession.endRun({
     reason,

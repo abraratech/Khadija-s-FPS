@@ -1305,3 +1305,17 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* PVP.2 R1.3 — isolate Solo/Co-Op-only HUD during Team Elimination. */
+body.ka-pvp-native-hud-isolated #kills-display,
+body.ka-pvp-native-hud-isolated #score-display,
+body.ka-pvp-native-hud-isolated #round-counter-wrap,
+body.ka-pvp-native-hud-isolated #progression-panel,
+body.ka-pvp-native-hud-isolated #objective-panel,
+body.ka-pvp-native-hud-isolated #map-system-panel,
+body.ka-pvp-native-hud-isolated .challenge-panel-wrap,
+body.ka-pvp-native-hud-isolated #powerup-timers,
+body.ka-pvp-native-hud-isolated #perk-indicators,
+body.ka-pvp-native-hud-isolated #shop-feedback-panel {
+  display: none !important;
+}

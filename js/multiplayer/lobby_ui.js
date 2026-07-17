@@ -123,9 +123,9 @@ export class MultiplayerLobbyUI {
 
         <div id="ka-coop-connect-view">
           <p class="ka-coop-note">
-            Create isolated private Co-Op or Team Elimination rooms. Public
-            matchmaking remains Co-Op only. Existing Co-Op progression, enemies,
-            operations, reconnect recovery, and rewards remain unchanged.
+            Create isolated private Co-Op or Team Elimination rooms, find public
+            Co-Op allies, or enter rated public PvP 1v1 matchmaking. Existing Co-Op
+            progression, enemies, operations, reconnect recovery, and rewards remain unchanged.
           </p>
 
           <label class="ka-coop-field">
@@ -159,9 +159,8 @@ export class MultiplayerLobbyUI {
               <span class="ka-matchmaking-region">REGION-AWARE</span>
             </div>
             <p class="ka-matchmaking-copy">
-              Find a compatible Co-Op operative using the current arena,
-              difficulty, protocol and game build. PvP is private-room only
-              during PVP.1 certification.
+              Find a compatible Co-Op operative or a rated public PvP 1v1 opponent
+              using the current arena, protocol, game build, and region policy.
             </p>
             <div class="ka-matchmaking-preferences">
               <label class="ka-coop-field">
@@ -198,14 +197,14 @@ export class MultiplayerLobbyUI {
               </button>
             </div>
             <div class="ka-public-room-actions">
-              <button id="ka-coop-browse-rooms" type="button">BROWSE OPEN ROOMS</button>
-              <button id="ka-coop-create-public" type="button">CREATE PUBLIC ROOM</button>
+              <button id="ka-coop-browse-rooms" type="button">BROWSE PUBLIC CO-OP ROOMS</button>
+              <button id="ka-coop-create-public" type="button">CREATE PUBLIC CO-OP ROOM</button>
             </div>
             <section id="ka-room-browser" class="ka-room-browser" hidden aria-live="polite">
               <div class="ka-room-browser-heading">
                 <div>
-                  <strong id="ka-room-browser-title">OPEN PUBLIC ROOMS</strong>
-                  <span id="ka-room-browser-detail">HOST-APPROVED ROOMS ONLY</span>
+                  <strong id="ka-room-browser-title">PUBLIC CO-OP ROOMS</strong>
+                  <span id="ka-room-browser-detail">HOSTED CO-OP ROOMS · PVP USES QUICK MATCH</span>
                 </div>
                 <button id="ka-room-browser-refresh" type="button">REFRESH</button>
               </div>
@@ -317,7 +316,7 @@ export class MultiplayerLobbyUI {
           </div>
 
           <div class="ka-coop-actions">
-            <button id="ka-coop-ready" type="button">NOT READY</button>
+            <button id="ka-coop-ready" type="button" aria-label="Set status to ready">READY</button>
             <button id="ka-coop-start" class="ka-coop-primary" type="button">START CO-OP RUN</button>
             <button id="ka-coop-leave" class="ka-coop-danger" type="button">LEAVE ROOM</button>
           </div>
@@ -1188,8 +1187,16 @@ this.elements.playerList.appendChild(row);
 
 
 
-    this.elements.ready.textContent = local?.ready ? 'READY' : 'NOT READY';
-    this.elements.ready.dataset.ready = local?.ready ? 'true' : 'false';
+    const localReady = local?.ready === true;
+    this.elements.ready.textContent = localReady ? 'NOT READY' : 'READY';
+    this.elements.ready.setAttribute(
+      'aria-label',
+      localReady ? 'Set status to not ready' : 'Set status to ready'
+    );
+    this.elements.ready.title = localReady
+      ? 'Click to become not ready'
+      : 'Click when you are ready';
+    this.elements.ready.dataset.ready = localReady ? 'true' : 'false';
     this.elements.ready.disabled = room.status === 'in-run';
 
     const pvpHasOpponents = !isPvp || connectedHumanCount >= 2;

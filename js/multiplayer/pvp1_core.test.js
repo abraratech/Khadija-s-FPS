@@ -6,13 +6,16 @@ import {
   PVP1_PATCH,
   PVP1_PRODUCT_VERSION,
   PVP1_SOURCE_BASELINE_SHA,
+  classifyPvp1StateUpdate,
   derivePvp1Presentation,
   isPvp1Mode,
   normalizePvp1Mode,
   normalizePvp1State,
   opposingPvp1Team,
   pvp1PrivateRoomPolicy,
-  roomUsesPvp1
+  roomUsesPvp1,
+  selectPvp1SpawnIndex,
+  shouldPresentPvp1Summary
 } from './pvp1_core.js';
 
 assert.equal(PVP1_PATCH, 'pvp1-r1-isolated-team-elimination-foundation');
@@ -90,6 +93,28 @@ assert.equal(countdown.inputBlocked, true);
 assert.equal(countdown.countdownSeconds, 2);
 assert.equal(countdown.alphaWins, 1);
 
+const countdownReleased = derivePvp1Presentation(state, 'alpha', 5000);
+assert.equal(countdownReleased.phase, 'ACTIVE');
+assert.equal(countdownReleased.inputBlocked, false);
+assert.equal(countdownReleased.headline, 'ROUND 2 · FIGHT');
+
+const spawnPoints = [
+  { x: -30, z: 0 },
+  { x: 30, z: 0 },
+  { x: 0, z: -30 },
+  { x: 0, z: 30 }
+];
+const alphaSpawn = selectPvp1SpawnIndex(spawnPoints, 'ALPHA', 0);
+const bravoSpawn = selectPvp1SpawnIndex(spawnPoints, 'BRAVO', 0);
+assert.notEqual(alphaSpawn, bravoSpawn);
+assert.equal(alphaSpawn, 0);
+assert.equal(bravoSpawn, 1);
+assert.notEqual(
+  selectPvp1SpawnIndex(spawnPoints, 'ALPHA', 1),
+  selectPvp1SpawnIndex(spawnPoints, 'BRAVO', 1)
+);
+assert.equal(selectPvp1SpawnIndex([], 'ALPHA', 0), -1);
+
 const active = derivePvp1Presentation({
   ...state,
   phase: 'ACTIVE'
@@ -106,5 +131,75 @@ const eliminated = derivePvp1Presentation({
   }
 }, 'alpha', 6000);
 assert.equal(eliminated.inputBlocked, true);
+
+const priorCompleteState = normalizePvp1State({
+  ...state,
+  runId: 'run-prior',
+  phase: 'COMPLETE',
+  revision: 27,
+  winnerTeam: 'ALPHA'
+});
+const freshNextState = normalizePvp1State({
+  ...state,
+  runId: 'run-next',
+  phase: 'COUNTDOWN',
+  revision: 1
+});
+
+const newRunDecision = classifyPvp1StateUpdate({
+  currentState: priorCompleteState,
+  incomingState: freshNextState,
+  activeRunId: 'run-next'
+});
+assert.equal(newRunDecision.accepted, true);
+assert.equal(newRunDecision.reason, 'NEW_RUN');
+assert.equal(newRunDecision.runChanged, true);
+
+const stalePriorRunDecision = classifyPvp1StateUpdate({
+  currentState: freshNextState,
+  incomingState: priorCompleteState,
+  activeRunId: 'run-next',
+  force: true
+});
+assert.equal(stalePriorRunDecision.accepted, false);
+assert.equal(stalePriorRunDecision.reason, 'STALE_RUN');
+
+const staleRevisionDecision = classifyPvp1StateUpdate({
+  currentState: { ...freshNextState, revision: 5 },
+  incomingState: { ...freshNextState, revision: 4 },
+  activeRunId: 'run-next'
+});
+assert.equal(staleRevisionDecision.accepted, false);
+assert.equal(staleRevisionDecision.reason, 'STALE_REVISION');
+
+const forcedCurrentRunDecision = classifyPvp1StateUpdate({
+  currentState: { ...freshNextState, revision: 5 },
+  incomingState: { ...freshNextState, revision: 4 },
+  activeRunId: 'run-next',
+  force: true
+});
+assert.equal(forcedCurrentRunDecision.accepted, true);
+assert.equal(forcedCurrentRunDecision.reason, 'CURRENT_RUN');
+
+assert.equal(shouldPresentPvp1Summary({
+  state: priorCompleteState,
+  activeRunId: 'run-prior',
+  lastSummaryRunId: ''
+}), true);
+assert.equal(shouldPresentPvp1Summary({
+  state: priorCompleteState,
+  activeRunId: 'run-next',
+  lastSummaryRunId: ''
+}), false);
+assert.equal(shouldPresentPvp1Summary({
+  state: priorCompleteState,
+  activeRunId: 'run-prior',
+  lastSummaryRunId: 'run-prior'
+}), false);
+assert.equal(shouldPresentPvp1Summary({
+  state: priorCompleteState,
+  activeRunId: '',
+  lastSummaryRunId: ''
+}), false);
 
 console.log('PVP.1 client policy core tests passed');

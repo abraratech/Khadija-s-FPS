@@ -99,6 +99,7 @@ import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wh
 // POST.1A: live voice was removed from the player-facing build. Text chat remains.
 import './multiplayer/suspend_resume.js';
 import { isMultiplayerTabLeaseBlocking } from './multiplayer/tab_lease.js';
+import { selectPvp1SpawnIndex } from './multiplayer/pvp1_core.js';
 import './multiplayer/production_release.js';
 
 const canvas = document.getElementById('c');
@@ -254,9 +255,11 @@ configureMultiplayerPvp({
 window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
 window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
 window.KHADIJA_PVP_PATCH = 'pvp2-r1-public-matchmaking-competitive-stats-balance';
+window.KHADIJA_PVP_HOTFIX = 'pvp2-r1-5-lobby-action-label-clarity';
 console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
 console.info('[Multiplayer Patch] final2-r1-full-product-certification');
 console.info('[PvP Patch] pvp2-r1-public-matchmaking-competitive-stats-balance');
+console.info('[PvP Hotfix] pvp2-r1-5-lobby-action-label-clarity');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;
@@ -777,19 +780,25 @@ function setActionKeyState(action, pressed) {
 }
 
 function pauseGameplay(source = 'input') {
-    if (
-        gs !== 'playing'
-        || !player.alive
-        || Number(player.health || 0) <= 0
-        || isGameplayInputBlocked()
-    ) return false;
-  if (isOnlineCoOpRun() && coOpMenuOpen) return true;
+  const onlineRun = isOnlineCoOpRun();
+  if (gs !== 'playing') return false;
+  // Online players must always be able to open the menu and quit, including
+  // during PvP countdown, spectating, reconnect fences, and revive states.
+  if (
+    !onlineRun
+    && (
+      !player.alive
+      || Number(player.health || 0) <= 0
+      || isGameplayInputBlocked()
+    )
+  ) return false;
+  if (onlineRun && coOpMenuOpen) return true;
 
   pauseTransitionAt = performance.now();
   clearInputState();
   showPauseScreen();
 
-  if (isOnlineCoOpRun()) {
+  if (onlineRun) {
     coOpMenuOpen = true;
     if (!isMobile && document.pointerLockElement) {
       document.exitPointerLock();
@@ -805,12 +814,6 @@ function pauseGameplay(source = 'input') {
   console.log(`Game paused from ${source}.`);
   return true;
 } function resumeGameplay(source = 'input') {
-    if (
-        !player.alive
-        || Number(player.health || 0) <= 0
-        || isGameplayInputBlocked()
-    ) return false;
-
   if (isOnlineCoOpRun() && coOpMenuOpen) {
     if (performance.now() - pauseTransitionAt < 180) return false;
 
@@ -833,6 +836,11 @@ function pauseGameplay(source = 'input') {
     return true;
   }
 
+  if (
+    !player.alive
+    || Number(player.health || 0) <= 0
+    || isGameplayInputBlocked()
+  ) return false;
   if (gs !== 'paused') return false;
   if (performance.now() - pauseTransitionAt < 180) return false;
 
@@ -1311,9 +1319,7 @@ function placePvpSpawn({ team = 'ALPHA', slot = 0 } = {}) {
   }
 
   const cleanSlot = Math.max(0, Math.floor(Number(slot) || 0));
-  const index = team === 'BRAVO'
-    ? Math.max(0, pool.length - 1 - (cleanSlot % Math.max(1, pool.length)))
-    : cleanSlot % pool.length;
+  const index = selectPvp1SpawnIndex(pool, team, cleanSlot);
   const spawn = pool[index] || pool[0];
   player.pos.set(Number(spawn.x) || 0, EYE_H, Number(spawn.z) || 0);
   player.vel.set(0, 0, 0);
@@ -1461,9 +1467,15 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
       difficulty: difficultyMultiplier,
       mode: pvpRun ? 'pvp' : (isOnlineMultiplayerRun() ? 'multiplayer' : 'single')
     });
-    resetObjectivesRun({ mapId: chosenMap });
-    resetMapGameplay({ mapId: chosenMap, scene });
-    resetChallengesRun();
+    if (pvpRun) {
+      endObjectivesRun();
+      endMapGameplay();
+      endChallengesRun();
+    } else {
+      resetObjectivesRun({ mapId: chosenMap });
+      resetMapGameplay({ mapId: chosenMap, scene });
+      resetChallengesRun();
+    }
     beginLocalLeaderboardRun();
     void beginOnlineLeaderboardRun({
       mapId: chosenMap,
@@ -1471,9 +1483,16 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
       mode: pvpRun ? 'pvp' : (isOnlineMultiplayerRun() ? 'multiplayer' : 'single')
     });
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
-    placePlayerAtRandomSpawn();
-    resetTutorialRun({ mapId: chosenMap, isMobile, player });
-    resetVisualTutorial();
+    // PVP.1 already applied the authoritative team spawn during
+    // beginMultiplayerRun. Never overwrite it with a random Co-Op spawn.
+    if (!pvpRun) placePlayerAtRandomSpawn();
+    if (pvpRun) {
+      endTutorialRun();
+      endVisualTutorial();
+    } else {
+      resetTutorialRun({ mapId: chosenMap, isMobile, player });
+      resetVisualTutorial();
+    }
     resetCameraPresentation();
     beginGameplayReliability();
 

@@ -93,24 +93,97 @@ export function normalizePvp1State(value = {}) {
   });
 }
 
+export function classifyPvp1StateUpdate({
+  currentState = null,
+  incomingState = null,
+  activeRunId = '',
+  force = false
+} = {}) {
+  const incoming = normalizePvp1State(incomingState || {});
+  const current = currentState ? normalizePvp1State(currentState) : null;
+  const expectedRunId = String(activeRunId || '').trim();
+
+  if (!incoming.runId) {
+    return Object.freeze({
+      accepted: false,
+      reason: 'MISSING_RUN_ID',
+      runChanged: false,
+      incoming
+    });
+  }
+
+  if (expectedRunId && incoming.runId !== expectedRunId) {
+    return Object.freeze({
+      accepted: false,
+      reason: 'STALE_RUN',
+      runChanged: current?.runId !== incoming.runId,
+      incoming
+    });
+  }
+
+  const runChanged = !current || current.runId !== incoming.runId;
+  if (
+    force !== true
+    && !runChanged
+    && incoming.revision < current.revision
+  ) {
+    return Object.freeze({
+      accepted: false,
+      reason: 'STALE_REVISION',
+      runChanged: false,
+      incoming
+    });
+  }
+
+  return Object.freeze({
+    accepted: true,
+    reason: runChanged ? 'NEW_RUN' : 'CURRENT_RUN',
+    runChanged,
+    incoming
+  });
+}
+
+export function shouldPresentPvp1Summary({
+  state = null,
+  activeRunId = '',
+  lastSummaryRunId = ''
+} = {}) {
+  const match = normalizePvp1State(state || {});
+  const expectedRunId = String(activeRunId || '').trim();
+  return Boolean(
+    match.phase === 'COMPLETE'
+    && expectedRunId
+    && match.runId === expectedRunId
+    && match.runId !== String(lastSummaryRunId || '')
+  );
+}
+
 export function derivePvp1Presentation(state, localPlayerId, now = Date.now()) {
   const match = normalizePvp1State(state);
   const local = match.players[String(localPlayerId || '')] || null;
+  const timestamp = Number(now || 0);
   const countdownMs = match.phase === 'COUNTDOWN'
-    ? Math.max(0, match.roundStartsAt - Number(now || 0))
+    ? Math.max(0, match.roundStartsAt - timestamp)
     : 0;
   const countdownSeconds = countdownMs > 0
     ? Math.max(1, Math.ceil(countdownMs / 1000))
     : 0;
-  const roundRemainingMs = match.phase === 'ACTIVE'
-    ? Math.max(0, match.roundEndsAt - Number(now || 0))
+  // The Worker keeps COUNTDOWN until the first authoritative shot. Locally,
+  // movement and firing must unlock when the published start time is reached.
+  const effectivePhase = (
+    match.phase === 'COUNTDOWN'
+    && match.roundStartsAt > 0
+    && timestamp >= match.roundStartsAt
+  ) ? 'ACTIVE' : match.phase;
+  const roundRemainingMs = effectivePhase === 'ACTIVE'
+    ? Math.max(0, match.roundEndsAt - timestamp)
     : 0;
   const roundRemainingSeconds = Math.max(0, Math.ceil(roundRemainingMs / 1000));
 
   return Object.freeze({
     mode: match.mode,
-    active: match.mode === PVP1_MODE && match.phase !== 'COMPLETE',
-    phase: match.phase,
+    active: match.mode === PVP1_MODE && effectivePhase !== 'COMPLETE',
+    phase: effectivePhase,
     round: match.round,
     bestOf: match.bestOf,
     alphaWins: match.teams.ALPHA.roundWins,
@@ -130,16 +203,57 @@ export function derivePvp1Presentation(state, localPlayerId, now = Date.now()) {
     inputBlocked: Boolean(
       !local
       || local.alive !== true
-      || match.phase === 'COUNTDOWN'
-      || match.phase === 'COMPLETE'
+      || effectivePhase === 'COUNTDOWN'
+      || effectivePhase === 'COMPLETE'
     ),
     winnerTeam: match.winnerTeam,
-    headline: match.phase === 'COMPLETE'
+    headline: effectivePhase === 'COMPLETE'
       ? `${match.winnerTeam || 'MATCH'} WINS`
-      : match.phase === 'COUNTDOWN'
+      : effectivePhase === 'COUNTDOWN'
         ? `ROUND ${match.round} · ${countdownSeconds || 1}`
         : `ROUND ${match.round} · FIGHT`
   });
+}
+
+export function selectPvp1SpawnIndex(points = [], team = 'ALPHA', slot = 0) {
+  const normalized = (Array.isArray(points) ? points : [])
+    .map((point, index) => ({
+      index,
+      x: Number(point?.x),
+      z: Number(point?.z)
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.z));
+  if (normalized.length === 0) return -1;
+  if (normalized.length === 1) return normalized[0].index;
+
+  let anchorA = normalized[0];
+  let anchorB = normalized[1];
+  let maximumDistanceSquared = -1;
+  for (let left = 0; left < normalized.length - 1; left += 1) {
+    for (let right = left + 1; right < normalized.length; right += 1) {
+      const dx = normalized[right].x - normalized[left].x;
+      const dz = normalized[right].z - normalized[left].z;
+      const distanceSquared = dx * dx + dz * dz;
+      if (distanceSquared > maximumDistanceSquared) {
+        maximumDistanceSquared = distanceSquared;
+        anchorA = normalized[left];
+        anchorB = normalized[right];
+      }
+    }
+  }
+
+  const axisX = anchorB.x - anchorA.x;
+  const axisZ = anchorB.z - anchorA.z;
+  const ordered = [...normalized].sort((left, right) => {
+    const leftProjection = (left.x - anchorA.x) * axisX + (left.z - anchorA.z) * axisZ;
+    const rightProjection = (right.x - anchorA.x) * axisX + (right.z - anchorA.z) * axisZ;
+    return leftProjection - rightProjection || left.index - right.index;
+  });
+  const normalizedTeam = normalizePvp1Team(team) || 'ALPHA';
+  const side = normalizedTeam === 'BRAVO' ? [...ordered].reverse() : ordered;
+  const sideCapacity = Math.max(1, Math.ceil(side.length / 2));
+  const cleanSlot = Math.max(0, Math.floor(Number(slot) || 0));
+  return side[cleanSlot % sideCapacity]?.index ?? side[0].index;
 }
 
 export function pvp1PrivateRoomPolicy(gameMode) {

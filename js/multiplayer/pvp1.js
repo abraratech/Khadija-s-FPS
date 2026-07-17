@@ -4,9 +4,11 @@ import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import {
   PVP1_MODE,
   PVP1_PATCH,
+  classifyPvp1StateUpdate,
   derivePvp1Presentation,
   normalizePvp1State,
-  roomUsesPvp1
+  roomUsesPvp1,
+  shouldPresentPvp1Summary
 } from './pvp1_core.js';
 
 function cleanText(value, fallback = '', limit = 120) {
@@ -38,6 +40,9 @@ export class MultiplayerPvp1Manager {
     this.lastRevision = -1;
     this.unsubscribe = [];
     this.hud = null;
+    this.matchSummary = null;
+    this.lastSummaryRunId = '';
+    this.activeRunId = '';
 
     this.unsubscribe.push(
       this.eventBus?.on(MULTIPLAYER_EVENTS.ROOM_STATE_CHANGED, (event) => {
@@ -82,12 +87,31 @@ export class MultiplayerPvp1Manager {
   beginRun() {
     this.room = this.runtime?.room?.getSnapshot?.() || this.room;
     this.active = this.isPvpRoom(this.room);
+    this.activeRunId = String(
+      this.session?.run?.runId
+      || this.room?.runId
+      || ''
+    );
     this.lastSpawnSerial = 0;
+    this.hideMatchSummary();
+    this.setNativeHudIsolation(this.active);
     if (!this.active) {
       this.hideHud();
       return false;
     }
-    if (this.room?.pvp) {
+
+    if (this.activeRunId && this.state?.runId !== this.activeRunId) {
+      this.state = null;
+      this.lastRevision = -1;
+    }
+
+    if (
+      this.room?.pvp
+      && (
+        !this.activeRunId
+        || String(this.room.pvp.runId || '') === this.activeRunId
+      )
+    ) {
       this.applyState(this.room.pvp, { force: true });
     }
     this.ensureHud();
@@ -99,6 +123,7 @@ export class MultiplayerPvp1Manager {
     this.active = false;
     this.lastSpawnSerial = 0;
     this.hideHud();
+    this.setNativeHudIsolation(false);
   }
 
   syncRoom(room) {
@@ -116,6 +141,27 @@ export class MultiplayerPvp1Manager {
   handleControl(action, payload) {
     if (action === 'pvp-state' && payload?.state) {
       this.applyState(payload.state);
+      return;
+    }
+
+    // The room lobby opens immediately after the authoritative run-ended
+    // control. Re-present the embedded final PvP state here so a dropped or
+    // reordered hit/state packet cannot suppress the match result.
+    if (action === 'run-ended' && payload?.pvp) {
+      const finalState = normalizePvp1State(payload.pvp);
+      const expectedRunId = String(
+        this.activeRunId
+        || this.session?.run?.runId
+        || finalState.runId
+        || ''
+      );
+      if (finalState.runId && finalState.runId === expectedRunId) {
+        this.applyState(finalState, { force: true });
+        if (finalState.phase === 'COMPLETE') {
+          this.lastSummaryRunId = finalState.runId;
+          this.showMatchSummary(finalState);
+        }
+      }
       return;
     }
 
@@ -159,17 +205,34 @@ export class MultiplayerPvp1Manager {
   }
 
   applyState(value, { force = false } = {}) {
-    const next = normalizePvp1State(value);
-    if (
-      !force
-      && this.state
-      && next.revision < this.state.revision
-    ) return false;
+    const activeRunId = this.active
+      ? String(this.activeRunId || this.session?.run?.runId || '')
+      : '';
+    const decision = classifyPvp1StateUpdate({
+      currentState: this.state,
+      incomingState: value,
+      activeRunId,
+      force
+    });
+    if (!decision.accepted) return false;
 
+    const next = decision.incoming;
+    if (decision.runChanged) {
+      this.lastSpawnSerial = 0;
+      this.lastRevision = -1;
+    }
     this.state = next;
     this.lastRevision = next.revision;
     if (this.active || this.session?.run?.active === true) {
       this.applyLocalState();
+    }
+    if (shouldPresentPvp1Summary({
+      state: next,
+      activeRunId,
+      lastSummaryRunId: this.lastSummaryRunId
+    })) {
+      this.lastSummaryRunId = next.runId;
+      this.showMatchSummary(next);
     }
     this.render();
     return true;
@@ -298,6 +361,120 @@ export class MultiplayerPvp1Manager {
     if (this.hud) this.hud.hidden = true;
   }
 
+  ensureMatchSummary() {
+    if (typeof document === 'undefined') return null;
+    if (this.matchSummary?.isConnected) return this.matchSummary;
+
+    const overlay = document.createElement('section');
+    overlay.id = 'ka-pvp-match-summary';
+    overlay.hidden = true;
+    overlay.setAttribute('aria-live', 'polite');
+    Object.assign(overlay.style, {
+      // Multiplayer lobby: 12000; Co-Op scoreboard: 12100. The final PvP
+      // result must remain above both until CONTINUE reveals the lobby below.
+      position: 'fixed', inset: '0', zIndex: '12250', display: 'grid',
+      placeItems: 'center', padding: '20px', background: 'rgba(1, 5, 12, .72)',
+      fontFamily: 'system-ui, sans-serif', color: '#edf8ff'
+    });
+
+    const panel = document.createElement('div');
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-modal', 'true');
+    panel.setAttribute('aria-label', 'PvP match summary');
+    Object.assign(panel.style, {
+      width: 'min(520px, 92vw)', padding: '24px', borderRadius: '14px',
+      border: '1px solid rgba(0, 212, 255, .48)',
+      background: 'linear-gradient(180deg, rgba(7, 19, 32, .98), rgba(3, 9, 18, .98))',
+      boxShadow: '0 20px 70px rgba(0,0,0,.62)', textAlign: 'center'
+    });
+
+    const outcome = document.createElement('div');
+    outcome.dataset.pvpSummaryOutcome = '';
+    Object.assign(outcome.style, {
+      fontWeight: '900', fontSize: '28px', letterSpacing: '.08em', color: '#ffd166'
+    });
+    const score = document.createElement('div');
+    score.dataset.pvpSummaryScore = '';
+    Object.assign(score.style, {
+      marginTop: '10px', fontWeight: '800', fontSize: '20px', color: '#9edbff'
+    });
+    const stats = document.createElement('div');
+    stats.dataset.pvpSummaryStats = '';
+    Object.assign(stats.style, {
+      marginTop: '16px', padding: '12px', borderRadius: '9px',
+      background: 'rgba(255,255,255,.06)', lineHeight: '1.7', color: '#d8edf7'
+    });
+    const note = document.createElement('div');
+    note.textContent = 'Competitive result recorded by arena authority.';
+    Object.assign(note.style, { marginTop: '12px', fontSize: '12px', color: '#83a9ba' });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'CONTINUE';
+    Object.assign(close.style, {
+      marginTop: '18px', minWidth: '170px', padding: '11px 20px',
+      borderRadius: '8px', border: '1px solid #00d4ff',
+      background: 'rgba(0, 212, 255, .12)', color: '#edf8ff',
+      fontWeight: '800', cursor: 'pointer'
+    });
+    close.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.hideMatchSummary();
+    });
+    panel.append(outcome, score, stats, note, close);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    this.matchSummary = overlay;
+    return overlay;
+  }
+
+  hideMatchSummary() {
+    if (!this.matchSummary) return false;
+    this.matchSummary.hidden = true;
+    this.matchSummary.style.display = 'none';
+    this.matchSummary.setAttribute('aria-hidden', 'true');
+    this.matchSummary.querySelector('button')?.blur?.();
+    return true;
+  }
+
+  setNativeHudIsolation(active) {
+    if (typeof document === 'undefined') return false;
+    document.body?.classList?.toggle('ka-pvp-native-hud-isolated', active === true);
+    return true;
+  }
+
+  showMatchSummary(state = this.state) {
+    const overlay = this.ensureMatchSummary();
+    if (!overlay || !state) return false;
+    const local = state.players?.[this.localPlayerId] || null;
+    const winner = cleanText(state.winnerTeam, 'MATCH');
+    const outcome = !local
+      ? 'MATCH COMPLETE'
+      : winner === local.team
+        ? 'VICTORY'
+        : state.winnerTeam
+          ? 'DEFEAT'
+          : 'DRAW';
+    const outcomeEl = overlay.querySelector('[data-pvp-summary-outcome]');
+    const scoreEl = overlay.querySelector('[data-pvp-summary-score]');
+    const statsEl = overlay.querySelector('[data-pvp-summary-stats]');
+    if (outcomeEl) outcomeEl.textContent = outcome;
+    if (scoreEl) {
+      scoreEl.textContent = `ALPHA ${state.teams?.ALPHA?.roundWins || 0} — ${state.teams?.BRAVO?.roundWins || 0} BRAVO`;
+    }
+    if (statsEl) {
+      statsEl.textContent = local
+        ? `${local.team} · KILLS ${local.eliminations} · DEATHS ${local.deaths} · DAMAGE ${local.damageDealt} · HEADSHOTS ${local.headshots}`
+        : `${winner} WINS THE MATCH`;
+    }
+    overlay.dataset.runId = state.runId || '';
+    overlay.hidden = false;
+    overlay.style.display = 'grid';
+    overlay.setAttribute('aria-hidden', 'false');
+    overlay.querySelector('button')?.focus?.();
+    return true;
+  }
+
   render(now = Date.now()) {
     const hud = this.ensureHud();
     if (!hud) return;
@@ -333,5 +510,10 @@ export class MultiplayerPvp1Manager {
     this.unsubscribe.length = 0;
     this.hud?.remove?.();
     this.hud = null;
+    this.matchSummary?.remove?.();
+    this.matchSummary = null;
+    this.lastSummaryRunId = '';
+    this.activeRunId = '';
+    this.setNativeHudIsolation(false);
   }
 }

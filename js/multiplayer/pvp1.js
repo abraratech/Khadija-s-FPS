@@ -122,6 +122,7 @@ export class MultiplayerPvp1Manager {
   endRun() {
     this.active = false;
     this.lastSpawnSerial = 0;
+    this.adapter.clearPvpRules?.();
     this.hideHud();
     this.setNativeHudIsolation(false);
   }
@@ -162,6 +163,35 @@ export class MultiplayerPvp1Manager {
           this.showMatchSummary(finalState);
         }
       }
+      return;
+    }
+
+    if (action === 'pvp-pickup-result') {
+      const event = payload?.event || {};
+      if (event.playerId === this.localPlayerId) {
+        const label = event.kind === 'WEAPON'
+          ? `${cleanText(event.weaponFamily, 'WEAPON')} ACQUIRED`
+          : event.kind === 'ARMOR'
+            ? `ARMOR ACQUIRED · ${Math.max(0, Number(event.detail) || 0)}`
+            : 'MAX AMMO ACQUIRED';
+        this.adapter.showToast?.(
+          label,
+          event.kind === 'ARMOR' ? '#69a7ff' : event.kind === 'AMMO' ? '#ffd166' : '#7df2a5',
+          1700
+        );
+      } else {
+        this.adapter.showToast?.(
+          `${cleanText(event.playerTeam, 'OPPONENT')} CLAIMED ${event.kind === 'WEAPON' ? cleanText(event.weaponFamily, 'WEAPON') : cleanText(event.kind, 'PICKUP')}`,
+          '#ff9cab',
+          1100
+        );
+      }
+      if (payload?.state) this.applyState(payload.state, { force: true });
+      return;
+    }
+
+    if (action === 'pvp-pickup-rejected') {
+      this.adapter.handlePvpPickupRejected?.(payload || {});
       return;
     }
 
@@ -273,7 +303,29 @@ export class MultiplayerPvp1Manager {
       this.player.isADS = false;
       this.player.isSprinting = false;
     }
+    this.adapter.applyPvpRules?.({
+      state: this.state,
+      localPlayer: local,
+      localPlayerId: this.localPlayerId
+    });
     this.adapter.syncHud?.();
+    return true;
+  }
+
+  requestPickup(pickupId) {
+    if (!this.active || !this.state) return false;
+    const presentation = derivePvp1Presentation(
+      this.state,
+      this.localPlayerId,
+      Date.now()
+    );
+    if (presentation.inputBlocked) return false;
+    const cleanPickupId = cleanText(pickupId, '', 80);
+    if (!cleanPickupId) return false;
+    this.transport?.sendControl?.('pvp-pickup', {
+      pickupId: cleanPickupId,
+      claimId: `${this.localPlayerId}:${this.state.runId}:${cleanPickupId}:${Date.now().toString(36)}`
+    });
     return true;
   }
 
@@ -501,7 +553,11 @@ export class MultiplayerPvp1Manager {
         ? ` · ${presentation.roundRemainingSeconds}s`
         : '';
       const protection = presentation.spawnProtected ? ' · SPAWN PROTECTED' : '';
-      status.textContent = `${presentation.headline}${clock} · ${presentation.localTeam || 'UNASSIGNED'}${protection}`;
+      const armor = presentation.localArmor > 0 ? ` · ARMOR ${presentation.localArmor}` : '';
+      const weapon = presentation.localWeapons?.length > 1
+        ? ` · ${presentation.localWeapons[presentation.localWeapons.length - 1]}`
+        : ' · PISTOL';
+      status.textContent = `${presentation.headline}${clock} · ${presentation.localTeam || 'UNASSIGNED'}${armor}${weapon}${protection}`;
     }
   }
 

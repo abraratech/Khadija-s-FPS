@@ -68,6 +68,7 @@ assert.equal(result.accepted, false);
 assert.equal(result.reason, 'FRIENDLY_FIRE_BLOCKED');
 
 for (let win = 0; win < 3; win += 1) {
+  state.players.alpha.unlockedWeapons = ['PISTOL', 'SNIPER'];
   const at = state.roundStartsAt + 2100;
   result = resolvePvp1Shot({
     state,

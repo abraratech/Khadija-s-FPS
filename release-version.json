@@ -2,9 +2,9 @@
   "schema": 1,
   "product": "Khadija's Arena",
   "productVersion": "1.1.0-pvp2",
-  "releaseId": "pvp3-r1-public-room-discovery-matchmaking-repair",
-  "releaseSequence": 2026071803,
-  "sourceBaselineSha": "646725ef129c00a476748e6745d96a2642ba8900",
+  "releaseId": "pvp3-r2-dedicated-rules-neutral-pickups",
+  "releaseSequence": 2026071804,
+  "sourceBaselineSha": "484eccb0b96d396da839e7c25000f21cbcbc41fc",
   "updateDelivery": true,
   "workerChangeRequired": true
 }

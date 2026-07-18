@@ -1,5 +1,13 @@
 // PVP.1 R1 — isolated Team Elimination client policy core.
 
+import {
+  PVP3_R2_ARMOR_CAP,
+  PVP3_R2_PATCH,
+  normalizePvp3MapId,
+  normalizePvp3PickupState,
+  normalizePvp3WeaponList
+} from './pvp3_rules_core.js';
+
 export const PVP1_PATCH = 'pvp1-r1-isolated-team-elimination-foundation';
 export const PVP1_PRODUCT_VERSION = '1.1.0-pvp1';
 export const PVP1_SOURCE_BASELINE_SHA = 'ddbdc3a4b478aa26a515e2dd8dbfc9449885c466';
@@ -58,6 +66,11 @@ export function normalizePvp1State(value = {}) {
       deaths: Math.max(0, Math.floor(Number(entry?.deaths) || 0)),
       damageDealt: Math.max(0, Math.floor(Number(entry?.damageDealt) || 0)),
       headshots: Math.max(0, Math.floor(Number(entry?.headshots) || 0)),
+      armor: Math.max(0, Number(entry?.armor) || 0),
+      maxArmor: Math.max(1, Number(entry?.maxArmor) || PVP3_R2_ARMOR_CAP),
+      unlockedWeapons: normalizePvp3WeaponList(entry?.unlockedWeapons),
+      ammoSerial: Math.max(0, Math.floor(Number(entry?.ammoSerial) || 0)),
+      pickupSerial: Math.max(0, Math.floor(Number(entry?.pickupSerial) || 0)),
       spawnProtectedUntil: Math.max(0, Number(entry?.spawnProtectedUntil) || 0),
       spawnSerial: Math.max(1, Math.floor(Number(entry?.spawnSerial) || 1))
     });
@@ -68,6 +81,8 @@ export function normalizePvp1State(value = {}) {
     patch: String(source.patch || PVP1_PATCH),
     mode: normalizePvp1Mode(source.mode),
     runId: String(source.runId || ''),
+    mapId: normalizePvp3MapId(source.mapId),
+    rulesPatch: String(source.rulesPatch || PVP3_R2_PATCH),
     phase: ['COUNTDOWN', 'ACTIVE', 'COMPLETE'].includes(source.phase)
       ? source.phase
       : 'COUNTDOWN',
@@ -87,6 +102,7 @@ export function normalizePvp1State(value = {}) {
       })
     }),
     players: Object.freeze(normalizedPlayers),
+    pickups: normalizePvp3PickupState(source.pickups),
     revision: Math.max(0, Math.floor(Number(source.revision) || 0)),
     updatedAt: Math.max(0, Number(source.updatedAt) || 0),
     reason: String(source.reason || '')
@@ -195,6 +211,13 @@ export function derivePvp1Presentation(state, localPlayerId, now = Date.now()) {
     localEliminations: local?.eliminations ?? 0,
     localDeaths: local?.deaths ?? 0,
     localHeadshots: local?.headshots ?? 0,
+    localArmor: local?.armor ?? 0,
+    localMaxArmor: local?.maxArmor ?? PVP3_R2_ARMOR_CAP,
+    localWeapons: local?.unlockedWeapons || Object.freeze(['PISTOL']),
+    localAmmoSerial: local?.ammoSerial ?? 0,
+    localPickupSerial: local?.pickupSerial ?? 0,
+    pickups: match.pickups,
+    rulesPatch: match.rulesPatch,
     spawnProtected: Boolean(local && Number(now || 0) < local.spawnProtectedUntil),
     countdownMs,
     roundRemainingMs,

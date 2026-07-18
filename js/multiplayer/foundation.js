@@ -1096,6 +1096,11 @@ export function attemptMultiplayerPvpShot(payload = {}) {
   return pvp1Manager?.attemptShot?.(payload) === true;
 }
 
+export function requestMultiplayerPvpPickup(pickupId) {
+  if (!initialized) return false;
+  return pvp1Manager?.requestPickup?.(pickupId) === true;
+}
+
 export function getMultiplayerPvpSnapshot() {
   if (!initialized) return null;
   return pvp1Manager?.getSnapshot?.() || null;

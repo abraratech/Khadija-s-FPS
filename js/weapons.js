@@ -13,6 +13,16 @@ import {
   getMapGameplayInteractionPrompt,
   activateMapGameplayInteractable
 } from './map_gameplay.js';
+import {
+  PVP3_R2_ARMOR_CAP,
+  PVP3_R2_PATCH,
+  PVP3_R2_PICKUP_CLAIM_RADIUS,
+  normalizePvp3PickupState,
+  normalizePvp3WeaponList,
+  pvp3FlatDistance,
+  pvp3PickupAvailable,
+  pvp3PickupLabel
+} from './multiplayer/pvp3_rules_core.js';
 import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './weapons/pistol.js';
 import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './weapons/smg.js';
 import { createProceduralRifleMesh, updateProceduralRifleReloadParts, resetProceduralRifleParts, updateProceduralRifleFireParts } from './weapons/rifle.js';
@@ -66,6 +76,12 @@ let flashVisibleT = 0;
 const activeShops = [];
 let multiplayerEconomy = null;
 let multiplayerPvp = null;
+const activePvpPickupMeshes = new Map();
+const pvpPickupRequestAt = new Map();
+let lastPvpLoadoutSignature = '';
+let lastPvpAmmoSerial = -1;
+let lastPvpSpawnSerial = -1;
+let lastPvpRulesRunId = '';
 let networkShotSequence = 0;
 const openedNetworkDoorIds = new Set();
 const networkRepairAwards = new Map();
@@ -89,6 +105,240 @@ export function configureMultiplayerPvp(config = null) {
   multiplayerPvp = config && typeof config === 'object'
     ? config
     : null;
+}
+
+function isPvpRulesRun() {
+  return multiplayerPvp?.isActive?.() === true;
+}
+
+function getPvpRulesSnapshot() {
+  return multiplayerPvp?.getSnapshot?.() || null;
+}
+
+function getLocalPvpRulesState(snapshot = getPvpRulesSnapshot()) {
+  const state = snapshot?.state || null;
+  const localPlayerId = multiplayerPvp?.getLocalPlayerId?.() || '';
+  const localPlayer = state?.players?.[localPlayerId] || null;
+  return { snapshot, state, localPlayerId, localPlayer };
+}
+
+function pvpPickupTone(pickup) {
+  if (pickup?.kind === 'ARMOR') return 0x5f8fff;
+  if (pickup?.kind === 'AMMO') return 0xffd166;
+  const family = String(pickup?.weaponFamily || '').toUpperCase();
+  if (family === 'SHOTGUN') return 0xff7a59;
+  if (family === 'SNIPER') return 0xd38bff;
+  if (family === 'SMG') return 0x55e6b8;
+  return 0x66c7ff;
+}
+
+function createPvpPickupMesh(pickup) {
+  const tone = pvpPickupTone(pickup);
+  const group = new THREE.Group();
+  group.name = `pvp-pickup-${pickup.id}`;
+  group.userData.pvpPickupId = pickup.id;
+  group.userData.baseY = Number(pickup.y) || 0.55;
+
+  const baseMaterial = new THREE.MeshStandardMaterial({
+    color: 0x111827,
+    emissive: tone,
+    emissiveIntensity: 0.22,
+    metalness: 0.62,
+    roughness: 0.34
+  });
+  const glowMaterial = new THREE.MeshStandardMaterial({
+    color: tone,
+    emissive: tone,
+    emissiveIntensity: 1.25,
+    metalness: 0.18,
+    roughness: 0.22,
+    transparent: true,
+    opacity: 0.92
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.84, 0.18, 18), baseMaterial);
+  base.position.y = 0.09;
+  group.add(base);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.60, 0.055, 8, 24), glowMaterial);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.22;
+  group.add(ring);
+  group.userData.ring = ring;
+
+  if (pickup.kind === 'WEAPON') {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.18, 0.22), glowMaterial);
+    body.position.y = 0.76;
+    body.rotation.y = -0.35;
+    group.add(body);
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.07, 0.08), glowMaterial);
+    barrel.position.set(0.54, 0.78, -0.20);
+    barrel.rotation.y = -0.35;
+    group.add(barrel);
+  } else if (pickup.kind === 'ARMOR') {
+    const shield = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), glowMaterial);
+    shield.scale.set(0.82, 1.15, 0.34);
+    shield.position.y = 0.78;
+    group.add(shield);
+  } else {
+    const crate = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.46, 0.46), glowMaterial);
+    crate.position.y = 0.62;
+    group.add(crate);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.70, 0.10, 0.50), baseMaterial);
+    band.position.y = 0.62;
+    group.add(band);
+  }
+
+  const light = new THREE.PointLight(tone, 1.15, 5.5, 2);
+  light.position.y = 0.85;
+  group.add(light);
+  group.position.set(Number(pickup.x) || 0, Number(pickup.y) || 0.55, Number(pickup.z) || 0);
+  scene.add(group);
+  return group;
+}
+
+function clearPvpPickupMeshes() {
+  activePvpPickupMeshes.forEach((mesh) => scene.remove(mesh));
+  activePvpPickupMeshes.clear();
+  pvpPickupRequestAt.clear();
+}
+
+function reconcilePvpInventory(localPlayer, { force = false } = {}) {
+  if (!localPlayer) return false;
+  const desired = normalizePvp3WeaponList(localPlayer.unlockedWeapons);
+  const signature = desired.join('|');
+  const spawnSerial = Math.max(0, Number(localPlayer.spawnSerial) || 0);
+  const runChanged = lastPvpRulesRunId !== String(getPvpRulesSnapshot()?.state?.runId || '');
+  if (!force && !runChanged && signature === lastPvpLoadoutSignature && spawnSerial === lastPvpSpawnSerial) {
+    return false;
+  }
+
+  player.inventory.forEach((weapon) => {
+    if (weapon?.meshGroup) camera.remove(weapon.meshGroup);
+  });
+  player.inventory = desired
+    .map((family) => WEAPON_DEFS[family])
+    .filter(Boolean)
+    .map(createWeaponInstance);
+  if (player.inventory.length === 0) player.inventory.push(createWeaponInstance(WEAPON_DEFS.PISTOL));
+  const equipIndex = player.inventory.length > 1 ? player.inventory.length - 1 : 0;
+  equipWeapon(equipIndex);
+  lastPvpLoadoutSignature = signature || 'PISTOL';
+  lastPvpSpawnSerial = spawnSerial;
+  lastPvpRulesRunId = String(getPvpRulesSnapshot()?.state?.runId || '');
+  return true;
+}
+
+export function applyPvpRulesState({ state = null, localPlayer = null } = {}) {
+  if (!state || String(state.rulesPatch || '') !== PVP3_R2_PATCH || !localPlayer) return false;
+  reconcilePvpInventory(localPlayer);
+  const ammoSerial = Math.max(0, Number(localPlayer.ammoSerial) || 0);
+  if (lastPvpAmmoSerial >= 0 && ammoSerial > lastPvpAmmoSerial) {
+    player.inventory.forEach(refillWeaponAmmo);
+    const active = getActiveWeapon();
+    if (active) updateAmmoHUD(active.ammo, active.reserve, active.maxAmmo);
+  }
+  lastPvpAmmoSerial = ammoSerial;
+  return true;
+}
+
+export function clearPvpRulesPresentation() {
+  clearPvpPickupMeshes();
+  lastPvpLoadoutSignature = '';
+  lastPvpAmmoSerial = -1;
+  lastPvpSpawnSerial = -1;
+  lastPvpRulesRunId = '';
+  return true;
+}
+
+export function handlePvpPickupRejected(payload = {}) {
+  const pickupId = String(payload.pickupId || '');
+  if (pickupId) {
+    const wait = Math.max(250, Math.min(2_500, Number(payload.retryAfterMs) || 650));
+    pvpPickupRequestAt.set(pickupId, performance.now() + wait);
+  }
+  return true;
+}
+
+function syncPvpPickupVisuals(dt = 0) {
+  const { state, localPlayer } = getLocalPvpRulesState();
+  if (!state || String(state.rulesPatch || '') !== PVP3_R2_PATCH) {
+    clearPvpPickupMeshes();
+    return false;
+  }
+  applyPvpRulesState({ state, localPlayer });
+  const pickups = normalizePvp3PickupState(state.pickups);
+  const validIds = new Set(pickups.map((pickup) => pickup.id));
+  activePvpPickupMeshes.forEach((mesh, pickupId) => {
+    if (!validIds.has(pickupId)) {
+      scene.remove(mesh);
+      activePvpPickupMeshes.delete(pickupId);
+    }
+  });
+
+  const now = Date.now();
+  pickups.forEach((pickup, index) => {
+    let mesh = activePvpPickupMeshes.get(pickup.id);
+    if (!mesh) {
+      mesh = createPvpPickupMesh(pickup);
+      activePvpPickupMeshes.set(pickup.id, mesh);
+    }
+    mesh.visible = state.phase !== 'COMPLETE' && pvp3PickupAvailable(pickup, now);
+    if (!mesh.visible) return;
+    mesh.rotation.y += Math.max(0, Number(dt) || 0) * (0.55 + index * 0.06);
+    mesh.position.y = (Number(pickup.y) || 0.55) + Math.sin((now + index * 330) * 0.0032) * 0.10;
+    if (mesh.userData.ring) mesh.userData.ring.rotation.z += Math.max(0, Number(dt) || 0) * 0.8;
+  });
+  return true;
+}
+
+function updatePvpPickupClaim() {
+  const { state, localPlayer } = getLocalPvpRulesState();
+  if (!state || !localPlayer || localPlayer.alive !== true) {
+    setInteractionPrompt(false);
+    return false;
+  }
+  const now = Date.now();
+  const pickups = normalizePvp3PickupState(state.pickups)
+    .filter((pickup) => pvp3PickupAvailable(pickup, now));
+  let closest = null;
+  let distance = Infinity;
+  pickups.forEach((pickup) => {
+    const current = pvp3FlatDistance(player.pos, pickup);
+    if (current < distance) {
+      closest = pickup;
+      distance = current;
+    }
+  });
+  if (!closest || distance > 4.2) {
+    setInteractionPrompt(false);
+    return false;
+  }
+
+  const label = pvp3PickupLabel(closest);
+  const ownsWeapon = closest.kind === 'WEAPON'
+    && normalizePvp3WeaponList(localPlayer.unlockedWeapons).includes(closest.weaponFamily);
+  const armorFull = closest.kind === 'ARMOR'
+    && Number(localPlayer.armor || 0) >= Number(localPlayer.maxArmor || PVP3_R2_ARMOR_CAP);
+  if (ownsWeapon) {
+    setInteractionPrompt(true, `${label} · ALREADY EQUIPPED`);
+    return true;
+  }
+  if (armorFull) {
+    setInteractionPrompt(true, `${label} · ARMOR FULL`);
+    return true;
+  }
+
+  setInteractionPrompt(true, distance <= PVP3_R2_PICKUP_CLAIM_RADIUS
+    ? `CLAIMING ${label}`
+    : `MOVE OVER ${label} TO CLAIM`);
+  if (distance > 1.80) return true;
+  const requestNow = performance.now();
+  const nextAllowed = Number(pvpPickupRequestAt.get(closest.id)) || 0;
+  if (requestNow < nextAllowed) return true;
+  pvpPickupRequestAt.set(closest.id, requestNow + 900);
+  multiplayerPvp?.requestPickup?.(closest.id);
+  return true;
 }
 
 function isOnlineEconomyRun() {
@@ -993,6 +1243,7 @@ export function buildGun() {
   activeShops.forEach(s => scene.remove(s.mesh));
   player.inventory = [];
   activeShops.length = 0;
+  clearPvpPickupMeshes();
   openedNetworkDoorIds.clear();
   networkRepairAwards.clear();
   networkShotSequence = 0;
@@ -1000,6 +1251,13 @@ export function buildGun() {
   const pistolDef = WEAPON_DEFS.PISTOL;
   player.inventory.push(createWeaponInstance(pistolDef));
   equipWeapon(0);
+
+  if (isPvpRulesRun()) {
+    const { state, localPlayer } = getLocalPvpRulesState();
+    applyPvpRulesState({ state, localPlayer });
+    syncPvpPickupVisuals(0);
+    return;
+  }
 
 // ── SPAWN PROCEDURAL SHOPS ──
   const gameplayPoints = getCurrentGameplayPoints();
@@ -2086,6 +2344,10 @@ function checkMultiplayerWorldInteractions(checkInteractionPressed = false) {
 }
 
 export function checkWorldInteractions(checkInteractionPressed = false) {
+  if (isPvpRulesRun()) {
+    updatePvpPickupClaim();
+    return;
+  }
   if (isOnlineEconomyRun()) {
     checkMultiplayerWorldInteractions(checkInteractionPressed);
     return;
@@ -3546,6 +3808,10 @@ function updateNetworkShopVisuals(dt) {
 }
 
 export function updateShops(dt) {
+  if (isPvpRulesRun()) {
+    syncPvpPickupVisuals(dt);
+    return;
+  }
   if (isOnlineEconomyRun() && isEconomyAuthority()) {
     barricades.forEach((barricade) => {
       barricade.cooldown = Math.max(

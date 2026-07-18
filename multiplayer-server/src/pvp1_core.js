@@ -1,5 +1,20 @@
 // PVP.1 R1 — isolated private Team Elimination authority core.
 
+import {
+  PVP3_R2_ARMOR_CAP,
+  PVP3_R2_PATCH,
+  PVP3_R2_PICKUP_CLAIM_RADIUS,
+  PVP3_R2_POSE_FRESHNESS_MS,
+  createPvp3PickupState,
+  normalizePvp3MapId,
+  normalizePvp3PickupState,
+  normalizePvp3WeaponFamily,
+  normalizePvp3WeaponList,
+  pvp3FlatDistance,
+  pvp3PickupAvailable,
+  pvp3PlayerOwnsWeapon
+} from './pvp3_rules_core.js';
+
 export const PVP1_PATCH = 'pvp1-r1-isolated-team-elimination-foundation';
 export const PVP1_MODE = 'pvp-team-elimination';
 export const PVP1_SCHEMA = 1;
@@ -114,6 +129,7 @@ export function assignPvp1Teams(players = []) {
 
 export function createPvp1MatchState({
   runId,
+  mapId = 'grid_bunker',
   players = [],
   now = Date.now()
 } = {}) {
@@ -131,6 +147,11 @@ export function createPvp1MatchState({
       deaths: 0,
       damageDealt: 0,
       headshots: 0,
+      armor: 0,
+      maxArmor: PVP3_R2_ARMOR_CAP,
+      unlockedWeapons: ['PISTOL'],
+      ammoSerial: 0,
+      pickupSerial: 0,
       spawnProtectedUntil: Math.max(0, finite(now)) + 5000,
       lastShotAt: 0,
       lastShotId: '',
@@ -143,6 +164,8 @@ export function createPvp1MatchState({
     patch: PVP1_PATCH,
     mode: PVP1_MODE,
     runId: cleanId(runId, 200),
+    mapId: normalizePvp3MapId(mapId),
+    rulesPatch: PVP3_R2_PATCH,
     phase: 'COUNTDOWN',
     round: 1,
     bestOf: PVP1_BEST_OF,
@@ -159,6 +182,10 @@ export function createPvp1MatchState({
       BRAVO: { roundWins: 0 }
     },
     players: playerState,
+    pickups: createPvp3PickupState(mapId, {
+      availableAt: Math.max(0, finite(now)) + 3800,
+      round: 1
+    }),
     revision: 1,
     updatedAt: Math.max(0, finite(now))
   };
@@ -182,11 +209,21 @@ function resetPlayersForRound(state) {
   const protectedUntil = Math.max(0, finite(state.roundStartsAt)) + PVP1_SPAWN_PROTECTION_MS;
   Object.values(state.players || {}).forEach((entry) => {
     entry.health = entry.maxHealth || 100;
+    entry.armor = 0;
+    entry.maxArmor = PVP3_R2_ARMOR_CAP;
+    entry.unlockedWeapons = ['PISTOL'];
+    entry.ammoSerial = Math.max(0, Math.floor(finite(entry.ammoSerial))) + 1;
+    entry.pickupSerial = Math.max(0, Math.floor(finite(entry.pickupSerial))) + 1;
     entry.alive = true;
     entry.lastShotAt = 0;
     entry.lastShotId = '';
     entry.spawnProtectedUntil = protectedUntil;
     entry.spawnSerial = Math.max(1, Math.floor(finite(entry.spawnSerial, 1))) + 1;
+  });
+  state.rulesPatch = PVP3_R2_PATCH;
+  state.pickups = createPvp3PickupState(state.mapId, {
+    availableAt: Math.max(0, finite(state.roundStartsAt)) + 800,
+    round: state.round
   });
 }
 
@@ -247,6 +284,9 @@ export function resolvePvp1Shot({
   }
 
   const family = normalizePvp1WeaponFamily(weaponFamily);
+  if (!pvp3PlayerOwnsWeapon(shooter, family)) {
+    return { accepted: false, reason: 'WEAPON_NOT_OWNED', state };
+  }
   const profile = PVP1_WEAPON_PROFILES[family];
   const elapsed = timestamp - Math.max(0, finite(shooter.lastShotAt));
   if (shooter.lastShotAt > 0 && elapsed < profile.minimumIntervalMs) {
@@ -271,8 +311,13 @@ export function resolvePvp1Shot({
     1,
     Math.round(scaled * (headshot === true ? profile.headshotMultiplier : 1))
   );
-  const appliedDamage = Math.min(target.health, damage);
-  target.health = Math.max(0, target.health - damage);
+  const armorBefore = Math.max(0, finite(target.armor));
+  const armorAbsorbed = Math.min(armorBefore, damage);
+  target.armor = Math.max(0, armorBefore - armorAbsorbed);
+  const healthDamage = Math.max(0, damage - armorAbsorbed);
+  const appliedHealthDamage = Math.min(target.health, healthDamage);
+  const appliedDamage = armorAbsorbed + appliedHealthDamage;
+  target.health = Math.max(0, target.health - healthDamage);
   target.alive = target.health > 0;
   shooter.damageDealt += appliedDamage;
   if (headshot === true) shooter.headshots = Math.max(0, finite(shooter.headshots)) + 1;
@@ -331,6 +376,8 @@ export function resolvePvp1Shot({
       headshot: headshot === true,
       distance: shotDistance,
       damage: appliedDamage,
+      armorAbsorbed,
+      remainingArmor: Math.max(0, finite(target.armor)),
       remainingHealth: target.health,
       eliminated,
       roundEnded,
@@ -342,6 +389,110 @@ export function resolvePvp1Shot({
         ALPHA: state.teams.ALPHA.roundWins,
         BRAVO: state.teams.BRAVO.roundWins
       },
+      serverTime: timestamp
+    }
+  };
+}
+
+export function resolvePvp3PickupClaim({
+  state,
+  playerId,
+  pickupId,
+  playerPosition = null,
+  poseUpdatedAt = 0,
+  claimId = '',
+  now = Date.now()
+} = {}) {
+  if (!state || state.mode !== PVP1_MODE) {
+    return { accepted: false, reason: 'NOT_PVP_MATCH', state };
+  }
+  if (state.phase === 'COMPLETE') {
+    return { accepted: false, reason: 'MATCH_COMPLETE', state };
+  }
+  const timestamp = Math.max(0, finite(now));
+  if (timestamp < Math.max(0, finite(state.roundStartsAt))) {
+    return {
+      accepted: false,
+      reason: 'ROUND_COUNTDOWN',
+      retryAfterMs: Math.ceil(state.roundStartsAt - timestamp),
+      state
+    };
+  }
+
+  const player = state.players?.[cleanId(playerId)];
+  if (!player) return { accepted: false, reason: 'PLAYER_NOT_FOUND', state };
+  if (player.alive !== true) return { accepted: false, reason: 'PLAYER_ELIMINATED', state };
+  if (!playerPosition || timestamp - Math.max(0, finite(poseUpdatedAt)) > PVP3_R2_POSE_FRESHNESS_MS) {
+    return { accepted: false, reason: 'POSITION_UNAVAILABLE', retryAfterMs: 80, state };
+  }
+
+  state.rulesPatch = PVP3_R2_PATCH;
+  state.mapId = normalizePvp3MapId(state.mapId);
+  state.pickups = normalizePvp3PickupState(
+    Array.isArray(state.pickups) && state.pickups.length
+      ? state.pickups
+      : createPvp3PickupState(state.mapId, { availableAt: state.roundStartsAt, round: state.round })
+  ).map((entry) => ({ ...entry }));
+  const targetId = cleanId(pickupId, 80);
+  const pickup = state.pickups.find((entry) => entry.id === targetId);
+  if (!pickup) return { accepted: false, reason: 'PICKUP_NOT_FOUND', state };
+  if (!pvp3PickupAvailable(pickup, timestamp)) {
+    return {
+      accepted: false,
+      reason: 'PICKUP_COOLDOWN',
+      retryAfterMs: Math.ceil(Math.max(0, pickup.availableAt - timestamp)),
+      state
+    };
+  }
+  const distance = pvp3FlatDistance(playerPosition, pickup);
+  if (distance > PVP3_R2_PICKUP_CLAIM_RADIUS) {
+    return { accepted: false, reason: 'PICKUP_OUT_OF_RANGE', state };
+  }
+
+  let detail = '';
+  if (pickup.kind === 'WEAPON') {
+    const family = normalizePvp3WeaponFamily(pickup.weaponFamily, 'RIFLE');
+    if (pvp3PlayerOwnsWeapon(player, family)) {
+      return { accepted: false, reason: 'WEAPON_ALREADY_OWNED', state };
+    }
+    player.unlockedWeapons = normalizePvp3WeaponList(['PISTOL', family]);
+    player.pickupSerial = Math.max(0, Math.floor(finite(player.pickupSerial))) + 1;
+    detail = family;
+  } else if (pickup.kind === 'ARMOR') {
+    const armor = Math.max(0, finite(player.armor));
+    const cap = Math.max(1, finite(player.maxArmor, PVP3_R2_ARMOR_CAP));
+    if (armor >= cap) return { accepted: false, reason: 'ARMOR_FULL', state };
+    player.armor = cap;
+    player.maxArmor = cap;
+    player.pickupSerial = Math.max(0, Math.floor(finite(player.pickupSerial))) + 1;
+    detail = String(cap);
+  } else {
+    player.ammoSerial = Math.max(0, Math.floor(finite(player.ammoSerial))) + 1;
+    player.pickupSerial = Math.max(0, Math.floor(finite(player.pickupSerial))) + 1;
+    detail = 'FULL';
+  }
+
+  pickup.claimedBy = player.playerId;
+  pickup.claimSerial = Math.max(0, Math.floor(finite(pickup.claimSerial))) + 1;
+  pickup.availableAt = timestamp + Math.max(4_000, Math.floor(finite(pickup.respawnMs, 20_000)));
+  pickup.round = Math.max(1, Math.floor(finite(state.round, 1)));
+  state.revision = Math.max(0, Math.floor(finite(state.revision))) + 1;
+  state.updatedAt = timestamp;
+
+  return {
+    accepted: true,
+    reason: 'CLAIMED',
+    state,
+    event: {
+      claimId: cleanId(claimId, 200),
+      pickupId: pickup.id,
+      kind: pickup.kind,
+      weaponFamily: pickup.weaponFamily || '',
+      detail,
+      playerId: player.playerId,
+      playerTeam: player.team,
+      availableAt: pickup.availableAt,
+      round: state.round,
       serverTime: timestamp
     }
   };

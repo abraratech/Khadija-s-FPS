@@ -112,12 +112,20 @@ def main() -> None:
     if int(release_descriptor.get("releaseSequence", 0)) != int(current_release.get("release_sequence", -1)):
         raise SystemExit("Current production release sequence mismatch")
     pvp3 = manifest.get("pvp3", {})
-    if current_release.get("patch") == "pvp3-r1-public-room-discovery-matchmaking-repair":
+    if current_release.get("patch") == "pvp3-r2-dedicated-rules-neutral-pickups":
         if pvp3.get("patch") != current_release.get("patch"):
-            raise SystemExit("PVP.3 production manifest patch mismatch")
-        for field in ("difficulty_free_pvp", "explicit_room_browser_filters", "atomic_open_room_find", "worker_change_required", "frontend_and_worker"):
+            raise SystemExit("PVP.3 R2 production manifest patch mismatch")
+        for field in (
+            "difficulty_free_pvp", "explicit_room_browser_filters", "atomic_open_room_find",
+            "dedicated_pvp_ruleset", "coop_shops_disabled_in_pvp", "coop_perks_disabled_in_pvp",
+            "coop_economy_disabled_in_pvp", "pvp_doors_open_at_round_load",
+            "neutral_weapon_pickups", "neutral_ammo_pickups", "neutral_armor_pickups",
+            "server_authoritative_pickup_claims", "server_authoritative_weapon_ownership",
+            "armor_damage_absorption", "pickups_reset_every_round", "equal_pistol_round_start",
+            "worker_change_required", "frontend_and_worker"
+        ):
             if pvp3.get(field) is not True:
-                raise SystemExit(f"PVP.3 production policy mismatch: {field}")
+                raise SystemExit(f"PVP.3 R2 production policy mismatch: {field}")
     post_seal1 = manifest.get("post_seal1", {})
     if current_release.get("patch") == "post-seal1-r1-console-lifecycle-form-hygiene":
         if post_seal1.get("patch") != current_release.get("patch"):

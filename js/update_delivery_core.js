@@ -1,8 +1,8 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'pvp3-r1-public-room-discovery-matchmaking-repair',
-  releaseSequence: 2026071803,
+  releaseId: 'pvp3-r2-dedicated-rules-neutral-pickups',
+  releaseSequence: 2026071804,
   productVersion: '1.1.0-pvp2'
 });
 

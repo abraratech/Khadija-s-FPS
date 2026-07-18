@@ -25,7 +25,8 @@ import {
   normalizePvp1Mode,
   pvp1ForfeitTeam,
   resolvePvp1RoundTimeout,
-  resolvePvp1Shot
+  resolvePvp1Shot,
+  resolvePvp3PickupClaim
 } from './pvp1_core.js';
 import {
   PVP2_MODE,
@@ -276,14 +277,23 @@ const PVP2_SERVER_INFO = Object.freeze({
 });
 
 const PVP3_SERVER_INFO = Object.freeze({
-  schema: 1,
-  patch: 'pvp3-r1-public-room-discovery-matchmaking-repair',
+  schema: 2,
+  patch: 'pvp3-r2-dedicated-rules-neutral-pickups',
+  discoveryPatch: 'pvp3-r1-public-room-discovery-matchmaking-repair',
   difficultyFreePvpDiscovery: true,
   immediatePublicListingSync: true,
   regionAwareCustomRooms: true,
   atomicOpenRoomFind: true,
   ratedQuickMatchSeparatedFromUnrankedRooms: true,
-  endpoints: ['/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join']
+  dedicatedPvpRuleset: true,
+  coopEconomyDisabledInPvp: true,
+  neutralPickups: ['WEAPON', 'AMMO', 'ARMOR'],
+  serverAuthoritativePickupClaims: true,
+  serverAuthoritativeWeaponOwnership: true,
+  roundPickupReset: true,
+  armorDamageAbsorption: true,
+  websocketRoomCreationHotfix: 'pvp3-r2-1-null-matchmaking-region-fix',
+  endpoints: ['/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join', 'ws:pvp-pickup']
 });
 
 
@@ -789,6 +799,7 @@ function defaultRoom(roomCode) {
     authorityCheckpoint: null,
     finalSummary: null,
     matchmaking: null,
+    directoryRegion: 'ZZ',
     revision: 0,
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -834,6 +845,11 @@ export class ArenaRoom extends DurableObject {
           this.room.settings.allowLateJoin = false;
         }
         this.room.pvp ||= null;
+        this.room.directoryRegion = String(
+          this.room.directoryRegion
+          || this.room.matchmaking?.region
+          || 'ZZ'
+        ).toUpperCase().slice(0, 16);
         this.room.kickedPlayers ||= {};
         this.room.directoryAdmissions ||= {};
         this.room.virtualPlayers ||= {};
@@ -1176,7 +1192,7 @@ export class ArenaRoom extends DurableObject {
       )
         ? requestedGameMode
         : 'coop';
-      this.room.matchmaking.region = String(
+      this.room.directoryRegion = String(
         request.headers.get('x-ka-region')
         || request.cf?.country
         || request.cf?.continent
@@ -2278,6 +2294,61 @@ isAuthorityCheckpointEnvelope(envelope) {
       return;
     }
 
+    if (action === 'pvp-pickup') {
+      if (
+        this.room.status !== 'in-run'
+        || !isPvp1Mode(this.room.settings?.gameMode)
+        || !this.room.pvp
+      ) {
+        this.sendError(socket, 'PvP pickup rejected outside an active PvP match.');
+        return;
+      }
+
+      const result = resolvePvp3PickupClaim({
+        state: this.room.pvp,
+        playerId: player.playerId,
+        pickupId: payload.pickupId,
+        playerPosition: player.pvpPose?.position || null,
+        poseUpdatedAt: player.pvpPose?.updatedAt || 0,
+        claimId: payload.claimId,
+        now: Date.now()
+      });
+
+      if (!result.accepted) {
+        socket.send(JSON.stringify({
+          kind: 'control',
+          action: 'pvp-pickup-rejected',
+          payload: {
+            pickupId: String(payload.pickupId || '').slice(0, 80),
+            reason: result.reason,
+            retryAfterMs: Math.max(0, Number(result.retryAfterMs) || 0)
+          }
+        }));
+        return;
+      }
+
+      this.room.pvp = result.state;
+      if (this.room.authorityCheckpoint) {
+        this.room.authorityCheckpoint.pvp = this.room.pvp;
+        this.room.authorityCheckpoint.updatedAt = Date.now();
+      }
+      await this.commit();
+      this.broadcast({
+        kind: 'control',
+        action: 'pvp-pickup-result',
+        payload: {
+          event: result.event,
+          state: this.room.pvp
+        }
+      });
+      this.broadcast({
+        kind: 'control',
+        action: 'pvp-state',
+        payload: { state: this.room.pvp }
+      });
+      return;
+    }
+
     if (action === 'pvp-shot') {
       if (
         this.room.status !== 'in-run'
@@ -2394,6 +2465,7 @@ isAuthorityCheckpointEnvelope(envelope) {
         });
         this.room.pvp = createPvp1MatchState({
           runId: this.room.runId,
+          mapId: this.room.settings.mapId,
           players: connected,
           now: Date.now()
         });
@@ -2871,7 +2943,7 @@ isAuthorityCheckpointEnvelope(envelope) {
       allowLateJoin: room.settings?.allowLateJoin !== false,
       locked: room.settings?.locked === true,
       hostConnected: host?.connected === true,
-      region: room.matchmaking?.region || 'ZZ',
+      region: room.matchmaking?.region || room.directoryRegion || 'ZZ',
       createdAt: room.createdAt || Date.now(),
       updatedAt: room.updatedAt || Date.now()
     };

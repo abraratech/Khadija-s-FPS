@@ -55,9 +55,9 @@ POST_LAUNCH4_RELEASE_SEQUENCE = 2026071801
 POST_SEAL1_PATCH = "post-seal1-r1-console-lifecycle-form-hygiene"
 POST_SEAL1_SOURCE_BASELINE_SHA = "cf13dce795e0d3f623cc27c01656bb24d5dd44c9"
 POST_SEAL1_RELEASE_SEQUENCE = 2026071802
-PVP3_PATCH = 'pvp3-r1-public-room-discovery-matchmaking-repair'
-PVP3_SOURCE_BASELINE_SHA = '646725ef129c00a476748e6745d96a2642ba8900'
-PVP3_RELEASE_SEQUENCE = 2026071803
+PVP3_PATCH = 'pvp3-r2-dedicated-rules-neutral-pickups'
+PVP3_SOURCE_BASELINE_SHA = '484eccb0b96d396da839e7c25000f21cbcbc41fc'
+PVP3_RELEASE_SEQUENCE = 2026071804
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -493,13 +493,27 @@ def main() -> None:
             "frontend_only": True
         },
         "pvp3": {
-            "schema": 1,
+            "schema": 2,
             "patch": PVP3_PATCH,
+            "discovery_patch": "pvp3-r1-public-room-discovery-matchmaking-repair",
             "source_baseline_sha": PVP3_SOURCE_BASELINE_SHA,
             "release_sequence": PVP3_RELEASE_SEQUENCE,
             "difficulty_free_pvp": True,
             "explicit_room_browser_filters": True,
             "atomic_open_room_find": True,
+            "dedicated_pvp_ruleset": True,
+            "coop_shops_disabled_in_pvp": True,
+            "coop_perks_disabled_in_pvp": True,
+            "coop_economy_disabled_in_pvp": True,
+            "pvp_doors_open_at_round_load": True,
+            "neutral_weapon_pickups": True,
+            "neutral_ammo_pickups": True,
+            "neutral_armor_pickups": True,
+            "server_authoritative_pickup_claims": True,
+            "server_authoritative_weapon_ownership": True,
+            "armor_damage_absorption": True,
+            "pickups_reset_every_round": True,
+            "equal_pistol_round_start": True,
             "worker_change_required": True,
             "frontend_and_worker": True
         },

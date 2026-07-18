@@ -1,10 +1,10 @@
 // PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/main.js
-import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing } from './map.js';
+import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, doors, openDoor, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, damageEnemyForBot, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
-import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, configureMultiplayerPvp, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
+import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, configureMultiplayerPvp, applyPvpRulesState, clearPvpRulesPresentation, handlePvpPickupRejected, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import {
   areTeamAlertCaptionsEnabled,
   getMasterVolumePercent,
@@ -94,7 +94,7 @@ import {
   consumeTutorialEvents,
   recordTutorialAction
 } from './tutorial.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, getMultiplayerCoopStatsSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession, getMultiplayerGameMode, isMultiplayerPvpRun, attemptMultiplayerPvpShot, getMultiplayerPvpSnapshot } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, getMultiplayerCoopStatsSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession, getMultiplayerGameMode, isMultiplayerPvpRun, attemptMultiplayerPvpShot, requestMultiplayerPvpPickup, getMultiplayerPvpSnapshot } from './multiplayer/foundation.js';
 
 import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js';
 // POST.1A: live voice was removed from the player-facing build. Text chat remains.
@@ -230,7 +230,10 @@ initializeMultiplayerFoundation(player, {
   pvpAdapter: {
     showToast: showStatusToast,
     syncHud: syncHudFromPlayer,
-    placePvpSpawn
+    placePvpSpawn,
+    applyPvpRules: applyPvpRulesState,
+    clearPvpRules: clearPvpRulesPresentation,
+    handlePvpPickupRejected
   }
 });
 initMultiplayerQuickMessageWheel({
@@ -251,18 +254,21 @@ configureMultiplayerEconomy({
 });
 configureMultiplayerPvp({
   isActive: isMultiplayerPvpRun,
-  fireShot: attemptMultiplayerPvpShot
+  fireShot: attemptMultiplayerPvpShot,
+  getSnapshot: getMultiplayerPvpSnapshot,
+  getLocalPlayerId: getLocalMultiplayerPlayerId,
+  requestPickup: requestMultiplayerPvpPickup
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
 window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
-window.KHADIJA_PVP_PATCH = 'pvp2-r2-public-custom-pvp-rooms';
-window.KHADIJA_PVP_HOTFIX = 'pvp2-r2-public-custom-pvp-rooms';
+window.KHADIJA_PVP_PATCH = 'pvp3-r2-dedicated-rules-neutral-pickups';
+window.KHADIJA_PVP_HOTFIX = 'pvp3-r2-dedicated-rules-neutral-pickups';
 window.KHADIJA_MULTIPLAYER_LAUNCH_UI_PATCH = 'pvp2-r2-1-launch-connection-hardening';
 window.KHADIJA_MULTIPLAYER_HUB_PATCH = 'mpui1-r1-full-section-hub-foundation';
 console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
 console.info('[Multiplayer Patch] final2-r1-full-product-certification');
-console.info('[PvP Patch] pvp2-r2-public-custom-pvp-rooms');
-console.info('[PvP Milestone] pvp2-r2-public-custom-pvp-rooms');
+console.info('[PvP Patch] pvp3-r2-dedicated-rules-neutral-pickups');
+console.info('[PvP Milestone] pvp3-r2-dedicated-rules-neutral-pickups');
 console.info('[Multiplayer Launch UI] pvp2-r2-1-launch-connection-hardening');
 console.info('[Multiplayer Hub] mpui1-r1-full-section-hub-foundation');
 
@@ -1439,6 +1445,10 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     const pvpRun = multiplayerGameMode === 'pvp-team-elimination';
     endMapGameplay();
     buildMap(chosenMap);
+    if (pvpRun) {
+      // Competitive rounds must never depend on zombie points or locked Co-Op gates.
+      while (doors.length > 0) openDoor(doors[0]);
+    }
 
     difficultyMultiplier = parseFloat(document.getElementById('diff-select')?.value) || 1.0;
     configureEconomyBalance(difficultyMultiplier, {

@@ -28,8 +28,10 @@ assert.match(build, /"_headers"/);
 assert.match(verifier, /release-version\.json/);
 assert.match(verifier, /Cache-Control/);
 assert.match(headers, /\/index\.html[\s\S]*no-cache, no-store, must-revalidate/);
-assert.equal(release.releaseId, 'post-launch4-r1-update-delivery-cache-safety');
-assert.equal(release.releaseSequence, 2026071801);
+assert.equal(release.schema, 1);
+assert.ok(release.releaseSequence >= 2026071801);
+assert.match(core, new RegExp(release.releaseId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+assert.match(core, new RegExp(`releaseSequence:\\s*${release.releaseSequence}`));
 assert.equal(multiplayerRelease.postLaunch4.patch, 'post-launch4-r1-update-delivery-cache-safety');
 assert.equal(multiplayerRelease.postLaunch4.workerChangeRequired, false);
 

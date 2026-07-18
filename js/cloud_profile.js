@@ -2279,27 +2279,49 @@ export function initCloudProfile({ showToast = null } = {}) {
     if (!receipt) return;
     void commitCloudProgressionReceipt(receipt);
   });
-  window.addEventListener('pagehide', () => syncCloudProfile('pagehide'));
-  window.addEventListener('beforeunload', () => syncCloudProfile('beforeunload'));
+  const stopLifecycleTimers = () => {
+    if (syncTimer) {
+      clearInterval(syncTimer);
+      syncTimer = null;
+    }
+    if (remoteTimer) {
+      clearInterval(remoteTimer);
+      remoteTimer = null;
+    }
+    clearRemoteRetryTimer();
+    releaseRemoteLease();
+  };
+  const startLifecycleTimers = () => {
+    if (!syncTimer) {
+      syncTimer = setInterval(() => {
+        if (document.visibilityState !== 'hidden') syncCloudProfile('periodic');
+      }, AUTO_SYNC_MS);
+    }
+    if (!remoteTimer) {
+      remoteTimer = setInterval(() => {
+        if (document.visibilityState !== 'hidden' && getRemoteCredentials().valid) {
+          void syncCloudProfileRemote('periodic');
+          if (readProgressionReceiptQueue().length) void drainProgressionReceiptQueue();
+        }
+      }, REMOTE_SYNC_MS);
+    }
+  };
+
+  window.addEventListener('pagehide', () => {
+    syncCloudProfile('pagehide');
+    stopLifecycleTimers();
+  });
+  window.addEventListener('pageshow', () => {
+    startLifecycleTimers();
+    if (getRemoteCredentials().valid) {
+      void retryCloudSyncQueue();
+      if (readProgressionReceiptQueue().length) void drainProgressionReceiptQueue();
+    }
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') syncCloudProfile('visibility-hidden');
   });
-
-  syncTimer = setInterval(() => {
-    if (document.visibilityState !== 'hidden') syncCloudProfile('periodic');
-  }, AUTO_SYNC_MS);
-  remoteTimer = setInterval(() => {
-    if (document.visibilityState !== 'hidden' && getRemoteCredentials().valid) {
-      void syncCloudProfileRemote('periodic');
-      if (readProgressionReceiptQueue().length) void drainProgressionReceiptQueue();
-    }
-  }, REMOTE_SYNC_MS);
-  window.addEventListener('unload', () => {
-    if (syncTimer) clearInterval(syncTimer);
-    if (remoteTimer) clearInterval(remoteTimer);
-    clearRemoteRetryTimer();
-    releaseRemoteLease();
-  }, { once: true });
+  startLifecycleTimers();
 
   queueMicrotask(async () => {
     syncCloudProfile('boot-complete');

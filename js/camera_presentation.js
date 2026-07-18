@@ -521,6 +521,9 @@ function buildSettingsPanel(parent, suffix) {
   distanceText.textContent = 'DISTANCE';
   const slider = document.createElement('input');
   slider.type = 'range';
+  slider.id = `ka-camera-distance-${suffix}`;
+  slider.name = `camera-distance-${suffix}`;
+  slider.setAttribute('aria-label', 'Third-person camera distance');
   slider.min = '3';
   slider.max = '6';
   slider.step = '0.1';

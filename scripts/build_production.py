@@ -52,6 +52,9 @@ LAUNCH2_SOURCE_BASELINE_SHA = "aada1736cb2f404bda6e079bf175495957f19e1a"
 POST_LAUNCH4_PATCH = "post-launch4-r1-update-delivery-cache-safety"
 POST_LAUNCH4_SOURCE_BASELINE_SHA = "7f9b67e3168ab22c003b696420f1028f1dfa5dd8"
 POST_LAUNCH4_RELEASE_SEQUENCE = 2026071801
+POST_SEAL1_PATCH = "post-seal1-r1-console-lifecycle-form-hygiene"
+POST_SEAL1_SOURCE_BASELINE_SHA = "cf13dce795e0d3f623cc27c01656bb24d5dd44c9"
+POST_SEAL1_RELEASE_SEQUENCE = 2026071802
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -474,6 +477,25 @@ def main() -> None:
             "matchmaking_refresh_deferred": True,
             "worker_change_required": False,
             "frontend_only": True
+        },
+        "post_seal1": {
+            "schema": 1,
+            "patch": POST_SEAL1_PATCH,
+            "source_baseline_sha": POST_SEAL1_SOURCE_BASELINE_SHA,
+            "release_sequence": POST_SEAL1_RELEASE_SEQUENCE,
+            "deprecated_unload_removed": True,
+            "page_lifecycle_bfcache_safe": True,
+            "dynamic_form_field_identity": True,
+            "worker_change_required": False,
+            "frontend_only": True
+        },
+        "current_release": {
+            "schema": 1,
+            "patch": POST_SEAL1_PATCH,
+            "source_baseline_sha": POST_SEAL1_SOURCE_BASELINE_SHA,
+            "release_sequence": POST_SEAL1_RELEASE_SEQUENCE,
+            "release_descriptor": "release-version.json",
+            "worker_change_required": False
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

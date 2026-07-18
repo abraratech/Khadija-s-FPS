@@ -38,6 +38,8 @@ async function copyTextWithFallback(text, sourceElement = null) {
 
   if (typeof document === 'undefined') return { copied: false, selected: false };
   const textarea = document.createElement('textarea');
+  textarea.name = 'room-code-copy-buffer';
+  textarea.autocomplete = 'off';
   textarea.value = value;
   textarea.setAttribute('readonly', '');
   textarea.setAttribute('aria-hidden', 'true');

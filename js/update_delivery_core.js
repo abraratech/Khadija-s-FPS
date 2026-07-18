@@ -1,8 +1,8 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'post-launch4-r1-update-delivery-cache-safety',
-  releaseSequence: 2026071801,
+  releaseId: 'post-seal1-r1-console-lifecycle-form-hygiene',
+  releaseSequence: 2026071802,
   productVersion: '1.1.0-pvp2'
 });
 

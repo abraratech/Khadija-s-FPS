@@ -1005,5 +1005,18 @@
     "gameplayAuthorityUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "postSeal1": {
+    "schema": 1,
+    "patch": "post-seal1-r1-console-lifecycle-form-hygiene",
+    "sourceBaselineSha": "cf13dce795e0d3f623cc27c01656bb24d5dd44c9",
+    "extensionConsoleErrorIsExternal": true,
+    "deprecatedUnloadRemoved": true,
+    "pageLifecycleTimersBfcacheSafe": true,
+    "dynamicFormFieldIdentity": true,
+    "standardAutocompletePreserved": true,
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

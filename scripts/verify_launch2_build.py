@@ -106,10 +106,18 @@ def main() -> None:
         if not (build / required_root).is_file():
             raise SystemExit(f"POST-LAUNCH.4 production root file is missing: {required_root}")
     release_descriptor = json.loads((build / "release-version.json").read_text(encoding="utf-8"))
-    if release_descriptor.get("releaseId") != post_launch4.get("patch"):
-        raise SystemExit("POST-LAUNCH.4 release descriptor mismatch")
-    if int(release_descriptor.get("releaseSequence", 0)) != int(post_launch4.get("release_sequence", -1)):
-        raise SystemExit("POST-LAUNCH.4 release sequence mismatch")
+    current_release = manifest.get("current_release", post_launch4)
+    if release_descriptor.get("releaseId") != current_release.get("patch"):
+        raise SystemExit("Current production release descriptor mismatch")
+    if int(release_descriptor.get("releaseSequence", 0)) != int(current_release.get("release_sequence", -1)):
+        raise SystemExit("Current production release sequence mismatch")
+    post_seal1 = manifest.get("post_seal1", {})
+    if current_release.get("patch") == "post-seal1-r1-console-lifecycle-form-hygiene":
+        if post_seal1.get("patch") != current_release.get("patch"):
+            raise SystemExit("POST-SEAL.1 production manifest patch mismatch")
+        for field in ("deprecated_unload_removed", "page_lifecycle_bfcache_safe", "dynamic_form_field_identity"):
+            if post_seal1.get(field) is not True:
+                raise SystemExit(f"POST-SEAL.1 production policy mismatch: {field}")
     headers_text = (build / "_headers").read_text(encoding="utf-8", errors="replace")
     if "/index.html" not in headers_text or "/release-version.json" not in headers_text:
         raise SystemExit("POST-LAUNCH.4 cache header routes are incomplete")

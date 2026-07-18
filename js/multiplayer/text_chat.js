@@ -197,6 +197,8 @@ export class MultiplayerTextChat {
     const safetyRow = document.createElement('div');
     Object.assign(safetyRow.style, { display: 'flex', gap: '7px', marginBottom: '8px' });
     this.playerSelect = document.createElement('select');
+    this.playerSelect.id = 'ka-text-chat-player-select';
+    this.playerSelect.name = 'text-chat-player-select';
     this.playerSelect.setAttribute('aria-label', 'Choose teammate to mute or unmute');
     Object.assign(this.playerSelect.style, {
       flex: '1', minWidth: '0', padding: '7px 8px', borderRadius: '7px',
@@ -218,6 +220,9 @@ export class MultiplayerTextChat {
     Object.assign(composer.style, { display: 'flex', gap: '7px' });
     this.input = document.createElement('input');
     this.input.type = 'text';
+    this.input.id = 'ka-text-chat-message';
+    this.input.name = 'text-chat-message';
+    this.input.setAttribute('aria-label', 'Team chat message');
     this.input.maxLength = TEXT_CHAT_MAX_LENGTH;
     this.input.placeholder = 'Message team…';
     this.input.autocomplete = 'off';
@@ -533,6 +538,8 @@ export class MultiplayerTextChat {
     Object.assign(composer.style, { display: 'flex', gap: '7px' });
     this.lobbyInput = document.createElement('input');
     this.lobbyInput.type = 'text';
+    this.lobbyInput.id = 'ka-room-chat-message';
+    this.lobbyInput.name = 'room-chat-message';
     this.lobbyInput.maxLength = TEXT_CHAT_MAX_LENGTH;
     this.lobbyInput.placeholder = 'Message room…';
     this.lobbyInput.autocomplete = 'off';

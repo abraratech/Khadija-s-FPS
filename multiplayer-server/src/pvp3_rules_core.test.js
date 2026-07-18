@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   PVP3_R2_ARMOR_CAP,
   PVP3_R2_PATCH,
+  PVP4_R1_PATCH,
   PVP3_R2_PICKUP_CLAIM_RADIUS,
   createPvp3PickupState,
   getPvp3PickupDefinitions,
@@ -29,7 +30,7 @@ let state = createPvp1MatchState({
   ],
   now: 1000
 });
-assert.equal(state.rulesPatch, PVP3_R2_PATCH);
+assert.equal(state.rulesPatch, PVP4_R1_PATCH);
 assert.equal(state.pickups.length, 4);
 assert.deepEqual(state.players.alpha.unlockedWeapons, ['PISTOL']);
 

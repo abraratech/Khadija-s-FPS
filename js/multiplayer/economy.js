@@ -2,11 +2,22 @@
 
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js'; import { getLateJoinCatchUpScore } from './coop_scaling_core.js';
 import { getEconomyBalanceSnapshot, scaleEconomyReward } from '../economy_balance.js';
+import {
+  MPNET1_MAX_TRANSACTION_RESULTS,
+  MPNET1_TRANSACTION_RETENTION_MS,
+  evaluateEmergencyResupply,
+  normalizeEmergencyState,
+  normalizeTransactionResult,
+  pruneTransactionResults
+} from './mpnet1_core.js';
 
 const SNAPSHOT_INTERVAL_MS = 220;
 const REQUEST_WINDOW_MS = 1000;
 const MAX_REQUESTS_PER_WINDOW = 12;
 const MAX_PROCESSED_REQUESTS = 512;
+const PENDING_REQUEST_RETRY_MS = Object.freeze([1200, 2800, 5200, 9000]);
+const TRANSACTION_RESEND_INTERVAL_MS = 900;
+const EMERGENCY_POLL_INTERVAL_MS = 900;
 
 function nowMs() {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -39,10 +50,11 @@ function cloneProfile(profile) {
   };
 }
 
-function makeAccount({ score = 0, kills = 0 } = {}) {
+function makeAccount({ score = 0, kills = 0, emergencyResupply = null } = {}) {
   return {
     score: normalizeScore(score),
     kills: normalizeKills(kills),
+    emergencyResupply: normalizeEmergencyState(emergencyResupply),
     profile: {
       weapons: new Set(['PISTOL']),
       perks: new Set(),
@@ -54,7 +66,8 @@ function makeAccount({ score = 0, kills = 0 } = {}) {
 function makeAccountFromSnapshot(entry = {}) {
   const account = makeAccount({
     score: entry.score,
-    kills: entry.kills
+    kills: entry.kills,
+    emergencyResupply: entry.emergencyResupply
   });
   account.profile.weapons = new Set(entry.profile?.weapons || ['PISTOL']);
   account.profile.perks = new Set(entry.profile?.perks || []);
@@ -83,6 +96,11 @@ export class MultiplayerEconomyManager {
     this.processedRequests = new Set();
     this.requestWindows = new Map();
     this.requestSequence = 0;
+    this.pendingRequests = new Map();
+    this.transactionResults = new Map();
+    this.transactionOrder = [];
+    this.appliedResultIds = new Set();
+    this.lastEmergencyPollAt = -Infinity;
     this.snapshotVersion = 0;
     this.lastSnapshotAt = -Infinity;
     this.snapshotDirty = false;
@@ -95,7 +113,12 @@ export class MultiplayerEconomyManager {
       requestsRejected: 0,
       snapshotsSent: 0,
       snapshotsReceived: 0,
-      combatAwards: 0, lateJoinGrants: 0
+      combatAwards: 0,
+      lateJoinGrants: 0,
+      transactionRetries: 0,
+      transactionReplays: 0,
+      transactionAcks: 0,
+      emergencyResupplies: 0
     };
 
     this.unsubscribe.push(
@@ -135,6 +158,11 @@ export class MultiplayerEconomyManager {
     this.processedRequests.clear();
     this.requestWindows.clear();
     this.requestSequence = 0;
+    this.pendingRequests.clear();
+    this.transactionResults.clear();
+    this.transactionOrder.length = 0;
+    this.appliedResultIds.clear();
+    this.lastEmergencyPollAt = -Infinity;
     this.snapshotVersion = 0;
     this.lastSnapshotAt = -Infinity;
     this.snapshotDirty = true;
@@ -171,6 +199,10 @@ export class MultiplayerEconomyManager {
     this.accounts.clear();
     this.processedRequests.clear();
     this.requestWindows.clear();
+    this.pendingRequests.clear();
+    this.transactionResults.clear();
+    this.transactionOrder.length = 0;
+    this.appliedResultIds.clear();
     this.adapter.endMultiplayerEconomy?.();
   }
 
@@ -233,9 +265,16 @@ export class MultiplayerEconomyManager {
   }
 
   update(now = nowMs()) {
-    if (!this.active || !this.worldReady || !this.isAuthority()) return;
+    if (!this.active || !this.worldReady) return;
 
+    const wallNow = Date.now();
+    this.pollPendingRequests(wallNow);
+    this.pollEmergencyResupply(wallNow);
+
+    if (!this.isAuthority()) return;
     this.ensureRoomAccounts();
+    this.pruneTransactionLedger(wallNow);
+    this.resendUnacknowledgedTransactions(wallNow);
 
     const localId = this.runtime?.localPlayerId;
     const localAccount = localId ? this.ensureAccount(localId) : null;
@@ -258,6 +297,7 @@ export class MultiplayerEconomyManager {
     return {
       score: account.score,
       kills: account.kills,
+      emergencyResupply: normalizeEmergencyState(account.emergencyResupply),
       profile: cloneProfile(account.profile)
     };
   }
@@ -267,15 +307,23 @@ export class MultiplayerEconomyManager {
 
     this.requestSequence += 1;
     const localPlayerId = this.runtime?.localPlayerId;
+    const requestId = cleanId(
+      request.requestId,
+      makeRequestId(localPlayerId, this.requestSequence)
+    );
     const payload = {
       ...request,
-      requestId: cleanId(
-        request.requestId,
-        makeRequestId(localPlayerId, this.requestSequence)
-      ),
+      requestId,
       actor: this.adapter.getLocalPurchaseState?.() || {}
     };
 
+    this.pendingRequests.set(requestId, {
+      requestId,
+      payload,
+      createdAt: Date.now(),
+      nextRetryAt: Date.now() + PENDING_REQUEST_RETRY_MS[0],
+      retryIndex: 0
+    });
     this.metrics.requestsSent += 1;
 
     if (this.isAuthority()) {
@@ -361,7 +409,20 @@ export class MultiplayerEconomyManager {
     const requestId = cleanId(request.requestId);
 
     if (!playerId || !requestId) return;
-    if (this.processedRequests.has(requestId)) return;
+
+    if (request.kind === 'transaction-ack') {
+      this.acknowledgeTransaction(request.transactionId, playerId);
+      return;
+    }
+
+    if (this.processedRequests.has(requestId)) {
+      const cached = this.transactionResults.get(requestId)?.result || null;
+      if (cached) {
+        this.metrics.transactionReplays += 1;
+        this.deliverResult(cached, { replay: true });
+      }
+      return;
+    }
     this.rememberProcessedRequest(requestId);
 
     if (!this.allowRequest(playerId)) {
@@ -370,16 +431,21 @@ export class MultiplayerEconomyManager {
     }
 
     const account = this.ensureAccount(playerId);
-    const playerState = playerId === this.runtime?.localPlayerId
+    const sampledPlayerState = playerId === this.runtime?.localPlayerId
       ? this.adapter.getLocalPurchaseState?.() || {}
       : this.runtime?.sampleRemotePlayer?.(playerId, nowMs())?.state || {};
+    const playerState = {
+      ...(request.actor && typeof request.actor === 'object' ? request.actor : {}),
+      ...sampledPlayerState
+    };
 
     const context = {
       playerId,
       account,
       balance: account?.score || 0,
       playerState,
-      request
+      request,
+      now: Date.now()
     };
 
     const validation = this.adapter.validateMultiplayerInteraction?.(
@@ -428,6 +494,28 @@ export class MultiplayerEconomyManager {
       return;
     }
 
+    const grant = committed.grant || validation.grant || null;
+    let authoritativeState = null;
+    if (grant?.type === 'health') {
+      const resourceCommit = this.adapter.commitAuthorityResourceGrant?.({
+        playerId,
+        requestId,
+        grant,
+        context,
+        now: Date.now()
+      }) || { ok: false, reason: 'HEALTH AUTHORITY UNAVAILABLE' };
+      if (resourceCommit.ok !== true) {
+        this.rejectRequest(
+          playerId,
+          requestId,
+          resourceCommit.reason || 'HEALTH RESTORE FAILED',
+          resourceCommit.feedback || null
+        );
+        return;
+      }
+      authoritativeState = resourceCommit.state || null;
+    }
+
     const reward = normalizeScore(committed.reward ?? validation.reward);
     account.score = Math.max(0, account.score - cost + reward);
     this.applyProfilePatch(account.profile, committed.profilePatch);
@@ -442,11 +530,17 @@ export class MultiplayerEconomyManager {
       reward,
       score: account.score,
       kills: account.kills,
-      grant: committed.grant || validation.grant || null,
-      feedback: committed.feedback || validation.feedback || null
+      grant,
+      authoritativeState,
+      feedback: committed.feedback || validation.feedback || null,
+      committedAt: Date.now()
     };
 
     this.metrics.requestsAccepted += 1;
+    if (request.kind === 'emergency-resupply') {
+      this.metrics.emergencyResupplies += 1;
+    }
+    this.rememberTransactionResult(result);
     this.deliverResult(result);
     this.snapshotDirty = true;
     this.sendSnapshot(true);
@@ -455,7 +549,7 @@ export class MultiplayerEconomyManager {
   rejectRequest(playerId, requestId, reason, feedback = null) {
     const account = this.ensureAccount(playerId);
     this.metrics.requestsRejected += 1;
-    this.deliverResult({
+    const result = {
       kind: 'interaction-result',
       requestId,
       targetPlayerId: playerId,
@@ -463,16 +557,32 @@ export class MultiplayerEconomyManager {
       reason: String(reason || 'REJECTED').slice(0, 120),
       score: account?.score || 0,
       kills: account?.kills || 0,
-      feedback
-    });
+      feedback,
+      committedAt: Date.now()
+    };
+    this.rememberTransactionResult(result);
+    this.deliverResult(result);
   }
 
-  deliverResult(result) {
+  deliverResult(result, { replay = false } = {}) {
     if (result.targetPlayerId === this.runtime?.localPlayerId) {
       this.applyLocalResult(result);
+      const record = result.requestId
+        ? this.transactionResults.get(result.requestId)
+        : null;
+      if (record) record.acknowledged = true;
       return;
     }
-    this.runtime?.sendEconomyResult?.(result);
+    const sent = this.runtime?.sendEconomyResult?.(result);
+    const record = result.requestId
+      ? this.transactionResults.get(result.requestId)
+      : null;
+    if (record) {
+      record.lastSentAt = Date.now();
+      record.sendCount = Math.max(0, Number(record.sendCount) || 0) + 1;
+      if (replay) record.replayed = true;
+    }
+    return sent;
   }
 
   handleRemoteResult(envelope) {
@@ -491,16 +601,29 @@ export class MultiplayerEconomyManager {
   applyLocalResult(result) {
     if (!result || result.targetPlayerId !== this.runtime?.localPlayerId) return;
 
+    const requestId = cleanId(result.requestId);
+    const alreadyApplied = Boolean(
+      requestId && this.appliedResultIds.has(requestId)
+    );
+
     if (this.player) {
       this.player.score = normalizeScore(result.score);
       this.player.kills = normalizeKills(result.kills);
     }
-
     this.adapter.applyLocalEconomyState?.({
       score: normalizeScore(result.score),
       kills: normalizeKills(result.kills)
     });
-    this.adapter.applyMultiplayerInteractionResult?.(result);
+
+    if (!alreadyApplied) {
+      if (requestId) this.appliedResultIds.add(requestId);
+      this.adapter.applyMultiplayerInteractionResult?.(result);
+    }
+
+    if (requestId) {
+      this.pendingRequests.delete(requestId);
+      this.sendTransactionAck(requestId);
+    }
   }
 
   sendSnapshot(force = false) {
@@ -518,6 +641,7 @@ export class MultiplayerEconomyManager {
       playerId,
       score: account.score,
       kills: account.kills,
+      emergencyResupply: normalizeEmergencyState(account.emergencyResupply),
       profile: cloneProfile(account.profile)
     }));
 
@@ -525,6 +649,7 @@ export class MultiplayerEconomyManager {
       version: this.snapshotVersion,
       authorityEpoch: this.authorityEpoch,
       processedRequestIds: Array.from(this.processedRequests).slice(-256),
+      transactionResults: this.getTransactionSnapshot(Date.now()),
       players,
       world: this.adapter.buildMultiplayerWorldState?.() || null,
       economyBalance: getEconomyBalanceSnapshot()
@@ -576,6 +701,7 @@ export class MultiplayerEconomyManager {
     }
 
     this.adapter.applyMultiplayerWorldState?.(snapshot.world || {});
+    this.replaySnapshotTransactions(snapshot);
   }
 
   applyMigrationCheckpoint(checkpoint = null, {
@@ -624,8 +750,12 @@ export class MultiplayerEconomyManager {
       this.adapter.applyMultiplayerProfile?.(local.profile || {});
     }
     this.adapter.applyMultiplayerWorldState?.(snapshot.world || {});
+    this.replaySnapshotTransactions(snapshot);
 
-    if (becameHost) this.sendSnapshot(true);
+    if (becameHost) {
+      this.restoreTransactionLedger(snapshot.transactionResults || []);
+      this.sendSnapshot(true);
+    }
     return true;
   }
 
@@ -640,6 +770,137 @@ export class MultiplayerEconomyManager {
     );
     if (!this.active) return false;
     return this.applyMigrationCheckpoint(checkpoint, { becameHost });
+  }
+
+  rememberTransactionResult(result) {
+    const normalized = normalizeTransactionResult(result, Date.now());
+    if (!normalized) return null;
+    const existing = this.transactionResults.get(normalized.requestId);
+    const record = existing || {
+      result: normalized,
+      acknowledged: false,
+      lastSentAt: 0,
+      sendCount: 0,
+      replayed: false
+    };
+    record.result = normalized;
+    this.transactionResults.set(normalized.requestId, record);
+    if (!existing) this.transactionOrder.push(normalized.requestId);
+    this.pruneTransactionLedger(Date.now());
+    return record;
+  }
+
+  restoreTransactionLedger(values = []) {
+    pruneTransactionResults(values, { now: Date.now() }).forEach((result) => {
+      this.rememberTransactionResult(result);
+    });
+  }
+
+  getTransactionSnapshot(now = Date.now()) {
+    return pruneTransactionResults(
+      this.transactionOrder
+        .map((requestId) => this.transactionResults.get(requestId)?.result)
+        .filter(Boolean),
+      {
+        now,
+        maxRecords: MPNET1_MAX_TRANSACTION_RESULTS,
+        retentionMs: MPNET1_TRANSACTION_RETENTION_MS
+      }
+    );
+  }
+
+  pruneTransactionLedger(now = Date.now()) {
+    const retained = this.getTransactionSnapshot(now);
+    const retainedIds = new Set(retained.map((entry) => entry.requestId));
+    this.transactionOrder = this.transactionOrder.filter((requestId) => retainedIds.has(requestId));
+    Array.from(this.transactionResults.keys()).forEach((requestId) => {
+      if (!retainedIds.has(requestId)) this.transactionResults.delete(requestId);
+    });
+  }
+
+  acknowledgeTransaction(transactionId, playerId) {
+    const id = cleanId(transactionId);
+    const record = id ? this.transactionResults.get(id) : null;
+    if (!record || record.result.targetPlayerId !== cleanId(playerId)) return false;
+    record.acknowledged = true;
+    this.metrics.transactionAcks += 1;
+    return true;
+  }
+
+  sendTransactionAck(transactionId) {
+    if (!transactionId || this.isAuthority()) return false;
+    this.requestSequence += 1;
+    const ack = {
+      requestId: makeRequestId(this.runtime?.localPlayerId, this.requestSequence),
+      kind: 'transaction-ack',
+      transactionId: cleanId(transactionId),
+      actor: {}
+    };
+    return Boolean(this.runtime?.sendEconomyRequest?.(ack));
+  }
+
+  replaySnapshotTransactions(snapshot = {}) {
+    const localPlayerId = this.runtime?.localPlayerId;
+    pruneTransactionResults(snapshot.transactionResults || [], { now: Date.now() })
+      .filter((result) => result.targetPlayerId === localPlayerId)
+      .forEach((result) => this.applyLocalResult(result));
+  }
+
+  resendUnacknowledgedTransactions(now = Date.now()) {
+    this.transactionOrder.forEach((requestId) => {
+      const record = this.transactionResults.get(requestId);
+      if (!record || record.acknowledged) return;
+      if (record.result.targetPlayerId === this.runtime?.localPlayerId) {
+        record.acknowledged = true;
+        return;
+      }
+      if (now - Number(record.lastSentAt || 0) < TRANSACTION_RESEND_INTERVAL_MS) return;
+      this.deliverResult(record.result, { replay: true });
+    });
+  }
+
+  pollPendingRequests(now = Date.now()) {
+    if (this.isAuthority() || !this.pendingRequests.size) return;
+    for (const pending of this.pendingRequests.values()) {
+      if (now < pending.nextRetryAt) continue;
+      this.runtime?.sendStateResyncRequest?.({
+        reason: 'economy-transaction-timeout',
+        transactionId: pending.requestId,
+        requireEconomySnapshot: true
+      });
+      this.runtime?.sendEconomyRequest?.(pending.payload);
+      this.metrics.transactionRetries += 1;
+      pending.retryIndex = Math.min(
+        pending.retryIndex + 1,
+        PENDING_REQUEST_RETRY_MS.length - 1
+      );
+      pending.nextRetryAt = now + PENDING_REQUEST_RETRY_MS[pending.retryIndex];
+    }
+  }
+
+  pollEmergencyResupply(now = Date.now()) {
+    if (now - this.lastEmergencyPollAt < EMERGENCY_POLL_INTERVAL_MS) return;
+    this.lastEmergencyPollAt = now;
+    if (Array.from(this.pendingRequests.values()).some(
+      (entry) => entry.payload?.kind === 'emergency-resupply'
+    )) return;
+
+    const actor = this.adapter.getLocalPurchaseState?.() || {};
+    const localAccount = this.ensureAccount(this.runtime?.localPlayerId);
+    const eligibility = evaluateEmergencyResupply({
+      allAmmoEmpty: actor.allAmmoEmpty === true,
+      balance: localAccount?.score ?? this.player?.score,
+      cheapestAmmoCost: actor.cheapestAmmoCost,
+      currentWave: actor.currentWave,
+      emergencyState: localAccount?.emergencyResupply,
+      now
+    });
+    if (!eligibility.ok) return;
+    this.requestInteraction({
+      kind: 'emergency-resupply',
+      automatic: true,
+      currentWave: actor.currentWave
+    });
   }
 
   applyProfilePatch(profile, patch = null) {
@@ -698,8 +959,11 @@ export class MultiplayerEconomyManager {
         playerId,
         score: account.score,
         kills: account.kills,
+        emergencyResupply: normalizeEmergencyState(account.emergencyResupply),
         profile: cloneProfile(account.profile)
       })),
+      pendingTransactions: this.pendingRequests.size,
+      retainedTransactionResults: this.transactionResults.size,
       metrics: { ...this.metrics },
       economyBalance: getEconomyBalanceSnapshot()
     };

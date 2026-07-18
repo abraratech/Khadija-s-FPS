@@ -36,9 +36,9 @@ assert.match(policy, /unlockedWeapons/);
 assert.match(policy, /localArmor/);
 assert.match(policy, /pickups: normalizePvp3PickupState/);
 
-assert.equal(release.releaseId, 'pvp3-r2-dedicated-rules-neutral-pickups');
-assert.equal(release.releaseSequence, 2026071804);
-assert.equal(release.sourceBaselineSha, '484eccb0b96d396da839e7c25000f21cbcbc41fc');
+assert.ok(release.releaseSequence >= 2026071804);
+assert.equal(metadata.pvp3?.patch, 'pvp3-r2-dedicated-rules-neutral-pickups');
+assert.equal(metadata.pvp3?.sourceBaselineSha, '484eccb0b96d396da839e7c25000f21cbcbc41fc');
 for (const field of [
   'dedicatedPvpRuleset',
   'coopShopsDisabledInPvp',

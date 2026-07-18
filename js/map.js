@@ -9,6 +9,7 @@ import { buildNeonDepot } from './maps/neon_depot.js';
 import { buildParkingGarage } from './maps/parking_garage.js';
 import { buildHospitalWing } from './maps/hospital_wing.js';
 import { buildReactorCourtyard } from './maps/reactor_courtyard.js';
+import { buildCrossfireTerminal, buildFoundryRing, buildSkylineRelay } from './maps/pvp_competitive_arenas.js';
 import { configureMapValidation } from './map_validation.js';
 import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -212,7 +213,24 @@ const MAP_ENVIRONMENTS = {
   bloomStrength: 0.78,
   bloomRadius: 0.34,
   bloomThreshold: 0.81
+  },
+
+  [MAP_IDS.CROSSFIRE_TERMINAL]: {
+    name: 'Crossfire Terminal - Cold Junction', fogColor: 0x07121c, fogDensity: 0.014, clearColor: 0x02070b,
+    ambientColor: 0x78d8ff, ambientIntensity: 0.92, dirColor: 0xffc071, dirIntensity: 0.86,
+    dirPosition: new THREE.Vector3(20, 32, -22), bloomStrength: 0.82, bloomRadius: 0.36, bloomThreshold: 0.79
+  },
+  [MAP_IDS.FOUNDRY_RING]: {
+    name: 'Foundry Ring - Heat Cycle', fogColor: 0x1a0905, fogDensity: 0.015, clearColor: 0x060201,
+    ambientColor: 0xff9b68, ambientIntensity: 0.78, dirColor: 0xffd29a, dirIntensity: 0.92,
+    dirPosition: new THREE.Vector3(-18, 34, 20), bloomStrength: 0.88, bloomRadius: 0.37, bloomThreshold: 0.77
+  },
+  [MAP_IDS.SKYLINE_RELAY]: {
+    name: 'Skyline Relay - Storm Roof', fogColor: 0x06101d, fogDensity: 0.012, clearColor: 0x01050a,
+    ambientColor: 0x7ac9ff, ambientIntensity: 0.88, dirColor: 0xd9efff, dirIntensity: 0.82,
+    dirPosition: new THREE.Vector3(24, 38, -18), bloomStrength: 0.92, bloomRadius: 0.40, bloomThreshold: 0.76
   }
+
 };
 
 const DEFAULT_MAP_ENVIRONMENT = MAP_ENVIRONMENTS[MAP_IDS.GRID_BUNKER];
@@ -765,7 +783,10 @@ const MAP_BUILDERS = {
   [MAP_IDS.NEON_DEPOT]: buildNeonDepot,
   [MAP_IDS.PARKING_GARAGE]: buildParkingGarage,
   [MAP_IDS.HOSPITAL_WING]: buildHospitalWing,
-  [MAP_IDS.REACTOR_COURTYARD]: buildReactorCourtyard
+  [MAP_IDS.REACTOR_COURTYARD]: buildReactorCourtyard,
+  [MAP_IDS.CROSSFIRE_TERMINAL]: buildCrossfireTerminal,
+  [MAP_IDS.FOUNDRY_RING]: buildFoundryRing,
+  [MAP_IDS.SKYLINE_RELAY]: buildSkylineRelay
 };
 
 export function buildMap(mapId = MAP_IDS.GRID_BUNKER) {

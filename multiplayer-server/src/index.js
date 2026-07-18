@@ -277,22 +277,32 @@ const PVP2_SERVER_INFO = Object.freeze({
 });
 
 const PVP3_SERVER_INFO = Object.freeze({
-  schema: 2,
-  patch: 'pvp3-r2-dedicated-rules-neutral-pickups',
+  schema: 3,
+  patch: 'pvp4-r1-competitive-maps-dynamic-hot-drops',
+  pickupFoundationPatch: 'pvp3-r2-dedicated-rules-neutral-pickups',
   discoveryPatch: 'pvp3-r1-public-room-discovery-matchmaking-repair',
+  websocketRoomCreationHotfix: 'pvp3-r2-1-null-matchmaking-region-fix',
   difficultyFreePvpDiscovery: true,
   immediatePublicListingSync: true,
   regionAwareCustomRooms: true,
   atomicOpenRoomFind: true,
   ratedQuickMatchSeparatedFromUnrankedRooms: true,
   dedicatedPvpRuleset: true,
+  competitiveMaps: ['crossfire_terminal', 'foundry_ring', 'skyline_relay'],
+  mirroredTeamSpawns: true,
+  multiLaneCombat: true,
+  elevatedCoverPositions: true,
   coopEconomyDisabledInPvp: true,
   neutralPickups: ['WEAPON', 'AMMO', 'ARMOR'],
   serverAuthoritativePickupClaims: true,
   serverAuthoritativeWeaponOwnership: true,
+  dynamicHotDropRelocation: true,
+  consecutiveLocationReuseBlocked: true,
+  playerProximityRelocationAvoidance: true,
+  arrivalBeaconMs: 3500,
+  reconnectRelocationRestoration: true,
   roundPickupReset: true,
   armorDamageAbsorption: true,
-  websocketRoomCreationHotfix: 'pvp3-r2-1-null-matchmaking-region-fix',
   endpoints: ['/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join', 'ws:pvp-pickup']
 });
 
@@ -2309,6 +2319,9 @@ isAuthorityCheckpointEnvelope(envelope) {
         playerId: player.playerId,
         pickupId: payload.pickupId,
         playerPosition: player.pvpPose?.position || null,
+        playerPositions: Object.values(this.room.players || {})
+          .filter((entry) => entry?.connected === true && entry?.pvpPose?.position)
+          .map((entry) => entry.pvpPose.position),
         poseUpdatedAt: player.pvpPose?.updatedAt || 0,
         claimId: payload.claimId,
         now: Date.now()

@@ -150,7 +150,10 @@ const MPUI2_MAP_IDS = new Set([
   'neon_depot',
   'parking_garage',
   'hospital_wing',
-  'reactor_courtyard'
+  'reactor_courtyard',
+  'crossfire_terminal',
+  'foundry_ring',
+  'skyline_relay'
 ]);
 
 function mapVisualClass(mapId) {

@@ -16,12 +16,16 @@ import {
 import {
   PVP3_R2_ARMOR_CAP,
   PVP3_R2_PATCH,
+  PVP4_R1_PATCH,
   PVP3_R2_PICKUP_CLAIM_RADIUS,
   normalizePvp3PickupState,
   normalizePvp3WeaponList,
+  isSupportedPvpRulesPatch,
   pvp3FlatDistance,
   pvp3PickupAvailable,
-  pvp3PickupLabel
+  pvp3PickupLabel,
+  pvp4PickupTelegraphed,
+  pvp4PickupCountdownSeconds
 } from './multiplayer/pvp3_rules_core.js';
 import { createProceduralPistolMesh, updateProceduralPistolReloadParts, resetProceduralPistolParts } from './weapons/pistol.js';
 import { createProceduralSMGMesh, updateProceduralSMGReloadParts, resetProceduralSMGParts, updateProceduralSMGFireParts } from './weapons/smg.js';
@@ -62,6 +66,7 @@ import {
 } from './run_summary.js';
 import { validateShotRay } from './gameplay_reliability_core.js';
 import { scaleEconomyPrice, scaleEconomyReward } from './economy_balance.js';
+import { evaluateEmergencyResupply } from './multiplayer/mpnet1_core.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -138,6 +143,7 @@ function createPvpPickupMesh(pickup) {
   group.name = `pvp-pickup-${pickup.id}`;
   group.userData.pvpPickupId = pickup.id;
   group.userData.baseY = Number(pickup.y) || 0.55;
+  group.userData.locationId = String(pickup.locationId || '');
 
   const baseMaterial = new THREE.MeshStandardMaterial({
     color: 0x111827,
@@ -165,6 +171,8 @@ function createPvpPickupMesh(pickup) {
   ring.position.y = 0.22;
   group.add(ring);
   group.userData.ring = ring;
+  group.userData.baseMaterial = baseMaterial;
+  group.userData.glowMaterial = glowMaterial;
 
   if (pickup.kind === 'WEAPON') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.18, 0.22), glowMaterial);
@@ -192,6 +200,7 @@ function createPvpPickupMesh(pickup) {
   const light = new THREE.PointLight(tone, 1.15, 5.5, 2);
   light.position.y = 0.85;
   group.add(light);
+  group.userData.light = light;
   group.position.set(Number(pickup.x) || 0, Number(pickup.y) || 0.55, Number(pickup.z) || 0);
   scene.add(group);
   return group;
@@ -230,7 +239,7 @@ function reconcilePvpInventory(localPlayer, { force = false } = {}) {
 }
 
 export function applyPvpRulesState({ state = null, localPlayer = null } = {}) {
-  if (!state || String(state.rulesPatch || '') !== PVP3_R2_PATCH || !localPlayer) return false;
+  if (!state || !isSupportedPvpRulesPatch(state.rulesPatch) || !localPlayer) return false;
   reconcilePvpInventory(localPlayer);
   const ammoSerial = Math.max(0, Number(localPlayer.ammoSerial) || 0);
   if (lastPvpAmmoSerial >= 0 && ammoSerial > lastPvpAmmoSerial) {
@@ -262,7 +271,7 @@ export function handlePvpPickupRejected(payload = {}) {
 
 function syncPvpPickupVisuals(dt = 0) {
   const { state, localPlayer } = getLocalPvpRulesState();
-  if (!state || String(state.rulesPatch || '') !== PVP3_R2_PATCH) {
+  if (!state || !isSupportedPvpRulesPatch(state.rulesPatch)) {
     clearPvpPickupMeshes();
     return false;
   }
@@ -283,11 +292,25 @@ function syncPvpPickupVisuals(dt = 0) {
       mesh = createPvpPickupMesh(pickup);
       activePvpPickupMeshes.set(pickup.id, mesh);
     }
-    mesh.visible = state.phase !== 'COMPLETE' && pvp3PickupAvailable(pickup, now);
+    const available = pvp3PickupAvailable(pickup, now);
+    const telegraphed = pvp4PickupTelegraphed(pickup, now);
+    mesh.visible = state.phase !== 'COMPLETE' && (available || telegraphed);
+    mesh.position.x = Number(pickup.x) || 0;
+    mesh.position.z = Number(pickup.z) || 0;
+    mesh.userData.locationId = String(pickup.locationId || '');
     if (!mesh.visible) return;
-    mesh.rotation.y += Math.max(0, Number(dt) || 0) * (0.55 + index * 0.06);
-    mesh.position.y = (Number(pickup.y) || 0.55) + Math.sin((now + index * 330) * 0.0032) * 0.10;
-    if (mesh.userData.ring) mesh.userData.ring.rotation.z += Math.max(0, Number(dt) || 0) * 0.8;
+    const pulse = 0.5 + Math.sin((now + index * 250) * 0.008) * 0.5;
+    const scale = available ? 1 : 0.72 + pulse * 0.18;
+    mesh.scale.setScalar(scale);
+    if (mesh.userData.glowMaterial) {
+      mesh.userData.glowMaterial.opacity = available ? 0.92 : 0.24 + pulse * 0.20;
+      mesh.userData.glowMaterial.emissiveIntensity = available ? 1.25 : 0.35 + pulse * 0.35;
+    }
+    if (mesh.userData.baseMaterial) mesh.userData.baseMaterial.opacity = available ? 1 : 0.34;
+    if (mesh.userData.light) mesh.userData.light.intensity = available ? 1.15 : 0.24 + pulse * 0.42;
+    mesh.rotation.y += Math.max(0, Number(dt) || 0) * (available ? 0.55 + index * 0.06 : 1.1);
+    mesh.position.y = (Number(pickup.y) || 0.55) + Math.sin((now + index * 330) * 0.0032) * (available ? 0.10 : 0.18);
+    if (mesh.userData.ring) mesh.userData.ring.rotation.z += Math.max(0, Number(dt) || 0) * (available ? 0.8 : 1.7);
   });
   return true;
 }
@@ -299,13 +322,13 @@ function updatePvpPickupClaim() {
     return false;
   }
   const now = Date.now();
-  const pickups = normalizePvp3PickupState(state.pickups)
-    .filter((pickup) => pvp3PickupAvailable(pickup, now));
+  const pickups = normalizePvp3PickupState(state.pickups);
   let closest = null;
   let distance = Infinity;
   pickups.forEach((pickup) => {
     const current = pvp3FlatDistance(player.pos, pickup);
-    if (current < distance) {
+    const visible = pvp3PickupAvailable(pickup, now) || pvp4PickupTelegraphed(pickup, now);
+    if (visible && current < distance) {
       closest = pickup;
       distance = current;
     }
@@ -316,6 +339,10 @@ function updatePvpPickupClaim() {
   }
 
   const label = pvp3PickupLabel(closest);
+  if (!pvp3PickupAvailable(closest, now)) {
+    setInteractionPrompt(true, `${label} ARRIVES IN ${pvp4PickupCountdownSeconds(closest, now)}s · NEW LOCATION`);
+    return true;
+  }
   const ownsWeapon = closest.kind === 'WEAPON'
     && normalizePvp3WeaponList(localPlayer.unlockedWeapons).includes(closest.weaponFamily);
   const armorFull = closest.kind === 'ARMOR'
@@ -1636,7 +1663,27 @@ export function prepareMultiplayerWorld() {
   networkRepairAwards.clear();
 }
 
+function getInventoryAmmoState() {
+  const inventory = Array.isArray(player.inventory) ? player.inventory : [];
+  const weapons = inventory.map((weapon) => ({
+    key: String(weapon?.key || weapon?.name || 'UNKNOWN').slice(0, 40),
+    ammo: Math.max(0, Math.floor(Number(weapon?.ammo) || 0)),
+    reserve: Math.max(0, Math.floor(Number(weapon?.reserve) || 0)),
+    maxAmmo: Math.max(1, Math.floor(Number(weapon?.maxAmmo) || 1))
+  }));
+  const ammoTotal = weapons.reduce(
+    (sum, weapon) => sum + weapon.ammo + weapon.reserve,
+    0
+  );
+  return {
+    ammoTotal,
+    allAmmoEmpty: weapons.length > 0 && ammoTotal <= 0,
+    weapons
+  };
+}
+
 export function getLocalPurchaseState() {
+  const ammoState = getInventoryAmmoState();
   return {
     position: toNetworkVector(player.pos),
     health: Number(player.health) || 0,
@@ -1644,6 +1691,14 @@ export function getLocalPurchaseState() {
     activeWeaponFamily: getWeaponFamily(getActiveWeapon()),
     activeWeaponTier: getWeaponUpgradeTier(getActiveWeapon()),
     ammoFull: isWeaponAmmoFull(getActiveWeapon()),
+    ammoTotal: ammoState.ammoTotal,
+    allAmmoEmpty: ammoState.allAmmoEmpty,
+    ammoByWeapon: ammoState.weapons,
+    cheapestAmmoCost: Math.min(
+      ECONOMY.AMMO_COST,
+      ...Object.values(ECONOMY.WALL_AMMO_COSTS)
+    ),
+    currentWave: Math.max(1, Math.floor(Number(currentWave) || 1)),
     doublePoints: (Number(player.doublePointsTimer) || 0) > 0
   };
 }
@@ -1654,9 +1709,52 @@ function makeInteractionFeedback(title, body, tone = 'ready') {
 
 export function validateMultiplayerInteraction(request = {}, context = {}) {
   const kind = String(request.kind || '');
-  const actorPosition = actorPositionFromContext(context);
   const account = context.account;
 
+  if (kind === 'emergency-resupply') {
+    const actorState = context.playerState || context.request?.actor || {};
+    const cheapestServerAmmoCost = Math.min(
+      ECONOMY.AMMO_COST,
+      ...Object.values(ECONOMY.WALL_AMMO_COSTS)
+    );
+    const eligibility = evaluateEmergencyResupply({
+      allAmmoEmpty: actorState.allAmmoEmpty === true
+        || Math.max(0, Number(actorState.ammoTotal) || 0) === 0,
+      balance: context.balance,
+      cheapestAmmoCost: cheapestServerAmmoCost,
+      currentWave,
+      emergencyState: account?.emergencyResupply,
+      now: context.now || Date.now()
+    });
+    if (!eligibility.ok) {
+      return {
+        ok: false,
+        reason: eligibility.reason,
+        feedback: makeInteractionFeedback(
+          'EMERGENCY RESUPPLY UNAVAILABLE',
+          eligibility.reason,
+          'warning'
+        )
+      };
+    }
+    return {
+      ok: true,
+      cost: 0,
+      emergencyState: eligibility.state,
+      grant: {
+        type: 'emergency-pistol-ammo',
+        weaponKey: 'PISTOL',
+        source: 'EMERGENCY_RESUPPLY'
+      },
+      feedback: makeInteractionFeedback(
+        'EMERGENCY SIDEARM RESUPPLIED',
+        'One magazine loaded · one reserve magazine issued',
+        'ready'
+      )
+    };
+  }
+
+  const actorPosition = actorPositionFromContext(context);
   if (!actorPosition) {
     return { ok: false, reason: 'PLAYER POSITION UNAVAILABLE' };
   }
@@ -1948,6 +2046,13 @@ export function commitMultiplayerInteraction(request = {}, validation = {}, cont
     });
   }
 
+
+  if (kind === 'emergency-resupply' && validation.emergencyState) {
+    context.account.emergencyResupply = {
+      ...validation.emergencyState
+    };
+  }
+
   return {
     ok: true,
     reward: validation.reward || 0,
@@ -1960,6 +2065,29 @@ export function commitMultiplayerInteraction(request = {}, validation = {}, cont
 function applyWeaponGrant(grant) {
   const family = String(grant?.weaponKey || 'PISTOL').replace('_UPG', '');
   const owned = findInventoryWeapon(family);
+
+  if (grant?.type === 'emergency-pistol-ammo') {
+    let pistol = owned.weapon;
+    let pistolIndex = owned.index;
+    if (!pistol) {
+      const def = WEAPON_DEFS.PISTOL;
+      if (!def) return false;
+      pistol = createWeaponInstance(def);
+      player.inventory.push(pistol);
+      pistolIndex = player.inventory.length - 1;
+    }
+    pistol.ammo = Math.max(
+      Number(pistol.ammo) || 0,
+      Number(pistol.maxAmmo) || 10
+    );
+    pistol.reserve = Math.max(
+      Number(pistol.reserve) || 0,
+      Number(pistol.maxAmmo) || 10
+    );
+    equipWeapon(pistolIndex);
+    updateAmmoHUD(pistol.ammo, pistol.reserve, pistol.maxAmmo);
+    return true;
+  }
 
   if (grant?.type === 'weapon-ammo') {
     if (!owned.weapon) return false;
@@ -2018,7 +2146,14 @@ export function applyMultiplayerInteractionResult(result = {}) {
 
   const grant = result.grant;
   if (grant?.type === 'health') {
-    player.health = player.maxHealth;
+    const authoritativeHealth = Number(result.authoritativeState?.health);
+    const authoritativeMaxHealth = Number(result.authoritativeState?.maxHealth);
+    if (Number.isFinite(authoritativeMaxHealth) && authoritativeMaxHealth > 0) {
+      player.maxHealth = Math.max(1, authoritativeMaxHealth);
+    }
+    player.health = Number.isFinite(authoritativeHealth)
+      ? Math.max(1, Math.min(player.maxHealth, authoritativeHealth))
+      : player.maxHealth;
     updateHealthHUD(player.health, player.maxHealth);
   } else if (grant?.type === 'perk') {
     const perkResult = purchaseProgressionPerk(grant.perkId, player);

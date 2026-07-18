@@ -45,7 +45,7 @@ assert.match(weapons, /configureMultiplayerPvp/);
 assert.match(weapons, /multiplayerPvp\?\.isActive/);
 assert.match(main, /configureMultiplayerPvp/);
 assert.match(main, /endEnemyRun\('pvp-isolation'\)/);
-assert.match(main, /KHADIJA_PVP_HOTFIX = 'pvp3-r2-dedicated-rules-neutral-pickups'/);
+assert.match(main, /KHADIJA_PVP_HOTFIX = 'pvp3-r2-1-null-matchmaking-region-fix'/);
 assert.match(main, /if \(!pvpRun\) placePlayerAtRandomSpawn\(\)/);
 assert.match(main, /Online players must always be able to open the menu and quit/);
 assert.match(main, /endObjectivesRun\(\);[\s\S]*endChallengesRun\(\);/);

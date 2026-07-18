@@ -186,6 +186,13 @@ export class MultiplayerPvp1Manager {
           1100
         );
       }
+      if (event.nextLocationId) {
+        this.adapter.showToast?.(
+          `HOT DROP RELOCATING · ${Math.max(1, Math.ceil((Number(event.availableAt) - Number(event.serverTime || Date.now())) / 1000))}s`,
+          '#72e4ff',
+          1500
+        );
+      }
       if (payload?.state) this.applyState(payload.state, { force: true });
       return;
     }

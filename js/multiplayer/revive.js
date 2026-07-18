@@ -323,6 +323,37 @@ export class MultiplayerReviveManager {
     };
   }
 
+  applyAuthorityHealthGrant(playerId, {
+    transactionId = null,
+    now = nowMs()
+  } = {}) {
+    if (!this.active || !this.isAuthority() || !playerId) {
+      return { ok: false, reason: 'HEALTH AUTHORITY UNAVAILABLE' };
+    }
+    const state = this.core.players.get(String(playerId));
+    if (!state || state.lifeState !== MULTIPLAYER_LIFE_STATES.ACTIVE) {
+      return { ok: false, reason: 'PLAYER IS NOT ACTIVE' };
+    }
+    const maxHealth = Math.max(1, Number(state.maxHealth) || 100);
+    this.core.updatePlayer(playerId, {
+      health: maxHealth,
+      maxHealth,
+      now
+    });
+    this.publishSnapshot(now, true);
+    return {
+      ok: true,
+      state: {
+        transactionId: transactionId ? String(transactionId).slice(0, 160) : null,
+        health: maxHealth,
+        maxHealth,
+        lifeState: MULTIPLAYER_LIFE_STATES.ACTIVE,
+        authorityEpoch: this.authorityEpoch,
+        committedAt: Date.now()
+      }
+    };
+  }
+
   applyAuthorityDamage(playerId, damage, {
     sourcePosition = null,
     damageType = 'UNKNOWN',

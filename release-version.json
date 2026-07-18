@@ -1,10 +1,10 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.1.0-pvp2",
-  "releaseId": "pvp3-r2-dedicated-rules-neutral-pickups",
-  "releaseSequence": 2026071804,
-  "sourceBaselineSha": "484eccb0b96d396da839e7c25000f21cbcbc41fc",
+  "productVersion": "1.1.1-mpnet1",
+  "releaseId": "mpnet1-r1-relay-transaction-resupply-integrity",
+  "releaseSequence": 2026071806,
+  "sourceBaselineSha": "1c6ef18390936d2c5c42689e728135ed393ed350",
   "updateDelivery": true,
   "workerChangeRequired": true
 }

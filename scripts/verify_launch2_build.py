@@ -126,6 +126,52 @@ def main() -> None:
         ):
             if pvp3.get(field) is not True:
                 raise SystemExit(f"PVP.3 R2 production policy mismatch: {field}")
+    pvp4 = manifest.get("pvp4", {})
+    if current_release.get("patch") == "pvp4-r1-competitive-maps-dynamic-hot-drops":
+        if pvp4.get("patch") != current_release.get("patch"):
+            raise SystemExit("PVP.4 R1 production manifest patch mismatch")
+        for field in (
+            "mirrored_team_spawns", "multi_lane_combat", "elevated_cover_positions",
+            "dynamic_hot_drop_relocation", "server_authoritative_relocation",
+            "consecutive_location_reuse_blocked", "nearby_location_reuse_blocked",
+            "player_proximity_relocation_avoidance", "pickup_overlap_avoidance",
+            "arrival_beacon_countdown", "reconnect_relocation_restoration",
+            "worker_change_required", "frontend_and_worker"
+        ):
+            if pvp4.get(field) is not True:
+                raise SystemExit(f"PVP.4 R1 production policy mismatch: {field}")
+        for required_map_module in (
+            "js/maps/pvp_competitive_arenas.js",
+            "js/multiplayer/pvp3_rules_core.js"
+        ):
+            if not (build / required_map_module).is_file():
+                raise SystemExit(f"PVP.4 R1 production runtime file missing: {required_map_module}")
+    mpnet1 = manifest.get("mpnet1", {})
+    if current_release.get("patch") == "mpnet1-r1-relay-transaction-resupply-integrity":
+        if mpnet1.get("patch") != current_release.get("patch"):
+            raise SystemExit("MPNET.1 R1 production manifest patch mismatch")
+        for field in (
+            "player_facing_relay_metrics", "atomic_health_economy_transactions",
+            "initiating_client_reconciliation", "transaction_result_replay",
+            "transaction_acknowledgements", "transaction_timeout_resync",
+            "host_migration_transaction_ledger", "authoritative_health_grant",
+            "emergency_pistol_resupply", "worker_change_required", "frontend_only"
+        ):
+            expected = field not in ("worker_change_required",)
+            if mpnet1.get(field) is not expected:
+                raise SystemExit(f"MPNET.1 R1 production policy mismatch: {field}")
+        for required_runtime in (
+            "js/multiplayer/mpnet1_core.js",
+            "js/multiplayer/economy.js",
+            "js/multiplayer/network_quality.js",
+            "js/multiplayer/network_hud.js",
+            "js/multiplayer/player_registry.js",
+            "js/multiplayer/revive.js",
+            "js/weapons.js"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"MPNET.1 R1 production runtime file missing: {required_runtime}")
+
     post_seal1 = manifest.get("post_seal1", {})
     if current_release.get("patch") == "post-seal1-r1-console-lifecycle-form-hygiene":
         if post_seal1.get("patch") != current_release.get("patch"):

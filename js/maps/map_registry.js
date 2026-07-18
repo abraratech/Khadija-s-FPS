@@ -6,7 +6,10 @@ export const MAP_IDS = Object.freeze({
   NEON_DEPOT: 'neon_depot',
   PARKING_GARAGE: 'parking_garage',
   HOSPITAL_WING: 'hospital_wing',
-  REACTOR_COURTYARD: 'reactor_courtyard'
+  REACTOR_COURTYARD: 'reactor_courtyard',
+  CROSSFIRE_TERMINAL: 'crossfire_terminal',
+  FOUNDRY_RING: 'foundry_ring',
+  SKYLINE_RELAY: 'skyline_relay'
 });
 
 export const MAP_REGISTRY = Object.freeze({
@@ -112,6 +115,40 @@ export const MAP_REGISTRY = Object.freeze({
     accentColor: '#19d8ff'
   }
 
+  [MAP_IDS.CROSSFIRE_TERMINAL]: {
+    id: MAP_IDS.CROSSFIRE_TERMINAL,
+    name: 'Crossfire Terminal',
+    subtitle: 'Competitive Transit Junction',
+    description: 'A mirrored three-lane PvP arena with central terminal cover, flank corridors, and contested uplinks.',
+    status: 'competitive', playable: true, legacyIndex: 8,
+    rotationRole: 'Three-lane dueling', recommendedDifficulty: 'pvp', difficultyFeel: 'competitive',
+    navigation: 'three-lane', spawnProfile: 'mirrored corners', previewSize: 'medium', accentColor: '#33d6ff',
+    pvpFocused: true, competitiveComplexity: 'high'
+  },
+
+  [MAP_IDS.FOUNDRY_RING]: {
+    id: MAP_IDS.FOUNDRY_RING,
+    name: 'Foundry Ring',
+    subtitle: 'Orbital Forge Complex',
+    description: 'A circular combat arena with rotating flank pressure, raised corner nests, and a dangerous central forge.',
+    status: 'competitive', playable: true, legacyIndex: 9,
+    rotationRole: 'Orbit and counter-flank', recommendedDifficulty: 'pvp', difficultyFeel: 'competitive',
+    navigation: 'ring + cross routes', spawnProfile: 'mirrored quadrants', previewSize: 'large', accentColor: '#ff6a32',
+    pvpFocused: true, competitiveComplexity: 'high'
+  },
+
+  [MAP_IDS.SKYLINE_RELAY]: {
+    id: MAP_IDS.SKYLINE_RELAY,
+    name: 'Skyline Relay',
+    subtitle: 'Rooftop Signal Array',
+    description: 'Twin rooftop compounds connected by a contested relay spine, with long flanks and layered cover.',
+    status: 'competitive', playable: true, legacyIndex: 10,
+    rotationRole: 'Vertical relay control', recommendedDifficulty: 'pvp', difficultyFeel: 'competitive',
+    navigation: 'spine + perimeter', spawnProfile: 'mirrored rooftops', previewSize: 'large', accentColor: '#72e4ff',
+    pvpFocused: true, competitiveComplexity: 'high'
+  }
+
+
 });
 
 export const MAP_LIST = Object.freeze(Object.values(MAP_REGISTRY));
@@ -125,7 +162,10 @@ const LEGACY_INDEX_TO_ID = Object.freeze({
   4: MAP_IDS.NEON_DEPOT,
   5: MAP_IDS.PARKING_GARAGE,
   6: MAP_IDS.HOSPITAL_WING,
-  7: MAP_IDS.REACTOR_COURTYARD
+  7: MAP_IDS.REACTOR_COURTYARD,
+  8: MAP_IDS.CROSSFIRE_TERMINAL,
+  9: MAP_IDS.FOUNDRY_RING,
+  10: MAP_IDS.SKYLINE_RELAY
 });
 
 export function normalizeMapId(mapId) {

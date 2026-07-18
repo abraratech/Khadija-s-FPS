@@ -3,6 +3,8 @@
 import {
   PVP3_R2_ARMOR_CAP,
   PVP3_R2_PATCH,
+  PVP4_R1_PATCH,
+  PVP_ACTIVE_RULES_PATCH,
   PVP3_R2_PICKUP_CLAIM_RADIUS,
   PVP3_R2_POSE_FRESHNESS_MS,
   createPvp3PickupState,
@@ -12,7 +14,8 @@ import {
   normalizePvp3WeaponList,
   pvp3FlatDistance,
   pvp3PickupAvailable,
-  pvp3PlayerOwnsWeapon
+  pvp3PlayerOwnsWeapon,
+  relocatePvp4Pickup
 } from './pvp3_rules_core.js';
 
 export const PVP1_PATCH = 'pvp1-r1-isolated-team-elimination-foundation';
@@ -165,7 +168,7 @@ export function createPvp1MatchState({
     mode: PVP1_MODE,
     runId: cleanId(runId, 200),
     mapId: normalizePvp3MapId(mapId),
-    rulesPatch: PVP3_R2_PATCH,
+    rulesPatch: PVP_ACTIVE_RULES_PATCH,
     phase: 'COUNTDOWN',
     round: 1,
     bestOf: PVP1_BEST_OF,
@@ -220,7 +223,7 @@ function resetPlayersForRound(state) {
     entry.spawnProtectedUntil = protectedUntil;
     entry.spawnSerial = Math.max(1, Math.floor(finite(entry.spawnSerial, 1))) + 1;
   });
-  state.rulesPatch = PVP3_R2_PATCH;
+  state.rulesPatch = PVP_ACTIVE_RULES_PATCH;
   state.pickups = createPvp3PickupState(state.mapId, {
     availableAt: Math.max(0, finite(state.roundStartsAt)) + 800,
     round: state.round
@@ -399,6 +402,7 @@ export function resolvePvp3PickupClaim({
   playerId,
   pickupId,
   playerPosition = null,
+  playerPositions = [],
   poseUpdatedAt = 0,
   claimId = '',
   now = Date.now()
@@ -426,7 +430,7 @@ export function resolvePvp3PickupClaim({
     return { accepted: false, reason: 'POSITION_UNAVAILABLE', retryAfterMs: 80, state };
   }
 
-  state.rulesPatch = PVP3_R2_PATCH;
+  state.rulesPatch = PVP_ACTIVE_RULES_PATCH;
   state.mapId = normalizePvp3MapId(state.mapId);
   state.pickups = normalizePvp3PickupState(
     Array.isArray(state.pickups) && state.pickups.length
@@ -474,14 +478,25 @@ export function resolvePvp3PickupClaim({
 
   pickup.claimedBy = player.playerId;
   pickup.claimSerial = Math.max(0, Math.floor(finite(pickup.claimSerial))) + 1;
-  pickup.availableAt = timestamp + Math.max(4_000, Math.floor(finite(pickup.respawnMs, 20_000)));
   pickup.round = Math.max(1, Math.floor(finite(state.round, 1)));
+  const availableAt = timestamp + Math.max(4_000, Math.floor(finite(pickup.respawnMs, 20_000)));
+  const relocated = relocatePvp4Pickup({
+    pickup,
+    pickups: state.pickups,
+    playerPositions,
+    runId: state.runId,
+    round: state.round,
+    availableAt
+  });
+  const pickupIndex = state.pickups.findIndex((entry) => entry.id === pickup.id);
+  state.pickups[pickupIndex] = { ...relocated };
+  state.rulesPatch = PVP4_R1_PATCH;
   state.revision = Math.max(0, Math.floor(finite(state.revision))) + 1;
   state.updatedAt = timestamp;
 
   return {
     accepted: true,
-    reason: 'CLAIMED',
+    reason: 'CLAIMED_AND_RELOCATED',
     state,
     event: {
       claimId: cleanId(claimId, 200),
@@ -491,7 +506,13 @@ export function resolvePvp3PickupClaim({
       detail,
       playerId: player.playerId,
       playerTeam: player.team,
-      availableAt: pickup.availableAt,
+      availableAt: relocated.availableAt,
+      revealAt: relocated.revealAt,
+      nextLocationId: relocated.locationId,
+      previousLocationId: relocated.previousLocationId,
+      nextPosition: { x: relocated.x, y: relocated.y, z: relocated.z },
+      relocationSerial: relocated.relocationSerial,
+      rulesPatch: PVP4_R1_PATCH,
       round: state.round,
       serverTime: timestamp
     }

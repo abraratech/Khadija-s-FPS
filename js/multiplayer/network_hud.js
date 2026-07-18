@@ -15,9 +15,9 @@ const QUALITY_LABELS = Object.freeze({
   WAITING: 'MEASURING CLOUD RELAY',
   EXCELLENT: 'CLOUD RELAY EXCELLENT',
   GOOD: 'CLOUD RELAY READY',
-  FAIR: 'CLOUD RELAY DELAY - PREDICTION ACTIVE',
-  POOR: 'HIGH CLOUD RELAY DELAY',
-  UNSTABLE: 'CLOUD RELAY UNSTABLE - ACTIONS MAY ARRIVE LATE',
+  FAIR: 'CLOUD RELAY DEGRADED - PREDICTION ACTIVE',
+  POOR: 'CLOUD RELAY POOR - STATE RECOVERY ACTIVE',
+  UNSTABLE: 'CLOUD RELAY UNSTABLE - ACTIONS ARE BEING RESYNCHRONIZED',
   RECONNECTING: 'RESTORING CLOUD RELAY'
 });
 function safeNumber(value, fallback = 0) {
@@ -216,19 +216,33 @@ export class MultiplayerNetworkHud {
       + 'Cloudflare room relay, not the speed between devices on the same LAN.'
     );
 
-    if (debugNetworkMetricsEnabled()) {
+    const showPlayerMetrics = [
+      'FAIR',
+      'POOR',
+      'UNSTABLE',
+      'RECONNECTING'
+    ].includes(quality);
+    if (showPlayerMetrics || debugNetworkMetricsEnabled()) {
       const stats = document.createElement('div');
-      stats.textContent = [
-        `${safeNumber(network.rttMs)} ms`,
-        `J ${safeNumber(network.jitterMs)} ms`,
-        `L ${safeNumber(network.packetLossPct)}%`,
+      const playerFacing = [
+        `${safeNumber(network.rttMs)} ms RTT`,
+        `${safeNumber(network.jitterMs)} ms jitter`,
+        `${safeNumber(network.packetLossPct)}% loss`
+      ];
+      const debug = [
         `B ${safeNumber(network.interpolationDelayMs)} ms`,
         `S ${safeNumber(network.silenceMs)} ms`,
         `SYNC ${String(reconciliation.status || 'WAITING')}`,
         `G ${safeNumber(reconciliation.metrics?.sequenceGaps)}`
-      ].join(' | ');
+      ];
+      stats.textContent = (debugNetworkMetricsEnabled()
+        ? playerFacing.concat(debug)
+        : playerFacing
+      ).join(' | ');
       Object.assign(stats.style, {
-        marginBottom: '7px', color: '#7895a4', fontVariantNumeric: 'tabular-nums',
+        marginBottom: '7px',
+        color: showPlayerMetrics ? '#a9c8d8' : '#7895a4',
+        fontVariantNumeric: 'tabular-nums',
         fontSize: '10px'
       });
       root.appendChild(stats);

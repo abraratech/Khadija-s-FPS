@@ -19,7 +19,7 @@ assert.match(index, /frontendDeterministicTests: 137/);
 assert.match(index, /workerDeterministicTests: 37/);
 assert.match(index, /productionRuntimeFiles: 252/);
 assert.equal((index.match(/version1Certification: POST_FINAL10_SERVER_INFO/g) || []).length, 2);
-assert.match(packageJson.version, /^1\.(?:0\.0|1\.0-pvp[12])$/);
+assert.match(packageJson.version, /^1\.(?:0\.0|1\.0-pvp[124])$/);
 assert.match(packageJson.scripts.check, /postfinal10_contract\.test\.js/);
 
 console.log('POST-FINAL.10 Worker Version 1.0 contract tests passed');

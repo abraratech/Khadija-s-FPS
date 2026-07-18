@@ -58,6 +58,12 @@ POST_SEAL1_RELEASE_SEQUENCE = 2026071802
 PVP3_PATCH = 'pvp3-r2-dedicated-rules-neutral-pickups'
 PVP3_SOURCE_BASELINE_SHA = '484eccb0b96d396da839e7c25000f21cbcbc41fc'
 PVP3_RELEASE_SEQUENCE = 2026071804
+PVP4_PATCH = 'pvp4-r1-competitive-maps-dynamic-hot-drops'
+PVP4_SOURCE_BASELINE_SHA = '1c6ef18390936d2c5c42689e728135ed393ed350'
+PVP4_RELEASE_SEQUENCE = 2026071805
+MPNET1_PATCH = 'mpnet1-r1-relay-transaction-resupply-integrity'
+MPNET1_SOURCE_BASELINE_SHA = '1c6ef18390936d2c5c42689e728135ed393ed350'
+MPNET1_RELEASE_SEQUENCE = 2026071806
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -517,11 +523,52 @@ def main() -> None:
             "worker_change_required": True,
             "frontend_and_worker": True
         },
+
+        "pvp4": {
+            "schema": 1,
+            "patch": PVP4_PATCH,
+            "source_baseline_sha": PVP4_SOURCE_BASELINE_SHA,
+            "release_sequence": PVP4_RELEASE_SEQUENCE,
+            "competitive_maps": ["crossfire_terminal", "foundry_ring", "skyline_relay"],
+            "mirrored_team_spawns": True,
+            "multi_lane_combat": True,
+            "elevated_cover_positions": True,
+            "dynamic_hot_drop_relocation": True,
+            "server_authoritative_relocation": True,
+            "consecutive_location_reuse_blocked": True,
+            "nearby_location_reuse_blocked": True,
+            "player_proximity_relocation_avoidance": True,
+            "pickup_overlap_avoidance": True,
+            "arrival_beacon_countdown": True,
+            "reconnect_relocation_restoration": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
+        "mpnet1": {
+            "schema": 1,
+            "patch": MPNET1_PATCH,
+            "source_baseline_sha": MPNET1_SOURCE_BASELINE_SHA,
+            "release_sequence": MPNET1_RELEASE_SEQUENCE,
+            "rolling_relay_window_ms": 30000,
+            "sustained_degradation_hold_ms": 7000,
+            "player_facing_relay_metrics": True,
+            "atomic_health_economy_transactions": True,
+            "initiating_client_reconciliation": True,
+            "transaction_result_replay": True,
+            "transaction_acknowledgements": True,
+            "transaction_timeout_resync": True,
+            "host_migration_transaction_ledger": True,
+            "authoritative_health_grant": True,
+            "emergency_pistol_resupply": True,
+            "emergency_resupply_cooldown_ms": 60000,
+            "worker_change_required": False,
+            "frontend_only": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": PVP3_PATCH,
-            "source_baseline_sha": PVP3_SOURCE_BASELINE_SHA,
-            "release_sequence": PVP3_RELEASE_SEQUENCE,
+            "patch": MPNET1_PATCH,
+            "source_baseline_sha": MPNET1_SOURCE_BASELINE_SHA,
+            "release_sequence": MPNET1_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
             "worker_change_required": True
         },

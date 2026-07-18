@@ -362,7 +362,23 @@ export function initializeMultiplayerFoundation(
     session: multiplayerSession,
     players: multiplayerPlayers,
     player,
-    adapter: economyAdapter
+    adapter: {
+      ...(economyAdapter || {}),
+      commitAuthorityResourceGrant: ({
+        playerId: targetPlayerId,
+        requestId,
+        grant,
+        now
+      } = {}) => {
+        if (grant?.type !== 'health') {
+          return { ok: true, state: null };
+        }
+        return reviveManager?.applyAuthorityHealthGrant?.(
+          targetPlayerId,
+          { transactionId: requestId, now }
+        ) || { ok: false, reason: 'HEALTH AUTHORITY UNAVAILABLE' };
+      }
+    }
   });
 
   coopStatsManager = new MultiplayerCoopStatsManager({

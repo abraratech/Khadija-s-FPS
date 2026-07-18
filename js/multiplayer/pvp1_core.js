@@ -3,6 +3,8 @@
 import {
   PVP3_R2_ARMOR_CAP,
   PVP3_R2_PATCH,
+  PVP_ACTIVE_RULES_PATCH,
+  isSupportedPvpRulesPatch,
   normalizePvp3MapId,
   normalizePvp3PickupState,
   normalizePvp3WeaponList
@@ -82,7 +84,9 @@ export function normalizePvp1State(value = {}) {
     mode: normalizePvp1Mode(source.mode),
     runId: String(source.runId || ''),
     mapId: normalizePvp3MapId(source.mapId),
-    rulesPatch: String(source.rulesPatch || PVP3_R2_PATCH),
+    rulesPatch: isSupportedPvpRulesPatch(source.rulesPatch)
+      ? String(source.rulesPatch)
+      : PVP_ACTIVE_RULES_PATCH,
     phase: ['COUNTDOWN', 'ACTIVE', 'COMPLETE'].includes(source.phase)
       ? source.phase
       : 'COUNTDOWN',

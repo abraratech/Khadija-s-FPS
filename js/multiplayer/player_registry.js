@@ -18,7 +18,27 @@ function weaponKey(player) {
   return weapon?.key || weapon?.name || null;
 }
 
+function ammoState(player) {
+  const inventory = Array.isArray(player?.inventory) ? player.inventory : [];
+  const weapons = inventory.map((weapon) => ({
+    key: String(weapon?.key || weapon?.name || 'UNKNOWN').slice(0, 40),
+    ammo: Math.max(0, Math.floor(Number(weapon?.ammo) || 0)),
+    reserve: Math.max(0, Math.floor(Number(weapon?.reserve) || 0)),
+    maxAmmo: Math.max(1, Math.floor(Number(weapon?.maxAmmo) || 1))
+  }));
+  const ammoTotal = weapons.reduce(
+    (total, weapon) => total + weapon.ammo + weapon.reserve,
+    0
+  );
+  return {
+    ammoTotal,
+    allAmmoEmpty: weapons.length > 0 && ammoTotal <= 0,
+    ammoByWeapon: weapons
+  };
+}
+
 function capturePlayerState(player) {
+  const ammo = ammoState(player);
   return {
     position: vectorSnapshot(player?.pos),
     velocity: vectorSnapshot(player?.vel),
@@ -40,7 +60,10 @@ function capturePlayerState(player) {
     isSprinting: player?.isSprinting === true,
     reloading: player?.reloading === true,
     currentWeaponIdx: Number(player?.currentWeaponIdx || 0),
-    weaponKey: weaponKey(player)
+    weaponKey: weaponKey(player),
+    ammoTotal: ammo.ammoTotal,
+    allAmmoEmpty: ammo.allAmmoEmpty,
+    ammoByWeapon: ammo.ammoByWeapon
   };
 }
 
@@ -52,6 +75,18 @@ function vectorsEqual(a, b, epsilon) {
   return approximatelyEqual(a?.x, b?.x, epsilon)
     && approximatelyEqual(a?.y, b?.y, epsilon)
     && approximatelyEqual(a?.z, b?.z, epsilon);
+}
+
+function ammoStatesEqual(a, b) {
+  const left = Array.isArray(a) ? a : [];
+  const right = Array.isArray(b) ? b : [];
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => (
+    entry.key === right[index]?.key
+    && entry.ammo === right[index]?.ammo
+    && entry.reserve === right[index]?.reserve
+    && entry.maxAmmo === right[index]?.maxAmmo
+  ));
 }
 
 function statesEqual(a, b) {
@@ -74,7 +109,10 @@ function statesEqual(a, b) {
     && a.isSprinting === b.isSprinting
     && a.reloading === b.reloading
     && a.currentWeaponIdx === b.currentWeaponIdx
-    && a.weaponKey === b.weaponKey;
+    && a.weaponKey === b.weaponKey
+    && a.ammoTotal === b.ammoTotal
+    && a.allAmmoEmpty === b.allAmmoEmpty
+    && ammoStatesEqual(a.ammoByWeapon, b.ammoByWeapon);
 }
 
 export class MultiplayerPlayerRegistry {

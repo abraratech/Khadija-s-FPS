@@ -1,9 +1,9 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'pvp3-r2-dedicated-rules-neutral-pickups',
-  releaseSequence: 2026071804,
-  productVersion: '1.1.0-pvp2'
+  releaseId: 'mpnet1-r1-relay-transaction-resupply-integrity',
+  releaseSequence: 2026071806,
+  productVersion: '1.1.1-mpnet1'
 });
 
 function cleanText(value, max = 160) {

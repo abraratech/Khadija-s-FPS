@@ -1,19 +1,23 @@
 import { deriveMultiplayerProductionReleaseUiState } from './production_release_ui_core.js';
+import { MULTIPLAYER_PRODUCTION_WORKER_URL } from './production_release_core.js';
 import { matchmakingStatusPresentation } from './matchmaking_core.js';
 import { roomDirectoryStatusPresentation } from './room_directory_core.js';
 import { PVP2_MODE, pvp2StatsPresentation } from './pvp2_core.js';
 
 // js/multiplayer/lobby_ui.js
+// MPUI.2 R1 — visual room browser and lobby polish; gameplay and service authority unchanged.
 
 const NAME_STORAGE_KEY = 'ka_multiplayer_display_name';
-const SERVER_STORAGE_KEY = 'ka_multiplayer_server_url';
 const MATCH3_PRIORITY_STORAGE_KEY = 'ka_match3_search_priority';
 const MATCH3_REGION_POLICY_STORAGE_KEY = 'ka_match3_region_policy';
 const MATCH3_ROOM_STATUS_STORAGE_KEY = 'ka_match3_room_status';
 const MATCH3_ROOM_SCOPE_STORAGE_KEY = 'ka_match3_room_scope';
 const MATCH3_ROOM_BOT_STORAGE_KEY = 'ka_match3_room_bot';
+const PVP2_PUBLIC_TEAM_SIZE_STORAGE_KEY = 'ka_pvp2_public_team_size';
+const PVP2_ROOM_MODE_FILTER_STORAGE_KEY = 'ka_pvp2_room_mode_filter';
 const COOP2_ROLE_STORAGE_KEY = 'ka_coop2_role_v1';
 const PVP1_PRIVATE_MODE_STORAGE_KEY = 'ka_pvp1_private_room_mode';
+const MPUI1_TAB_STORAGE_KEY = 'ka_mpui1_active_tab';
 
 function escapeForId(value) {
   return String(value || '').replace(/[^a-z0-9_-]/gi, '_');
@@ -81,12 +85,54 @@ function setNumericSelectValue(select, value, fallback = 1) {
   select.value = fallbackMatch?.value || select.options[0]?.value || '';
 }
 
+
+const MPUI2_MAP_IDS = new Set([
+  'grid_bunker',
+  'industrial_yard',
+  'neon_depot',
+  'parking_garage',
+  'hospital_wing',
+  'reactor_courtyard'
+]);
+
+function mapVisualClass(mapId) {
+  const normalized = String(mapId || 'grid_bunker').trim().toLowerCase();
+  const safe = MPUI2_MAP_IDS.has(normalized) ? normalized : 'grid_bunker';
+  return `ka-map-${safe.replace(/_/g, '-')}`;
+}
+
+function displayInitials(displayName) {
+  const parts = String(displayName || 'Player')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2);
+  const initials = parts.map((part) => part[0] || '').join('').toUpperCase();
+  return initials || 'P';
+}
+
+function formatRoomAge(entry = {}) {
+  const ageMs = Math.max(0, Number(entry.ageMs || 0));
+  if (ageMs < 15_000) return 'JUST UPDATED';
+  if (ageMs < 60_000) return `${Math.max(1, Math.floor(ageMs / 1000))}S AGO`;
+  return `${Math.max(1, Math.floor(ageMs / 60_000))}M AGO`;
+}
+
+function roomQualityPresentation(entry = {}) {
+  const quality = String(entry.quality || '').toLowerCase();
+  if (quality === 'excellent') return { label: 'BEST CONNECTION', tone: 'excellent' };
+  if (quality === 'good') return { label: 'GOOD CONNECTION', tone: 'good' };
+  if (quality === 'expanded') return { label: 'EXPANDED REGION', tone: 'expanded' };
+  return { label: entry.scope === 'regional' ? 'REGIONAL' : 'COMPATIBLE', tone: 'compatible' };
+}
+
 export class MultiplayerLobbyUI {
   constructor({ actions = {} } = {}) {
     this.actions = actions;
     this.state = null;
     this.elements = {};
     this.opened = false;
+    this.activeTab = readStored(MPUI1_TAB_STORAGE_KEY, 'play');
   }
 
   initialize() {
@@ -106,250 +152,190 @@ export class MultiplayerLobbyUI {
       openButton.hidden = true;
     }
 
-    const modal = document.createElement('div');
+    const mount = document.getElementById('ka-multiplayer-hub-mount') || document.body;
+    mount.replaceChildren();
+
+    const modal = document.createElement('section');
     modal.id = 'ka-coop-modal';
-    modal.setAttribute('aria-hidden', 'true');
+    modal.className = 'ka-multiplayer-hub-shell';
+    modal.setAttribute('aria-hidden', 'false');
     modal.innerHTML = `
-      <section class="ka-coop-card" role="dialog" aria-modal="true" aria-labelledby="ka-coop-title">
-        <header class="ka-coop-header">
-          <div>
-            <span class="ka-coop-kicker">KHADIJA PROTOCOL</span>
-            <h2 id="ka-coop-title">ONLINE MULTIPLAYER</h2>
+      <section class="ka-coop-card ka-mp-hub" role="region" aria-labelledby="ka-coop-title">
+        <header class="ka-coop-header ka-mp-hero">
+          <div class="ka-mp-hero-copy">
+            <span class="ka-coop-kicker">KHADIJA PROTOCOL · ONLINE OPERATIONS</span>
+            <h2 id="ka-coop-title">MULTIPLAYER HUB</h2>
+            <p>Deploy with allies, enter rated duels, host custom rooms, and track competitive performance.</p>
           </div>
-          <button id="ka-coop-close" class="ka-coop-icon-btn" type="button" aria-label="Close">×</button>
+          <div class="ka-mp-hero-side">
+            <div id="ka-coop-status" class="ka-coop-status" data-tone="neutral">ONLINE SERVICES STANDBY</div>
+            <button id="ka-coop-close" class="ka-mp-back-btn" type="button" aria-label="Back to main menu">← MAIN MENU</button>
+          </div>
         </header>
 
-        <div id="ka-coop-status" class="ka-coop-status" data-tone="neutral">LOCAL MODE</div>
+        <div id="ka-coop-connect-view" class="ka-mp-connect-view">
+          <section class="ka-mp-identity-bar" aria-label="Multiplayer identity">
+            <label class="ka-coop-field">
+              <span>Player name</span>
+              <input id="ka-coop-name" maxlength="24" autocomplete="nickname">
+            </label>
+            <label class="ka-coop-field">
+              <span>Co-op role</span>
+              <select id="ka-coop2-role">
+                <option value="VANGUARD">Vanguard · frontline rescue cover</option>
+                <option value="FIELD_MEDIC">Field Medic · faster safer revives</option>
+                <option value="RECON">Recon · longer tactical marks</option>
+                <option value="SUPPORT">Support · team cohesion utility</option>
+              </select>
+            </label>
+            <div class="ka-mp-service-card"><span>LIVE SERVICE</span><strong>REGION-AWARE</strong><small>Fixed secure production connection</small></div>
+          </section>
 
-        <div id="ka-coop-connect-view">
-          <p class="ka-coop-note">
-            Create isolated private Co-Op or Team Elimination rooms, find public
-            Co-Op allies, or enter rated public PvP 1v1 matchmaking. Existing Co-Op
-            progression, enemies, operations, reconnect recovery, and rewards remain unchanged.
-          </p>
+          <nav class="ka-mp-tabs" aria-label="Multiplayer hub sections">
+            <button type="button" data-mp-tab="play"><span>▶</span><b>PLAY</b><small>Quick Match</small></button>
+            <button type="button" data-mp-tab="rooms"><span>▦</span><b>ROOMS</b><small>Browse + Host</small></button>
+            <button type="button" data-mp-tab="competitive"><span>◆</span><b>COMPETITIVE</b><small>Rating + Record</small></button>
+            <button type="button" data-mp-tab="private"><span>⌁</span><b>PRIVATE</b><small>Invite Code</small></button>
+          </nav>
 
-          <label class="ka-coop-field">
-            <span>Player name</span>
-            <input id="ka-coop-name" maxlength="24" autocomplete="nickname">
-          </label>
-
-          <label class="ka-coop-field">
-            <span>Co-op role</span>
-            <select id="ka-coop2-role">
-              <option value="VANGUARD">Vanguard · frontline rescue cover</option>
-              <option value="FIELD_MEDIC">Field Medic · faster safer revives</option>
-              <option value="RECON">Recon · longer tactical marks</option>
-              <option value="SUPPORT">Support · team cohesion utility</option>
-            </select>
-          </label>
-
-          <label class="ka-coop-field">
-            <span>Worker server URL</span>
-            <input id="ka-coop-server" placeholder="https://your-worker.workers.dev">
-          </label>
-
-          <button id="ka-coop-release-retry" type="button">RECHECK CERTIFIED SERVER</button>
-
-          <section class="ka-matchmaking-panel" aria-labelledby="ka-matchmaking-title">
-            <div class="ka-matchmaking-heading">
-              <div>
-                <span class="ka-coop-kicker">PUBLIC MATCHMAKING</span>
-                <strong id="ka-matchmaking-title">QUICK MATCH</strong>
-              </div>
-              <span class="ka-matchmaking-region">REGION-AWARE</span>
+          <section class="ka-mp-panel" data-mp-panel="play">
+            <div class="ka-mp-panel-heading"><div><span>PUBLIC MATCHMAKING</span><strong>CHOOSE YOUR OPERATION</strong></div><small>One click starts a region-aware search.</small></div>
+            <div class="ka-mp-mode-grid">
+              <article class="ka-mp-mode-card ka-mp-mode-coop">
+                <div class="ka-mp-mode-art"><span>●●</span><i>CO-OP</i></div>
+                <div><span class="ka-coop-kicker">SHARED SURVIVAL</span><h3>CO-OP QUICK MATCH</h3><p>Fight escalating enemy waves with one human ally or an AI Wingman.</p></div>
+                <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">FIND PUBLIC CO-OP</button>
+              </article>
+              <article class="ka-mp-mode-card ka-mp-mode-pvp">
+                <div class="ka-mp-mode-art"><span>⚔</span><i>RATED</i></div>
+                <div><span class="ka-coop-kicker">TEAM ELIMINATION</span><h3>PVP QUICK MATCH</h3><p>Enter a rated public 1v1 with isolated competitive rules and equal starts.</p></div>
+                <button id="ka-pvp2-quick-match" class="ka-pvp2-primary" type="button">FIND PUBLIC PVP 1V1</button>
+              </article>
             </div>
-            <p class="ka-matchmaking-copy">
-              Find a compatible Co-Op operative or a rated public PvP 1v1 opponent
-              using the current arena, protocol, game build, and region policy.
-            </p>
-            <div class="ka-matchmaking-preferences">
-              <label class="ka-coop-field">
-                <span>Arena</span>
-                <select id="ka-matchmaking-map"></select>
-              </label>
-              <label class="ka-coop-field">
-                <span>Difficulty</span>
-                <select id="ka-matchmaking-difficulty"></select>
-              </label>
-              <label class="ka-coop-field">
-                <span>Search priority</span>
-                <select id="ka-match3-search-priority">
-                  <option value="balanced">Balanced</option>
-                  <option value="quality">Best connection</option>
-                  <option value="fast">Fastest match</option>
-                </select>
-              </label>
-              <label class="ka-coop-field">
-                <span>Region policy</span>
-                <select id="ka-match3-region-policy">
-                  <option value="auto">Region first, then global</option>
-                  <option value="regional-only">Regional only</option>
-                  <option value="global">Global immediately</option>
-                </select>
-              </label>
-            </div>
-            <div class="ka-pvp2-queue-actions">
-              <button id="ka-coop-quick-match" class="ka-coop-primary" type="button">
-                FIND PUBLIC CO-OP
-              </button>
-              <button id="ka-pvp2-quick-match" class="ka-pvp2-primary" type="button">
-                FIND PUBLIC PVP 1V1
-              </button>
-            </div>
-            <div class="ka-public-room-actions">
-              <button id="ka-coop-browse-rooms" type="button">BROWSE PUBLIC CO-OP ROOMS</button>
-              <button id="ka-coop-create-public" type="button">CREATE PUBLIC CO-OP ROOM</button>
-            </div>
-            <section id="ka-room-browser" class="ka-room-browser" hidden aria-live="polite">
-              <div class="ka-room-browser-heading">
-                <div>
-                  <strong id="ka-room-browser-title">PUBLIC CO-OP ROOMS</strong>
-                  <span id="ka-room-browser-detail">HOSTED CO-OP ROOMS · PVP USES QUICK MATCH</span>
-                </div>
-                <button id="ka-room-browser-refresh" type="button">REFRESH</button>
+
+            <section class="ka-matchmaking-panel ka-mp-search-settings" aria-labelledby="ka-matchmaking-title">
+              <div class="ka-matchmaking-heading"><div><span class="ka-coop-kicker">MATCH PREFERENCES</span><strong id="ka-matchmaking-title">SEARCH CONFIGURATION</strong></div><span class="ka-matchmaking-region">AUTO REGION</span></div>
+              <div class="ka-matchmaking-preferences">
+                <label class="ka-coop-field"><span>Arena</span><select id="ka-matchmaking-map"></select></label>
+                <label class="ka-coop-field"><span>Difficulty</span><select id="ka-matchmaking-difficulty"></select></label>
+                <label class="ka-coop-field"><span>Search priority</span><select id="ka-match3-search-priority"><option value="balanced">Balanced</option><option value="quality">Best connection</option><option value="fast">Fastest match</option></select></label>
+                <label class="ka-coop-field"><span>Region policy</span><select id="ka-match3-region-policy"><option value="auto">Region first, then global</option><option value="regional-only">Regional only</option><option value="global">Global immediately</option></select></label>
               </div>
-              <div class="ka-room-browser-filters">
-                <label>
-                  <span>Status</span>
-                  <select id="ka-room-filter-status">
-                    <option value="any">Any status</option>
-                    <option value="waiting">Waiting only</option>
-                    <option value="in-run">In progress</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Region</span>
-                  <select id="ka-room-filter-scope">
-                    <option value="any">Any region</option>
-                    <option value="regional">My region</option>
-                    <option value="global">Global</option>
-                  </select>
-                </label>
-                <label>
-                  <span>AI</span>
-                  <select id="ka-room-filter-bot">
-                    <option value="any">Any team</option>
-                    <option value="without-bot">Human slot only</option>
-                    <option value="with-bot">AI present</option>
-                  </select>
-                </label>
-                <label class="ka-room-filter-toggle">
-                  <input id="ka-room-filter-in-progress" type="checkbox" checked>
-                  <span>Allow join-in-progress</span>
-                </label>
+              <div id="ka-matchmaking-status" class="ka-matchmaking-status" data-tone="neutral" hidden>
+                <div><strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong><span id="ka-matchmaking-status-detail">MATCH BY BUILD, PROTOCOL, ARENA AND REGION</span></div>
+                <span id="ka-matchmaking-elapsed"></span>
+                <button id="ka-matchmaking-bot" class="ka-matchmaking-bot" type="button" hidden>DEPLOY AI WINGMATE</button>
+                <button id="ka-matchmaking-cancel" type="button">CANCEL</button>
               </div>
-              <div id="ka-room-browser-list" class="ka-room-browser-list"></div>
-            </section>
-            <div id="ka-matchmaking-status" class="ka-matchmaking-status" data-tone="neutral" hidden>
-              <div>
-                <strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong>
-                <span id="ka-matchmaking-status-detail">MATCH BY BUILD, PROTOCOL, ARENA AND REGION</span>
-              </div>
-              <span id="ka-matchmaking-elapsed"></span>
-              <button id="ka-matchmaking-bot" class="ka-matchmaking-bot" type="button" hidden>
-                DEPLOY AI WINGMATE
-              </button>
-              <button id="ka-matchmaking-cancel" type="button">CANCEL</button>
-            </div>
-            <section class="ka-pvp2-record" aria-labelledby="ka-pvp2-record-title">
-              <div class="ka-pvp2-record-heading">
-                <div>
-                  <span class="ka-coop-kicker">COMPETITIVE RECORD</span>
-                  <strong id="ka-pvp2-record-title">PVP RATING 1000</strong>
-                </div>
-                <button id="ka-pvp2-refresh" type="button">REFRESH</button>
-              </div>
-              <div class="ka-pvp2-record-grid">
-                <span id="ka-pvp2-record">0W · 0L</span>
-                <span id="ka-pvp2-performance">0 ELIMS · 0 DEATHS</span>
-                <span id="ka-pvp2-streak">NO ACTIVE STREAK</span>
-              </div>
-              <ol id="ka-pvp2-leaderboard" class="ka-pvp2-leaderboard">
-                <li>NO PUBLIC PVP RESULTS YET</li>
-              </ol>
             </section>
           </section>
 
-          <div class="ka-coop-private-divider"><span>PRIVATE ROOMS</span></div>
-
-          <label class="ka-coop-field ka-pvp1-private-mode">
-            <span>Private room mode</span>
-            <select id="ka-private-game-mode">
-              <option value="coop">Co-Op Operations</option>
-              <option value="pvp-team-elimination">PvP · Team Elimination (1v1 / 2v2)</option>
-            </select>
-          </label>
-          <p id="ka-pvp1-private-note" class="ka-pvp1-private-note">
-            PvP uses isolated rooms, separate damage rules, no AI enemies, no Wingman,
-            and no Co-Op reward receipts.
-          </p>
-
-          <div class="ka-coop-connect-grid">
-            <button id="ka-coop-create" class="ka-coop-primary" type="button">CREATE PRIVATE ROOM</button>
-            <div class="ka-coop-join-row">
-              <input id="ka-coop-code-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off">
-              <button id="ka-coop-join" type="button">JOIN</button>
+          <section class="ka-mp-panel" data-mp-panel="rooms" hidden>
+            <div class="ka-mp-panel-heading"><div><span>COMMUNITY ROOMS</span><strong>BROWSE OR HOST</strong></div><small>Public PvP rooms are unranked and waiting-room only.</small></div>
+            <div class="ka-mp-room-create-grid">
+              <article class="ka-mp-create-card ka-mp-create-coop"><span class="ka-mp-create-icon">●●</span><div><b>PUBLIC CO-OP</b><small>Open an operation room for another survivor.</small></div><button id="ka-coop-create-public" type="button">CREATE PUBLIC CO-OP ROOM</button></article>
+              <article class="ka-mp-create-card ka-mp-create-pvp"><span class="ka-mp-create-icon">⚔</span><div><b>PUBLIC PVP</b><small>Host an unranked Team Elimination room.</small></div><label class="ka-public-pvp-size"><span>Size</span><select id="ka-pvp2-public-team-size"><option value="1">1v1</option><option value="2">2v2</option></select></label><button id="ka-pvp2-create-public" class="ka-pvp2-primary" type="button">CREATE PUBLIC PVP ROOM</button></article>
             </div>
-          </div>
+            <div class="ka-public-room-actions ka-mp-browser-action"><button id="ka-coop-browse-rooms" type="button">BROWSE PUBLIC ROOMS</button></div>
+            <section id="ka-room-browser" class="ka-room-browser ka-mp2-room-browser" hidden aria-live="polite">
+              <div class="ka-room-browser-heading ka-mp2-browser-heading">
+                <div class="ka-mp2-browser-heading-icon" aria-hidden="true">▦</div>
+                <div class="ka-mp2-browser-heading-copy"><strong id="ka-room-browser-title">PUBLIC ROOMS</strong><span id="ka-room-browser-detail">HOSTED CO-OP AND UNRANKED TEAM ELIMINATION ROOMS</span></div>
+                <div class="ka-mp2-browser-live"><i></i><div><strong id="ka-room-browser-count">0 ROOMS</strong><small id="ka-room-browser-hint">SELECT FILTERS AND REFRESH</small></div></div>
+                <button id="ka-room-browser-refresh" type="button">↻ REFRESH</button>
+              </div>
+              <div class="ka-room-browser-filters ka-mp2-browser-filters">
+                <label><span>Mode</span><select id="ka-room-filter-mode"><option value="any">Any mode</option><option value="coop">Co-Op</option><option value="pvp-team-elimination">PvP · Team Elimination</option></select></label>
+                <label><span>Status</span><select id="ka-room-filter-status"><option value="any">Any status</option><option value="waiting">Waiting only</option><option value="in-run">In progress</option></select></label>
+                <label><span>Region</span><select id="ka-room-filter-scope"><option value="any">Any region</option><option value="regional">My region</option><option value="global">Global</option></select></label>
+                <label><span>AI</span><select id="ka-room-filter-bot"><option value="any">Any team</option><option value="without-bot">Human slot only</option><option value="with-bot">AI present</option></select></label>
+                <label class="ka-room-filter-toggle"><input id="ka-room-filter-in-progress" type="checkbox" checked><span>Allow join-in-progress</span></label>
+              </div>
+              <div id="ka-room-browser-list" class="ka-room-browser-list ka-mp2-room-grid"></div>
+            </section>
+          </section>
+
+          <section class="ka-mp-panel" data-mp-panel="competitive" hidden>
+            <div class="ka-mp-panel-heading"><div><span>COMPETITIVE RECORD</span><strong>RATED PVP PROFILE</strong></div><small>Only public Quick Match affects rating.</small></div>
+            <section class="ka-pvp2-record ka-mp-competitive-card" aria-labelledby="ka-pvp2-record-title">
+              <div class="ka-pvp2-record-heading"><div><span class="ka-coop-kicker">CURRENT RANK</span><strong id="ka-pvp2-record-title">PVP RATING 1000</strong></div><button id="ka-pvp2-refresh" type="button">REFRESH RECORD</button></div>
+              <div class="ka-pvp2-record-grid"><span id="ka-pvp2-record">0W · 0L</span><span id="ka-pvp2-performance">0 ELIMS · 0 DEATHS</span><span id="ka-pvp2-streak">NO ACTIVE STREAK</span></div>
+              <div class="ka-mp-rank-visual"><div class="ka-mp-rank-emblem">◆</div><div><span>COMPETITIVE PATH</span><strong>BUILD YOUR RATING</strong><small>Win rated 1v1 matches to climb the public leaderboard.</small></div></div>
+              <ol id="ka-pvp2-leaderboard" class="ka-pvp2-leaderboard"><li>NO PUBLIC PVP RESULTS YET</li></ol>
+            </section>
+          </section>
+
+          <section class="ka-mp-panel" data-mp-panel="private" hidden>
+            <div class="ka-mp-panel-heading"><div><span>INVITE-ONLY PLAY</span><strong>PRIVATE SQUAD ROOM</strong></div><small>Create a room or join with a six-character code.</small></div>
+            <div class="ka-mp-private-card">
+              <label class="ka-coop-field ka-pvp1-private-mode"><span>Private room mode</span><select id="ka-private-game-mode"><option value="coop">Co-Op Operations</option><option value="pvp-team-elimination">PvP · Team Elimination (1v1 / 2v2)</option></select></label>
+              <p id="ka-pvp1-private-note" class="ka-pvp1-private-note">PvP uses isolated rooms, separate damage rules, no AI enemies, no Wingman, and no Co-Op reward receipts.</p>
+              <div class="ka-coop-connect-grid"><button id="ka-coop-create" class="ka-coop-primary" type="button">CREATE PRIVATE ROOM</button><div class="ka-coop-join-row"><input id="ka-coop-code-input" maxlength="6" placeholder="ROOM CODE" autocomplete="off"><button id="ka-coop-join" type="button">JOIN ROOM</button></div></div>
+            </div>
+          </section>
         </div>
 
-        <div id="ka-coop-room-view" hidden>
-          <div class="ka-coop-room-top">
-            <div>
-              <span class="ka-coop-label">ROOM CODE</span>
-              <strong id="ka-coop-code">------</strong>
+        <div id="ka-coop-room-view" class="ka-mp-room-view ka-mp2-lobby" hidden>
+          <div id="ka-mp-room-visual" class="ka-mp-room-banner ka-mp2-lobby-hero ka-map-grid-bunker" data-mode="coop">
+            <div class="ka-mp2-lobby-hero-shade"></div>
+            <div class="ka-mp2-lobby-hero-copy">
+              <div class="ka-mp2-lobby-badges"><span id="ka-mp-room-mode-badge">CO-OP</span><span id="ka-mp-room-status-badge">WAITING</span><span id="ka-mp-room-visibility-badge">PRIVATE</span></div>
+              <span class="ka-coop-kicker">ACTIVE LOBBY</span>
+              <h3 id="ka-mp-room-title">TEAM ASSEMBLY</h3>
+              <p id="ka-mp-room-subtitle">Prepare your squad and confirm readiness.</p>
             </div>
-            <button id="ka-coop-copy" type="button">COPY CODE</button>
+            <div class="ka-coop-room-top ka-mp2-room-code-panel"><div><span class="ka-coop-label">ROOM CODE</span><strong id="ka-coop-code">------</strong><small id="ka-mp-room-rule-badge">SHARED SURVIVAL</small></div><button id="ka-coop-copy" type="button">COPY CODE</button></div>
           </div>
 
-          <div id="ka-coop-player-list" class="ka-coop-player-list"></div>
-
-          <div class="ka-coop-settings-grid">
-            <label class="ka-coop-field">
-              <span>Arena</span>
-              <select id="ka-coop-map"></select>
-            </label>
-            <label class="ka-coop-field">
-              <span>Difficulty</span>
-              <select id="ka-coop-difficulty"></select>
-            </label>
+          <div class="ka-mp2-readiness-panel">
+            <div class="ka-mp2-readiness-copy"><span>LOBBY STATUS</span><strong id="ka-mp-ready-summary">WAITING FOR OPERATIVES</strong><small id="ka-mp-ready-detail">Invite players or open the room to continue.</small></div>
+            <div class="ka-mp2-readiness-meter" aria-hidden="true"><i id="ka-mp-ready-meter"></i></div>
           </div>
 
-          <div class="ka-coop-actions">
-            <button id="ka-coop-ready" type="button" aria-label="Set status to ready">READY</button>
-            <button id="ka-coop-start" class="ka-coop-primary" type="button">START CO-OP RUN</button>
-            <button id="ka-coop-leave" class="ka-coop-danger" type="button">LEAVE ROOM</button>
-          </div>
+          <div id="ka-coop-player-list" class="ka-coop-player-list ka-mp2-player-grid"></div>
+
+          <section class="ka-mp2-lobby-settings">
+            <div id="ka-mp-lobby-map-preview" class="ka-mp2-map-preview ka-map-grid-bunker"><div><span>SELECTED ARENA</span><strong id="ka-mp-lobby-map-name">GRID BUNKER</strong><small id="ka-mp-lobby-map-rule">HOST CAN CHANGE BEFORE DEPLOYMENT</small></div></div>
+            <div class="ka-coop-settings-grid ka-mp2-settings-grid"><label class="ka-coop-field"><span>Arena</span><select id="ka-coop-map"></select></label><label class="ka-coop-field"><span>Difficulty</span><select id="ka-coop-difficulty"></select></label></div>
+          </section>
+
+          <div class="ka-coop-actions ka-mp2-lobby-actions"><button id="ka-coop-ready" type="button" aria-label="Set status to ready">READY</button><button id="ka-coop-start" class="ka-coop-primary" type="button">START CO-OP RUN</button><button id="ka-coop-leave" class="ka-coop-danger" type="button">LEAVE ROOM</button></div>
         </div>
       </section>
     `;
 
-    document.body.appendChild(modal);
+    mount.appendChild(modal);
 
     this.elements = {
       modal,
       openButton,
       close: modal.querySelector('#ka-coop-close'),
+      tabbar: modal.querySelector('.ka-mp-tabs'),
+      tabButtons: Array.from(modal.querySelectorAll('[data-mp-tab]')),
+      tabPanels: Array.from(modal.querySelectorAll('[data-mp-panel]')),
       status: modal.querySelector('#ka-coop-status'),
       connectView: modal.querySelector('#ka-coop-connect-view'),
       roomView: modal.querySelector('#ka-coop-room-view'),
       name: modal.querySelector('#ka-coop-name'),
       coop2Role: modal.querySelector('#ka-coop2-role'),
-      server: modal.querySelector('#ka-coop-server'),
-      releaseRetry: modal.querySelector('#ka-coop-release-retry'),
       quickMatch: modal.querySelector('#ka-coop-quick-match'),
       pvp2QuickMatch: modal.querySelector('#ka-pvp2-quick-match'),
       browseRooms: modal.querySelector('#ka-coop-browse-rooms'),
       createPublic: modal.querySelector('#ka-coop-create-public'),
+      createPublicPvp: modal.querySelector('#ka-pvp2-create-public'),
+      publicPvpTeamSize: modal.querySelector('#ka-pvp2-public-team-size'),
       roomBrowser: modal.querySelector('#ka-room-browser'),
       roomBrowserTitle: modal.querySelector('#ka-room-browser-title'),
       roomBrowserDetail: modal.querySelector('#ka-room-browser-detail'),
+      roomBrowserCount: modal.querySelector('#ka-room-browser-count'),
+      roomBrowserHint: modal.querySelector('#ka-room-browser-hint'),
       roomBrowserRefresh: modal.querySelector('#ka-room-browser-refresh'),
       roomBrowserList: modal.querySelector('#ka-room-browser-list'),
       matchmakingMap: modal.querySelector('#ka-matchmaking-map'),
       matchmakingDifficulty: modal.querySelector('#ka-matchmaking-difficulty'),
       match3SearchPriority: modal.querySelector('#ka-match3-search-priority'),
       match3RegionPolicy: modal.querySelector('#ka-match3-region-policy'),
+      roomFilterMode: modal.querySelector('#ka-room-filter-mode'),
       roomFilterStatus: modal.querySelector('#ka-room-filter-status'),
       roomFilterScope: modal.querySelector('#ka-room-filter-scope'),
       roomFilterBot: modal.querySelector('#ka-room-filter-bot'),
@@ -371,6 +357,19 @@ export class MultiplayerLobbyUI {
       privateModeNote: modal.querySelector('#ka-pvp1-private-note'),
       codeInput: modal.querySelector('#ka-coop-code-input'),
       join: modal.querySelector('#ka-coop-join'),
+      roomVisual: modal.querySelector('#ka-mp-room-visual'),
+      roomModeBadge: modal.querySelector('#ka-mp-room-mode-badge'),
+      roomStatusBadge: modal.querySelector('#ka-mp-room-status-badge'),
+      roomVisibilityBadge: modal.querySelector('#ka-mp-room-visibility-badge'),
+      roomTitle: modal.querySelector('#ka-mp-room-title'),
+      roomSubtitle: modal.querySelector('#ka-mp-room-subtitle'),
+      roomRuleBadge: modal.querySelector('#ka-mp-room-rule-badge'),
+      readySummary: modal.querySelector('#ka-mp-ready-summary'),
+      readyDetail: modal.querySelector('#ka-mp-ready-detail'),
+      readyMeter: modal.querySelector('#ka-mp-ready-meter'),
+      lobbyMapPreview: modal.querySelector('#ka-mp-lobby-map-preview'),
+      lobbyMapName: modal.querySelector('#ka-mp-lobby-map-name'),
+      lobbyMapRule: modal.querySelector('#ka-mp-lobby-map-rule'),
       roomCode: modal.querySelector('#ka-coop-code'),
       copy: modal.querySelector('#ka-coop-copy'),
       playerList: modal.querySelector('#ka-coop-player-list'),
@@ -395,10 +394,6 @@ export class MultiplayerLobbyUI {
     this.elements.privateGameMode.value = readStored(
       PVP1_PRIVATE_MODE_STORAGE_KEY,
       'coop'
-    );
-    this.elements.server.value = readStored(
-      SERVER_STORAGE_KEY,
-      'https://khadijas-arena-multiplayer.abraratech-8cc.workers.dev/'
     );
 
     appendOptions(
@@ -444,6 +439,14 @@ export class MultiplayerLobbyUI {
       MATCH3_REGION_POLICY_STORAGE_KEY,
       'auto'
     );
+    this.elements.publicPvpTeamSize.value = readStored(
+      PVP2_PUBLIC_TEAM_SIZE_STORAGE_KEY,
+      '1'
+    );
+    this.elements.roomFilterMode.value = readStored(
+      PVP2_ROOM_MODE_FILTER_STORAGE_KEY,
+      'any'
+    );
     this.elements.roomFilterStatus.value = readStored(
       MATCH3_ROOM_STATUS_STORAGE_KEY,
       'any'
@@ -458,6 +461,7 @@ export class MultiplayerLobbyUI {
     );
 
     this.bindEvents();
+    this.switchHubTab(this.activeTab);
     this.render({
       connected: false,
       connecting: false,
@@ -584,7 +588,7 @@ export class MultiplayerLobbyUI {
       this.saveIdentity();
       this.actions.findReplacementPublicAlly?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         mapId: this.elements.map.value || 'grid_bunker',
         difficulty: Number(this.elements.difficulty.value) || 1
       });
@@ -602,13 +606,8 @@ export class MultiplayerLobbyUI {
 
 bindEvents() {
     this.elements.close.addEventListener('click', () => this.close());
-    this.elements.modal.addEventListener('click', (event) => {
-      if (event.target === this.elements.modal) this.close();
-    });
-
-    this.elements.releaseRetry.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.retryRelease?.({ serverUrl: this.elements.server.value });
+    this.elements.tabButtons.forEach((button) => {
+      button.addEventListener('click', () => this.switchHubTab(button.dataset.mpTab));
     });
 
     this.elements.coop2Role.addEventListener('change', () => {
@@ -623,7 +622,7 @@ bindEvents() {
       this.saveIdentity();
       this.actions.quickMatch?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         mapId: this.elements.matchmakingMap.value || 'grid_bunker',
         difficulty: Number(this.elements.matchmakingDifficulty.value) || 1,
         searchPriority: this.elements.match3SearchPriority.value || 'balanced',
@@ -637,7 +636,7 @@ bindEvents() {
       this.saveIdentity();
       this.actions.quickMatch?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         mapId: this.elements.matchmakingMap.value || 'grid_bunker',
         difficulty: 1,
         searchPriority: this.elements.match3SearchPriority.value || 'balanced',
@@ -651,17 +650,19 @@ bindEvents() {
     this.elements.pvp2Refresh.addEventListener('click', () => {
       this.saveIdentity();
       this.actions.refreshPvp2?.({
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         scope: 'global'
       });
     });
 
     const browseRooms = () => {
+      this.switchHubTab('rooms');
       this.saveIdentity();
       this.actions.browseOpenRooms?.({
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         searchPriority: this.elements.match3SearchPriority.value || 'balanced',
         filters: {
+          gameMode: this.elements.roomFilterMode.value || 'any',
           mapId: this.elements.matchmakingMap.value || '',
           difficulty: Number(this.elements.matchmakingDifficulty.value) || null,
           status: this.elements.roomFilterStatus.value || 'any',
@@ -677,7 +678,21 @@ bindEvents() {
       this.saveIdentity();
       this.actions.createPublicRoom?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+        gameMode: 'coop'
+      });
+    });
+    this.elements.createPublicPvp.addEventListener('click', () => {
+      this.saveIdentity();
+      writeStored(
+        PVP2_PUBLIC_TEAM_SIZE_STORAGE_KEY,
+        this.elements.publicPvpTeamSize.value
+      );
+      this.actions.createPublicRoom?.({
+        displayName: this.elements.name.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+        gameMode: PVP2_MODE,
+        teamSize: Number(this.elements.publicPvpTeamSize.value) || 1
       });
     });
 
@@ -685,7 +700,7 @@ bindEvents() {
       this.saveIdentity();
       this.actions.deployBotFill?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         mapId: this.elements.matchmakingMap.value || 'grid_bunker',
         difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
       });
@@ -700,6 +715,14 @@ bindEvents() {
     });
     this.elements.match3RegionPolicy.addEventListener('change', () => {
       writeStored(MATCH3_REGION_POLICY_STORAGE_KEY, this.elements.match3RegionPolicy.value);
+    });
+    this.elements.roomFilterMode.addEventListener('change', () => {
+      writeStored(PVP2_ROOM_MODE_FILTER_STORAGE_KEY, this.elements.roomFilterMode.value);
+      if (this.elements.roomFilterMode.value === PVP2_MODE) {
+        this.elements.roomFilterStatus.value = 'waiting';
+        this.elements.roomFilterBot.value = 'without-bot';
+        this.elements.roomFilterInProgress.checked = false;
+      }
     });
     this.elements.roomFilterStatus.addEventListener('change', () => {
       writeStored(MATCH3_ROOM_STATUS_STORAGE_KEY, this.elements.roomFilterStatus.value);
@@ -719,7 +742,7 @@ bindEvents() {
       );
       this.actions.createRoom?.({
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         gameMode: this.elements.privateGameMode.value
       });
     });
@@ -735,7 +758,7 @@ bindEvents() {
       this.actions.joinRoom?.({
         roomCode: this.elements.codeInput.value,
         displayName: this.elements.name.value,
-        serverUrl: this.elements.server.value
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL
       });
     });
 
@@ -748,7 +771,6 @@ bindEvents() {
 
     [
       this.elements.name,
-      this.elements.server,
       this.elements.codeInput,
       this.elements.matchmakingMap,
       this.elements.matchmakingDifficulty,
@@ -813,18 +835,31 @@ bindEvents() {
     this.elements.difficulty.addEventListener('change', sendSettings);
   }
 
+  switchHubTab(tab = 'play') {
+    const valid = new Set(['play', 'rooms', 'competitive', 'private']);
+    const next = valid.has(tab) ? tab : 'play';
+    this.activeTab = next;
+    writeStored(MPUI1_TAB_STORAGE_KEY, next);
+    this.elements.tabButtons?.forEach((button) => {
+      const active = button.dataset.mpTab === next;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    this.elements.tabPanels?.forEach((panel) => {
+      panel.hidden = panel.dataset.mpPanel !== next;
+    });
+  }
+
   saveIdentity() {
     const name = this.elements.name.value.trim().slice(0, 24) || 'Player';
-    const serverUrl = this.elements.server.value.trim();
     this.elements.name.value = name;
     writeStored(NAME_STORAGE_KEY, name);
-    writeStored(SERVER_STORAGE_KEY, serverUrl);
   }
 
   getConnectionIdentity() {
     return {
       displayName: this.elements.name?.value?.trim?.().slice(0, 24) || 'Player',
-      serverUrl: this.elements.server?.value?.trim?.() || ''
+      serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL
     };
   }
 
@@ -832,13 +867,19 @@ bindEvents() {
     this.opened = true;
     this.elements.modal.classList.add('open');
     this.elements.modal.setAttribute('aria-hidden', 'false');
+    window.dispatchEvent(new CustomEvent('ka:menu-screen', {
+      detail: { screen: 'multiplayer' }
+    }));
+    this.switchHubTab(this.activeTab || 'play');
     this.render(this.state);
   }
 
   close() {
     this.opened = false;
     this.elements.modal.classList.remove('open');
-    this.elements.modal.setAttribute('aria-hidden', 'true');
+    window.dispatchEvent(new CustomEvent('ka:menu-screen', {
+      detail: { screen: 'home' }
+    }));
   }
 
   localPlayer() {
@@ -860,6 +901,9 @@ bindEvents() {
     const pvp2WorkerEnabled = (
       nextState.productionRelease?.worker?.pvp2?.publicMatchmakingEnabled !== false
     );
+    const pvp2CustomRoomsEnabled = (
+      nextState.productionRelease?.worker?.pvp2?.publicCustomRoomsEnabled !== false
+    );
     if (
       !pvpWorkerEnabled
       && this.elements.privateGameMode?.value === 'pvp-team-elimination'
@@ -873,6 +917,7 @@ bindEvents() {
     }
     this.elements.connectView.hidden = online;
     this.elements.roomView.hidden = !online;
+    if (this.elements.tabbar) this.elements.tabbar.hidden = online;
 
     const releaseUi = deriveMultiplayerProductionReleaseUiState({
       productionRelease: nextState.productionRelease,
@@ -953,7 +998,10 @@ bindEvents() {
     const directoryActive = ['loading', 'joining'].includes(roomDirectory.status);
     this.elements.browseRooms.disabled = disabled || online || matchmakingActive || directoryActive;
     this.elements.createPublic.disabled = disabled || online || matchmakingActive || directoryActive;
+    this.elements.createPublicPvp.disabled = disabled || online || matchmakingActive || directoryActive || !pvp2WorkerEnabled || !pvp2CustomRoomsEnabled;
+    this.elements.publicPvpTeamSize.disabled = disabled || online || matchmakingActive || directoryActive || !pvp2WorkerEnabled || !pvp2CustomRoomsEnabled;
     this.elements.roomBrowserRefresh.disabled = disabled || online || directoryActive;
+    this.elements.roomFilterMode.disabled = disabled || online || directoryActive;
     this.elements.roomFilterStatus.disabled = disabled || online || directoryActive;
     this.elements.roomFilterScope.disabled = disabled || online || directoryActive;
     this.elements.roomFilterBot.disabled = disabled || online || directoryActive;
@@ -962,40 +1010,132 @@ bindEvents() {
     this.elements.roomBrowser.dataset.tone = roomDirectoryUi.tone;
     this.elements.roomBrowserTitle.textContent = roomDirectoryUi.title;
     this.elements.roomBrowserDetail.textContent = roomDirectoryUi.detail;
+    const visibleRoomCount = Array.isArray(roomDirectory.rooms) ? roomDirectory.rooms.length : 0;
+    this.elements.roomBrowserCount.textContent = `${visibleRoomCount} ROOM${visibleRoomCount === 1 ? '' : 'S'}`;
+    this.elements.roomBrowserHint.textContent = roomDirectory.status === 'loading'
+      ? 'SCANNING LIVE LOBBIES'
+      : roomDirectory.status === 'joining'
+        ? 'RESERVING YOUR SLOT'
+        : visibleRoomCount > 0
+          ? 'LIVE COMPATIBLE LOBBIES'
+          : 'CREATE A ROOM TO LEAD';
     this.elements.roomBrowserList.replaceChildren();
     if (['ready', 'join-rejected'].includes(roomDirectory.status) && roomDirectory.rooms?.length) {
       roomDirectory.rooms.forEach((entry) => {
         const card = document.createElement('article');
-        card.className = 'ka-room-browser-card';
+        card.className = 'ka-room-browser-card ka-mp2-room-card';
         card.dataset.status = entry.status;
         card.dataset.scope = entry.scope;
+        card.dataset.mode = entry.gameMode || 'coop';
+        card.dataset.quality = String(entry.quality || 'compatible').toLowerCase();
 
-        const identity = document.createElement('div');
-        identity.className = 'ka-room-browser-card-main';
-        const title = document.createElement('strong');
         const mapOption = Array.from(this.elements.matchmakingMap.options).find(
           (option) => option.value === entry.mapId
         );
-        title.textContent = mapOption?.textContent?.trim?.() || entry.mapId.replace(/_/g, ' ').toUpperCase();
-        const meta = document.createElement('span');
+        const arenaLabel = mapOption?.textContent?.trim?.()
+          || String(entry.mapId || 'grid_bunker').replace(/_/g, ' ').toUpperCase();
+        const pvpEntry = entry.gameMode === PVP2_MODE;
+        const quality = roomQualityPresentation(entry);
         const difficultyOption = Array.from(this.elements.matchmakingDifficulty.options).find(
           (option) => Number(option.value) === Number(entry.difficulty)
         );
-        const difficultyLabel = difficultyOption?.textContent?.trim?.() || `DIFFICULTY ${entry.difficulty}`;
-        meta.textContent = [
-          difficultyLabel,
-          entry.status === 'in-run' ? 'IN PROGRESS' : 'WAITING',
-          `${entry.connectedHumans}/${entry.maxPlayers} HUMANS`,
-          entry.reservedHumans > 0 ? `${entry.reservedHumans} JOINING` : null,
-          entry.hasBot ? 'AI WINGMAN' : null,
-          entry.scope === 'regional' ? 'YOUR REGION' : 'GLOBAL'
-        ].filter(Boolean).join(' · ');
-        identity.append(title, meta);
+        const difficultyLabel = difficultyOption?.textContent?.trim?.()
+          || `DIFFICULTY ${entry.difficulty}`;
+
+        const visual = document.createElement('div');
+        visual.className = `ka-mp2-room-card-visual ${mapVisualClass(entry.mapId)}`;
+        const visualShade = document.createElement('div');
+        visualShade.className = 'ka-mp2-room-card-shade';
+        const visualTop = document.createElement('div');
+        visualTop.className = 'ka-mp2-room-card-top';
+        const modeBadge = document.createElement('span');
+        modeBadge.className = 'ka-mp2-room-mode-badge';
+        modeBadge.textContent = pvpEntry ? '⚔ UNRANKED PVP' : '●● CO-OP';
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'ka-mp2-room-status-badge';
+        statusBadge.dataset.status = entry.status;
+        statusBadge.textContent = entry.status === 'in-run' ? 'IN PROGRESS' : 'WAITING';
+        visualTop.append(modeBadge, statusBadge);
+        const visualBottom = document.createElement('div');
+        visualBottom.className = 'ka-mp2-room-card-arena';
+        const arenaKicker = document.createElement('span');
+        arenaKicker.textContent = pvpEntry ? 'TEAM ELIMINATION' : difficultyLabel.toUpperCase();
+        const arenaTitle = document.createElement('strong');
+        arenaTitle.textContent = arenaLabel;
+        visualBottom.append(arenaKicker, arenaTitle);
+        visual.append(visualShade, visualTop, visualBottom);
+
+        const body = document.createElement('div');
+        body.className = 'ka-mp2-room-card-body';
+        const headline = document.createElement('div');
+        headline.className = 'ka-mp2-room-card-headline';
+        const title = document.createElement('strong');
+        title.textContent = pvpEntry
+          ? `${entry.maxPlayers === 4 ? '2V2' : '1V1'} CUSTOM BATTLE`
+          : 'PUBLIC SURVIVAL SQUAD';
+        const qualityBadge = document.createElement('span');
+        qualityBadge.className = 'ka-mp2-room-quality';
+        qualityBadge.dataset.tone = quality.tone;
+        qualityBadge.textContent = quality.label;
+        headline.append(title, qualityBadge);
+
+        const occupancy = document.createElement('div');
+        occupancy.className = 'ka-mp2-room-occupancy';
+        const slots = document.createElement('div');
+        slots.className = 'ka-mp2-room-slots';
+        const connected = Math.max(0, Number(entry.connectedHumans || 0));
+        const reserved = Math.max(0, Number(entry.reservedHumans || 0));
+        const capacity = Math.max(2, Math.min(4, Number(entry.maxPlayers || 2)));
+        for (let index = 0; index < capacity; index += 1) {
+          const slot = document.createElement('i');
+          slot.dataset.slot = index < connected
+            ? 'occupied'
+            : index < connected + reserved
+              ? 'reserved'
+              : 'open';
+          slot.title = slot.dataset.slot === 'occupied'
+            ? 'Connected player'
+            : slot.dataset.slot === 'reserved'
+              ? 'Player joining'
+              : 'Open player slot';
+          slots.appendChild(slot);
+        }
+        const slotCopy = document.createElement('div');
+        const slotTitle = document.createElement('strong');
+        slotTitle.textContent = `${connected}/${capacity} PLAYERS`;
+        const slotDetail = document.createElement('small');
+        slotDetail.textContent = entry.openHumanSlots > 0
+          ? `${entry.openHumanSlots} OPEN SLOT${entry.openHumanSlots === 1 ? '' : 'S'}`
+          : 'ROOM FULL';
+        slotCopy.append(slotTitle, slotDetail);
+        occupancy.append(slots, slotCopy);
+
+        const meta = document.createElement('div');
+        meta.className = 'ka-mp2-room-meta';
+        const metaEntries = [
+          ['REGION', entry.scope === 'regional' ? `${entry.region || 'LOCAL'} · NEARBY` : `${entry.region || 'ZZ'} · GLOBAL`],
+          ['ACTIVITY', formatRoomAge(entry)],
+          ['RULES', pvpEntry ? 'EQUAL STARTS · NO LATE JOIN' : entry.hasBot ? 'AI WINGMAN ACTIVE' : 'HUMAN SLOT AVAILABLE']
+        ];
+        metaEntries.forEach(([label, value]) => {
+          const item = document.createElement('span');
+          const key = document.createElement('small');
+          key.textContent = label;
+          const val = document.createElement('b');
+          val.textContent = value;
+          item.append(key, val);
+          meta.appendChild(item);
+        });
+        body.append(headline, occupancy, meta);
 
         const join = document.createElement('button');
         join.type = 'button';
-        join.className = 'ka-room-browser-join';
-        join.textContent = entry.status === 'in-run' ? 'JOIN RUN' : 'JOIN ROOM';
+        join.className = 'ka-room-browser-join ka-mp2-room-join';
+        const joinMain = document.createElement('strong');
+        joinMain.textContent = entry.status === 'in-run' ? 'JOIN ACTIVE RUN' : 'JOIN LOBBY';
+        const joinSub = document.createElement('small');
+        joinSub.textContent = pvpEntry ? 'UNRANKED CUSTOM MATCH' : 'DEPLOY WITH THIS SQUAD';
+        join.append(joinMain, joinSub);
         join.disabled = disabled || directoryActive || entry.openHumanSlots < 1;
         join.addEventListener('click', () => {
           this.saveIdentity();
@@ -1003,25 +1143,35 @@ bindEvents() {
             listingId: entry.listingId,
             joinToken: entry.joinToken,
             displayName: this.elements.name.value,
-            serverUrl: this.elements.server.value,
-            partySize: roomDirectory.filters?.requiredSlots || 1
+            serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+            partySize: roomDirectory.filters?.requiredSlots || 1,
+            gameMode: entry.gameMode || 'coop'
           });
         });
-        card.append(identity, join);
+
+        card.setAttribute(
+          'aria-label',
+          `${pvpEntry ? 'Unranked PvP' : 'Co-Op'} room on ${arenaLabel}, ${connected} of ${capacity} players, ${entry.openHumanSlots} open slots`
+        );
+        card.append(visual, body, join);
         this.elements.roomBrowserList.appendChild(card);
       });
     } else if (roomDirectory.status !== 'loading' && roomDirectory.status !== 'joining') {
       const empty = document.createElement('div');
-      empty.className = 'ka-room-browser-empty';
-      empty.textContent = roomDirectoryUi.detail;
+      empty.className = 'ka-room-browser-empty ka-mp2-browser-empty';
+      const emptyIcon = document.createElement('span');
+      emptyIcon.textContent = '◇';
+      const emptyTitle = document.createElement('strong');
+      emptyTitle.textContent = roomDirectoryUi.title;
+      const emptyDetail = document.createElement('small');
+      emptyDetail.textContent = roomDirectoryUi.detail;
+      empty.append(emptyIcon, emptyTitle, emptyDetail);
       this.elements.roomBrowserList.appendChild(empty);
     }
 
     this.elements.create.disabled = disabled || matchmakingActive || directoryActive;
     this.elements.privateGameMode.disabled = disabled || matchmakingActive || directoryActive || !pvpWorkerEnabled;
     this.elements.join.disabled = disabled || matchmakingActive || directoryActive;
-    this.elements.releaseRetry.hidden = !releaseUi.retryVisible || online;
-    this.elements.releaseRetry.disabled = releaseUi.retryDisabled || nextState.connecting || online;
         const lastRoom = nextState.lastRoom;
         this.elements.rejoin.hidden = online || !lastRoom?.roomCode;
         this.elements.rejoin.disabled = disabled || online;
@@ -1038,46 +1188,116 @@ bindEvents() {
     );
     const allReady = connectedPlayers.length > 0
       && connectedPlayers.every((player) => player.ready === true);
+    const connectedHumanCount = connectedPlayers.filter(
+      (player) => player.isBot !== true
+    ).length;
+    const botPresent = connectedPlayers.some((player) => player.isBot === true);
+    const maxPlayers = Math.max(2, Math.min(4, Number(room.settings?.maxPlayers) || 2));
+    const readyCount = connectedPlayers.filter((player) => player.ready === true).length;
+    const roomMapId = String(room.settings?.mapId || 'grid_bunker');
+    const roomMapOption = Array.from(this.elements.map.options).find(
+      (option) => option.value === roomMapId
+    );
+    const roomMapLabel = roomMapOption?.textContent?.trim?.()
+      || roomMapId.replace(/_/g, ' ').toUpperCase();
+    const mapClass = mapVisualClass(roomMapId);
+
+    this.elements.roomVisual.className = `ka-mp-room-banner ka-mp2-lobby-hero ${mapClass}`;
+    this.elements.roomVisual.dataset.mode = isPvp ? 'pvp' : 'coop';
+    this.elements.roomModeBadge.textContent = isPvp ? '⚔ TEAM ELIMINATION' : '●● CO-OP OPERATIONS';
+    this.elements.roomStatusBadge.textContent = room.status === 'in-run' ? 'IN PROGRESS' : 'WAITING ROOM';
+    this.elements.roomStatusBadge.dataset.status = room.status || 'waiting';
+    this.elements.roomVisibilityBadge.textContent = room.settings?.publicListing === true ? 'PUBLIC' : 'PRIVATE';
+    this.elements.roomTitle.textContent = isPvp ? 'BATTLE LOBBY' : 'SURVIVAL SQUAD';
+    this.elements.roomSubtitle.textContent = isPvp
+      ? 'Build two balanced teams, ready every competitor, then begin the elimination series.'
+      : 'Assemble your squad, choose an arena, and confirm every operative is ready.';
+    this.elements.roomRuleBadge.textContent = isPvp
+      ? `${maxPlayers === 4 ? '2V2' : '1V1'} · UNRANKED · EQUAL STARTS`
+      : `${maxPlayers} PLAYER CAP · SHARED SURVIVAL`;
+    this.elements.lobbyMapPreview.className = `ka-mp2-map-preview ${mapClass}`;
+    this.elements.lobbyMapName.textContent = roomMapLabel;
+    this.elements.lobbyMapRule.textContent = isPvp
+      ? 'TEAM ELIMINATION · DIFFICULTY LOCKED'
+      : isHost
+        ? 'HOST CAN CHANGE BEFORE DEPLOYMENT'
+        : 'ARENA SELECTED BY HOST';
+    this.elements.readyMeter.style.width = `${Math.round((readyCount / Math.max(1, connectedPlayers.length)) * 100)}%`;
+    this.elements.readySummary.textContent = room.status === 'in-run'
+      ? 'OPERATION IN PROGRESS'
+      : allReady
+        ? 'SQUAD READY TO DEPLOY'
+        : `${readyCount}/${connectedPlayers.length} OPERATIVES READY`;
+    this.elements.readyDetail.textContent = room.status === 'in-run'
+      ? 'The active match is protected from lobby changes.'
+      : allReady
+        ? (isHost ? 'Launch when your team is prepared.' : 'Waiting for the host to launch.')
+        : connectedPlayers.length < 2
+          ? 'Invite another player or use an available team option.'
+          : 'Every connected player must confirm readiness.';
 
     this.elements.playerList.replaceChildren();
+    this.elements.playerList.dataset.mode = isPvp ? 'pvp' : 'coop';
+    this.elements.playerList.dataset.capacity = String(maxPlayers);
     room.players.forEach((player, index) => {
       const row = document.createElement('div');
-      row.className = 'ka-coop-player';
+      row.className = 'ka-coop-player ka-mp2-player-card';
       row.id = `ka-coop-player-${escapeForId(player.playerId)}`;
       row.dataset.bot = player.isBot === true ? 'true' : 'false';
+      row.dataset.local = player.playerId === local?.playerId ? 'true' : 'false';
+      row.dataset.host = player.isHost === true ? 'true' : 'false';
+      row.dataset.team = isPvp ? String(player.team || '') : '';
 
       const identity = document.createElement('div');
-      identity.className = 'ka-coop-player-identity';
+      identity.className = 'ka-coop-player-identity ka-mp2-player-identity';
 
-      const slot = document.createElement('span');
-      slot.className = 'ka-coop-player-slot';
-      slot.textContent = String(index + 1);
+      const avatar = document.createElement('span');
+      avatar.className = 'ka-mp2-player-avatar';
+      avatar.textContent = player.isBot ? 'AI' : displayInitials(player.displayName);
 
+      const copy = document.createElement('div');
+      copy.className = 'ka-mp2-player-copy';
+      const nameLine = document.createElement('div');
+      nameLine.className = 'ka-mp2-player-name-line';
       const name = document.createElement('strong');
       name.textContent = player.displayName || 'Player';
-
+      nameLine.appendChild(name);
+      if (player.playerId === local?.playerId) {
+        const you = document.createElement('span');
+        you.textContent = 'YOU';
+        you.dataset.badge = 'you';
+        nameLine.appendChild(you);
+      }
+      if (player.isHost) {
+        const host = document.createElement('span');
+        host.textContent = 'HOST';
+        host.dataset.badge = 'host';
+        nameLine.appendChild(host);
+      }
       const role = document.createElement('span');
       role.className = 'ka-coop-player-role';
       role.textContent = isPvp
-        ? `${player.team || 'UNASSIGNED'}${player.isHost ? ' · HOST' : ''}`
+        ? `${player.team || 'UNASSIGNED'} TEAM · SLOT ${index + 1}`
         : player.isBot
-          ? 'AI WINGMATE'
+          ? 'AI WINGMAN · COMPANION SLOT'
           : player.isHost
-            ? 'HOST'
-            : 'OPERATIVE';
-      row.dataset.team = isPvp ? String(player.team || '') : '';
-
-      identity.append(slot, name, role);
+            ? 'SQUAD LEADER · OPERATIVE'
+            : 'OPERATIVE · HUMAN PLAYER';
+      copy.append(nameLine, role);
+      identity.append(avatar, copy);
 
       const state = document.createElement('span');
-      state.className = 'ka-coop-player-state';
+      state.className = 'ka-coop-player-state ka-mp2-player-state';
       state.dataset.ready = player.ready ? 'true' : 'false';
       state.dataset.connected = player.connected === false ? 'false' : 'true';
-      state.textContent = player.connected === false
+      const stateDot = document.createElement('i');
+      const stateCopy = document.createElement('b');
+      stateCopy.textContent = player.connected === false
         ? 'RECONNECTING'
         : player.ready
           ? 'READY'
           : 'NOT READY';
+      state.append(stateDot, stateCopy);
 
       row.append(identity, state);
 
@@ -1087,7 +1307,7 @@ bindEvents() {
         && player.isBot !== true
       ) {
         const controls = document.createElement('div');
-        controls.className = 'ka-coop-player-controls';
+        controls.className = 'ka-coop-player-controls ka-mp2-player-controls';
 
         const transfer = document.createElement('button');
         transfer.type = 'button';
@@ -1110,8 +1330,29 @@ bindEvents() {
         row.appendChild(controls);
       }
 
-this.elements.playerList.appendChild(row);
+      this.elements.playerList.appendChild(row);
     });
+
+    for (let index = room.players.length; index < maxPlayers; index += 1) {
+      const openSlot = document.createElement('div');
+      openSlot.className = 'ka-coop-player ka-mp2-player-card ka-mp2-player-open';
+      openSlot.dataset.open = 'true';
+      const openIcon = document.createElement('span');
+      openIcon.className = 'ka-mp2-player-avatar';
+      openIcon.textContent = '+';
+      const openCopy = document.createElement('div');
+      openCopy.className = 'ka-mp2-player-copy';
+      const openTitle = document.createElement('strong');
+      openTitle.textContent = isPvp ? 'OPEN COMPETITOR SLOT' : 'OPEN OPERATIVE SLOT';
+      const openDetail = document.createElement('span');
+      openDetail.className = 'ka-coop-player-role';
+      openDetail.textContent = room.settings?.publicListing === true
+        ? 'VISIBLE IN PUBLIC ROOM BROWSER'
+        : 'SHARE THE ROOM CODE TO INVITE';
+      openCopy.append(openTitle, openDetail);
+      openSlot.append(openIcon, openCopy);
+      this.elements.playerList.appendChild(openSlot);
+    }
 
     this.elements.map.value = String(room.settings?.mapId || 'grid_bunker');
     setNumericSelectValue(
@@ -1128,6 +1369,9 @@ this.elements.playerList.appendChild(row);
       this.elements.maxPlayers.value = String(
         Math.max(2, Math.min(4, Number(room.settings?.maxPlayers) || 4))
       );
+      Array.from(this.elements.maxPlayers.options).forEach((option) => {
+        option.disabled = isPvp && option.value === '3';
+      });
       this.elements.maxPlayers.disabled =
         !isHost || room.status === 'in-run';
     }
@@ -1142,16 +1386,11 @@ this.elements.playerList.appendChild(row);
       this.elements.allowLateJoin.disabled = isPvp || !isHost;
     }
     if (this.elements.publicListing) {
-      this.elements.publicListing.checked = isPvp
-        ? false
-        : room.settings?.publicListing === true;
-      this.elements.publicListing.disabled = isPvp || !isHost;
+      this.elements.publicListing.checked = room.settings?.publicListing === true;
+      this.elements.publicListing.disabled = !isHost || room.status === 'in-run';
+      this.elements.publicListing.parentElement?.classList.toggle('ka-pvp-public-listing', isPvp);
     }
 
-    const botPresent = connectedPlayers.some((player) => player.isBot === true);
-    const connectedHumanCount = connectedPlayers.filter(
-      (player) => player.isBot !== true
-    ).length;
     if (this.elements.maxPlayers && botPresent) {
       this.elements.maxPlayers.value = '2';
       this.elements.maxPlayers.disabled = true;

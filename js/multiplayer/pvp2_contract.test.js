@@ -13,13 +13,16 @@ const lobbyUi = read('js/multiplayer/lobby_ui.js');
 const matchmaking = read('js/multiplayer/matchmaking_core.js');
 const css = read('css/multiplayer.css');
 
-assert.equal(release.pvp2.patch, 'pvp2-r1-public-matchmaking-competitive-stats-balance');
+assert.equal(release.pvp2.patch, 'pvp2-r2-public-custom-pvp-rooms');
 assert.equal(release.pvp2.publicMatchmaking, true);
 assert.equal(release.pvp2.publicTeamSize, 1);
 assert.equal(release.pvp2.coopIsolationPreserved, true);
 assert.match(lobbyUi, /FIND PUBLIC PVP 1V1/);
 assert.match(lobbyUi, /CREATE PUBLIC CO-OP ROOM/);
-assert.match(lobbyUi, /PVP USES QUICK MATCH/);
+assert.match(lobbyUi, /CREATE PUBLIC PVP ROOM/);
+assert.match(lobbyUi, /UNRANKED PVP/);
+assert.equal(release.pvp2.publicCustomRooms, true);
+assert.equal(release.pvp2.customRoomsRanked, false);
 assert.match(lobbyUi, /localReady \? 'NOT READY' : 'READY'/);
 assert.match(lobbyUi, /Set status to not ready/);
 assert.match(lobbyUi, /COMPETITIVE RECORD/);

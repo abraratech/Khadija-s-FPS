@@ -1,6 +1,6 @@
 // PVP.2 R1 — public PvP competitive statistics and rating authority.
 
-export const PVP2_PATCH = 'pvp2-r1-public-matchmaking-competitive-stats-balance';
+export const PVP2_PATCH = 'pvp2-r2-public-custom-pvp-rooms';
 export const PVP2_PRODUCT_VERSION = '1.1.0-pvp2';
 export const PVP2_SCHEMA = 1;
 export const PVP2_MODE = 'pvp-team-elimination';
@@ -9,6 +9,17 @@ export const PVP2_MINIMUM_RATING = 100;
 export const PVP2_RATING_K = 32;
 export const PVP2_LEDGER_LIMIT = 2000;
 export const PVP2_LEADERBOARD_LIMIT = 100;
+export const PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED = true;
+export const PVP2_CUSTOM_ROOM_FEATURE_FLAG = 'PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED';
+export const PVP2_CUSTOM_ROOM_TEAM_SIZES = Object.freeze([1, 2]);
+
+export function normalizePvp2CustomRoomMaxPlayers(value) {
+  return Number(value) >= 4 ? 4 : 2;
+}
+
+export function pvp2PublicCustomRoomsEnabled(value, fallback = true) {
+  return pvp2FeatureEnabled(value, fallback);
+}
 
 function cleanText(value, fallback = '', limit = 160) {
   const text = String(value ?? fallback).trim();

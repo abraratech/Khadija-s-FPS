@@ -41,7 +41,7 @@ PVP1_PATCH = "pvp1-r1-isolated-team-elimination-foundation"
 PVP1_PRODUCT_VERSION = "1.1.0-pvp1"
 PVP1_SOURCE_BASELINE_SHA = "ddbdc3a4b478aa26a515e2dd8dbfc9449885c466"
 PVP1_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
-PVP2_PATCH = "pvp2-r1-public-matchmaking-competitive-stats-balance"
+PVP2_PATCH = "pvp2-r2-public-custom-pvp-rooms"
 PVP2_PRODUCT_VERSION = "1.1.0-pvp2"
 PVP2_SOURCE_BASELINE_SHA = "014b0cf1921a3df3d8fbc3df9ad3be93e7e4fb0b"
 PVP2_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
@@ -390,6 +390,11 @@ def main() -> None:
             "mode": "pvp-team-elimination",
             "public_matchmaking": True,
             "public_team_size": 1,
+            "public_custom_rooms": True,
+            "public_custom_rooms_enabled": True,
+            "custom_room_team_sizes": [1, 2],
+            "custom_rooms_ranked": False,
+            "custom_rooms_waiting_only": True,
             "private_pvp_preserved": True,
             "region_first_global_expansion": True,
             "no_backfill": True,

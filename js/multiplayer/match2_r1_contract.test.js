@@ -10,8 +10,9 @@ const hub = fs.readFileSync(new URL('../../multiplayer-server/src/matchmaking_hu
 const sniper = fs.readFileSync(new URL('../weapons/sniper.js', import.meta.url), 'utf8');
 
 assert(lobby.includes('browseOpenRooms') && lobby.includes('joinOpenRoom') && lobby.includes('createPublicRoom'));
-assert(ui.includes('BROWSE PUBLIC CO-OP ROOMS') && ui.includes('CREATE PUBLIC CO-OP ROOM'));
-assert(ui.includes('PVP USES QUICK MATCH'));
+assert(ui.includes('BROWSE PUBLIC ROOMS') && ui.includes('CREATE PUBLIC CO-OP ROOM'));
+assert(ui.includes('CREATE PUBLIC PVP ROOM') && ui.includes('UNRANKED TEAM ELIMINATION ROOMS'));
+assert(ui.includes('FIND PUBLIC PVP 1V1'));
 assert(ui.includes('LIST AS PUBLIC ROOM'));
 assert(css.includes('.ka-room-browser-card'));
 assert(worker.includes("url.pathname === '/directory-admission'"));

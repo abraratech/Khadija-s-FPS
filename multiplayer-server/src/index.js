@@ -32,7 +32,9 @@ import {
   PVP2_PATCH,
   PVP2_PRODUCT_VERSION,
   PVP2_SCHEMA,
-  pvp2FeatureEnabled
+  normalizePvp2CustomRoomMaxPlayers,
+  pvp2FeatureEnabled,
+  pvp2PublicCustomRoomsEnabled
 } from './pvp2_core.js';
 import { MATCHMAKING_PATCH, MATCHMAKING_SCHEMA } from './matchmaking_core.js';
 import {
@@ -80,6 +82,13 @@ function pvp1Enabled(env) {
 
 function pvp2PublicMatchmakingEnabled(env) {
   return pvp2FeatureEnabled(env?.PVP2_PUBLIC_MATCHMAKING_ENABLED, true);
+}
+
+function pvp2PublicCustomRoomsAvailable(env) {
+  return pvp2PublicCustomRoomsEnabled(
+    env?.PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED,
+    true
+  );
 }
 
 const POST_FINAL1_SERVER_INFO = Object.freeze({
@@ -242,6 +251,11 @@ const PVP2_SERVER_INFO = Object.freeze({
   mode: PVP1_MODE,
   publicMatchmaking: true,
   publicTeamSize: 1,
+  publicCustomRooms: true,
+  publicCustomRoomsEnabled: true,
+  customRoomTeamSizes: [1, 2],
+  customRoomsRanked: false,
+  customRoomsWaitingOnly: true,
   privatePvpPreserved: true,
   regionFirstGlobalExpansion: true,
   noBackfill: true,
@@ -2077,10 +2091,21 @@ isAuthorityCheckpointEnvelope(envelope) {
       }
 
       if (isPvp1Mode(this.room.settings?.gameMode)) {
-        this.room.settings.maxPlayers = 4;
+        this.room.settings.maxPlayers = normalizePvp2CustomRoomMaxPlayers(
+          this.room.settings.maxPlayers
+        );
         this.room.settings.allowLateJoin = false;
-        this.room.settings.publicListing = false;
-        this.room.settings.privacy = 'private';
+        this.room.settings.publicListing = Boolean(
+          this.room.status !== 'in-run'
+          && this.room.settings.publicListing === true
+          && pvp2PublicCustomRoomsAvailable(this.env)
+        );
+        this.room.settings.locked = this.room.settings.publicListing
+          ? false
+          : this.room.settings.locked === true;
+        this.room.settings.privacy = this.room.settings.publicListing
+          ? 'public'
+          : 'private';
         this.room.virtualPlayers = {};
       }
 
@@ -2337,7 +2362,6 @@ isAuthorityCheckpointEnvelope(envelope) {
       if (pvpRoom) {
         this.room.virtualPlayers = {};
         this.room.settings.allowLateJoin = false;
-        this.room.settings.publicListing = false;
         const assignments = assignPvp1Teams(connected);
         connected.forEach((entry) => {
           const assignment = assignments[entry.playerId];
@@ -2797,12 +2821,14 @@ isAuthorityCheckpointEnvelope(envelope) {
       room.directoryAdmissions,
       { now: Date.now() }
     );
+    const pvpRoom = isPvp1Mode(room.settings?.gameMode);
     const listed = Boolean(
       room.settings?.publicListing === true
       && room.settings?.locked !== true
       && host?.connected === true
       && connectedHumans + reservedHumans < maxPlayers
       && ['waiting', 'in-run'].includes(room.status)
+      && (!pvpRoom || room.status === 'waiting')
       && (room.status !== 'in-run' || room.settings?.allowLateJoin === true)
     );
     return {
@@ -2810,6 +2836,8 @@ isAuthorityCheckpointEnvelope(envelope) {
       listed,
       protocol: SERVER_PROTOCOL,
       build: SERVER_BUILD,
+      gameMode: pvpRoom ? PVP1_MODE : 'coop',
+      ranked: false,
       mapId: room.settings?.mapId || 'grid_bunker',
       difficulty: Number(room.settings?.difficulty) || 1,
       status: room.status,
@@ -2992,7 +3020,7 @@ export default {
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
-        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env) },
+        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env), publicCustomRoomsEnabled: pvp2PublicCustomRoomsAvailable(env) },
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -3034,7 +3062,7 @@ export default {
         economyRewardsProgression: POST_FINAL9_SERVER_INFO,
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
-        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env) },
+        pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env), publicCustomRoomsEnabled: pvp2PublicCustomRoomsAvailable(env) },
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });

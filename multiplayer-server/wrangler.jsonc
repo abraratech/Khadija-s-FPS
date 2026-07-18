@@ -72,6 +72,7 @@
   "vars": {
     "ALLOWED_ORIGINS": "*",
     "PVP1_ENABLED": "true",
-    "PVP2_PUBLIC_MATCHMAKING_ENABLED": "true"
+    "PVP2_PUBLIC_MATCHMAKING_ENABLED": "true",
+    "PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED": "true"
   }
 }

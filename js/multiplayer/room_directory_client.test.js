@@ -23,6 +23,8 @@ const client = new PublicRoomDirectoryClient({
         rooms: [{
           listingId: 'listing-1',
           joinToken: 'join-1',
+          gameMode: 'pvp-team-elimination',
+          ranked: false,
           mapId: 'grid_bunker',
           difficulty: 1,
           status: 'waiting',
@@ -45,7 +47,9 @@ const client = new PublicRoomDirectoryClient({
         roomCode: 'ABC234',
         joinMode: 'join',
         admissionToken: 'admission-1',
-        admissionExpiresAt: Date.now() + 15000
+        admissionExpiresAt: Date.now() + 15000,
+        gameMode: 'pvp-team-elimination',
+        ranked: false
       }
     });
   }
@@ -59,6 +63,7 @@ const list = await client.list({
 });
 assert.equal(list.status, 'ready');
 assert.equal(list.rooms.length, 1);
+assert.equal(list.rooms[0].gameMode, 'pvp-team-elimination');
 const options = {
   serverUrl: 'https://example.workers.dev',
   playerId: 'player-1',
@@ -73,6 +78,7 @@ const [first, second] = await Promise.all([
 ]);
 assert.equal(first.roomCode, 'ABC234');
 assert.equal(second.admissionToken, 'admission-1');
+assert.equal(first.gameMode, 'pvp-team-elimination');
 assert.equal(joinCalls, 1, 'duplicate join clicks must share one request');
 assert.equal(calls.length, 2);
 console.log('MATCH.2 R1.1 frontend room admission client tests passed');

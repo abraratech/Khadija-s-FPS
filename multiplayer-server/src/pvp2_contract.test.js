@@ -18,12 +18,15 @@ assert.match(index, /url\.pathname === '\/pvp2\/stats'/);
 assert.match(index, /url\.pathname === '\/pvp2\/leaderboard'/);
 assert.match(index, /url\.pathname\.startsWith\('\/pvp2\/'\)/);
 assert.match(index, /PVP2_PATCH/);
-assert.match(core, /pvp2-r1-public-matchmaking-competitive-stats-balance/);
+assert.match(core, /pvp2-r2-public-custom-pvp-rooms/);
 assert.match(hub, /\/pvp2\/stats/);
 assert.match(hub, /\/pvp2\/leaderboard/);
 assert.match(hub, /\/pvp2\/result/);
 assert.match(matchmaking, /pvp-team-elimination/);
 assert.match(wrangler, /PVP2_PUBLIC_MATCHMAKING_ENABLED/);
+assert.match(wrangler, /PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED/);
+assert.match(index, /publicCustomRooms/);
+assert.match(index, /customRoomsRanked: false/);
 assert.match(wrangler, /"true"/);
 
 

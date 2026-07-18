@@ -223,6 +223,7 @@ export class MatchmakingHub extends DurableObject {
       request.headers.get('x-ka-region') || 'ZZ'
     ).toUpperCase().slice(0, 16);
     const filters = {
+      gameMode: url.searchParams.get('gameMode') || 'any',
       mapId: url.searchParams.get('mapId') || '',
       difficulty: url.searchParams.get('difficulty') || '',
       status: url.searchParams.get('status') || 'any',
@@ -327,6 +328,10 @@ export class MatchmakingHub extends DurableObject {
         status: admission.roomStatus,
         admissionToken: admission.admissionToken,
         admissionExpiresAt: admission.admissionExpiresAt,
+        gameMode: listing.gameMode === 'pvp-team-elimination'
+          ? 'pvp-team-elimination'
+          : 'coop',
+        ranked: listing.ranked === true,
         partySize: 1,
         quality: listing.region === String(request.headers.get('x-ka-region') || 'ZZ').toUpperCase().slice(0, 16)
           ? 'excellent'
@@ -441,6 +446,9 @@ export class MatchmakingHub extends DurableObject {
           now
         })),
       {
+        gameMode: ticket.mode === 'pvp-team-elimination'
+          ? 'pvp-team-elimination'
+          : 'coop',
         mapId: ticket.mapId,
         difficulty: ticket.difficulty,
         status: ticket.joinInProgress === true ? 'any' : 'waiting',

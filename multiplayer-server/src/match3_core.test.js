@@ -6,6 +6,7 @@ import {
   estimatedMatch3WaitMs,
   match3RegionCompatible,
   match3RoomVisibleForFilters,
+  normalizeMatch3RoomFilters,
   normalizeMatch3ServerPreferences,
   sortMatch3RoomEntries
 } from './match3_core.js';
@@ -79,3 +80,8 @@ assert(sortMatch3RoomEntries([room], { requiredSlots: 1 }, { now })[0].quality =
 assert(estimatedMatch3WaitMs({ partySize: 2 }) === 1_000, 'party room wait mismatch');
 
 console.log('MATCH.3 Worker quality, party and room filter tests passed');
+
+const pvpDirectoryFilters = normalizeMatch3RoomFilters({ gameMode: 'pvp-team-elimination', difficulty: '' });
+assert(pvpDirectoryFilters.gameMode === 'pvp-team-elimination', 'PvP directory mode filter mismatch');
+assert(!match3RoomVisibleForFilters({ openHumanSlots: 1, gameMode: 'coop' }, pvpDirectoryFilters), 'Co-Op listing must not match PvP directory filter');
+assert(match3RoomVisibleForFilters({ openHumanSlots: 1, gameMode: 'pvp-team-elimination' }, pvpDirectoryFilters), 'PvP listing should match PvP directory filter');

@@ -1520,11 +1520,13 @@
 <div class="ka-rail-tagline">Survive the outbreak.<br/>Master every arena.<br/>Fight together.</div>
 </div>
 <div aria-label="Available modes" class="ka-rail-mode-row">
-<div class="ka-rail-mode solo"><span>◉</span><b>SOLO</b><small>Single player</small></div>
-<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>2 players</small></div>
+<div class="ka-rail-mode solo"><span>◉</span><b>SOLO</b><small>Survival</small></div>
+<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>Operations</small></div>
+<div class="ka-rail-mode pvp"><span>⚔</span><b>PVP</b><small>Team elimination</small></div>
 </div>
 <nav class="ka-rail-nav">
 <button class="ka-rail-nav-btn active" data-next-screen="home" data-rail-screen="home" type="button"><span>▶</span> Quick Play</button>
+<button class="ka-rail-nav-btn" data-next-screen="multiplayer" data-rail-screen="multiplayer" type="button"><span>◫</span> Multiplayer</button>
 <button class="ka-rail-nav-btn" data-next-screen="map" data-rail-screen="map" type="button"><span>▰</span> Select Arena</button>
 <button class="ka-rail-nav-btn" data-next-screen="difficulty" data-rail-screen="difficulty" type="button"><span>⌁</span> Loadout</button>
 <button class="ka-rail-nav-btn" data-next-screen="avatar" data-rail-screen="avatar" type="button"><span>◈</span> Avatar Studio</button>
@@ -1593,11 +1595,11 @@
 <small>Choose one of six arenas, tune the difficulty, and fight through escalating swarm rounds.</small>
 <span class="ka-mode-arrow">SELECT ARENA →</span>
 </button>
-<button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" type="button">
-<span class="ka-card-kicker">Online multiplayer</span>
-<strong>Co-op + Private PvP</strong>
-<small>Co-op keeps individual points, perks, weapons, and purchases unchanged; private rooms can also run isolated 1v1 / 2v2 Team Elimination.</small>
-<span class="ka-mode-arrow">OPEN MULTIPLAYER →</span>
+<button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" data-next-screen="multiplayer" type="button">
+<span class="ka-card-kicker">Online multiplayer hub</span>
+<strong>Co-Op + Competitive PvP</strong>
+<small>Quick Match, public rooms, private squads, competitive records, and visual room management in one dedicated section.</small>
+<span class="ka-mode-arrow">ENTER MULTIPLAYER →</span>
 </button>
 <div class="ka-home-actions">
 <button class="ka-nav-btn" data-next-screen="map" type="button">SELECT ARENA</button>
@@ -1605,6 +1607,15 @@
 <button class="ka-link-btn" data-next-screen="settings" type="button">GAME SETTINGS</button>
 </div>
 </div>
+</div>
+</section>
+<section class="ka-menu-screen ka-multiplayer-screen" data-menu-screen="multiplayer" id="multiplayer-screen">
+<div class="ka-section-heading ka-multiplayer-section-heading">
+  <div><span>Online operations center</span><strong>MULTIPLAYER HUB</strong></div>
+  <small>Quick Match · Public Rooms · Private Squads · Competitive Record</small>
+</div>
+<div id="ka-multiplayer-hub-mount" class="ka-multiplayer-hub-mount" aria-live="polite">
+  <div class="ka-multiplayer-hub-loading"><span>◫</span><strong>INITIALIZING ONLINE SERVICES</strong><small>Preparing multiplayer controls…</small></div>
 </div>
 </section>
 <section class="ka-menu-screen" data-menu-screen="map">
@@ -2334,7 +2345,8 @@
 </section>
 <script>
       (() => {
-        const screenNames = ['home', 'map', 'difficulty', 'avatar', 'social', 'settings'];
+        const screenNames = ['home', 'multiplayer', 'map', 'difficulty', 'avatar', 'social', 'live', 'settings'];
+        const stepFlow = ['home', 'map', 'difficulty'];
         const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
         const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
         const mapSelect = document.getElementById('map-select');
@@ -2420,11 +2432,13 @@
 
         function showScreen(name) {
           screens.forEach(screen => screen.classList.toggle('active', screen.dataset.menuScreen === name));
-          const activeIndex = screenNames.indexOf(name);
+          const activeIndex = stepFlow.indexOf(name);
           steps.forEach((step, index) => {
             step.classList.toggle('active', step.dataset.stepDot === name);
-            step.classList.toggle('done', index < activeIndex);
+            step.classList.toggle('done', activeIndex >= 0 && index < activeIndex);
           });
+          const menuRoot = document.getElementById('menu');
+          if (menuRoot) menuRoot.dataset.screen = name;
           document.querySelectorAll('[data-rail-screen]').forEach((button) => {
             const active = button.dataset.railScreen === name;
             button.classList.toggle('active', active);
@@ -2502,6 +2516,11 @@
         document.querySelectorAll('[data-next-screen]').forEach((btn) => {
           btn.addEventListener('click', () => showScreen(btn.dataset.nextScreen));
         });
+        window.addEventListener('ka:menu-screen', (event) => {
+          const requested = String(event.detail?.screen || 'home');
+          if (screenNames.includes(requested)) showScreen(requested);
+        });
+        window.KHADIJA_MENU_SHOW_SCREEN = showScreen;
 
         document.querySelectorAll('.ka-map-card[data-map]').forEach((btn) => {
           btn.addEventListener('click', () => applyMapSelection(btn.dataset.map));

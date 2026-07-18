@@ -11,6 +11,8 @@ assert.equal(PUBLIC_ROOM_DIRECTORY_PATCH, 'match3-r1-party-quality-room-discover
 const entry = normalizePublicRoomEntry({
   listingId: 'listing-1',
   joinToken: 'join-1',
+  gameMode: 'pvp-team-elimination',
+  ranked: false,
   mapId: 'grid_bunker',
   difficulty: 1,
   status: 'waiting',
@@ -23,6 +25,8 @@ const entry = normalizePublicRoomEntry({
   scope: 'regional'
 });
 assert.equal(entry.openHumanSlots, 1);
+assert.equal(entry.gameMode, 'pvp-team-elimination');
+assert.equal(entry.ranked, false);
 const response = normalizeRoomDirectoryResponse({
   ok: true,
   schema: 1,
@@ -35,10 +39,13 @@ const assignment = normalizeRoomAdmissionAssignment({
   roomCode: 'ABC234',
   admissionToken: 'admission-1',
   admissionExpiresAt: 1234,
-  listingId: 'listing-1'
+  listingId: 'listing-1',
+  gameMode: 'pvp-team-elimination',
+  ranked: false
 });
 assert.equal(assignment.roomCode, 'ABC234');
 assert.equal(assignment.admissionToken, 'admission-1');
+assert.equal(assignment.gameMode, 'pvp-team-elimination');
 assert.equal(roomDirectoryStatusPresentation({ status: 'ready', rooms: response.rooms }).tone, 'success');
 assert.equal(roomDirectoryStatusPresentation({ status: 'join-rejected', error: 'Room full' }).tone, 'warning');
 console.log('MATCH.2 R1.1 frontend room directory core tests passed');

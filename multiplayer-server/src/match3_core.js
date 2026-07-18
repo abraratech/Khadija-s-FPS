@@ -153,6 +153,9 @@ export function chooseMatch3Candidate(tickets, incoming, {
 export function normalizeMatch3RoomFilters(value = {}) {
   const source = value && typeof value === 'object' ? value : {};
   return Object.freeze({
+    gameMode: ['any', 'coop', 'pvp-team-elimination'].includes(source.gameMode)
+      ? source.gameMode
+      : 'any',
     mapId: cleanText(source.mapId, '', 80),
     difficulty: source.difficulty === '' || source.difficulty === null
       ? null
@@ -183,6 +186,10 @@ export function normalizeMatch3RoomFilters(value = {}) {
 export function match3RoomVisibleForFilters(room = {}, filters = {}) {
   const normalized = normalizeMatch3RoomFilters(filters);
   if (Number(room.openHumanSlots || 0) < normalized.requiredSlots) return false;
+  if (
+    normalized.gameMode !== 'any'
+    && String(room.gameMode || 'coop') !== normalized.gameMode
+  ) return false;
   if (normalized.mapId && String(room.mapId || '') !== normalized.mapId) return false;
   if (
     normalized.difficulty !== null

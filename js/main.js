@@ -254,12 +254,16 @@ configureMultiplayerPvp({
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
 window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
-window.KHADIJA_PVP_PATCH = 'pvp2-r1-public-matchmaking-competitive-stats-balance';
-window.KHADIJA_PVP_HOTFIX = 'pvp2-r1-5-lobby-action-label-clarity';
+window.KHADIJA_PVP_PATCH = 'pvp2-r2-public-custom-pvp-rooms';
+window.KHADIJA_PVP_HOTFIX = 'pvp2-r2-public-custom-pvp-rooms';
+window.KHADIJA_MULTIPLAYER_LAUNCH_UI_PATCH = 'pvp2-r2-1-launch-connection-hardening';
+window.KHADIJA_MULTIPLAYER_HUB_PATCH = 'mpui1-r1-full-section-hub-foundation';
 console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
 console.info('[Multiplayer Patch] final2-r1-full-product-certification');
-console.info('[PvP Patch] pvp2-r1-public-matchmaking-competitive-stats-balance');
-console.info('[PvP Hotfix] pvp2-r1-5-lobby-action-label-clarity');
+console.info('[PvP Patch] pvp2-r2-public-custom-pvp-rooms');
+console.info('[PvP Milestone] pvp2-r2-public-custom-pvp-rooms');
+console.info('[Multiplayer Launch UI] pvp2-r2-1-launch-connection-hardening');
+console.info('[Multiplayer Hub] mpui1-r1-full-section-hub-foundation');
 
 function setNumericSelectValue(select, value, fallback = 1) {
   if (!select) return;

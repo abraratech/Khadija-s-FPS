@@ -1,9 +1,11 @@
 // js/multiplayer/lobby.js
+// PVP.2 R2.1 — production multiplayer service is fixed internally and never player-configurable.
 
 import { MULTIPLAYER_EVENTS } from './event_bus.js';
 import { SESSION_MODES } from './session.js';
 import { TRANSPORT_MODES, TRANSPORT_STATES } from './transport.js';
 import { MultiplayerLobbyUI } from './lobby_ui.js';
+import { MULTIPLAYER_PRODUCTION_WORKER_URL } from './production_release_core.js';
 import {
   MULTIPLAYER_BUILD_ID,
   MULTIPLAYER_PROTOCOL_VERSION
@@ -36,7 +38,7 @@ import {
 import { PublicMatchmakingClient } from './matchmaking.js';
 import { PublicRoomDirectoryClient } from './room_directory.js';
 import { Pvp2CompetitiveClient } from './pvp2.js';
-import { PVP2_MODE, createPvp2PublicQueuePreferences } from './pvp2_core.js';
+import { PVP2_MODE, createPvp2CustomRoomPolicy, createPvp2PublicQueuePreferences } from './pvp2_core.js';
 import { normalizePvp1Mode } from './pvp1_core.js';
 import {
   match3PartyErrorMessage,
@@ -122,11 +124,10 @@ function loadLastRoom() {
     try {
         const parsed = JSON.parse(readPersistentValue(LAST_ROOM_STORAGE_KEY) || 'null');
         const roomCode = normalizeRoomCode(parsed?.roomCode);
-        const serverUrl = String(parsed?.serverUrl || '').trim();
-        if (roomCode.length !== 6 || !serverUrl) return null;
+        if (roomCode.length !== 6) return null;
         return {
             roomCode,
-            serverUrl,
+            serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
             displayName: String(parsed?.displayName || 'Player').trim().slice(0, 24) || 'Player',
             savedAt: Math.max(0, Number(parsed?.savedAt) || 0)
         };
@@ -135,13 +136,12 @@ function loadLastRoom() {
     }
 }
 
-function saveLastRoom({ roomCode, serverUrl, displayName } = {}) {
+function saveLastRoom({ roomCode, displayName } = {}) {
     const normalized = normalizeRoomCode(roomCode);
-    const normalizedServer = String(serverUrl || '').trim();
-    if (normalized.length !== 6 || !normalizedServer) return null;
+    if (normalized.length !== 6) return null;
     const value = {
         roomCode: normalized,
-        serverUrl: normalizedServer,
+        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
         displayName: String(displayName || 'Player').trim().slice(0, 24) || 'Player',
         savedAt: Date.now()
     };
@@ -213,7 +213,7 @@ export class MultiplayerLobbyController {
           }
         });
         this.pvp2State = this.pvp2.getSnapshot();
-        this.pendingPublicListing = false;
+        this.pendingPublicListing = null;
         this.pendingDirectoryJoin = null;
         this.roomDirectory = new PublicRoomDirectoryClient({
           onChange: (snapshot) => {
@@ -241,7 +241,6 @@ export class MultiplayerLobbyController {
         createRoom: (options) => this.createRoom(options),
         joinRoom: (options) => this.joinRoom(options),
                 rejoinLastRoom: (options) => this.rejoinLastRoom(options),
-        retryRelease: (options) => this.retryRelease(options),
         setReady: (ready) => this.setReady(ready),
         updateSettings: (settings) => this.updateSettings(settings),
         startRun: () => this.startRun(),
@@ -354,6 +353,7 @@ export class MultiplayerLobbyController {
   }
 
   async browseOpenRooms({ serverUrl, filters = {}, searchPriority = 'balanced' } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.error = null;
     this.render();
@@ -361,7 +361,7 @@ export class MultiplayerLobbyController {
       await requireMultiplayerProductionReleaseReady(serverUrl);
     } catch (error) {
       this.error = String(
-        error?.message || 'Certified multiplayer server check failed.'
+        'Online services are temporarily unavailable.'
       ).toUpperCase();
       this.render();
       return false;
@@ -404,6 +404,7 @@ export class MultiplayerLobbyController {
     serverUrl,
     partySize = 1
   } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.quickMatchConnectInFlight = true;
     this.error = null;
@@ -428,7 +429,8 @@ export class MultiplayerLobbyController {
         displayName,
         serverUrl,
         joinMode: 'join',
-        admissionToken: assignment.admissionToken
+        admissionToken: assignment.admissionToken,
+        gameMode: assignment.gameMode || 'coop'
       });
       if (!connected) {
         this.quickMatchConnectInFlight = false;
@@ -464,20 +466,36 @@ export class MultiplayerLobbyController {
     }
   }
 
-  async createPublicRoom({ displayName, serverUrl } = {}) {
+  async createPublicRoom({
+    displayName,
+    serverUrl,
+    gameMode = 'coop',
+    teamSize = 1
+  } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.connected || this.quickMatchConnectInFlight) return false;
     if (this.matchmaking?.isActive?.()) {
       await this.matchmaking.cancel({ reason: 'public-room-create' });
     }
-    this.pendingPublicListing = true;
+    const pvp = String(gameMode || '').toLowerCase() === PVP2_MODE;
+    const policy = pvp
+      ? createPvp2CustomRoomPolicy({ teamSize })
+      : Object.freeze({
+          gameMode: 'coop',
+          maxPlayers: 4,
+          publicListing: true,
+          allowLateJoin: true,
+          ranked: false
+        });
+    this.pendingPublicListing = policy;
     const connected = await this.connect({
       roomCode: makeRoomCode(),
       displayName,
       serverUrl,
       joinMode: 'create',
-      gameMode: 'coop'
+      gameMode: policy.gameMode
     });
-    if (!connected) this.pendingPublicListing = false;
+    if (!connected) this.pendingPublicListing = null;
     return connected;
   }
 
@@ -486,6 +504,7 @@ export class MultiplayerLobbyController {
     serverUrl,
     gameMode = 'coop'
   } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.matchmaking?.isActive?.()) {
       await this.matchmaking.cancel({ reason: 'private-room-create' });
     }
@@ -500,6 +519,7 @@ export class MultiplayerLobbyController {
   }
 
   async joinRoom({ roomCode, displayName, serverUrl } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.matchmaking?.isActive?.()) {
       await this.matchmaking.cancel({ reason: 'private-room-join' });
     }
@@ -530,6 +550,7 @@ export class MultiplayerLobbyController {
     joinInProgress = true,
     mode = 'coop'
   } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.connected || this.quickMatchConnectInFlight) return false;
     this.error = null;
     this.render();
@@ -538,7 +559,7 @@ export class MultiplayerLobbyController {
       await requireMultiplayerProductionReleaseReady(serverUrl);
     } catch (error) {
       this.error = String(
-        error?.message || 'Certified multiplayer server check failed.'
+        'Online services are temporarily unavailable.'
       ).toUpperCase();
       this.render();
       return false;
@@ -614,6 +635,7 @@ export class MultiplayerLobbyController {
     mapId = 'grid_bunker',
     difficulty = 1
   } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (
       this.connected
       || this.quickMatchConnectInFlight
@@ -661,6 +683,7 @@ export class MultiplayerLobbyController {
     mapId = 'grid_bunker',
     difficulty = 1
   } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     const local = this.room?.players?.find(
       (player) => player.playerId === this.localPlayerId
     );
@@ -675,7 +698,7 @@ export class MultiplayerLobbyController {
     const search = {
       displayName: String(displayName || local?.displayName || 'Player')
         .trim().slice(0, 24),
-      serverUrl: String(serverUrl || this.transport?.serverUrl || '').trim(),
+      serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
       mapId: String(mapId || this.room?.settings?.mapId || 'grid_bunker')
         .slice(0, 80),
       difficulty: Number(difficulty || this.room?.settings?.difficulty) || 1
@@ -792,8 +815,7 @@ export class MultiplayerLobbyController {
   }
 
   async refreshPvp2({ serverUrl, scope = 'global', region = 'ZZ' } = {}) {
-    const url = String(serverUrl || this.ui?.getConnectionIdentity?.()?.serverUrl || '').trim();
-    if (!url) return false;
+    const url = MULTIPLAYER_PRODUCTION_WORKER_URL;
     const snapshot = await this.pvp2.refresh({
       serverUrl: url,
       playerId: this.localPlayerId,
@@ -816,19 +838,9 @@ export class MultiplayerLobbyController {
         return this.connect({
             roomCode: saved.roomCode,
             displayName: String(displayName || saved.displayName || 'Player'),
-            serverUrl: saved.serverUrl,
+            serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
             joinMode: 'join'
         });
-    }
-
-    async retryRelease({ serverUrl } = {}) {
-      this.error = null;
-      this.productionRelease = await checkMultiplayerProductionRelease(serverUrl, { force: true });
-      if (this.productionRelease?.ready !== true) {
-        this.error = this.productionRelease?.errors?.[0]?.message || 'Certified multiplayer server check failed.';
-      }
-      this.render();
-      return this.productionRelease?.ready === true;
     }
 
     async connect({
@@ -844,22 +856,16 @@ export class MultiplayerLobbyController {
     this.room = null;
     this.render();
 
-    if (!String(serverUrl || '').trim()) {
-      this.error = 'DEPLOY THE WORKER, THEN ENTER ITS SERVER URL';
-      this.render();
-      return false;
-    }
-
+    const productionServerUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     this.lastRoom = saveLastRoom({
             roomCode,
-            serverUrl,
             displayName
         }) || this.lastRoom;
 
         try {
-      await requireMultiplayerProductionReleaseReady(serverUrl);
+      await requireMultiplayerProductionReleaseReady(productionServerUrl);
       await this.transport.connect({
-        serverUrl,
+        serverUrl: productionServerUrl,
         roomCode,
         playerId: this.localPlayerId,
         displayName: String(displayName || 'Player').trim().slice(0, 24),
@@ -871,7 +877,7 @@ export class MultiplayerLobbyController {
       this.render();
       return true;
     } catch (error) {
-      this.error = error?.message || 'Unable to connect to multiplayer server.';
+      this.error = 'Online services are temporarily unavailable.';
       this.render();
       return false;
     }
@@ -1003,11 +1009,13 @@ export class MultiplayerLobbyController {
         (player) => player.playerId === this.localPlayerId
       );
       if (this.pendingPublicListing && local?.isHost === true) {
-        this.pendingPublicListing = false;
+        const listingPolicy = this.pendingPublicListing;
+        this.pendingPublicListing = null;
         void this.updateSettings({
+          maxPlayers: listingPolicy.maxPlayers,
           publicListing: true,
           locked: false,
-          allowLateJoin: true
+          allowLateJoin: listingPolicy.allowLateJoin === true
         });
       }
       const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;
@@ -1425,7 +1433,7 @@ openLobby() {
     this.error = null;
     this.quickMatchConnectInFlight = false;
     this.pendingQuickMatchAssignment = null;
-    this.pendingPublicListing = false;
+    this.pendingPublicListing = null;
     this.roomDirectory.clear();
     if (this.matchmaking?.isActive?.()) {
       void this.matchmaking.cancel({ reason: 'room-left' });

@@ -22,6 +22,8 @@ const listing = {
     listed: true,
     protocol: 6,
     build: 'build-1',
+    gameMode: 'pvp-team-elimination',
+    ranked: false,
     mapId: 'grid_bunker',
     difficulty: 1,
     status: 'waiting',
@@ -41,6 +43,9 @@ assert.equal(roomDirectoryListingVisible(listing, { now }), true);
 const publicEntry = publicRoomDirectoryEntry(listing, { requestRegion: 'AS', now });
 assert.equal(publicEntry.scope, 'regional');
 assert.equal(publicEntry.openHumanSlots, 1);
+assert.equal(publicEntry.gameMode, 'pvp-team-elimination');
+assert.equal(publicEntry.ranked, false);
+assert.equal(roomDirectoryListingVisible({ ...listing, status: 'in-run' }, { now }), false);
 assert.equal(roomDirectoryListingVisible({ ...listing, reservedHumans: 1 }, { now }), false);
 
 const room = {

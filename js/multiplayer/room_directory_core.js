@@ -35,6 +35,10 @@ export function normalizePublicRoomEntry(value = {}) {
   return Object.freeze({
     listingId: cleanText(value.listingId, '', 220),
     joinToken: cleanText(value.joinToken, '', 280),
+    gameMode: cleanText(value.gameMode, 'coop', 40).toLowerCase() === 'pvp-team-elimination'
+      ? 'pvp-team-elimination'
+      : 'coop',
+    ranked: value.ranked === true,
     mapId: cleanText(value.mapId, 'grid_bunker', 80),
     difficulty: Math.max(0.25, Math.min(10, finiteNumber(value.difficulty, 1))),
     status: ['waiting', 'in-run'].includes(status) ? status : 'waiting',
@@ -95,6 +99,10 @@ export function normalizeRoomAdmissionAssignment(value = {}) {
     admissionToken,
     admissionExpiresAt: Math.max(0, finiteNumber(value.admissionExpiresAt, 0)),
     listingId: cleanText(value.listingId, '', 220),
+    gameMode: cleanText(value.gameMode, 'coop', 40).toLowerCase() === 'pvp-team-elimination'
+      ? 'pvp-team-elimination'
+      : 'coop',
+    ranked: value.ranked === true,
     partySize: Math.max(1, Math.min(2, Math.trunc(finiteNumber(value.partySize, 1)))),
     quality: cleanText(value.quality, 'compatible', 40)
   });

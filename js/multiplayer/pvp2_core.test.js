@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   PVP2_MODE,
+  createPvp2CustomRoomPolicy,
   createPvp2PublicQueuePreferences,
   normalizePvp2Leaderboard,
   normalizePvp2QueueMode,
@@ -38,3 +39,10 @@ assert.equal(board.entries[0].rank, 1);
 assert.equal(board.entries[0].rating, 1100);
 
 console.log('PVP.2 frontend policy core tests passed');
+
+const custom1v1 = createPvp2CustomRoomPolicy({ teamSize: 1 });
+assert.equal(custom1v1.maxPlayers, 2);
+assert.equal(custom1v1.ranked, false);
+assert.equal(custom1v1.allowLateJoin, false);
+const custom2v2 = createPvp2CustomRoomPolicy({ teamSize: 2 });
+assert.equal(custom2v2.maxPlayers, 4);

@@ -99,3 +99,8 @@ assert(
 );
 
 console.log('MATCH.3 frontend quality and party core tests passed');
+
+const pvpModeFilters = normalizeMatch3RoomFilters({ gameMode: 'pvp-team-elimination', difficulty: '' });
+assert(pvpModeFilters.gameMode === 'pvp-team-elimination', 'PvP mode filter mismatch');
+assert(!roomEntryMatchesFilters({ openHumanSlots: 1, gameMode: 'coop' }, pvpModeFilters), 'Co-Op listing must not match PvP filter');
+assert(roomEntryMatchesFilters({ openHumanSlots: 1, gameMode: 'pvp-team-elimination' }, pvpModeFilters), 'PvP listing should match PvP filter');

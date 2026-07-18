@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const root = new URL('../../', import.meta.url);
+const read = (relative) => fs.readFileSync(new URL(relative, root), 'utf8');
+const ui = read('js/multiplayer/lobby_ui.js');
+const css = read('css/multiplayer.css');
+const release = JSON.parse(read('multiplayer-release.json'));
+
+assert.match(ui, /MPUI\.2 R1/);
+assert.match(ui, /ka-room-browser-count/);
+assert.match(ui, /ka-mp2-room-card-visual/);
+assert.match(ui, /mapVisualClass\(entry\.mapId\)/);
+assert.match(ui, /ka-mp2-room-slots/);
+assert.match(ui, /OPEN COMPETITOR SLOT/);
+assert.match(ui, /ka-mp-ready-meter/);
+assert.match(ui, /ka-mp-lobby-map-preview/);
+assert.match(ui, /displayInitials\(player\.displayName\)/);
+assert.match(ui, /roomQualityPresentation\(entry\)/);
+assert.match(css, /MPUI\.2 R1/);
+assert.match(css, /\.ka-mp2-room-card/);
+assert.match(css, /\.ka-mp2-player-card/);
+assert.match(css, /\.ka-mp2-lobby-hero/);
+assert.match(css, /\.ka-map-grid-bunker/);
+assert.match(css, /url\('\.\.\/assets\/ui\/maps\/grid_bunker\.webp'\)/);
+assert.equal(release.multiplayerHub.patch, 'mpui2-r1-visual-room-browser-lobby-polish');
+assert.equal(release.multiplayerHub.visualRoomCards, true);
+assert.equal(release.multiplayerHub.mapHeroPreviews, true);
+assert.equal(release.multiplayerHub.visualOccupancySlots, true);
+assert.equal(release.multiplayerHub.operatorLobbyCards, true);
+assert.equal(release.multiplayerHub.gameplayAuthorityUnchanged, true);
+assert.equal(release.multiplayerHub.workerProtocolUnchanged, true);
+console.log('MPUI.2 visual room browser and lobby contract tests passed');

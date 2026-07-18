@@ -84,6 +84,7 @@ export class PublicRoomDirectoryClient {
           playerId,
           protocol,
           build,
+          gameMode: filters.gameMode || 'any',
           mapId: filters.mapId || '',
           difficulty: filters.difficulty ?? '',
           status: filters.status || 'any',

@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const root = new URL('../../', import.meta.url);
+const read = (relative) => fs.readFileSync(new URL(relative, root), 'utf8');
+const index = read('index.html');
+const ui = read('js/multiplayer/lobby_ui.js');
+const css = read('css/multiplayer.css');
+const main = read('js/main.js');
+const release = JSON.parse(read('multiplayer-release.json'));
+
+assert.match(index, /data-menu-screen="multiplayer"/);
+assert.match(index, /id="ka-multiplayer-hub-mount"/);
+assert.match(index, /data-rail-screen="multiplayer"/);
+assert.match(index, /ka:menu-screen/);
+assert.match(ui, /MULTIPLAYER HUB/);
+assert.match(ui, /data-mp-tab="play"/);
+assert.match(ui, /data-mp-tab="rooms"/);
+assert.match(ui, /data-mp-tab="competitive"/);
+assert.match(ui, /data-mp-tab="private"/);
+assert.match(ui, /mount\.appendChild\(modal\)/);
+assert.doesNotMatch(ui, /document\.body\.appendChild\(modal\)/);
+assert.doesNotMatch(ui, /role="dialog" aria-modal="true"/);
+assert.match(ui, /detail: \{ screen: 'multiplayer' \}/);
+assert.match(css, /MPUI\.1 R1/);
+assert.match(css, /\.ka-mp-mode-grid/);
+assert.match(css, /\.ka-mp-tabs/);
+assert.match(css, /#ka-coop-modal\.ka-multiplayer-hub-shell/);
+assert.match(main, /mpui1-r1-full-section-hub-foundation/);
+assert.equal(release.multiplayerHub.patch, 'mpui2-r1-visual-room-browser-lobby-polish');
+assert.equal(release.multiplayerHub.dedicatedMenuSection, true);
+assert.equal(release.multiplayerHub.modalPrimaryNavigationRemoved, true);
+assert.equal(release.multiplayerHub.gameplayAuthorityUnchanged, true);
+console.log('MPUI.1 full-section Multiplayer Hub contract tests passed');

@@ -1,5 +1,6 @@
 // js/multiplayer/production_release_ui_core.js
-export const MULTIPLAYER_PRODUCTION_RELEASE_UI_PATCH = 'm3-production-release-ui-r1';
+// PVP.2 R2.1 — launch-safe service status. Compatibility validation remains internal.
+export const MULTIPLAYER_PRODUCTION_RELEASE_UI_PATCH = 'm3-production-release-ui-r2-launch';
 function cleanText(value, fallback = '', limit = 320) {
   const text = String(value ?? fallback).trim();
   return (text || String(fallback || '')).slice(0, limit);
@@ -13,11 +14,10 @@ export function deriveMultiplayerProductionReleaseUiState({
   const status = cleanStatus(productionRelease?.status);
   const ready = productionRelease?.ready === true;
   const blocking = productionRelease?.blocking === true;
-  const firstError = cleanText(productionRelease?.errors?.[0]?.message, '', 260);
   if (online) return Object.freeze({status,statusText:'ONLINE ROOM READY',tone:'success',blockActions:true,retryVisible:false,retryDisabled:true});
-  if (connecting || status === 'CHECKING') return Object.freeze({status:'CHECKING',statusText:'VERIFYING CERTIFIED MULTIPLAYER SERVER…',tone:'warning',blockActions:true,retryVisible:true,retryDisabled:true});
-  if (status === 'FAIL' || blocking) return Object.freeze({status:'FAIL',statusText:cleanText(firstError || error,'CERTIFIED SERVER CHECK FAILED').toUpperCase(),tone:'danger',blockActions:true,retryVisible:true,retryDisabled:false});
-  if (status === 'PASS' && ready) return Object.freeze({status:'PASS',statusText:'CERTIFIED MULTIPLAYER SERVER READY',tone:'success',blockActions:false,retryVisible:true,retryDisabled:false});
-  if (error) return Object.freeze({status,statusText:cleanText(error).toUpperCase(),tone:'danger',blockActions:false,retryVisible:true,retryDisabled:false});
-  return Object.freeze({status,statusText:'CERTIFIED SERVER CHECK NOT RUN',tone:'neutral',blockActions:false,retryVisible:true,retryDisabled:false});
+  if (connecting || status === 'CHECKING') return Object.freeze({status:'CHECKING',statusText:'CONNECTING TO ONLINE SERVICES…',tone:'warning',blockActions:true,retryVisible:false,retryDisabled:true});
+  if (status === 'FAIL' || blocking) return Object.freeze({status:'FAIL',statusText:'ONLINE SERVICES TEMPORARILY UNAVAILABLE',tone:'danger',blockActions:true,retryVisible:false,retryDisabled:true});
+  if (status === 'PASS' && ready) return Object.freeze({status:'PASS',statusText:'ONLINE SERVICES READY',tone:'success',blockActions:false,retryVisible:false,retryDisabled:true});
+  if (error) return Object.freeze({status,statusText:'ONLINE CONNECTION INTERRUPTED',tone:'danger',blockActions:false,retryVisible:false,retryDisabled:true});
+  return Object.freeze({status,statusText:'ONLINE SERVICES STANDBY',tone:'neutral',blockActions:false,retryVisible:false,retryDisabled:true});
 }

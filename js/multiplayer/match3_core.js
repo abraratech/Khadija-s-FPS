@@ -57,7 +57,11 @@ export function normalizeMatch3RoomFilters(value = {}) {
   const bot = ['any', 'with-bot', 'without-bot'].includes(source.bot)
     ? source.bot
     : 'any';
+  const gameMode = ['any', 'coop', 'pvp-team-elimination'].includes(source.gameMode)
+    ? source.gameMode
+    : 'any';
   return Object.freeze({
+    gameMode,
     mapId: cleanText(source.mapId, '', 80),
     difficulty: source.difficulty === '' || source.difficulty === null
       ? null
@@ -138,6 +142,10 @@ export function match3QueueLabel({
 export function roomEntryMatchesFilters(entry = {}, filters = {}) {
   const normalized = normalizeMatch3RoomFilters(filters);
   if (Number(entry.openHumanSlots || 0) < normalized.requiredSlots) return false;
+  if (
+    normalized.gameMode !== 'any'
+    && String(entry.gameMode || 'coop') !== normalized.gameMode
+  ) return false;
   if (normalized.mapId && String(entry.mapId || '') !== normalized.mapId) return false;
   if (
     normalized.difficulty !== null

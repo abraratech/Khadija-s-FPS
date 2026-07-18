@@ -22,6 +22,7 @@ import {
   PVP2_MODE,
   PVP2_PATCH,
   PVP2_PRODUCT_VERSION,
+  PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED,
   PVP2_PUBLIC_MATCHMAKING_ENABLED,
   PVP2_SCHEMA,
   PVP2_SOURCE_BASELINE_SHA
@@ -141,6 +142,11 @@ export function createMultiplayerFrontendReleaseManifest() {
       mode: PVP2_MODE,
       publicMatchmaking: true,
       publicTeamSize: 1,
+      publicCustomRooms: true,
+      publicCustomRoomsEnabled: PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED,
+      customRoomTeamSizes: Object.freeze([1, 2]),
+      customRoomsRanked: false,
+      customRoomsWaitingOnly: true,
       privatePvpPreserved: true,
       regionFirstGlobalExpansion: true,
       noBackfill: true,
@@ -211,6 +217,9 @@ export function evaluateMultiplayerProductionRelease({ workerManifest = null, fr
     ['PVP2_MODE_MISMATCH','PVP.2 mode',cleanText(frontend.pvp2?.mode),cleanText(worker.pvp2?.mode,'missing')],
     ['PVP2_PUBLIC_MATCHMAKING_POLICY_MISMATCH','PVP.2 public matchmaking policy',frontend.pvp2?.publicMatchmaking === true,worker.pvp2?.publicMatchmaking === true],
     ['PVP2_PUBLIC_TEAM_SIZE_MISMATCH','PVP.2 public team size',finiteInteger(frontend.pvp2?.publicTeamSize),finiteInteger(worker.pvp2?.publicTeamSize,-1)],
+    ['PVP2_PUBLIC_CUSTOM_ROOMS_MISMATCH','PVP.2 public custom room policy',frontend.pvp2?.publicCustomRooms === true,worker.pvp2?.publicCustomRooms === true],
+    ['PVP2_CUSTOM_ROOMS_RANKED_MISMATCH','PVP.2 custom room ranking policy',frontend.pvp2?.customRoomsRanked === true,worker.pvp2?.customRoomsRanked === true],
+    ['PVP2_CUSTOM_ROOMS_WAITING_ONLY_MISMATCH','PVP.2 custom room waiting-only policy',frontend.pvp2?.customRoomsWaitingOnly === true,worker.pvp2?.customRoomsWaitingOnly === true],
     ['PVP2_COOP_ISOLATION_MISMATCH','PVP.2 Co-Op isolation',frontend.pvp2?.coopIsolationPreserved === true,worker.pvp2?.coopIsolationPreserved === true],
     ['PVP2_RESULT_LEDGER_MISMATCH','PVP.2 idempotent result ledger',frontend.pvp2?.idempotentMatchResults === true,worker.pvp2?.idempotentMatchResults === true]
   ]) if (expected !== received) errors.push(finding(code, `Frontend and Worker ${label} do not match.`, { expected, received }));

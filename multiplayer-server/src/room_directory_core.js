@@ -38,6 +38,10 @@ export function normalizeRoomDirectorySync(value = {}, { now = Date.now() } = {}
     listed: value.listed === true,
     protocol: Math.max(1, Math.trunc(finiteNumber(value.protocol, 0))),
     build: cleanText(value.build, '', 120),
+    gameMode: cleanText(value.gameMode, 'coop', 40).toLowerCase() === 'pvp-team-elimination'
+      ? 'pvp-team-elimination'
+      : 'coop',
+    ranked: value.ranked === true,
     mapId: cleanText(value.mapId, 'grid_bunker', 80),
     difficulty: Math.max(0.25, Math.min(10, finiteNumber(value.difficulty, 1))),
     status: ['waiting', 'in-run'].includes(status) ? status : 'waiting',
@@ -61,6 +65,10 @@ export function roomDirectoryListingVisible(listing, { now = Date.now() } = {}) 
   if (Number(listing.expiresAt) <= now) return false;
   const occupied = Number(listing.connectedHumans || 0) + Number(listing.reservedHumans || 0);
   if (occupied >= Number(listing.maxPlayers)) return false;
+  if (
+    listing.gameMode === 'pvp-team-elimination'
+    && listing.status !== 'waiting'
+  ) return false;
   if (listing.status === 'in-run' && listing.allowLateJoin !== true) return false;
   return ['waiting', 'in-run'].includes(listing.status);
 }
@@ -77,6 +85,10 @@ export function publicRoomDirectoryEntry(listing, {
   return Object.freeze({
     listingId: listing.listingId,
     joinToken: listing.joinToken,
+    gameMode: listing.gameMode === 'pvp-team-elimination'
+      ? 'pvp-team-elimination'
+      : 'coop',
+    ranked: listing.ranked === true,
     mapId: listing.mapId,
     difficulty: listing.difficulty,
     status: listing.status,

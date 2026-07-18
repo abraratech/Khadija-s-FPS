@@ -2,7 +2,7 @@
 
 import { PVP1_MODE } from './pvp1_core.js';
 
-export const PVP2_PATCH = 'pvp2-r1-public-matchmaking-competitive-stats-balance';
+export const PVP2_PATCH = 'pvp2-r2-public-custom-pvp-rooms';
 export const PVP2_PRODUCT_VERSION = '1.1.0-pvp2';
 export const PVP2_SOURCE_BASELINE_SHA = '014b0cf1921a3df3d8fbc3df9ad3be93e7e4fb0b';
 export const PVP2_CERTIFIED_FRONTEND_BASELINE_SHA = '5511d393d7249b5487affa3616716ccb64593e99';
@@ -11,6 +11,27 @@ export const PVP2_MODE = PVP1_MODE;
 export const PVP2_PUBLIC_MATCHMAKING_ENABLED = true;
 export const PVP2_FEATURE_FLAG = 'PVP2_PUBLIC_MATCHMAKING_ENABLED';
 export const PVP2_INITIAL_RATING = 1000;
+export const PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED = true;
+export const PVP2_CUSTOM_ROOM_FEATURE_FLAG = 'PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED';
+export const PVP2_CUSTOM_ROOM_TEAM_SIZES = Object.freeze([1, 2]);
+
+export function normalizePvp2CustomRoomTeamSize(value) {
+  return Number(value) >= 2 ? 2 : 1;
+}
+
+export function createPvp2CustomRoomPolicy(value = {}) {
+  const teamSize = normalizePvp2CustomRoomTeamSize(value.teamSize);
+  return Object.freeze({
+    gameMode: PVP2_MODE,
+    teamSize,
+    maxPlayers: teamSize * 2,
+    publicListing: true,
+    allowLateJoin: false,
+    botsAllowed: false,
+    ranked: false,
+    status: 'waiting'
+  });
+}
 
 function cleanText(value, fallback = '', limit = 160) {
   const text = String(value ?? fallback).trim();

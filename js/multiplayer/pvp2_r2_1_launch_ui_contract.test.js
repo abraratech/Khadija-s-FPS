@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const ui = fs.readFileSync(new URL('./lobby_ui.js', import.meta.url), 'utf8');
+const lobby = fs.readFileSync(new URL('./lobby.js', import.meta.url), 'utf8');
+const status = fs.readFileSync(new URL('./production_release_ui_core.js', import.meta.url), 'utf8');
+assert.doesNotMatch(ui, /Worker server URL|ka-coop-server|ka-coop-release-retry|RECHECK CERTIFIED SERVER|SERVER_STORAGE_KEY|ka_multiplayer_server_url/);
+assert.match(ui, /MULTIPLAYER_PRODUCTION_WORKER_URL/);
+assert.match(lobby, /serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL/);
+assert.doesNotMatch(lobby, /ENTER ITS SERVER URL|retryRelease:/);
+assert.doesNotMatch(status, /CERTIFIED MULTIPLAYER SERVER|CERTIFIED SERVER CHECK|VERIFYING CERTIFIED/);
+assert.match(status, /ONLINE SERVICES READY/);
+assert.match(status, /ONLINE SERVICES TEMPORARILY UNAVAILABLE/);
+console.log('PVP.2 R2.1 launch UI contract tests passed');

@@ -102,7 +102,7 @@ def main() -> None:
     post_launch4 = manifest.get("post_launch4", {})
     if post_launch4.get("patch") != "post-launch4-r1-update-delivery-cache-safety":
         raise SystemExit("POST-LAUNCH.4 production manifest patch mismatch")
-    for required_root in ("release-version.json", "_headers"):
+    for required_root in ("release-version.json", "pvp-production-seal.json", "_headers"):
         if not (build / required_root).is_file():
             raise SystemExit(f"POST-LAUNCH.4 production root file is missing: {required_root}")
     release_descriptor = json.loads((build / "release-version.json").read_text(encoding="utf-8"))
@@ -171,6 +171,37 @@ def main() -> None:
         ):
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"MPNET.1 R1 production runtime file missing: {required_runtime}")
+
+    pvp6 = manifest.get("pvp6", {})
+    if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
+        if pvp6.get("patch") != current_release.get("patch"):
+            raise SystemExit("PVP.6 R1 production manifest patch mismatch")
+        for field in (
+            "production_seal_candidate", "worker_version_metadata_exposed",
+            "operational_rollback_flags_retained", "real_two_client_certification_required",
+            "worker_change_required", "frontend_and_worker"
+        ):
+            if pvp6.get(field) is not True:
+                raise SystemExit(f"PVP.6 R1 production policy mismatch: {field}")
+        if pvp6.get("final_production_seal") is not False:
+            raise SystemExit("PVP.6 R1 candidate cannot claim final production seal before live certification")
+        if int(pvp6.get("dead_pvp_flags_found", -1)) != 0:
+            raise SystemExit("PVP.6 R1 dead PvP flag inventory mismatch")
+        if pvp6.get("version_metadata_binding") != "CF_VERSION_METADATA":
+            raise SystemExit("PVP.6 R1 Worker version metadata binding mismatch")
+        for required_runtime in (
+            "pvp-production-seal.json",
+            "js/multiplayer/pvp6_core.js",
+            "js/multiplayer/pvp5_core.js",
+            "js/multiplayer/pvp1.js"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"PVP.6 R1 production runtime file missing: {required_runtime}")
+        seal = json.loads((build / "pvp-production-seal.json").read_text(encoding="utf-8"))
+        if seal.get("patch") != pvp6.get("patch"):
+            raise SystemExit("PVP.6 R1 paired seal descriptor mismatch")
+        if seal.get("workerBaselineSha") != current_release.get("worker_baseline_sha"):
+            raise SystemExit("PVP.6 R1 paired Worker baseline mismatch")
 
     pvp5 = manifest.get("pvp5", {})
     if current_release.get("patch") == "pvp5-r1-competitive-match-completion-stabilization":

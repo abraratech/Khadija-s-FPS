@@ -1,11 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.1.0-pvp5",
-  "releaseId": "pvp5-r1-competitive-match-completion-stabilization",
-  "releaseSequence": 2026071807,
-  "sourceBaselineSha": "9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87",
+  "productVersion": "1.1.0-pvp6-rc1",
+  "releaseId": "pvp6-r1-final-pvp-certification-candidate",
+  "releaseSequence": 2026071808,
+  "sourceBaselineSha": "36c020aeddcf2c10bf117063167d6f6d2d59b556",
   "updateDelivery": true,
   "workerChangeRequired": true,
-  "workerBaselineSha": "deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7"
+  "workerBaselineSha": "334268d77dbd30b3ca1d7e3c3ad883cf27235944",
+  "baselineWorkerVersionId": "76fbfcdc-178a-4394-97c9-5872fd0de52d",
+  "certificationStatus": "STATIC_CERTIFIED_LIVE_PENDING"
 }

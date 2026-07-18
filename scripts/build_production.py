@@ -68,8 +68,14 @@ PVP5_PATCH = 'pvp5-r1-competitive-match-completion-stabilization'
 PVP5_FRONTEND_BASELINE_SHA = '9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87'
 PVP5_WORKER_BASELINE_SHA = 'deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7'
 PVP5_RELEASE_SEQUENCE = 2026071807
+PVP6_PATCH = 'pvp6-r1-final-pvp-certification-candidate'
+PVP6_PRODUCT_VERSION = '1.1.0-pvp6-rc1'
+PVP6_FRONTEND_BASELINE_SHA = '36c020aeddcf2c10bf117063167d6f6d2d59b556'
+PVP6_WORKER_BASELINE_SHA = '334268d77dbd30b3ca1d7e3c3ad883cf27235944'
+PVP6_BASELINE_WORKER_VERSION_ID = '76fbfcdc-178a-4394-97c9-5872fd0de52d'
+PVP6_RELEASE_SEQUENCE = 2026071808
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
-ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
+ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
     ".git", ".wrangler", "node_modules", "multiplayer-server", "scripts",
@@ -166,8 +172,8 @@ def main() -> None:
         "certified_source_seal": SOURCE_SEAL,
         "certification": {
             "status": "CERTIFIED",
-            "deterministic_tests": 127,
-            "javascript_syntax_checks": 369,
+            "deterministic_tests": 129,
+            "javascript_syntax_checks": 370,
             "map_hero_checks": 6,
             "voice_runtime_removed": True,
             "administrator_tools_included": True,
@@ -591,13 +597,35 @@ def main() -> None:
             "worker_change_required": True,
             "frontend_and_worker": True
         },
+        "pvp6": {
+            "schema": 1,
+            "patch": PVP6_PATCH,
+            "product_version": PVP6_PRODUCT_VERSION,
+            "frontend_baseline_sha": PVP6_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": PVP6_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": PVP6_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": PVP6_RELEASE_SEQUENCE,
+            "certification_status": "STATIC_CERTIFIED_LIVE_PENDING",
+            "live_certification_status": "PENDING",
+            "production_seal_candidate": True,
+            "final_production_seal": False,
+            "version_metadata_binding": "CF_VERSION_METADATA",
+            "worker_version_metadata_exposed": True,
+            "operational_rollback_flags_retained": True,
+            "dead_pvp_flags_found": 0,
+            "real_two_client_certification_required": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": PVP5_PATCH,
-            "source_baseline_sha": PVP5_FRONTEND_BASELINE_SHA,
-            "worker_baseline_sha": PVP5_WORKER_BASELINE_SHA,
-            "release_sequence": PVP5_RELEASE_SEQUENCE,
+            "patch": PVP6_PATCH,
+            "source_baseline_sha": PVP6_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": PVP6_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": PVP6_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": PVP6_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
+            "paired_seal_descriptor": "pvp-production-seal.json",
             "worker_change_required": True
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),

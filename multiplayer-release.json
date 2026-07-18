@@ -1141,5 +1141,39 @@
     "workerChangeRequired": true,
     "frontendAndWorker": true,
     "realTwoClientCertificationRequired": true
+  },
+  "pvp6": {
+    "schema": 1,
+    "patch": "pvp6-r1-final-pvp-certification-candidate",
+    "productVersion": "1.1.0-pvp6-rc1",
+    "releaseSequence": 2026071808,
+    "frontendBaselineSha": "36c020aeddcf2c10bf117063167d6f6d2d59b556",
+    "workerBaselineSha": "334268d77dbd30b3ca1d7e3c3ad883cf27235944",
+    "baselineWorkerVersionId": "76fbfcdc-178a-4394-97c9-5872fd0de52d",
+    "certificationStatus": "STATIC_CERTIFIED_LIVE_PENDING",
+    "liveCertificationStatus": "PENDING",
+    "productionSealCandidate": true,
+    "finalProductionSeal": false,
+    "versionMetadataBinding": "CF_VERSION_METADATA",
+    "workerVersionMetadataExposed": true,
+    "operationalRollbackFlagsRetained": true,
+    "deadPvpFlagsFound": 0,
+    "realTwoClientCertificationRequired": true,
+    "certificationMatrix": [
+      "ONE_VS_ONE_LIFECYCLE",
+      "TWO_VS_TWO_LIFECYCLE",
+      "PUBLIC_MATCHMAKING",
+      "OPEN_ROOM_DISCOVERY",
+      "SPECTATING_AND_SCOREBOARD",
+      "REMATCH_AND_MAP_VOTING",
+      "DISCONNECT_RECONNECT_FORFEIT",
+      "HOST_MIGRATION_AND_TAB_RECOVERY",
+      "SPAWN_AND_HOT_DROP_SAFETY",
+      "RATING_AND_STAT_IDEMPOTENCY",
+      "RELAY_DEGRADATION_AND_RECONCILIATION",
+      "DESKTOP_MOBILE_CONTROLLER_BROWSER"
+    ],
+    "workerChangeRequired": true,
+    "frontendAndWorker": true
   }
 }

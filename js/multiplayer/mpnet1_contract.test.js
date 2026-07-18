@@ -15,8 +15,8 @@ const [releaseText, versionText, economy, revive, network, hud, registry, weapon
 ].map((path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 const release = JSON.parse(releaseText);
 const version = JSON.parse(versionText);
-assert.equal(version.releaseId, 'mpnet1-r1-relay-transaction-resupply-integrity');
-assert.equal(version.releaseSequence, 2026071806);
+assert.equal(release.mpnet1.patch, 'mpnet1-r1-relay-transaction-resupply-integrity');
+assert.ok(version.releaseSequence >= 2026071806);
 assert.equal(release.mpnet1.atomicHealthEconomyTransactions, true);
 assert.equal(release.mpnet1.transactionResultReplay, true);
 assert.equal(release.mpnet1.emergencyPistolResupply, true);

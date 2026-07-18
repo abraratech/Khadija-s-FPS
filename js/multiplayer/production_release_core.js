@@ -27,6 +27,7 @@ import {
   PVP2_SCHEMA,
   PVP2_SOURCE_BASELINE_SHA
 } from './pvp2_core.js';
+import { createPvp6SealDescriptor } from './pvp6_core.js';
 
 export const MULTIPLAYER_PRODUCTION_RELEASE_PATCH = 'final2-r1-full-product-certification';
 export const MULTIPLAYER_PRODUCTION_RELEASE_PROTOCOL = 6;
@@ -164,7 +165,8 @@ export function createMultiplayerFrontendReleaseManifest() {
       workerChangeRequired: true,
       frontendOnly: false,
       endpoints: Object.freeze(['/pvp2/stats', '/pvp2/leaderboard'])
-    })
+    }),
+    pvp6: createPvp6SealDescriptor()
   });
 }
 export function evaluateMultiplayerProductionRelease({ workerManifest = null, frontendManifest = createMultiplayerFrontendReleaseManifest() } = {}) {

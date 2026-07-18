@@ -840,7 +840,12 @@
       "private"
     ],
     "gameplayAuthorityUnchanged": true,
-    "workerProtocolUnchanged": true
+    "workerProtocolUnchanged": true,
+    "hotfix": "mpui2-r1-1-active-lobby-tab-isolation",
+    "activeLobbyRoomsTabOnly": true,
+    "hubTabsRemainAvailableInLobby": true,
+    "activeLobbyAutoOpensRoomsOnJoin": true,
+    "nonRoomTabsHideActiveLobby": true
   },
   "hud1": {
     "schema": 1,
@@ -899,5 +904,46 @@
     "desktopPauseTopAligned": true,
     "resumeActionSticky": true,
     "pauseScrollResetOnOpen": true
+  },
+  "launch1": {
+    "schema": 1,
+    "patch": "launch1-r1-first-run-welcome-production-language",
+    "sourceBaselineSha": "aada1736cb2f404bda6e079bf175495957f19e1a",
+    "firstRunWelcome": true,
+    "welcomeReplayFromSettings": true,
+    "soloAndMultiplayerShortcuts": true,
+    "keyboardFocusTrap": true,
+    "mobileResponsive": true,
+    "reducedMotionSafe": true,
+    "playerFacingWorkerLanguageRemoved": true,
+    "playerFacingCertificationLanguageRemoved": true,
+    "rawServiceErrorsHidden": true,
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
+  },
+  "launch2": {
+    "schema": 1,
+    "patch": "launch2-r1-final-production-certification",
+    "sourceBaselineSha": "aada1736cb2f404bda6e079bf175495957f19e1a",
+    "productionOnlyBuild": true,
+    "runtimeReferenceVerification": true,
+    "manifestHashVerification": true,
+    "testsExcluded": true,
+    "workerSourceExcluded": true,
+    "repositoryToolsExcluded": true,
+    "sourceMapsExcluded": true,
+    "playerEditableServiceEndpoint": false,
+    "playerFacingCertificationControls": false,
+    "approvedLocalPatches": [
+      "hud1-r1-configurable-objective-display",
+      "vis1-r1-visual-achievements-competitive-profile-hud-controls",
+      "vis1-r1-1-pause-resume-visibility",
+      "launch1-r1-first-run-welcome-production-language",
+      "mpui2-r1-1-active-lobby-tab-isolation"
+    ],
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

@@ -5,7 +5,8 @@ import { roomDirectoryStatusPresentation } from './room_directory_core.js';
 import { PVP2_MODE, pvp2StatsPresentation } from './pvp2_core.js';
 
 // js/multiplayer/lobby_ui.js
-// MPUI.2 R1 — visual room browser and lobby polish; gameplay and service authority unchanged.
+// MPUI.2 R1.1 — active lobby tab isolation hotfix.
+// Active lobbies are rendered only in the Rooms context while other Hub tabs remain usable.
 
 const NAME_STORAGE_KEY = 'ka_multiplayer_display_name';
 const MATCH3_PRIORITY_STORAGE_KEY = 'ka_match3_search_priority';
@@ -858,6 +859,7 @@ bindEvents() {
   switchHubTab(tab = 'play') {
     const valid = new Set(['play', 'rooms', 'competitive', 'private']);
     const next = valid.has(tab) ? tab : 'play';
+    const online = Boolean(this.state?.room && this.state?.connected);
     this.activeTab = next;
     writeStored(MPUI1_TAB_STORAGE_KEY, next);
     this.elements.tabButtons?.forEach((button) => {
@@ -866,8 +868,17 @@ bindEvents() {
       button.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     this.elements.tabPanels?.forEach((panel) => {
-      panel.hidden = panel.dataset.mpPanel !== next;
+      const isActivePanel = panel.dataset.mpPanel === next;
+      const activeLobbyReplacesRoomsPanel = (
+        online
+        && next === 'rooms'
+        && panel.dataset.mpPanel === 'rooms'
+      );
+      panel.hidden = !isActivePanel || activeLobbyReplacesRoomsPanel;
     });
+    if (this.elements.roomView) {
+      this.elements.roomView.hidden = !(online && next === 'rooms');
+    }
   }
 
   saveIdentity() {
@@ -910,6 +921,7 @@ bindEvents() {
 
   render(nextState) {
     if (!nextState || !this.elements.modal) return;
+    const wasOnline = Boolean(this.state?.room && this.state?.connected);
     this.state = nextState;
 
     const room = nextState.room;
@@ -935,9 +947,12 @@ bindEvents() {
         ? 'PvP uses isolated rooms, separate damage rules, no AI enemies, no Wingman, and no Co-Op reward receipts.'
         : 'PvP is temporarily disabled by the Worker. Solo and Co-Op remain available.';
     }
-    this.elements.connectView.hidden = online;
-    this.elements.roomView.hidden = !online;
-    if (this.elements.tabbar) this.elements.tabbar.hidden = online;
+    this.elements.connectView.hidden = false;
+    if (this.elements.tabbar) this.elements.tabbar.hidden = false;
+    if (online && !wasOnline) {
+      this.activeTab = 'rooms';
+    }
+    this.switchHubTab(this.activeTab || 'play');
 
     const releaseUi = deriveMultiplayerProductionReleaseUiState({
       productionRelease: nextState.productionRelease,

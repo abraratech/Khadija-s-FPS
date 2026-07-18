@@ -78,6 +78,7 @@ import { initVisualTutorial, resetVisualTutorial, updateVisualTutorial, endVisua
 import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboardRun } from './local_leaderboards.js';
 import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
 import { initCareerAchievements } from './career_achievements.js';
+import { initLaunch1Experience } from './launch1.js';
 import { initCameraPresentation, resetCameraPresentation, updateCameraPresentation, enforceCameraPresentationVisibility, endCameraPresentation } from './camera_presentation.js';
 import {
   initGameplayReliability,
@@ -705,6 +706,7 @@ initTutorialControls();
 initVisualTutorial({ isMobile });
 initLocalLeaderboards();
 initOnlineLeaderboards();
+initLaunch1Experience();
 initCareerAchievements({
   getProgressionSnapshot,
   getChallengesSnapshot,

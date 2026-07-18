@@ -135,8 +135,8 @@ function renderManifest() {
   if (!manifest) {
     if (status) {
       status.textContent = lastError
-        ? `LIVE SERVICE RETRYING · ${lastError}`
-        : 'CONNECTING TO LIVE SERVICE';
+        ? 'ONLINE SCHEDULE TEMPORARILY UNAVAILABLE'
+        : 'CONNECTING TO ONLINE SCHEDULE';
       status.dataset.tone = 'warning';
     }
     return;
@@ -144,8 +144,8 @@ function renderManifest() {
 
   if (status) {
     status.textContent = manifest.source === 'worker'
-      ? 'WORKER TIME VERIFIED · AUTOMATIC PROTECTED CLAIMS'
-      : 'OFFLINE CACHED SCHEDULE · REWARDS VERIFY ON RECONNECT';
+      ? 'ONLINE SCHEDULE READY · REWARDS PROTECTED'
+      : 'CACHED SCHEDULE · REWARDS VERIFY ON RECONNECT';
     status.dataset.tone = manifest.source === 'worker' ? 'good' : 'warning';
   }
 
@@ -246,7 +246,7 @@ function scheduleRefresh(manifest = getLive1ManifestSnapshot()) {
 export async function refreshLive1Manifest({ silent = false } = {}) {
   const endpoint = await discoverWorkerUrl();
   if (!endpoint) {
-    lastError = 'WORKER URL UNAVAILABLE';
+    lastError = 'ONLINE SCHEDULE UNAVAILABLE';
     renderManifest();
     scheduleRefresh(null);
     return null;
@@ -276,7 +276,7 @@ export async function refreshLive1Manifest({ silent = false } = {}) {
     );
     return manifest;
   } catch (error) {
-    lastError = cleanText(error?.message, 'LIVE SERVICE OFFLINE', 100);
+    lastError = 'ONLINE SCHEDULE UNAVAILABLE';
     renderManifest();
     scheduleRefresh(null);
     return null;

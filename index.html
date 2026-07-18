@@ -1584,7 +1584,7 @@
 <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
 <div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
 <div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-title">Survivor</span> · <span id="profile-achievements">0</span> achievements</small></div>
-<div class="ka-stat-card ka-stat-muted"><span>Build</span><b>LIVE SERVICE</b></div>
+<div class="ka-stat-card ka-stat-muted"><span>Status</span><b>READY TO PLAY</b></div>
 </div>
 </div>
 </div>
@@ -1919,8 +1919,8 @@
 
 <section class="ka-menu-screen" data-menu-screen="live" id="live1-screen">
 <div class="ka-section-heading">
-  <div><span>Server-timed operations</span><strong>LIVE COMMAND</strong></div>
-  <small>ROTATIONS USE VERIFIED WORKER TIME. CLIENT CLOCKS DO NOT CONTROL AVAILABILITY OR REWARDS.</small>
+  <div><span>Online seasonal operations</span><strong>LIVE COMMAND</strong></div>
+  <small>ROTATIONS FOLLOW SECURE ONLINE TIME. DEVICE CLOCKS DO NOT CONTROL AVAILABILITY OR REWARDS.</small>
 </div>
 <div id="live1-status" class="ka-live1-status" data-tone="neutral">CONNECTING TO LIVE SERVICE</div>
 <div class="ka-live1-hero">
@@ -1956,8 +1956,8 @@
 <div class="ka-settings-card">
 <span class="ka-card-kicker">Player settings</span>
 <strong style="display:block;font-size:32px;margin-bottom:8px;">Game Options</strong>
-<small style="color:#b6c0c8;line-height:1.5;display:block;">Graphics, audio, rebindable controls, controller tuning, mobile aim, accessibility, and release checks are active.</small>
-<div aria-live="polite" class="ka-version1-runtime-status" data-tone="neutral" id="postfinal10-runtime-status">VERSION 1.0 · INITIALIZING FINAL RUNTIME</div>
+<small style="color:#b6c0c8;line-height:1.5;display:block;">Graphics, audio, controls, controller tuning, mobile aim, accessibility, and privacy options.</small>
+<div aria-live="polite" class="ka-version1-runtime-status" data-tone="neutral" id="postfinal10-runtime-status">SYSTEM CHECKING · NETWORK STATUS</div>
 <div class="ka-mobile-size-panel" style="margin-top:18px;">
 <label for="btn-size-slider">Mobile button size</label>
 <input id="btn-size-slider" max="90" min="42" type="range" value="52"/>
@@ -2185,6 +2185,10 @@
 <div class="ka-setting-row">
 <div><strong>Tutorial Prompts</strong><small id="tutorial-status">Training available on the next run</small><small>Includes first-run controls and one-time enemy introductions.</small></div>
 <div><select class="ka-setting-control" id="tutorial-prompts-select"><option value="on">On</option><option value="off">Off</option></select><button class="ka-link-btn" id="reset-tutorial-btn" style="width:100%;margin-top:8px;text-align:center;" type="button">Reset Training</button></div>
+</div>
+<div class="ka-setting-row" id="launch1-welcome-settings-row">
+<div><strong>Welcome Guide</strong><small>Replay the quick introduction to Solo Survival, Multiplayer, and Field Training.</small></div>
+<div><button class="ka-link-btn" id="launch1-replay-welcome-btn" style="width:100%;text-align:center;" type="button">Open Welcome Guide</button></div>
 </div>
 <div class="ka-setting-row">
 <div><strong>Player Preference Defaults</strong><small>Restore audio, mouse, FOV, ADS, crosshair visibility, and display-stat defaults.</small></div>
@@ -2562,6 +2566,41 @@
 <div id="keybind-warning">Bindings are saved automatically.</div>
 <div class="keybind-actions"><button class="ka-link-btn" id="reset-keybinds-btn" type="button">Reset Defaults</button><button class="ka-nav-btn" id="close-keybinds-btn-bottom" type="button">Done</button></div>
 </div>
+</div>
+<div id="launch1-welcome" hidden aria-hidden="true">
+  <section class="ka-launch1-dialog" role="dialog" aria-modal="true" aria-labelledby="launch1-welcome-title" aria-describedby="launch1-welcome-description">
+    <div class="ka-launch1-head">
+      <div>
+        <span class="ka-launch1-kicker">WELCOME, SURVIVOR</span>
+        <h2 id="launch1-welcome-title">CHOOSE YOUR FIGHT</h2>
+        <p id="launch1-welcome-description">Khadija's Arena supports fast Solo deployments, online Co-Op, competitive PvP, and optional first-run field training.</p>
+      </div>
+      <button class="ka-launch1-close" data-launch1-action="close" type="button" aria-label="Close welcome guide">×</button>
+    </div>
+    <div class="ka-launch1-grid">
+      <article class="ka-launch1-card" data-tone="cyan">
+        <span class="ka-launch1-icon" aria-hidden="true">▶</span>
+        <strong>SOLO SURVIVAL</strong>
+        <p>Select an arena, choose your loadout and difficulty, then survive escalating operations at your own pace.</p>
+      </article>
+      <article class="ka-launch1-card" data-tone="amber">
+        <span class="ka-launch1-icon" aria-hidden="true">◫</span>
+        <strong>MULTIPLAYER</strong>
+        <p>Join Co-Op, rated PvP, public custom rooms, or private squads through the dedicated Multiplayer Hub.</p>
+      </article>
+      <article class="ka-launch1-card" data-tone="pink">
+        <span class="ka-launch1-icon" aria-hidden="true">✦</span>
+        <strong>FIELD TRAINING</strong>
+        <p>Your first Solo run can teach movement, combat, reloading, interactions, and survival essentials while you play.</p>
+      </article>
+    </div>
+    <div class="ka-launch1-actions">
+      <button class="ka-launch1-primary" data-launch1-action="solo" type="button">START SOLO</button>
+      <button class="ka-launch1-secondary" data-launch1-action="multiplayer" type="button">OPEN MULTIPLAYER</button>
+      <button class="ka-launch1-tertiary" data-launch1-action="close" type="button">EXPLORE MENU</button>
+      <small>Replay this guide anytime from Settings.</small>
+    </div>
+  </section>
 </div>
 <div id="pause-screen" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 5, 10, 0.85); z-index: 100; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px); padding: 24px; overflow: auto;">
 <div style="color: #fff; font-family: sans-serif; font-size: 54px; font-weight: bold; letter-spacing: 5px; margin-bottom: 18px; text-shadow: 3px 3px 0 #000;">PAUSED</div>

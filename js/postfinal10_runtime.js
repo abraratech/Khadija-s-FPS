@@ -71,7 +71,8 @@ function publish() {
     const networkText = network.status === 'HEALTHY'
       ? 'NETWORK READY'
       : `NETWORK ${network.status}`;
-    node.textContent = `VERSION ${POST_FINAL10_PRODUCT_VERSION} · ${governor.profile} · ${networkText}`;
+    const systemText = governor.profile === 'CONSERVE' ? 'SYSTEM ADAPTING' : 'SYSTEM READY';
+    node.textContent = `${systemText} · ${networkText}`;
     node.dataset.tone = network.status === 'OFFLINE' || network.status === 'POOR'
       ? 'danger'
       : network.status === 'DEGRADED' || governor.profile === 'CONSERVE'

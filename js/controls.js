@@ -325,7 +325,7 @@ function handleCaptureKeydown(event) {
 
   if (!code || RESERVED_CODES.has(code)) {
     const warning = document.getElementById('keybind-warning');
-    if (warning) warning.textContent = 'That key is reserved for diagnostics or development tools.';
+    if (warning) warning.textContent = 'That key is reserved by the game.';
     return;
   }
 

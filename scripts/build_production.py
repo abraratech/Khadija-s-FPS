@@ -45,6 +45,10 @@ PVP2_PATCH = "pvp2-r2-public-custom-pvp-rooms"
 PVP2_PRODUCT_VERSION = "1.1.0-pvp2"
 PVP2_SOURCE_BASELINE_SHA = "014b0cf1921a3df3d8fbc3df9ad3be93e7e4fb0b"
 PVP2_CERTIFIED_FRONTEND_BASELINE_SHA = "5511d393d7249b5487affa3616716ccb64593e99"
+LAUNCH1_PATCH = "launch1-r1-first-run-welcome-production-language"
+LAUNCH1_SOURCE_BASELINE_SHA = "aada1736cb2f404bda6e079bf175495957f19e1a"
+LAUNCH2_PATCH = "launch2-r1-final-production-certification"
+LAUNCH2_SOURCE_BASELINE_SHA = "aada1736cb2f404bda6e079bf175495957f19e1a"
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
 ROOT_DIRS = ("assets", "css", "js")
@@ -89,7 +93,7 @@ def allowed(relative: Path) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
-    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\PVP2_R1_PRODUCTION_BUILD")
+    parser.add_argument("--output-dir", default=r"C:\wamp64\MInstall\LAUNCH2_PRODUCTION_BUILD")
     args = parser.parse_args()
 
     project = Path(args.project_root).resolve()
@@ -412,6 +416,47 @@ def main() -> None:
             "protocol_unchanged": True,
             "worker_change_required": True,
             "frontend_only": False
+        },
+        "launch1": {
+            "schema": 1,
+            "patch": LAUNCH1_PATCH,
+            "source_baseline_sha": LAUNCH1_SOURCE_BASELINE_SHA,
+            "first_run_welcome": True,
+            "welcome_replay_from_settings": True,
+            "solo_and_multiplayer_shortcuts": True,
+            "keyboard_focus_trap": True,
+            "mobile_responsive": True,
+            "reduced_motion_safe": True,
+            "player_facing_worker_language_removed": True,
+            "player_facing_certification_language_removed": True,
+            "raw_service_errors_hidden": True,
+            "gameplay_authority_unchanged": True,
+            "worker_change_required": False,
+            "frontend_only": True
+        },
+        "launch2": {
+            "schema": 1,
+            "patch": LAUNCH2_PATCH,
+            "source_baseline_sha": LAUNCH2_SOURCE_BASELINE_SHA,
+            "production_only_build": True,
+            "runtime_reference_verification": True,
+            "manifest_hash_verification": True,
+            "tests_excluded": True,
+            "worker_source_excluded": True,
+            "repository_tools_excluded": True,
+            "source_maps_excluded": True,
+            "player_editable_service_endpoint": False,
+            "player_facing_certification_controls": False,
+            "approved_local_patches": [
+                "hud1-r1-configurable-objective-display",
+                "vis1-r1-visual-achievements-competitive-profile-hud-controls",
+                "vis1-r1-1-pause-resume-visibility",
+                "launch1-r1-first-run-welcome-production-language",
+                "mpui2-r1-1-active-lobby-tab-isolation"
+            ],
+            "gameplay_authority_unchanged": True,
+            "worker_change_required": False,
+            "frontend_only": True
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

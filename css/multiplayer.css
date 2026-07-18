@@ -1992,3 +1992,6 @@ body.ka-pvp-native-hud-isolated #shop-feedback-panel {
     text-align: left;
   }
 }
+
+/* MPUI.2 R1.1 — active lobby tab isolation. */
+.ka-mp-room-view[hidden] { display: none !important; }

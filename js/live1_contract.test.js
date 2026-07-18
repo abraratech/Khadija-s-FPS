@@ -18,7 +18,7 @@ assert.ok(main.includes("from './live1.js'"), 'main runtime must initialize LIVE
 assert.ok(main.includes('beginLive1Run({'), 'run start must freeze the live context');
 assert.ok(main.includes('endLive1Run();'), 'run end must clear LIVE.1 runtime state');
 assert.ok(runtime.includes('/live/manifest'), 'runtime must use the Worker live manifest');
-assert.ok(runtime.includes('OFFLINE CACHED SCHEDULE'), 'offline schedule presentation missing');
+assert.ok(runtime.includes('CACHED SCHEDULE · REWARDS VERIFY ON RECONNECT'), 'offline schedule presentation missing');
 assert.ok(state.includes('serverOffsetMs'), 'Worker time offset state missing');
 assert.ok(progression.includes('applyLive1RunReceipt'), 'local protected-receipt mirror missing');
 assert.ok(progression.includes('liveManifestRevision'), 'live receipt revision missing');

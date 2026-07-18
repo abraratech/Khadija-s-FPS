@@ -1995,3 +1995,48 @@ body.ka-pvp-native-hud-isolated #shop-feedback-panel {
 
 /* MPUI.2 R1.1 — active lobby tab isolation. */
 .ka-mp-room-view[hidden] { display: none !important; }
+
+/* POST-LAUNCH.1 R1 — action de-duplication and reconnect feedback. */
+.ka-coop-card button.ka-action-pending,
+.ka-mp-hub button.ka-action-pending {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+.ka-coop-card button.ka-action-pending::after,
+.ka-mp-hub button.ka-action-pending::after {
+  content: "";
+  display: inline-block;
+  width: 0.78em;
+  height: 0.78em;
+  margin-left: 0.55em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.08em;
+  animation: ka-postlaunch1-action-spin 0.72s linear infinite;
+}
+
+.ka-coop-status[data-tone="danger"] {
+  box-shadow: inset 0 0 0 1px rgba(255, 82, 92, 0.12);
+}
+
+#ka-coop-code:focus {
+  outline: 2px solid #00d4ff;
+  outline-offset: 5px;
+  user-select: text;
+}
+
+@keyframes ka-postlaunch1-action-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ka-coop-card button.ka-action-pending::after,
+  .ka-mp-hub button.ka-action-pending::after {
+    animation: none;
+    border-right-color: currentColor;
+    opacity: 0.55;
+  }
+}

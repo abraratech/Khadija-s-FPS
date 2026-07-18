@@ -945,5 +945,35 @@
     "gameplayAuthorityUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "postLaunch1": {
+    "schema": 1,
+    "patch": "post-launch1-r1-live-interaction-safety-recovery",
+    "sourceBaselineSha": "f46b9e4d7da3f3b814ae2cc01443d51f2ca49c51",
+    "multiplayerActionDeduplication": true,
+    "rapidSubmitProtection": true,
+    "offlineActionGating": true,
+    "automaticReconnectRefresh": true,
+    "promptFreeRoomCodeCopy": true,
+    "clipboardFallbackSelection": true,
+    "reducedMotionSafeBusyState": true,
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
+  },
+  "postLaunch2": {
+    "schema": 1,
+    "patch": "post-launch2-r1-adaptive-menu-viewport-safety",
+    "sourceBaselineSha": "f46b9e4d7da3f3b814ae2cc01443d51f2ca49c51",
+    "requiresPostLaunch1": true,
+    "desktopRailVerticalFallback": true,
+    "laptopHeightCompaction": true,
+    "browserZoomResilience": true,
+    "activeNavigationAutoReveal": true,
+    "mobileTopNavigationPreserved": true,
+    "keyboardNavigationPreserved": true,
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

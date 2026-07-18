@@ -5,8 +5,9 @@ import { roomDirectoryStatusPresentation } from './room_directory_core.js';
 import { PVP2_MODE, pvp2StatsPresentation } from './pvp2_core.js';
 
 // js/multiplayer/lobby_ui.js
-// MPUI.2 R1.1 — active lobby tab isolation hotfix.
-// Active lobbies are rendered only in the Rooms context while other Hub tabs remain usable.
+// POST-LAUNCH.1 R1 — live multiplayer interaction safety and recovery.
+// Preserves MPUI.2 R1.1 room isolation while adding action de-duplication, offline gating,
+// automatic service refresh after reconnect, and prompt-free room-code copying.
 
 const NAME_STORAGE_KEY = 'ka_multiplayer_display_name';
 const MATCH3_PRIORITY_STORAGE_KEY = 'ka_match3_search_priority';
@@ -19,6 +20,58 @@ const PVP2_ROOM_MODE_FILTER_STORAGE_KEY = 'ka_pvp2_room_mode_filter';
 const COOP2_ROLE_STORAGE_KEY = 'ka_coop2_role_v1';
 const PVP1_PRIVATE_MODE_STORAGE_KEY = 'ka_pvp1_private_room_mode';
 const MPUI1_TAB_STORAGE_KEY = 'ka_mpui1_active_tab';
+const POST_LAUNCH1_ACTION_COOLDOWN_MS = 900;
+const POST_LAUNCH1_NETWORK_RECOVERY_MS = 3600;
+
+async function copyTextWithFallback(text, sourceElement = null) {
+  const value = String(text || '').trim();
+  if (!value) return { copied: false, selected: false };
+
+  try {
+    if (globalThis.navigator?.clipboard?.writeText) {
+      await globalThis.navigator.clipboard.writeText(value);
+      return { copied: true, selected: false };
+    }
+  } catch {
+    // Fall through to a local DOM copy method for restricted clipboard contexts.
+  }
+
+  if (typeof document === 'undefined') return { copied: false, selected: false };
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-10000px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand?.('copy') === true;
+  } catch {
+    copied = false;
+  }
+  textarea.remove();
+  if (copied) return { copied: true, selected: false };
+
+  if (sourceElement && globalThis.getSelection && document.createRange) {
+    try {
+      const selection = globalThis.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(sourceElement);
+      selection?.removeAllRanges?.();
+      selection?.addRange?.(range);
+      sourceElement.setAttribute('tabindex', '-1');
+      sourceElement.focus?.({ preventScroll: true });
+      return { copied: false, selected: true };
+    } catch {
+      // The room code remains visible even if selection is unavailable.
+    }
+  }
+  return { copied: false, selected: false };
+}
 
 function escapeForId(value) {
   return String(value || '').replace(/[^a-z0-9_-]/gi, '_');
@@ -134,6 +187,71 @@ export class MultiplayerLobbyUI {
     this.elements = {};
     this.opened = false;
     this.activeTab = readStored(MPUI1_TAB_STORAGE_KEY, 'play');
+    this.actionLocks = new Map();
+    this.networkOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    this.networkRestoredUntil = 0;
+  }
+
+  runActionOnce(key, callback, { button = null, cooldownMs = POST_LAUNCH1_ACTION_COOLDOWN_MS } = {}) {
+    const actionKey = String(key || 'action');
+    const now = Date.now();
+    const lockedUntil = Number(this.actionLocks.get(actionKey) || 0);
+    if (lockedUntil > now) return false;
+
+    const safeCooldown = Math.max(250, Math.min(5000, Number(cooldownMs) || POST_LAUNCH1_ACTION_COOLDOWN_MS));
+    this.actionLocks.set(actionKey, now + safeCooldown);
+    button?.classList?.add('ka-action-pending');
+    button?.setAttribute?.('aria-busy', 'true');
+
+    try {
+      callback?.();
+    } catch (error) {
+      this.actionLocks.delete(actionKey);
+      button?.classList?.remove('ka-action-pending');
+      button?.removeAttribute?.('aria-busy');
+      throw error;
+    }
+
+    globalThis.setTimeout?.(() => {
+      if (Number(this.actionLocks.get(actionKey) || 0) <= Date.now()) {
+        this.actionLocks.delete(actionKey);
+      }
+      button?.classList?.remove('ka-action-pending');
+      button?.removeAttribute?.('aria-busy');
+    }, safeCooldown + 30);
+    return true;
+  }
+
+  handleNetworkChange(online) {
+    const restored = online === true;
+    this.networkOffline = !restored;
+    this.networkRestoredUntil = restored ? Date.now() + POST_LAUNCH1_NETWORK_RECOVERY_MS : 0;
+    this.render(this.state);
+
+    if (!restored || this.state?.connected || !this.opened) return;
+    globalThis.setTimeout?.(() => {
+      this.runActionOnce('network-recovery-refresh', () => {
+        this.actions.refreshPvp2?.({
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          scope: 'global'
+        });
+        if (this.activeTab === 'rooms') {
+          this.actions.browseOpenRooms?.({
+            serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+            searchPriority: this.elements.match3SearchPriority?.value || 'balanced',
+            filters: {
+              gameMode: this.elements.roomFilterMode?.value || 'any',
+              mapId: this.elements.matchmakingMap?.value || '',
+              difficulty: Number(this.elements.matchmakingDifficulty?.value) || null,
+              status: this.elements.roomFilterStatus?.value || 'any',
+              regionScope: this.elements.roomFilterScope?.value || 'any',
+              bot: this.elements.roomFilterBot?.value || 'any',
+              joinInProgress: this.elements.roomFilterInProgress?.checked !== false
+            }
+          });
+        }
+      }, { cooldownMs: POST_LAUNCH1_NETWORK_RECOVERY_MS });
+    }, 250);
   }
 
   initialize() {
@@ -508,6 +626,9 @@ export class MultiplayerLobbyUI {
             localPlayerId: null,
       error: null
     });
+
+    window.addEventListener('offline', () => this.handleNetworkChange(false));
+    window.addEventListener('online', () => this.handleNetworkChange(true));
   }
 
 
@@ -606,22 +727,28 @@ export class MultiplayerLobbyUI {
       });
     });
     this.elements.findPublicAlly?.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.findReplacementPublicAlly?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        mapId: this.elements.map.value || 'grid_bunker',
-        difficulty: Number(this.elements.difficulty.value) || 1
-      });
+      this.runActionOnce('find-public-ally', () => {
+        this.saveIdentity();
+        this.actions.findReplacementPublicAlly?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          mapId: this.elements.map.value || 'grid_bunker',
+          difficulty: Number(this.elements.difficulty.value) || 1
+        });
+      }, { button: this.elements.findPublicAlly, cooldownMs: 1400 });
     });
     this.elements.callWingman?.addEventListener('click', () => {
-      this.actions.deployRoomBotFill?.({
-        mapId: this.elements.map.value || 'grid_bunker',
-        difficulty: Number(this.elements.difficulty.value) || 1
-      });
+      this.runActionOnce('call-wingman', () => {
+        this.actions.deployRoomBotFill?.({
+          mapId: this.elements.map.value || 'grid_bunker',
+          difficulty: Number(this.elements.difficulty.value) || 1
+        });
+      }, { button: this.elements.callWingman, cooldownMs: 1400 });
     });
     this.elements.dismissWingman?.addEventListener('click', () => {
-      this.actions.dismissRoomBotFill?.();
+      this.runActionOnce('dismiss-wingman', () => {
+        this.actions.dismissRoomBotFill?.();
+      }, { button: this.elements.dismissWingman, cooldownMs: 1000 });
     });
   }
 
@@ -640,40 +767,46 @@ bindEvents() {
     });
 
     this.elements.quickMatch.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.quickMatch?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
-        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1,
-        searchPriority: this.elements.match3SearchPriority.value || 'balanced',
-        regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
-        allowBackfill: true,
-        joinInProgress: this.elements.roomFilterInProgress.checked !== false
-      });
+      this.runActionOnce('quick-match-coop', () => {
+        this.saveIdentity();
+        this.actions.quickMatch?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+          difficulty: Number(this.elements.matchmakingDifficulty.value) || 1,
+          searchPriority: this.elements.match3SearchPriority.value || 'balanced',
+          regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
+          allowBackfill: true,
+          joinInProgress: this.elements.roomFilterInProgress.checked !== false
+        });
+      }, { button: this.elements.quickMatch, cooldownMs: 1500 });
     });
 
     this.elements.pvp2QuickMatch.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.quickMatch?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
-        difficulty: 1,
-        searchPriority: this.elements.match3SearchPriority.value || 'balanced',
-        regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
-        allowBackfill: false,
-        joinInProgress: false,
-        mode: PVP2_MODE
-      });
+      this.runActionOnce('quick-match-pvp', () => {
+        this.saveIdentity();
+        this.actions.quickMatch?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+          difficulty: 1,
+          searchPriority: this.elements.match3SearchPriority.value || 'balanced',
+          regionPolicy: this.elements.match3RegionPolicy.value || 'auto',
+          allowBackfill: false,
+          joinInProgress: false,
+          mode: PVP2_MODE
+        });
+      }, { button: this.elements.pvp2QuickMatch, cooldownMs: 1500 });
     });
 
     this.elements.pvp2Refresh.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.refreshPvp2?.({
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        scope: 'global'
-      });
+      this.runActionOnce('refresh-pvp-stats', () => {
+        this.saveIdentity();
+        this.actions.refreshPvp2?.({
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          scope: 'global'
+        });
+      }, { button: this.elements.pvp2Refresh, cooldownMs: 1200 });
     });
 
     const browseRooms = () => {
@@ -693,42 +826,60 @@ bindEvents() {
         }
       });
     };
-    this.elements.browseRooms.addEventListener('click', browseRooms);
-    this.elements.roomBrowserRefresh.addEventListener('click', browseRooms);
-    this.elements.createPublic.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.createPublicRoom?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        gameMode: 'coop'
+    this.elements.browseRooms.addEventListener('click', () => {
+      this.runActionOnce('browse-public-rooms', browseRooms, {
+        button: this.elements.browseRooms,
+        cooldownMs: 1200
       });
     });
-    this.elements.createPublicPvp.addEventListener('click', () => {
-      this.saveIdentity();
-      writeStored(
-        PVP2_PUBLIC_TEAM_SIZE_STORAGE_KEY,
-        this.elements.publicPvpTeamSize.value
-      );
-      this.actions.createPublicRoom?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        gameMode: PVP2_MODE,
-        teamSize: Number(this.elements.publicPvpTeamSize.value) || 1
+    this.elements.roomBrowserRefresh.addEventListener('click', () => {
+      this.runActionOnce('refresh-public-rooms', browseRooms, {
+        button: this.elements.roomBrowserRefresh,
+        cooldownMs: 1200
       });
+    });
+    this.elements.createPublic.addEventListener('click', () => {
+      this.runActionOnce('create-public-coop', () => {
+        this.saveIdentity();
+        this.actions.createPublicRoom?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          gameMode: 'coop'
+        });
+      }, { button: this.elements.createPublic, cooldownMs: 1600 });
+    });
+    this.elements.createPublicPvp.addEventListener('click', () => {
+      this.runActionOnce('create-public-pvp', () => {
+        this.saveIdentity();
+        writeStored(
+          PVP2_PUBLIC_TEAM_SIZE_STORAGE_KEY,
+          this.elements.publicPvpTeamSize.value
+        );
+        this.actions.createPublicRoom?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          gameMode: PVP2_MODE,
+          teamSize: Number(this.elements.publicPvpTeamSize.value) || 1
+        });
+      }, { button: this.elements.createPublicPvp, cooldownMs: 1600 });
     });
 
     this.elements.matchmakingBot.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.deployBotFill?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        mapId: this.elements.matchmakingMap.value || 'grid_bunker',
-        difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
-      });
+      this.runActionOnce('deploy-matchmaking-bot', () => {
+        this.saveIdentity();
+        this.actions.deployBotFill?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          mapId: this.elements.matchmakingMap.value || 'grid_bunker',
+          difficulty: Number(this.elements.matchmakingDifficulty.value) || 1
+        });
+      }, { button: this.elements.matchmakingBot, cooldownMs: 1400 });
     });
 
     this.elements.matchmakingCancel.addEventListener('click', () => {
-      this.actions.cancelQuickMatch?.();
+      this.runActionOnce('cancel-matchmaking', () => {
+        this.actions.cancelQuickMatch?.();
+      }, { button: this.elements.matchmakingCancel, cooldownMs: 700 });
     });
 
     this.elements.match3SearchPriority.addEventListener('change', () => {
@@ -756,31 +907,37 @@ bindEvents() {
     });
 
     this.elements.create.addEventListener('click', () => {
-      this.saveIdentity();
-      writeStored(
-        PVP1_PRIVATE_MODE_STORAGE_KEY,
-        this.elements.privateGameMode.value
-      );
-      this.actions.createRoom?.({
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-        gameMode: this.elements.privateGameMode.value
-      });
+      this.runActionOnce('create-private-room', () => {
+        this.saveIdentity();
+        writeStored(
+          PVP1_PRIVATE_MODE_STORAGE_KEY,
+          this.elements.privateGameMode.value
+        );
+        this.actions.createRoom?.({
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+          gameMode: this.elements.privateGameMode.value
+        });
+      }, { button: this.elements.create, cooldownMs: 1600 });
     });
 
     this.elements.rejoin.addEventListener('click', () => {
-            this.saveIdentity();
-            this.actions.rejoinLastRoom?.({
-                displayName: this.elements.name.value
-            });
+      this.runActionOnce('rejoin-last-room', () => {
+        this.saveIdentity();
+        this.actions.rejoinLastRoom?.({
+          displayName: this.elements.name.value
         });
-        this.elements.join.addEventListener('click', () => {
-      this.saveIdentity();
-      this.actions.joinRoom?.({
-        roomCode: this.elements.codeInput.value,
-        displayName: this.elements.name.value,
-        serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL
-      });
+      }, { button: this.elements.rejoin, cooldownMs: 1600 });
+    });
+    this.elements.join.addEventListener('click', () => {
+      this.runActionOnce('join-private-room', () => {
+        this.saveIdentity();
+        this.actions.joinRoom?.({
+          roomCode: this.elements.codeInput.value,
+          displayName: this.elements.name.value,
+          serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL
+        });
+      }, { button: this.elements.join, cooldownMs: 1600 });
     });
 
     this.elements.codeInput.addEventListener('input', () => {
@@ -817,32 +974,40 @@ bindEvents() {
     this.elements.copy.addEventListener('click', async () => {
       const code = this.state?.room?.roomCode || '';
       if (!code) return;
-      try {
-        await navigator.clipboard.writeText(code);
-        this.elements.copy.textContent = 'COPIED';
-        setTimeout(() => {
-          this.elements.copy.textContent = 'COPY CODE';
-        }, 1000);
-      } catch {
-        window.prompt('Copy room code:', code);
+      const result = await copyTextWithFallback(code, this.elements.roomCode);
+      this.elements.copy.textContent = result.copied ? 'COPIED' : result.selected ? 'PRESS CTRL+C' : 'CODE VISIBLE';
+      if (!result.copied) {
+        this.elements.status.textContent = result.selected
+          ? 'ROOM CODE SELECTED · COPY IT WITH CTRL+C'
+          : 'ROOM CODE IS VISIBLE ABOVE';
+        this.elements.status.dataset.tone = 'warning';
       }
+      setTimeout(() => {
+        this.elements.copy.textContent = 'COPY CODE';
+      }, result.copied ? 1000 : 2200);
     });
 
     this.elements.ready.addEventListener('click', () => {
-      const local = this.localPlayer();
-      this.actions.setReady?.(!(local?.ready === true));
+      this.runActionOnce('toggle-ready', () => {
+        const local = this.localPlayer();
+        this.actions.setReady?.(!(local?.ready === true));
+      }, { button: this.elements.ready, cooldownMs: 600 });
     });
 
     this.elements.start.addEventListener('click', () => {
-      this.actions.updateSettings?.({
-        mapId: this.elements.map.value || 'grid_bunker',
-        difficulty: Number(this.elements.difficulty.value) || 1
-      });
-      this.actions.startRun?.();
+      this.runActionOnce('start-room-run', () => {
+        this.actions.updateSettings?.({
+          mapId: this.elements.map.value || 'grid_bunker',
+          difficulty: Number(this.elements.difficulty.value) || 1
+        });
+        this.actions.startRun?.();
+      }, { button: this.elements.start, cooldownMs: 1800 });
     });
 
     this.elements.leave.addEventListener('click', () => {
-      this.actions.leaveRoom?.();
+      this.runActionOnce('leave-room', () => {
+        this.actions.leaveRoom?.();
+      }, { button: this.elements.leave, cooldownMs: 1200 });
     });
 
     const sendSettings = () => {
@@ -968,6 +1133,13 @@ bindEvents() {
       statusText = 'AWAITING ROOM CONFIRMATION…';
       tone = 'warning';
     }
+    if (this.networkOffline) {
+      statusText = 'OFFLINE · ONLINE PLAY WILL RESUME AUTOMATICALLY';
+      tone = 'danger';
+    } else if (!online && Date.now() < this.networkRestoredUntil) {
+      statusText = 'CONNECTION RESTORED · REFRESHING ONLINE PLAY';
+      tone = 'warning';
+    }
     this.elements.status.textContent = statusText;
     this.elements.status.dataset.tone = tone;
     this.elements.openButton.dataset.online = online ? 'true' : 'false';
@@ -980,7 +1152,7 @@ bindEvents() {
     const matchmakingActive = ['searching', 'matched', 'connecting'].includes(
       matchmaking.status
     );
-    const disabled = nextState.connecting || releaseUi.blockActions;
+    const disabled = nextState.connecting || releaseUi.blockActions || this.networkOffline;
     this.elements.quickMatch.disabled = disabled || online || matchmakingActive;
     this.elements.pvp2QuickMatch.disabled = disabled || online || matchmakingActive || !pvp2WorkerEnabled;
     this.elements.matchmakingMap.disabled = disabled || matchmakingActive;
@@ -1206,15 +1378,17 @@ bindEvents() {
         join.append(joinMain, joinSub);
         join.disabled = disabled || directoryActive || entry.openHumanSlots < 1;
         join.addEventListener('click', () => {
-          this.saveIdentity();
-          this.actions.joinOpenRoom?.({
-            listingId: entry.listingId,
-            joinToken: entry.joinToken,
-            displayName: this.elements.name.value,
-            serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
-            partySize: roomDirectory.filters?.requiredSlots || 1,
-            gameMode: entry.gameMode || 'coop'
-          });
+          this.runActionOnce(`join-listing-${entry.listingId || entry.roomCode || 'room'}`, () => {
+            this.saveIdentity();
+            this.actions.joinOpenRoom?.({
+              listingId: entry.listingId,
+              joinToken: entry.joinToken,
+              displayName: this.elements.name.value,
+              serverUrl: MULTIPLAYER_PRODUCTION_WORKER_URL,
+              partySize: roomDirectory.filters?.requiredSlots || 1,
+              gameMode: entry.gameMode || 'coop'
+            });
+          }, { button: join, cooldownMs: 1600 });
         });
 
         card.setAttribute(

@@ -1018,5 +1018,19 @@
     "gameplayAuthorityUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "pvp3": {
+    "schema": 1,
+    "patch": "pvp3-r1-public-room-discovery-matchmaking-repair",
+    "sourceBaselineSha": "646725ef129c00a476748e6745d96a2642ba8900",
+    "difficultyFreePvp": true,
+    "explicitRoomBrowserFilters": true,
+    "immediatePublicListingSync": true,
+    "regionAwareCustomRooms": true,
+    "atomicFindOpenRoom": true,
+    "ratedQuickMatchSeparatedFromUnrankedRooms": true,
+    "realTwoClientDiscoveryRequired": true,
+    "workerChangeRequired": true,
+    "frontendAndWorker": true
   }
 }

@@ -41,6 +41,7 @@ export class PublicRoomDirectoryClient {
     this.onChange = typeof onChange === 'function' ? onChange : null;
     this.listSequence = 0;
     this.joinPromise = null;
+    this.findPromise = null;
     this.state = Object.freeze({
       status: 'idle',
       active: false,
@@ -64,7 +65,7 @@ export class PublicRoomDirectoryClient {
       ...this.state,
       ...patch,
       status,
-      active: ['loading', 'joining'].includes(status)
+      active: ['loading', 'joining', 'finding'].includes(status)
     });
     try { this.onChange?.(this.state); } catch { /* UI observers are non-fatal. */ }
     return this.state;
@@ -86,7 +87,7 @@ export class PublicRoomDirectoryClient {
           build,
           gameMode: filters.gameMode || 'any',
           mapId: filters.mapId || '',
-          difficulty: filters.difficulty ?? '',
+          difficulty: filters.gameMode === 'pvp-team-elimination' ? '' : (filters.difficulty ?? ''),
           status: filters.status || 'any',
           regionScope: filters.regionScope || 'any',
           bot: filters.bot || 'any',
@@ -122,6 +123,61 @@ export class PublicRoomDirectoryClient {
         error: cleanMessage(error?.message || error),
         joiningListingId: null
       });
+    }
+  }
+
+  async findOpenRoom(options = {}) {
+    if (this.findPromise) return this.findPromise;
+    this.findPromise = this.performFindOpenRoom(options).finally(() => {
+      this.findPromise = null;
+    });
+    return this.findPromise;
+  }
+
+  async performFindOpenRoom({
+    serverUrl,
+    playerId,
+    protocol,
+    build,
+    gameMode = 'pvp-team-elimination',
+    mapId = '',
+    difficulty = null,
+    searchPriority = 'balanced',
+    partySize = 1
+  } = {}) {
+    if (!this.fetchImpl) throw new Error('This browser cannot find public rooms.');
+    this.publish({ status: 'finding', error: null, joiningListingId: null });
+    try {
+      const response = await this.fetchImpl(roomDirectoryEndpoint(
+        serverUrl,
+        '/matchmaking/rooms/find'
+      ), {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'omit',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          playerId,
+          protocol,
+          build,
+          gameMode,
+          mapId,
+          difficulty: gameMode === 'pvp-team-elimination' ? null : difficulty,
+          searchPriority,
+          partySize
+        })
+      });
+      const payload = await readJsonResponse(response);
+      const assignment = normalizeRoomAdmissionAssignment(payload?.assignment || {});
+      this.publish({ status: 'ready', error: null, joiningListingId: null });
+      return assignment;
+    } catch (error) {
+      this.publish({
+        status: 'join-rejected',
+        error: cleanMessage(error?.message || error),
+        joiningListingId: null
+      });
+      throw error;
     }
   }
 
@@ -180,6 +236,7 @@ export class PublicRoomDirectoryClient {
   clear() {
     this.listSequence += 1;
     this.joinPromise = null;
+    this.findPromise = null;
     return this.publish({
       status: 'idle',
       rooms: Object.freeze([]),

@@ -232,6 +232,7 @@ export class MultiplayerLobbyController {
         refreshPvp2: (options) => this.refreshPvp2(options),
         browseOpenRooms: (options) => this.browseOpenRooms(options),
         joinOpenRoom: (options) => this.joinOpenRoom(options),
+        findOpenRoom: (options) => this.findOpenRoom(options),
         createPublicRoom: (options) => this.createPublicRoom(options),
         deployBotFill: (options) => this.deployBotFill(options),
         findReplacementPublicAlly: (options) => this.findReplacementPublicAlly(options),
@@ -302,7 +303,7 @@ export class MultiplayerLobbyController {
       ) {
         this.transport.sendControl('directory-heartbeat', {});
       }
-    }, 30_000);
+    }, 15_000);
     const refreshResume = consumeMultiplayerRefreshResume({
       lastRoom: this.lastRoom || loadLastRoom(),
       connected: this.connected,
@@ -466,11 +467,70 @@ export class MultiplayerLobbyController {
     }
   }
 
+  async findOpenRoom({
+    displayName,
+    serverUrl,
+    gameMode = PVP2_MODE,
+    mapId = '',
+    difficulty = null,
+    searchPriority = 'balanced'
+  } = {}) {
+    serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
+    if (this.connected || this.quickMatchConnectInFlight) return false;
+    if (this.matchmaking?.isActive?.()) {
+      await this.matchmaking.cancel({ reason: 'find-open-room' });
+    }
+    this.quickMatchConnectInFlight = true;
+    this.error = null;
+    this.render();
+    try {
+      await requireMultiplayerProductionReleaseReady(serverUrl);
+      const assignment = await this.roomDirectory.findOpenRoom({
+        serverUrl,
+        playerId: this.localPlayerId,
+        protocol: MULTIPLAYER_PROTOCOL_VERSION,
+        build: MULTIPLAYER_BUILD_ID,
+        gameMode,
+        mapId,
+        difficulty,
+        searchPriority,
+        partySize: 1
+      });
+      this.pendingDirectoryJoin = {
+        listingId: assignment.listingId,
+        serverUrl
+      };
+      const connected = await this.connect({
+        roomCode: assignment.roomCode,
+        displayName,
+        serverUrl,
+        joinMode: 'join',
+        admissionToken: assignment.admissionToken,
+        gameMode: assignment.gameMode || gameMode
+      });
+      if (!connected) {
+        this.quickMatchConnectInFlight = false;
+        this.pendingDirectoryJoin = null;
+      }
+      return connected;
+    } catch (error) {
+      this.quickMatchConnectInFlight = false;
+      this.pendingDirectoryJoin = null;
+      this.error = String(
+        error?.message || 'No compatible open public room is available.'
+      ).toUpperCase();
+      this.render();
+      return false;
+    }
+  }
+
   async createPublicRoom({
     displayName,
     serverUrl,
     gameMode = 'coop',
-    teamSize = 1
+    teamSize = 1,
+    mapId = 'grid_bunker',
+    difficulty = 1
   } = {}) {
     serverUrl = MULTIPLAYER_PRODUCTION_WORKER_URL;
     if (this.connected || this.quickMatchConnectInFlight) return false;
@@ -487,7 +547,11 @@ export class MultiplayerLobbyController {
           allowLateJoin: true,
           ranked: false
         });
-    this.pendingPublicListing = policy;
+    this.pendingPublicListing = Object.freeze({
+      ...policy,
+      mapId: String(mapId || 'grid_bunker').slice(0, 80),
+      difficulty: pvp ? 1 : (Number(difficulty) || 1)
+    });
     const connected = await this.connect({
       roomCode: makeRoomCode(),
       displayName,
@@ -1015,7 +1079,9 @@ export class MultiplayerLobbyController {
           maxPlayers: listingPolicy.maxPlayers,
           publicListing: true,
           locked: false,
-          allowLateJoin: listingPolicy.allowLateJoin === true
+          allowLateJoin: listingPolicy.allowLateJoin === true,
+          mapId: listingPolicy.mapId || 'grid_bunker',
+          ...(listingPolicy.gameMode === PVP2_MODE ? {} : { difficulty: Number(listingPolicy.difficulty) || 1 })
         });
       }
       const mode = local?.isHost ? SESSION_MODES.HOST : SESSION_MODES.CLIENT;

@@ -275,6 +275,18 @@ const PVP2_SERVER_INFO = Object.freeze({
   endpoints: ['/pvp2/stats', '/pvp2/leaderboard']
 });
 
+const PVP3_SERVER_INFO = Object.freeze({
+  schema: 1,
+  patch: 'pvp3-r1-public-room-discovery-matchmaking-repair',
+  difficultyFreePvpDiscovery: true,
+  immediatePublicListingSync: true,
+  regionAwareCustomRooms: true,
+  atomicOpenRoomFind: true,
+  ratedQuickMatchSeparatedFromUnrankedRooms: true,
+  endpoints: ['/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join']
+});
+
+
 const FINAL2_SERVER_INFO = Object.freeze({
   schema: 1,
   patch: SERVER_PATCH,
@@ -1164,8 +1176,15 @@ export class ArenaRoom extends DurableObject {
       )
         ? requestedGameMode
         : 'coop';
+      this.room.matchmaking.region = String(
+        request.headers.get('x-ka-region')
+        || request.cf?.country
+        || request.cf?.continent
+        || 'ZZ'
+      ).toUpperCase().slice(0, 16);
       if (isPvp1Mode(this.room.settings.gameMode)) {
         this.room.settings.maxPlayers = 4;
+        this.room.settings.difficulty = 1;
         this.room.settings.privacy = 'private';
         this.room.settings.publicListing = false;
         this.room.settings.allowLateJoin = false;
@@ -2095,6 +2114,7 @@ isAuthorityCheckpointEnvelope(envelope) {
           this.room.settings.maxPlayers
         );
         this.room.settings.allowLateJoin = false;
+        this.room.settings.difficulty = 1;
         this.room.settings.publicListing = Boolean(
           this.room.status !== 'in-run'
           && this.room.settings.publicListing === true
@@ -2110,6 +2130,9 @@ isAuthorityCheckpointEnvelope(envelope) {
       }
 
       await this.commit();
+      if (payload.publicListing !== undefined || isPvp1Mode(this.room.settings?.gameMode)) {
+        await this.syncDirectoryListing({ force: true });
+      }
       this.broadcastRoomState();
       return;
     }
@@ -2839,7 +2862,7 @@ isAuthorityCheckpointEnvelope(envelope) {
       gameMode: pvpRoom ? PVP1_MODE : 'coop',
       ranked: false,
       mapId: room.settings?.mapId || 'grid_bunker',
-      difficulty: Number(room.settings?.difficulty) || 1,
+      difficulty: pvpRoom ? 1 : (Number(room.settings?.difficulty) || 1),
       status: room.status,
       connectedHumans,
       reservedHumans,
@@ -3003,6 +3026,7 @@ export default {
             '/matchmaking/ack',
             '/matchmaking/health',
             '/matchmaking/rooms/list',
+            '/matchmaking/rooms/find',
             '/matchmaking/rooms/join'
           ]
         },
@@ -3021,6 +3045,7 @@ export default {
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
         pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env), publicCustomRoomsEnabled: pvp2PublicCustomRoomsAvailable(env) },
+        pvp3: PVP3_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO
       });
     }
@@ -3045,6 +3070,7 @@ export default {
             '/matchmaking/ack',
             '/matchmaking/health',
             '/matchmaking/rooms/list',
+            '/matchmaking/rooms/find',
             '/matchmaking/rooms/join'
           ]
         },
@@ -3063,6 +3089,7 @@ export default {
         version1Certification: POST_FINAL10_SERVER_INFO,
         pvp1: { ...PVP1_SERVER_INFO, featureEnabled: pvp1Enabled(env) },
         pvp2: { ...PVP2_SERVER_INFO, publicMatchmakingEnabled: pvp2PublicMatchmakingEnabled(env), publicCustomRoomsEnabled: pvp2PublicCustomRoomsAvailable(env) },
+        pvp3: PVP3_SERVER_INFO,
         fullProductCertification: FINAL2_SERVER_INFO,
         deployedAt: new Date().toISOString()
       });
@@ -3071,7 +3098,7 @@ export default {
     if (url.pathname !== '/ws') {
       return json({
         service: 'Khadija’s Arena Multiplayer',
-        endpoints: ['/health', '/release', '/ops/health', '/ops/privacy', '/ops/events', '/live/manifest', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/join', '/pvp2/stats', '/pvp2/leaderboard', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', ...SOCIAL1_SERVER_INFO.endpoints, '/ws']
+        endpoints: ['/health', '/release', '/ops/health', '/ops/privacy', '/ops/events', '/live/manifest', '/matchmaking/enqueue', '/matchmaking/status', '/matchmaking/cancel', '/matchmaking/ack', '/matchmaking/health', '/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join', '/pvp2/stats', '/pvp2/leaderboard', '/leaderboards', '/leaderboards/challenge', '/leaderboards/submit', '/profiles/register', '/profiles/profile', '/profiles/sync', '/profiles/progression/commit', '/profiles/link/create', '/profiles/link/consume', '/profiles/export', '/profiles/account', '/profiles/devices', '/profiles/devices/name', '/profiles/devices/revoke', '/profiles/devices/revoke-others', '/profiles/token/rotate', '/profiles/recovery/generate', '/profiles/recovery/consume', '/profiles/auth/passkey/register/options', '/profiles/auth/passkey/register/verify', '/profiles/auth/passkey/login/options', '/profiles/auth/passkey/login/verify', '/profiles/auth/session', '/profiles/auth/signout', '/profiles/auth/passkeys', '/profiles/auth/passkeys/name', '/profiles/auth/passkeys/revoke', '/profiles/history', '/profiles/history/restore', '/profiles/activity', ...SOCIAL1_SERVER_INFO.endpoints, '/ws']
       });
     }
 
@@ -3086,8 +3113,19 @@ export default {
 
     const id = env.ROOMS.idFromName(roomCode);
     const stub = env.ROOMS.get(id);
+    const roomHeaders = new Headers(request.headers);
+    roomHeaders.set(
+      'x-ka-region',
+      String(
+        request.cf?.continent
+        || request.cf?.country
+        || request.headers.get('x-ka-region')
+        || 'ZZ'
+      ).toUpperCase().slice(0, 16)
+    );
+    const roomRequest = new Request(request, { headers: roomHeaders });
     return observeOpsResponse(
-      stub.fetch(request),
+      stub.fetch(roomRequest),
       request,
       env,
       ctx,

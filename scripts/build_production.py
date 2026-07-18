@@ -55,6 +55,9 @@ POST_LAUNCH4_RELEASE_SEQUENCE = 2026071801
 POST_SEAL1_PATCH = "post-seal1-r1-console-lifecycle-form-hygiene"
 POST_SEAL1_SOURCE_BASELINE_SHA = "cf13dce795e0d3f623cc27c01656bb24d5dd44c9"
 POST_SEAL1_RELEASE_SEQUENCE = 2026071802
+PVP3_PATCH = 'pvp3-r1-public-room-discovery-matchmaking-repair'
+PVP3_SOURCE_BASELINE_SHA = '646725ef129c00a476748e6745d96a2642ba8900'
+PVP3_RELEASE_SEQUENCE = 2026071803
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -489,13 +492,24 @@ def main() -> None:
             "worker_change_required": False,
             "frontend_only": True
         },
+        "pvp3": {
+            "schema": 1,
+            "patch": PVP3_PATCH,
+            "source_baseline_sha": PVP3_SOURCE_BASELINE_SHA,
+            "release_sequence": PVP3_RELEASE_SEQUENCE,
+            "difficulty_free_pvp": True,
+            "explicit_room_browser_filters": True,
+            "atomic_open_room_find": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": POST_SEAL1_PATCH,
-            "source_baseline_sha": POST_SEAL1_SOURCE_BASELINE_SHA,
-            "release_sequence": POST_SEAL1_RELEASE_SEQUENCE,
+            "patch": PVP3_PATCH,
+            "source_baseline_sha": PVP3_SOURCE_BASELINE_SHA,
+            "release_sequence": PVP3_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
-            "worker_change_required": False
+            "worker_change_required": True
         },
         "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

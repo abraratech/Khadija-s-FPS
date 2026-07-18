@@ -2,9 +2,9 @@
   "schema": 1,
   "product": "Khadija's Arena",
   "productVersion": "1.1.0-pvp2",
-  "releaseId": "post-seal1-r1-console-lifecycle-form-hygiene",
-  "releaseSequence": 2026071802,
-  "sourceBaselineSha": "cf13dce795e0d3f623cc27c01656bb24d5dd44c9",
+  "releaseId": "pvp3-r1-public-room-discovery-matchmaking-repair",
+  "releaseSequence": 2026071803,
+  "sourceBaselineSha": "646725ef129c00a476748e6745d96a2642ba8900",
   "updateDelivery": true,
-  "workerChangeRequired": false
+  "workerChangeRequired": true
 }

@@ -138,6 +138,9 @@ export class MatchmakingHub extends DurableObject {
     if (request.method === 'POST' && url.pathname === '/matchmaking/rooms/join') {
       return this.joinRoomListing(request, now);
     }
+    if (request.method === 'POST' && url.pathname === '/matchmaking/rooms/find') {
+      return this.findRoomListing(request, now);
+    }
     if (request.method === 'GET' && url.pathname === '/pvp2/stats') {
       return this.pvp2Stats(url, now);
     }
@@ -159,6 +162,14 @@ export class MatchmakingHub extends DurableObject {
           patch: PVP2_PATCH,
           publicMatchmakingEnabled: pvp2FeatureEnabled(this.env.PVP2_PUBLIC_MATCHMAKING_ENABLED),
           competitivePlayers: Object.keys(this.state.pvp2Stats || {}).length
+        },
+        pvp3: {
+          schema: 1,
+          patch: 'pvp3-r1-public-room-discovery-matchmaking-repair',
+          difficultyFreePvpDiscovery: true,
+          atomicOpenRoomFind: true,
+          ratedQuickMatchSeparatedFromUnrankedRooms: true,
+          endpoints: ['/matchmaking/rooms/list', '/matchmaking/rooms/find', '/matchmaking/rooms/join']
         },
         openRooms: Object.values(this.state.rooms || {}).filter((listing) => roomDirectoryListingVisible(listing, { now })).length,
         roomDirectory: { schema: ROOM_DIRECTORY_SCHEMA, patch: ROOM_DIRECTORY_PATCH },
@@ -257,6 +268,100 @@ export class MatchmakingHub extends DurableObject {
       rooms,
       refreshedAt: now
     });
+  }
+
+  async findRoomListing(request, now) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ ok: false, error: 'INVALID_JSON' }, { status: 400 });
+    }
+    const playerId = cleanText(body?.playerId, 160);
+    const protocol = Math.max(1, Math.trunc(Number(body?.protocol) || 0));
+    const build = cleanText(body?.build, 120);
+    const partySize = Math.max(1, Math.min(2, Math.trunc(Number(body?.partySize) || 1)));
+    const gameMode = String(body?.gameMode || '').trim().toLowerCase() === PVP2_MODE
+      ? PVP2_MODE
+      : 'coop';
+    if (!playerId || !protocol || !build) {
+      return json({ ok: false, error: 'DIRECTORY_COMPATIBILITY_REQUIRED' }, { status: 400 });
+    }
+    if (partySize > 1) {
+      return json({
+        ok: false,
+        error: 'PARTY_OPEN_ROOM_RESERVATION_UNSUPPORTED',
+        message: 'Open Room discovery currently supports one joining player.'
+      }, { status: 409 });
+    }
+    const requestRegion = String(request.headers.get('x-ka-region') || 'ZZ')
+      .toUpperCase().slice(0, 16);
+    const filters = {
+      gameMode,
+      mapId: cleanText(body?.mapId, 80),
+      difficulty: gameMode === PVP2_MODE ? null : (body?.difficulty ?? null),
+      status: gameMode === PVP2_MODE ? 'waiting' : 'any',
+      regionScope: 'any',
+      bot: gameMode === PVP2_MODE ? 'without-bot' : 'any',
+      joinInProgress: gameMode !== PVP2_MODE,
+      requiredSlots: 1,
+      searchPriority: ['quality', 'balanced', 'fast'].includes(body?.searchPriority)
+        ? body.searchPriority
+        : 'balanced'
+    };
+    const candidates = filterAndSortPublicRoomDirectory(
+      Object.values(this.state.rooms || {})
+        .filter((listing) => (
+          roomDirectoryListingVisible(listing, { now })
+          && Number(listing.protocol) === protocol
+          && String(listing.build) === build
+        ))
+        .map((listing) => publicRoomDirectoryEntry(listing, { requestRegion, now })),
+      filters,
+      { now }
+    );
+    for (const entry of candidates) {
+      const listing = this.state.rooms?.[entry.listingId] || null;
+      if (!listing) continue;
+      const admission = await this.verifyRoomDirectoryAdmission(
+        listing,
+        playerId,
+        entry.listingId
+      );
+      if (!admission.ok) {
+        if (['ROOM_NOT_PUBLIC','HOST_UNAVAILABLE','ROOM_LOCKED','LATE_JOIN_DISABLED','ROOM_UNAVAILABLE','ROOM_FULL'].includes(admission.error)) {
+          delete this.state.rooms[entry.listingId];
+        }
+        continue;
+      }
+      listing.reservedHumans = Math.max(0, Number(admission.reservedHumans) || 0);
+      listing.updatedAt = now;
+      listing.expiresAt = Math.max(Number(listing.expiresAt) || 0, now + 30_000);
+      await this.commit(now);
+      return json({
+        ok: true,
+        assignment: {
+          roomCode: admission.roomCode,
+          joinMode: 'join',
+          listingId: entry.listingId,
+          status: admission.roomStatus,
+          admissionToken: admission.admissionToken,
+          admissionExpiresAt: admission.admissionExpiresAt,
+          gameMode,
+          ranked: false,
+          partySize: 1,
+          quality: entry.quality || (entry.scope === 'regional' ? 'excellent' : 'compatible')
+        }
+      });
+    }
+    if (candidates.length) await this.commit(now);
+    return json({
+      ok: false,
+      error: 'NO_OPEN_ROOM_AVAILABLE',
+      message: gameMode === PVP2_MODE
+        ? 'No open unranked PvP room is available. Create one or use Rated Quick Match.'
+        : 'No compatible open Co-Op room is available.'
+    }, { status: 404 });
   }
 
   async joinRoomListing(request, now) {

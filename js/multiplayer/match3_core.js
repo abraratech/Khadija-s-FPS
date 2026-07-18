@@ -149,6 +149,7 @@ export function roomEntryMatchesFilters(entry = {}, filters = {}) {
   if (normalized.mapId && String(entry.mapId || '') !== normalized.mapId) return false;
   if (
     normalized.difficulty !== null
+    && String(entry.gameMode || 'coop') !== 'pvp-team-elimination'
     && Math.abs(Number(entry.difficulty || 0) - normalized.difficulty) > 0.001
   ) return false;
   if (normalized.status !== 'any' && entry.status !== normalized.status) return false;

@@ -17,7 +17,7 @@ assert.equal(release.pvp2.patch, 'pvp2-r2-public-custom-pvp-rooms');
 assert.equal(release.pvp2.publicMatchmaking, true);
 assert.equal(release.pvp2.publicTeamSize, 1);
 assert.equal(release.pvp2.coopIsolationPreserved, true);
-assert.match(lobbyUi, /FIND PUBLIC PVP 1V1/);
+assert.match(lobbyUi, /FIND (?:PUBLIC|RATED) PVP 1V1/);
 assert.match(lobbyUi, /CREATE PUBLIC CO-OP ROOM/);
 assert.match(lobbyUi, /CREATE PUBLIC PVP ROOM/);
 assert.match(lobbyUi, /UNRANKED PVP/);

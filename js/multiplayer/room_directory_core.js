@@ -114,6 +114,9 @@ export function roomDirectoryStatusPresentation(state = {}) {
   if (status === 'loading') {
     return Object.freeze({ title: 'SCANNING OPEN ROOMS', detail: 'CHECKING HOST-APPROVED PUBLIC LOBBIES', tone: 'neutral' });
   }
+  if (status === 'finding') {
+    return Object.freeze({ title: 'FINDING OPEN ROOM', detail: 'CHECKING COMPATIBLE UNRANKED PUBLIC LOBBIES', tone: 'neutral' });
+  }
   if (status === 'joining') {
     return Object.freeze({ title: 'RESERVING ROOM SLOT', detail: 'VERIFYING CAPACITY, BUILD AND HOST PERMISSION', tone: 'neutral' });
   }

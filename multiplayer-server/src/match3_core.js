@@ -193,6 +193,7 @@ export function match3RoomVisibleForFilters(room = {}, filters = {}) {
   if (normalized.mapId && String(room.mapId || '') !== normalized.mapId) return false;
   if (
     normalized.difficulty !== null
+    && String(room.gameMode || 'coop') !== 'pvp-team-elimination'
     && Math.abs(Number(room.difficulty || 0) - normalized.difficulty) > 0.001
   ) return false;
   if (normalized.status !== 'any' && room.status !== normalized.status) return false;

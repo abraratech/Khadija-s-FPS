@@ -2040,3 +2040,19 @@ body.ka-pvp-native-hud-isolated #shop-feedback-panel {
     opacity: 0.55;
   }
 }
+
+
+/* PVP.3 R1 — public-room discovery clarity and difficulty-free PvP controls. */
+.ka-pvp3-pvp-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
+.ka-pvp3-pvp-actions > button { min-height:44px; }
+#ka-pvp3-find-open-pvp,
+#ka-pvp3-find-open-room { border-color:rgba(255,122,144,.42); background:linear-gradient(135deg,rgba(87,24,43,.78),rgba(31,12,23,.9)); color:#ffe3e9; }
+.ka-coop-only-field > span { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.ka-coop-only-field > span small { color:#70a5b5; font-size:8px; letter-spacing:.08em; }
+#ka-room-filter-difficulty-field[hidden],
+#ka-coop-difficulty-field[hidden] { display:none !important; }
+.ka-mp-browser-action { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (max-width:720px) {
+  .ka-pvp3-pvp-actions,
+  .ka-mp-browser-action { grid-template-columns:1fr; }
+}

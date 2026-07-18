@@ -80,5 +80,14 @@ assert.equal(first.roomCode, 'ABC234');
 assert.equal(second.admissionToken, 'admission-1');
 assert.equal(first.gameMode, 'pvp-team-elimination');
 assert.equal(joinCalls, 1, 'duplicate join clicks must share one request');
-assert.equal(calls.length, 2);
+const found = await client.findOpenRoom({
+  serverUrl: 'https://example.workers.dev',
+  playerId: 'player-1',
+  protocol: 6,
+  build: 'm5-coop-turn-fallback-r1',
+  gameMode: 'pvp-team-elimination'
+});
+assert.equal(found.roomCode, 'ABC234');
+assert.ok(calls.some((entry) => entry.url.includes('/matchmaking/rooms/find')));
+assert.equal(calls.length, 3);
 console.log('MATCH.2 R1.1 frontend room admission client tests passed');

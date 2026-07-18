@@ -111,6 +111,13 @@ def main() -> None:
         raise SystemExit("Current production release descriptor mismatch")
     if int(release_descriptor.get("releaseSequence", 0)) != int(current_release.get("release_sequence", -1)):
         raise SystemExit("Current production release sequence mismatch")
+    pvp3 = manifest.get("pvp3", {})
+    if current_release.get("patch") == "pvp3-r1-public-room-discovery-matchmaking-repair":
+        if pvp3.get("patch") != current_release.get("patch"):
+            raise SystemExit("PVP.3 production manifest patch mismatch")
+        for field in ("difficulty_free_pvp", "explicit_room_browser_filters", "atomic_open_room_find", "worker_change_required", "frontend_and_worker"):
+            if pvp3.get(field) is not True:
+                raise SystemExit(f"PVP.3 production policy mismatch: {field}")
     post_seal1 = manifest.get("post_seal1", {})
     if current_release.get("patch") == "post-seal1-r1-console-lifecycle-form-hygiene":
         if post_seal1.get("patch") != current_release.get("patch"):

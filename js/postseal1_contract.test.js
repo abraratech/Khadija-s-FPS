@@ -29,8 +29,8 @@ assert.match(build, /current_release/);
 assert.match(verifier, /Current production release descriptor mismatch/);
 assert.match(verifier, /POST-SEAL\.1 production manifest patch mismatch/);
 
-assert.equal(version.releaseId, 'post-seal1-r1-console-lifecycle-form-hygiene');
-assert.equal(version.releaseSequence, 2026071802);
+assert.ok(version.releaseSequence >= 2026071802);
+assert.ok(typeof version.releaseId === 'string' && version.releaseId.length > 0);
 assert.equal(release.postSeal1?.patch, 'post-seal1-r1-console-lifecycle-form-hygiene');
 assert.equal(release.postSeal1?.workerChangeRequired, false);
 

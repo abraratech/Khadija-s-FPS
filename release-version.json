@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "product": "Khadija's Arena",
+  "productVersion": "1.1.0-pvp2",
+  "releaseId": "post-launch4-r1-update-delivery-cache-safety",
+  "releaseSequence": 2026071801,
+  "sourceBaselineSha": "7f9b67e3168ab22c003b696420f1028f1dfa5dd8",
+  "updateDelivery": true,
+  "workerChangeRequired": false
+}

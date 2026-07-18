@@ -1,0 +1,9 @@
+# POST-LAUNCH.4 — keep the app shell and release descriptor revalidatable.
+/
+  Cache-Control: no-cache, no-store, must-revalidate
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+/release-version.json
+  Cache-Control: no-cache, no-store, must-revalidate
+/multiplayer-release.json
+  Cache-Control: no-cache, no-store, must-revalidate

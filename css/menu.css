@@ -976,3 +976,67 @@ body.ka-launch1-welcome-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   #launch1-welcome *, #launch1-welcome *::before, #launch1-welcome *::after { animation: none !important; transition: none !important; }
 }
+
+
+/* POST-LAUNCH.4 R1 — safe update-ready prompt, hidden during active play/lobbies. */
+#ka-update-ready[hidden] { display: none !important; }
+.ka-update-ready {
+  position: fixed;
+  z-index: 20120;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: min(560px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(0, 212, 255, .52);
+  border-radius: 17px;
+  color: #f5fbff;
+  background: linear-gradient(135deg, rgba(7, 25, 38, .98), rgba(3, 9, 16, .98));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .52), 0 0 28px rgba(0, 212, 255, .12);
+  backdrop-filter: blur(16px);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  animation: kaUpdateReadyIn .22s ease-out both;
+}
+.ka-update-ready__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  color: #001018;
+  background: #00d4ff;
+  font-size: 24px;
+  font-weight: 1000;
+  box-shadow: 0 0 20px rgba(0, 212, 255, .26);
+}
+.ka-update-ready__copy { display: grid; min-width: 0; gap: 2px; }
+.ka-update-ready__copy strong { color: #00d4ff; font-size: 12px; letter-spacing: .16em; }
+.ka-update-ready__copy span { color: #f5fbff; font-size: 14px; font-weight: 850; }
+.ka-update-ready__copy small { color: #8fa6b4; font-size: 11px; }
+.ka-update-ready__actions { display: flex; gap: 7px; }
+.ka-update-ready__actions button {
+  min-height: 40px;
+  border-radius: 10px;
+  padding: 0 13px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .05em;
+}
+.ka-update-ready__primary { border: 1px solid #00d4ff; color: #001018; background: #00d4ff; }
+.ka-update-ready__later { border: 1px solid rgba(255,255,255,.2); color: #bfd0d9; background: rgba(255,255,255,.05); }
+.ka-update-ready__primary:hover, .ka-update-ready__primary:focus-visible { background: #55e4ff; }
+.ka-update-ready__later:hover, .ka-update-ready__later:focus-visible { border-color: #bfd0d9; color: white; }
+@keyframes kaUpdateReadyIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 640px) {
+  .ka-update-ready { grid-template-columns: auto 1fr; gap: 10px; padding: 12px; }
+  .ka-update-ready__actions { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; }
+  .ka-update-ready__actions button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ka-update-ready { animation: none !important; }
+  .ka-update-ready * { transition: none !important; }
+}

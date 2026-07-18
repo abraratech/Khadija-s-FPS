@@ -49,8 +49,11 @@ LAUNCH1_PATCH = "launch1-r1-first-run-welcome-production-language"
 LAUNCH1_SOURCE_BASELINE_SHA = "aada1736cb2f404bda6e079bf175495957f19e1a"
 LAUNCH2_PATCH = "launch2-r1-final-production-certification"
 LAUNCH2_SOURCE_BASELINE_SHA = "aada1736cb2f404bda6e079bf175495957f19e1a"
+POST_LAUNCH4_PATCH = "post-launch4-r1-update-delivery-cache-safety"
+POST_LAUNCH4_SOURCE_BASELINE_SHA = "7f9b67e3168ab22c003b696420f1028f1dfa5dd8"
+POST_LAUNCH4_RELEASE_SEQUENCE = 2026071801
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
-ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json")
+ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
 FORBIDDEN_PARTS = {
     ".git", ".wrangler", "node_modules", "multiplayer-server", "scripts",
@@ -455,6 +458,20 @@ def main() -> None:
                 "mpui2-r1-1-active-lobby-tab-isolation"
             ],
             "gameplay_authority_unchanged": True,
+            "worker_change_required": False,
+            "frontend_only": True
+        },
+        "post_launch4": {
+            "schema": 1,
+            "patch": POST_LAUNCH4_PATCH,
+            "source_baseline_sha": POST_LAUNCH4_SOURCE_BASELINE_SHA,
+            "release_sequence": POST_LAUNCH4_RELEASE_SEQUENCE,
+            "release_descriptor": "release-version.json",
+            "cache_control_headers": True,
+            "stale_shell_detection": True,
+            "active_match_refresh_deferred": True,
+            "active_lobby_refresh_deferred": True,
+            "matchmaking_refresh_deferred": True,
             "worker_change_required": False,
             "frontend_only": True
         },

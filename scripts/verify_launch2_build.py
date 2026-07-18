@@ -99,6 +99,23 @@ def main() -> None:
     if launch2.get("player_facing_certification_controls") is not False:
         raise SystemExit("Player-facing certification controls are not disabled")
 
+    post_launch4 = manifest.get("post_launch4", {})
+    if post_launch4.get("patch") != "post-launch4-r1-update-delivery-cache-safety":
+        raise SystemExit("POST-LAUNCH.4 production manifest patch mismatch")
+    for required_root in ("release-version.json", "_headers"):
+        if not (build / required_root).is_file():
+            raise SystemExit(f"POST-LAUNCH.4 production root file is missing: {required_root}")
+    release_descriptor = json.loads((build / "release-version.json").read_text(encoding="utf-8"))
+    if release_descriptor.get("releaseId") != post_launch4.get("patch"):
+        raise SystemExit("POST-LAUNCH.4 release descriptor mismatch")
+    if int(release_descriptor.get("releaseSequence", 0)) != int(post_launch4.get("release_sequence", -1)):
+        raise SystemExit("POST-LAUNCH.4 release sequence mismatch")
+    headers_text = (build / "_headers").read_text(encoding="utf-8", errors="replace")
+    if "/index.html" not in headers_text or "/release-version.json" not in headers_text:
+        raise SystemExit("POST-LAUNCH.4 cache header routes are incomplete")
+    if "Cache-Control: no-cache, no-store, must-revalidate" not in headers_text:
+        raise SystemExit("POST-LAUNCH.4 cache-control policy is incomplete")
+
     manifest_files = manifest.get("files", {})
     actual_files = {
         path.relative_to(build).as_posix(): path

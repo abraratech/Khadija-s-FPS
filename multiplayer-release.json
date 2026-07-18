@@ -384,7 +384,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "PVP.1 R1 \u2014 Isolated Team Elimination Foundation",
+  "releaseLabel": "PVP.1 R1 — Isolated Team Elimination Foundation",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -972,6 +972,18 @@
     "activeNavigationAutoReveal": true,
     "mobileTopNavigationPreserved": true,
     "keyboardNavigationPreserved": true,
+    "gameplayAuthorityUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
+  },
+  "postLaunch3": {
+    "schema": 1,
+    "patch": "post-launch3-r1-player-facing-language-service-polish",
+    "sourceBaselineSha": "5963185b25ff51232643cb4e3d49d9a7000a7508",
+    "playerFacingBuildLanguageRemoved": true,
+    "playerFacingProtocolLanguageRemoved": true,
+    "managedServiceWording": true,
+    "internalCompatibilityChecksPreserved": true,
     "gameplayAuthorityUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true

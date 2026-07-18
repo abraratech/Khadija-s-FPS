@@ -282,7 +282,7 @@ export class MultiplayerLobbyUI {
       <section class="ka-coop-card ka-mp-hub" role="region" aria-labelledby="ka-coop-title">
         <header class="ka-coop-header ka-mp-hero">
           <div class="ka-mp-hero-copy">
-            <span class="ka-coop-kicker">KHADIJA PROTOCOL · ONLINE OPERATIONS</span>
+            <span class="ka-coop-kicker">ONLINE OPERATIONS</span>
             <h2 id="ka-coop-title">MULTIPLAYER HUB</h2>
             <p>Deploy with allies, enter rated duels, host custom rooms, and track competitive performance.</p>
           </div>
@@ -307,7 +307,7 @@ export class MultiplayerLobbyUI {
                 <option value="SUPPORT">Support · team cohesion utility</option>
               </select>
             </label>
-            <div class="ka-mp-service-card"><span>LIVE SERVICE</span><strong>REGION-AWARE</strong><small>Fixed secure production connection</small></div>
+            <div class="ka-mp-service-card"><span>LIVE SERVICE</span><strong>REGION-AWARE</strong><small>Secure managed online connection</small></div>
           </section>
 
           <nav class="ka-mp-tabs" aria-label="Multiplayer hub sections">
@@ -341,7 +341,7 @@ export class MultiplayerLobbyUI {
                 <label class="ka-coop-field"><span>Region policy</span><select id="ka-match3-region-policy"><option value="auto">Region first, then global</option><option value="regional-only">Regional only</option><option value="global">Global immediately</option></select></label>
               </div>
               <div id="ka-matchmaking-status" class="ka-matchmaking-status" data-tone="neutral" hidden>
-                <div><strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong><span id="ka-matchmaking-status-detail">MATCH BY BUILD, PROTOCOL, ARENA AND REGION</span></div>
+                <div><strong id="ka-matchmaking-status-title">PUBLIC QUICK MATCH</strong><span id="ka-matchmaking-status-detail">SEARCHING BY CONNECTION, ARENA AND REGION</span></div>
                 <span id="ka-matchmaking-elapsed"></span>
                 <button id="ka-matchmaking-bot" class="ka-matchmaking-bot" type="button" hidden>DEPLOY AI WINGMATE</button>
                 <button id="ka-matchmaking-cancel" type="button">CANCEL</button>

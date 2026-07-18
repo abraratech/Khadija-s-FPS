@@ -269,7 +269,7 @@ export function matchmakingStatusPresentation(snapshot = {}, {
   return Object.freeze({
     tone: 'neutral',
     title: 'PUBLIC QUICK MATCH',
-    detail: 'MATCH BY BUILD, PROTOCOL, ARENA AND REGION',
+    detail: 'SEARCHING BY CONNECTION, ARENA AND REGION',
     elapsedText: '',
     cancellable: false
   });

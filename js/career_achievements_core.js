@@ -30,6 +30,32 @@ function normalizeOperation(entry, scope) {
   });
 }
 
+const ACHIEVEMENT_VISUALS = Object.freeze({
+  FIRST_BLOOD: Object.freeze({ category: 'COMBAT', rarity: 'COMMON', icon: '✦', tone: '#ff6b6b', stat: 'totalKills', target: 1 }),
+  HEAD_HUNTER: Object.freeze({ category: 'MASTERY', rarity: 'RARE', icon: '◎', tone: '#7dd3fc' }),
+  WAVE_10: Object.freeze({ category: 'SURVIVAL', rarity: 'RARE', icon: '▲', tone: '#fbbf24', stat: 'bestWave', target: 10 }),
+  GOLIATH_DOWN: Object.freeze({ category: 'HUNTER', rarity: 'EPIC', icon: '◆', tone: '#c084fc' }),
+  PACKED: Object.freeze({ category: 'ARSENAL', rarity: 'COMMON', icon: '⚙', tone: '#34d399', stat: 'weaponUpgrades', target: 1 }),
+  TIER_III: Object.freeze({ category: 'ARSENAL', rarity: 'EPIC', icon: '▣', tone: '#fb7185' }),
+  CONTRACTOR: Object.freeze({ category: 'OPERATIONS', rarity: 'RARE', icon: '⌖', tone: '#22d3ee', stat: 'objectivesCompleted', target: 1 }),
+  PERKED_UP: Object.freeze({ category: 'SURVIVAL', rarity: 'EPIC', icon: '✚', tone: '#a3e635' })
+});
+
+function achievementProgress(id, profile, highWave = 1) {
+  const visual = ACHIEVEMENT_VISUALS[id];
+  if (!visual?.stat || !visual.target) return Object.freeze({ current: 0, target: 0, percent: 0, measurable: false });
+  const source = visual.stat === 'bestWave'
+    ? Math.max(integer(profile?.bestWave, 1, 1), integer(highWave, 1, 1))
+    : integer(profile?.[visual.stat], 0);
+  const current = Math.min(visual.target, source);
+  return Object.freeze({
+    current,
+    target: visual.target,
+    percent: Math.max(0, Math.min(100, Math.round((current / visual.target) * 100))),
+    measurable: true
+  });
+}
+
 export function buildCareerPresentation({
   progression = {},
   challenges = {},
@@ -48,14 +74,28 @@ export function buildCareerPresentation({
     : 100;
 
   const achievements = Array.isArray(challenges?.achievements)
-    ? challenges.achievements.map((entry) => ({
-        id: cleanText(entry?.id, 'UNKNOWN', 80),
-        label: cleanText(entry?.label, 'Achievement', 100),
-        description: cleanText(entry?.description, 'Complete the listed milestone.', 260),
-        xp: integer(entry?.xp, 0),
-        unlocked: entry?.unlocked === true,
-        unlockedAt: integer(entry?.unlockedAt, 0)
-      }))
+    ? challenges.achievements.map((entry) => {
+        const id = cleanText(entry?.id, 'UNKNOWN', 80);
+        const visual = ACHIEVEMENT_VISUALS[id] || {};
+        const unlocked = entry?.unlocked === true;
+        const progress = achievementProgress(id, profile, highWave);
+        return {
+          id,
+          label: cleanText(entry?.label, 'Achievement', 100),
+          description: cleanText(entry?.description, 'Complete the listed milestone.', 260),
+          xp: integer(entry?.xp, 0),
+          unlocked,
+          unlockedAt: integer(entry?.unlockedAt, 0),
+          category: cleanText(entry?.category, visual.category || 'CAREER', 24).toUpperCase(),
+          rarity: cleanText(entry?.rarity, visual.rarity || 'STANDARD', 24).toUpperCase(),
+          icon: cleanText(entry?.icon, visual.icon || '◇', 8),
+          tone: cleanText(entry?.tone, visual.tone || '#00d4ff', 24),
+          progressCurrent: unlocked && progress.measurable ? progress.target : progress.current,
+          progressTarget: progress.target,
+          progressPercent: unlocked ? 100 : progress.percent,
+          progressMeasurable: progress.measurable
+        };
+      })
     : [];
 
   achievements.sort((left, right) => {

@@ -49,6 +49,8 @@ const INTERACT_TICK_INTERVAL_MS = 250;
 const SURVIVOR_TICK_INTERVAL_MS = 200;
 const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'RANGED']);
 const OBJECTIVE_HUD_KEY = 'ka_objective_hud_mode_v1';
+const RUN_CHALLENGES_HUD_KEY = 'ka_run_challenges_visibility_v1';
+const OBJECTIVE_HUD_MODES = Object.freeze(['full', 'compact', 'hidden']);
 
 function nowMs() {
   return (
@@ -242,6 +244,10 @@ export class Content1Manager {
     this.hudFaction = null;
     this.hudModifiers = null;
     this.hudBoss = null;
+    this.hudModeToggle = null;
+    this.hudContent = null;
+    this.objectiveHudMode = 'full';
+    this.runChallengesVisible = true;
     this.objectiveGroup = null;
     this.primaryRing = null;
     this.secondaryRing = null;
@@ -283,6 +289,12 @@ export class Content1Manager {
       window.KAGetPostFinal4Objective = () => this.getSnapshot()?.postFinal4 || null;
       window.KAGetPostFinal7Mission = () => this.getSnapshot()?.postFinal7 || null;
       window.KAGetPostFinal8Replayability = () => this.getSnapshot()?.postFinal8 || null;
+      window.KASetObjectiveHudMode = (mode) => this.setObjectiveHudMode(mode, { persist: true, announce: true });
+      window.KASetRunChallengesVisible = (visible) => this.setRunChallengesVisible(visible === true, { persist: true, announce: true });
+      window.KAGetHudPreferences = () => Object.freeze({
+        objectiveHudMode: this.objectiveHudMode,
+        runChallengesVisible: this.runChallengesVisible === true
+      });
       window.KAChoosePostFinal7Risk = (choice) => this.chooseMissionRisk(choice);
       window.KAContent1EnemySpawned = (enemy) => this.prepareEnemySpawn(enemy);
       window.KAContent1EnemyDamaged = (details) => this.recordEnemyDamage(details);
@@ -1486,21 +1498,143 @@ export class Content1Manager {
     return clone(this.latestSnapshot);
   }
 
+  normalizeObjectiveHudMode(value) {
+    const mode = String(value || '').trim().toLowerCase();
+    return OBJECTIVE_HUD_MODES.includes(mode) ? mode : 'full';
+  }
+
+  applyHudPreferences() {
+    if (typeof document === 'undefined') return;
+    const mode = this.normalizeObjectiveHudMode(this.objectiveHudMode);
+    this.objectiveHudMode = mode;
+    const body = document.body;
+    body?.classList.toggle('ka-objective-hud-compact', mode === 'compact');
+    body?.classList.toggle('ka-objective-hud-hidden', mode === 'hidden');
+    body?.classList.toggle('ka-run-challenges-hidden', this.runChallengesVisible !== true);
+    this.hud?.classList.toggle('ka-objective-hud-compact', mode === 'compact');
+    this.hud?.classList.toggle('ka-objective-hud-hidden', mode === 'hidden');
+
+    const objectiveControls = [
+      document.getElementById('objective-hud-mode-select'),
+      document.getElementById('pause-objective-hud-mode-select')
+    ].filter(Boolean);
+    objectiveControls.forEach((control) => {
+      if (control.value !== mode) control.value = mode;
+    });
+
+    const challengeValue = this.runChallengesVisible === true ? 'show' : 'hide';
+    const challengeControls = [
+      document.getElementById('run-challenges-visibility-select'),
+      document.getElementById('pause-run-challenges-visibility-select')
+    ].filter(Boolean);
+    challengeControls.forEach((control) => {
+      if (control.value !== challengeValue) control.value = challengeValue;
+    });
+
+    const current = document.getElementById('pause-objective-hud-current');
+    if (current) {
+      current.textContent = mode === 'full'
+        ? 'FULL DETAIL'
+        : (mode === 'compact' ? 'COMPACT' : 'HIDDEN');
+    }
+    const pausePanel = document.getElementById('pause-hud-visibility-panel');
+    if (pausePanel) pausePanel.dataset.objectiveMode = mode;
+
+    if (this.hudModeToggle) {
+      const nextMode = mode === 'full' ? 'compact' : (mode === 'compact' ? 'hidden' : 'full');
+      const action = nextMode === 'compact' ? 'Compact' : (nextMode === 'hidden' ? 'Hide' : 'Show');
+      this.hudModeToggle.dataset.mode = mode;
+      this.hudModeToggle.setAttribute('aria-label', `${action} objective panel`);
+      this.hudModeToggle.title = `${action} objective panel`;
+      this.hudModeToggle.innerHTML = `<span aria-hidden="true">${mode === 'hidden' ? '◎' : (mode === 'compact' ? '−' : '▱')}</span><b>${action.toUpperCase()}</b>`;
+    }
+
+    window.dispatchEvent(new CustomEvent('ka:hud-preferences-updated', {
+      detail: Object.freeze({
+        objectiveHudMode: mode,
+        runChallengesVisible: this.runChallengesVisible === true
+      })
+    }));
+  }
+
+  setObjectiveHudMode(value, { persist = true, announce = false } = {}) {
+    const mode = this.normalizeObjectiveHudMode(value);
+    this.objectiveHudMode = mode;
+    if (persist) {
+      try { localStorage.setItem(OBJECTIVE_HUD_KEY, mode); } catch { /* restricted storage */ }
+    }
+    this.applyHudPreferences();
+    if (announce) {
+      const label = mode === 'full' ? 'FULL DETAIL' : (mode === 'compact' ? 'COMPACT' : 'HIDDEN');
+      this.showToast?.(`OBJECTIVE PANEL · ${label}`);
+    }
+    this.updateHud(true);
+  }
+
+  setRunChallengesVisible(visible, { persist = true, announce = false } = {}) {
+    this.runChallengesVisible = visible === true;
+    if (persist) {
+      try {
+        localStorage.setItem(RUN_CHALLENGES_HUD_KEY, this.runChallengesVisible ? 'show' : 'hide');
+      } catch { /* restricted storage */ }
+    }
+    this.applyHudPreferences();
+    if (announce) {
+      this.showToast?.(`RUN CHALLENGES · ${this.runChallengesVisible ? 'SHOWN' : 'HIDDEN'}`);
+    }
+  }
+
+  cycleObjectiveHudMode() {
+    const next = this.objectiveHudMode === 'full'
+      ? 'compact'
+      : (this.objectiveHudMode === 'compact' ? 'hidden' : 'full');
+    this.setObjectiveHudMode(next, { persist: true, announce: true });
+  }
+
   bindHudModeControl() {
     if (typeof document === 'undefined') return;
-    const select = document.getElementById('objective-hud-mode-select');
-    if (!select || select.dataset.kaBound === '1') return;
-    select.dataset.kaBound = '1';
-    let saved = 'full';
-    try { saved = localStorage.getItem(OBJECTIVE_HUD_KEY) || 'full'; } catch { /* restricted storage */ }
-    select.value = saved === 'compact' ? 'compact' : 'full';
-    document.body?.classList.toggle('ka-objective-hud-compact', select.value === 'compact');
-    select.addEventListener('change', () => {
-      const value = select.value === 'compact' ? 'compact' : 'full';
-      try { localStorage.setItem(OBJECTIVE_HUD_KEY, value); } catch { /* restricted storage */ }
-      document.body?.classList.toggle('ka-objective-hud-compact', value === 'compact');
-      this.updateHud(true);
+    let savedMode = 'full';
+    let savedChallenges = 'show';
+    try {
+      savedMode = localStorage.getItem(OBJECTIVE_HUD_KEY) || 'full';
+      savedChallenges = localStorage.getItem(RUN_CHALLENGES_HUD_KEY) || 'show';
+    } catch { /* restricted storage */ }
+    this.objectiveHudMode = this.normalizeObjectiveHudMode(savedMode);
+    this.runChallengesVisible = savedChallenges !== 'hide';
+
+    const objectiveControls = [
+      document.getElementById('objective-hud-mode-select'),
+      document.getElementById('pause-objective-hud-mode-select')
+    ].filter(Boolean);
+    objectiveControls.forEach((control) => {
+      if (control.dataset.kaHud1Bound === '1') return;
+      control.dataset.kaHud1Bound = '1';
+      control.addEventListener('change', () => {
+        this.setObjectiveHudMode(control.value, { persist: true, announce: control.id.startsWith('pause-') });
+      });
     });
+
+    const challengeControls = [
+      document.getElementById('run-challenges-visibility-select'),
+      document.getElementById('pause-run-challenges-visibility-select')
+    ].filter(Boolean);
+    challengeControls.forEach((control) => {
+      if (control.dataset.kaHud1Bound === '1') return;
+      control.dataset.kaHud1Bound = '1';
+      control.addEventListener('change', () => {
+        this.setRunChallengesVisible(control.value !== 'hide', {
+          persist: true,
+          announce: control.id.startsWith('pause-')
+        });
+      });
+    });
+
+    if (this.hudModeToggle && this.hudModeToggle.dataset.kaHud1Bound !== '1') {
+      this.hudModeToggle.dataset.kaHud1Bound = '1';
+      this.hudModeToggle.addEventListener('click', () => this.cycleObjectiveHudMode());
+    }
+
+    this.applyHudPreferences();
   }
 
   ensureHud() {
@@ -1510,6 +1644,8 @@ export class Content1Manager {
     hud.id = 'ka-content1-hud';
     hud.className = 'ka-content1-hud ka-postfinal4-hud';
     hud.innerHTML = `
+      <button class="ka-objective-hud-toggle" type="button" aria-label="Compact objective panel" title="Compact objective panel"><span aria-hidden="true">▱</span><b>COMPACT</b></button>
+      <div class="ka-objective-hud-content">
       <div class="ka-content1-kicker">CO-OP OPERATION CHAIN</div>
       <div class="ka-postfinal7-mission">MISSION DIRECTOR INITIALIZING</div>
       <div class="ka-postfinal7-stages">STAGE 0 / 0</div>
@@ -1530,9 +1666,12 @@ export class Content1Manager {
         </div>
       </div>
       <div class="ka-content1-encounter">STANDARD PRESSURE</div>
+      </div>
     `;
     document.body.appendChild(hud);
     this.hud = hud;
+    this.hudModeToggle = hud.querySelector('.ka-objective-hud-toggle');
+    this.hudContent = hud.querySelector('.ka-objective-hud-content');
     this.hudMission = hud.querySelector('.ka-postfinal7-mission');
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
@@ -1553,6 +1692,7 @@ export class Content1Manager {
     this.hudRiskOverdrive?.addEventListener('click', () => (
       this.chooseMissionRisk(POST_FINAL7_RISK_CHOICES.OVERDRIVE)
     ));
+    this.bindHudModeControl();
     return hud;
   }
 
@@ -1616,6 +1756,7 @@ export class Content1Manager {
     }
     if (this.hudRisk) {
       const decision = mission?.status === POST_FINAL7_MISSION_STATUS.DECISION;
+      hud.classList.toggle('ka-objective-hud-critical', decision);
       this.hudRisk.hidden = !decision;
       if (decision) {
         const remaining = Math.max(
@@ -1796,6 +1937,8 @@ export class Content1Manager {
     this.unsubscribe.splice(0).forEach((fn) => fn?.());
     this.hud?.remove?.();
     this.hud = null;
+    this.hudModeToggle = null;
+    this.hudContent = null;
     this.clearObjectiveVisuals();
   }
 }

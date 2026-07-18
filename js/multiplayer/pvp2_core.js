@@ -15,6 +15,40 @@ export const PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED = true;
 export const PVP2_CUSTOM_ROOM_FEATURE_FLAG = 'PVP2_PUBLIC_CUSTOM_ROOMS_ENABLED';
 export const PVP2_CUSTOM_ROOM_TEAM_SIZES = Object.freeze([1, 2]);
 
+export const PVP2_RANK_TIERS = Object.freeze([
+  Object.freeze({ id: 'RECRUIT', label: 'Recruit', floor: 100, ceiling: 899, tone: '#94a3b8', emblem: '◇' }),
+  Object.freeze({ id: 'BRONZE', label: 'Bronze', floor: 900, ceiling: 1099, tone: '#d08a5b', emblem: '◆' }),
+  Object.freeze({ id: 'SILVER', label: 'Silver', floor: 1100, ceiling: 1299, tone: '#cbd5e1', emblem: '✦' }),
+  Object.freeze({ id: 'GOLD', label: 'Gold', floor: 1300, ceiling: 1499, tone: '#fbbf24', emblem: '✶' }),
+  Object.freeze({ id: 'PLATINUM', label: 'Platinum', floor: 1500, ceiling: 1699, tone: '#67e8f9', emblem: '⬡' }),
+  Object.freeze({ id: 'DIAMOND', label: 'Diamond', floor: 1700, ceiling: 1899, tone: '#a78bfa', emblem: '◈' }),
+  Object.freeze({ id: 'VANGUARD', label: 'Vanguard', floor: 1900, ceiling: Number.POSITIVE_INFINITY, tone: '#fb7185', emblem: '♛' })
+]);
+
+export function pvp2RankPresentation(ratingValue = PVP2_INITIAL_RATING) {
+  const rating = Math.max(100, Math.trunc(finite(ratingValue, PVP2_INITIAL_RATING)));
+  const tierIndex = Math.max(0, PVP2_RANK_TIERS.findIndex((entry) => rating >= entry.floor && rating <= entry.ceiling));
+  const tier = PVP2_RANK_TIERS[tierIndex] || PVP2_RANK_TIERS[0];
+  const next = PVP2_RANK_TIERS[tierIndex + 1] || null;
+  const span = Number.isFinite(tier.ceiling) ? Math.max(1, tier.ceiling - tier.floor + 1) : 1;
+  const progressPercent = next
+    ? Math.max(0, Math.min(100, Math.round(((rating - tier.floor) / span) * 100)))
+    : 100;
+  return Object.freeze({
+    id: tier.id,
+    label: tier.label,
+    tone: tier.tone,
+    emblem: tier.emblem,
+    floor: tier.floor,
+    ceiling: tier.ceiling,
+    progressPercent,
+    nextLabel: next?.label || 'Maximum Rank',
+    nextRating: next?.floor || rating,
+    ratingToNext: next ? Math.max(0, next.floor - rating) : 0,
+    capped: !next
+  });
+}
+
 export function normalizePvp2CustomRoomTeamSize(value) {
   return Number(value) >= 2 ? 2 : 1;
 }
@@ -118,12 +152,24 @@ export function normalizePvp2Leaderboard(value = {}) {
 
 export function pvp2StatsPresentation(statsValue = {}) {
   const stats = normalizePvp2Stats(statsValue);
+  const rank = pvp2RankPresentation(stats.rating);
+  const milestones = Object.freeze([
+    Object.freeze({ id: 'FIRST_WIN', label: 'First Victory', icon: '✦', unlocked: stats.wins >= 1 }),
+    Object.freeze({ id: 'HOT_STREAK', label: 'Hot Streak', icon: '⚡', unlocked: stats.bestWinStreak >= 3 }),
+    Object.freeze({ id: 'GOLD_PATH', label: 'Gold Path', icon: '✶', unlocked: stats.bestRating >= 1300 }),
+    Object.freeze({ id: 'RELENTLESS', label: 'Relentless', icon: '♛', unlocked: stats.bestWinStreak >= 5 })
+  ]);
   return Object.freeze({
-    headline: `RATING ${stats.rating}`,
+    headline: `${rank.label.toUpperCase()} · ${stats.rating}`,
+    rating: stats.rating,
+    bestRating: stats.bestRating,
+    matchesPlayed: stats.matchesPlayed,
     record: `${stats.wins}W · ${stats.losses}L`,
     performance: `${stats.eliminations} ELIMS · ${stats.deaths} DEATHS`,
     streak: stats.winStreak > 0 ? `${stats.winStreak} WIN STREAK` : 'NO ACTIVE STREAK',
     winRateText: `${Math.round(stats.winRate * 100)}% WIN RATE`,
-    kdText: `${stats.eliminationDeathRatio.toFixed(2)} E/D`
+    kdText: `${stats.eliminationDeathRatio.toFixed(2)} E/D`,
+    rank,
+    milestones
   });
 }

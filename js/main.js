@@ -616,7 +616,14 @@ function showPauseScreen() {
   updatePauseSummary();
 
   const pauseScreen = document.getElementById('pause-screen');
-  if (pauseScreen) pauseScreen.style.display = 'flex';
+  if (pauseScreen) {
+    pauseScreen.style.display = 'flex';
+    pauseScreen.scrollTop = 0;
+    window.requestAnimationFrame(() => {
+      pauseScreen.scrollTop = 0;
+      document.getElementById('resume-btn')?.focus({ preventScroll: true });
+    });
+  }
 }
 
 function hidePauseScreen() {

@@ -13,14 +13,14 @@ const RUN_CHALLENGE_DEFS = Object.freeze([
 ]);
 
 const ACHIEVEMENTS = Object.freeze({
-  FIRST_BLOOD: Object.freeze({ label: 'First Blood', description: 'Eliminate your first enemy.', xp: 25 }),
-  HEAD_HUNTER: Object.freeze({ label: 'Head Hunter', description: 'Score 25 headshot kills in one run.', xp: 75 }),
-  WAVE_10: Object.freeze({ label: 'Holding the Line', description: 'Reach wave 10.', xp: 100 }),
-  GOLIATH_DOWN: Object.freeze({ label: 'Giant Slayer', description: 'Eliminate a Goliath.', xp: 100 }),
-  PACKED: Object.freeze({ label: 'Powered Up', description: 'Pack-a-Punch a weapon.', xp: 50 }),
-  TIER_III: Object.freeze({ label: 'Maximum Output', description: 'Upgrade a weapon to Tier III.', xp: 125 }),
-  CONTRACTOR: Object.freeze({ label: 'Contractor', description: 'Complete a map objective.', xp: 75 }),
-  PERKED_UP: Object.freeze({ label: 'Perked Up', description: 'Activate all four perks in one run.', xp: 100 })
+  FIRST_BLOOD: Object.freeze({ label: 'First Blood', description: 'Eliminate your first enemy.', xp: 25, category: 'COMBAT', rarity: 'COMMON', icon: '✦', tone: '#ff6b6b' }),
+  HEAD_HUNTER: Object.freeze({ label: 'Head Hunter', description: 'Score 25 headshot kills in one run.', xp: 75, category: 'MASTERY', rarity: 'RARE', icon: '◎', tone: '#7dd3fc' }),
+  WAVE_10: Object.freeze({ label: 'Holding the Line', description: 'Reach wave 10.', xp: 100, category: 'SURVIVAL', rarity: 'RARE', icon: '▲', tone: '#fbbf24' }),
+  GOLIATH_DOWN: Object.freeze({ label: 'Giant Slayer', description: 'Eliminate a Goliath.', xp: 100, category: 'HUNTER', rarity: 'EPIC', icon: '◆', tone: '#c084fc' }),
+  PACKED: Object.freeze({ label: 'Powered Up', description: 'Pack-a-Punch a weapon.', xp: 50, category: 'ARSENAL', rarity: 'COMMON', icon: '⚙', tone: '#34d399' }),
+  TIER_III: Object.freeze({ label: 'Maximum Output', description: 'Upgrade a weapon to Tier III.', xp: 125, category: 'ARSENAL', rarity: 'EPIC', icon: '▣', tone: '#fb7185' }),
+  CONTRACTOR: Object.freeze({ label: 'Contractor', description: 'Complete a map objective.', xp: 75, category: 'OPERATIONS', rarity: 'RARE', icon: '⌖', tone: '#22d3ee' }),
+  PERKED_UP: Object.freeze({ label: 'Perked Up', description: 'Activate all four perks in one run.', xp: 100, category: 'SURVIVAL', rarity: 'EPIC', icon: '✚', tone: '#a3e635' })
 });
 
 function defaultPersistent() {

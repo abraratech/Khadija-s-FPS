@@ -257,10 +257,22 @@ export class MultiplayerLobbyUI {
 
           <section class="ka-mp-panel" data-mp-panel="competitive" hidden>
             <div class="ka-mp-panel-heading"><div><span>COMPETITIVE RECORD</span><strong>RATED PVP PROFILE</strong></div><small>Only public Quick Match affects rating.</small></div>
-            <section class="ka-pvp2-record ka-mp-competitive-card" aria-labelledby="ka-pvp2-record-title">
-              <div class="ka-pvp2-record-heading"><div><span class="ka-coop-kicker">CURRENT RANK</span><strong id="ka-pvp2-record-title">PVP RATING 1000</strong></div><button id="ka-pvp2-refresh" type="button">REFRESH RECORD</button></div>
-              <div class="ka-pvp2-record-grid"><span id="ka-pvp2-record">0W · 0L</span><span id="ka-pvp2-performance">0 ELIMS · 0 DEATHS</span><span id="ka-pvp2-streak">NO ACTIVE STREAK</span></div>
-              <div class="ka-mp-rank-visual"><div class="ka-mp-rank-emblem">◆</div><div><span>COMPETITIVE PATH</span><strong>BUILD YOUR RATING</strong><small>Win rated 1v1 matches to climb the public leaderboard.</small></div></div>
+            <section class="ka-pvp2-record ka-mp-competitive-card ka-vis1-competitive" aria-labelledby="ka-pvp2-record-title">
+              <div class="ka-pvp2-record-heading"><div><span class="ka-coop-kicker">RATED QUICK MATCH</span><strong>COMPETITIVE OPERATOR PROFILE</strong></div><button id="ka-pvp2-refresh" type="button">REFRESH RECORD</button></div>
+              <div id="ka-pvp2-rank-hero" class="ka-vis1-rank-hero" style="--rank-tone:#d08a5b">
+                <div id="ka-pvp2-rank-emblem" class="ka-vis1-rank-emblem" aria-hidden="true">◆</div>
+                <div class="ka-vis1-rank-copy"><span id="ka-pvp2-tier">BRONZE DIVISION</span><strong id="ka-pvp2-record-title">BRONZE · 1000</strong><small id="ka-pvp2-rank-progress">100 RATING TO SILVER</small></div>
+                <div class="ka-vis1-rank-rating"><span>CURRENT RATING</span><b id="ka-pvp2-rating-value">1000</b><small id="ka-pvp2-best-rating">BEST 1000</small></div>
+                <div class="ka-vis1-rank-meter" aria-label="Competitive rank progress"><i id="ka-pvp2-rank-meter"></i></div>
+              </div>
+              <div class="ka-pvp2-record-grid ka-vis1-metric-grid">
+                <span><small>MATCH RECORD</small><b id="ka-pvp2-record">0W · 0L</b></span>
+                <span><small>COMBAT</small><b id="ka-pvp2-performance">0 ELIMS · 0 DEATHS</b></span>
+                <span><small>MOMENTUM</small><b id="ka-pvp2-streak">NO ACTIVE STREAK</b></span>
+              </div>
+              <div class="ka-vis1-section-title"><div><span>COMPETITIVE BADGES</span><strong>CAREER MILESTONES</strong></div><small>Earned through rated public PvP</small></div>
+              <div id="ka-pvp2-milestones" class="ka-vis1-pvp-milestones"></div>
+              <div class="ka-vis1-section-title"><div><span>PUBLIC STANDINGS</span><strong>TOP OPERATORS</strong></div><small>Global leaderboard</small></div>
               <ol id="ka-pvp2-leaderboard" class="ka-pvp2-leaderboard"><li>NO PUBLIC PVP RESULTS YET</li></ol>
             </section>
           </section>
@@ -348,6 +360,14 @@ export class MultiplayerLobbyUI {
       matchmakingCancel: modal.querySelector('#ka-matchmaking-cancel'),
       pvp2Refresh: modal.querySelector('#ka-pvp2-refresh'),
       pvp2RecordTitle: modal.querySelector('#ka-pvp2-record-title'),
+      pvp2RankHero: modal.querySelector('#ka-pvp2-rank-hero'),
+      pvp2RankEmblem: modal.querySelector('#ka-pvp2-rank-emblem'),
+      pvp2Tier: modal.querySelector('#ka-pvp2-tier'),
+      pvp2RankProgress: modal.querySelector('#ka-pvp2-rank-progress'),
+      pvp2RatingValue: modal.querySelector('#ka-pvp2-rating-value'),
+      pvp2BestRating: modal.querySelector('#ka-pvp2-best-rating'),
+      pvp2RankMeter: modal.querySelector('#ka-pvp2-rank-meter'),
+      pvp2Milestones: modal.querySelector('#ka-pvp2-milestones'),
       pvp2Record: modal.querySelector('#ka-pvp2-record'),
       pvp2Performance: modal.querySelector('#ka-pvp2-performance'),
       pvp2Streak: modal.querySelector('#ka-pvp2-streak'),
@@ -972,17 +992,50 @@ bindEvents() {
 
     const pvp2 = nextState.pvp2 || {};
     const pvp2Presentation = pvp2StatsPresentation(pvp2.stats || {});
+    const rank = pvp2Presentation.rank;
     this.elements.pvp2RecordTitle.textContent = pvp2Presentation.headline;
+    this.elements.pvp2RankHero.style.setProperty('--rank-tone', rank.tone);
+    this.elements.pvp2RankHero.dataset.rank = rank.id.toLowerCase();
+    this.elements.pvp2RankEmblem.textContent = rank.emblem;
+    this.elements.pvp2Tier.textContent = `${rank.label.toUpperCase()} DIVISION`;
+    this.elements.pvp2RankProgress.textContent = rank.capped
+      ? 'MAXIMUM COMPETITIVE RANK'
+      : `${rank.ratingToNext} RATING TO ${rank.nextLabel.toUpperCase()}`;
+    this.elements.pvp2RatingValue.textContent = String(pvp2Presentation.rating);
+    this.elements.pvp2BestRating.textContent = `BEST ${pvp2Presentation.bestRating}`;
+    this.elements.pvp2RankMeter.style.width = `${rank.progressPercent}%`;
     this.elements.pvp2Record.textContent = `${pvp2Presentation.record} · ${pvp2Presentation.winRateText}`;
     this.elements.pvp2Performance.textContent = `${pvp2Presentation.performance} · ${pvp2Presentation.kdText}`;
     this.elements.pvp2Streak.textContent = pvp2Presentation.streak;
+    this.elements.pvp2Milestones.replaceChildren();
+    pvp2Presentation.milestones.forEach((milestone) => {
+      const badge = document.createElement('article');
+      badge.className = `ka-vis1-pvp-badge ${milestone.unlocked ? 'unlocked' : 'locked'}`;
+      const icon = document.createElement('span');
+      icon.textContent = milestone.unlocked ? milestone.icon : '◇';
+      icon.setAttribute('aria-hidden', 'true');
+      const copy = document.createElement('div');
+      const label = document.createElement('b');
+      label.textContent = milestone.label;
+      const stateLabel = document.createElement('small');
+      stateLabel.textContent = milestone.unlocked ? 'UNLOCKED' : 'LOCKED';
+      copy.append(label, stateLabel);
+      badge.append(icon, copy);
+      this.elements.pvp2Milestones.appendChild(badge);
+    });
     this.elements.pvp2Refresh.disabled = disabled || pvp2.status === 'loading';
     this.elements.pvp2Leaderboard.replaceChildren();
     const pvp2Entries = pvp2.leaderboard?.entries || [];
     if (pvp2Entries.length) {
       pvp2Entries.slice(0, 5).forEach((entry) => {
         const item = document.createElement('li');
-        item.textContent = `#${entry.rank} ${entry.displayName} · ${entry.rating} · ${entry.wins}W`;
+        const rankNumber = document.createElement('b');
+        rankNumber.textContent = `#${entry.rank}`;
+        const identity = document.createElement('span');
+        identity.textContent = entry.displayName;
+        const score = document.createElement('small');
+        score.textContent = `${entry.rating} RATING · ${entry.wins}W`;
+        item.append(rankNumber, identity, score);
         this.elements.pvp2Leaderboard.appendChild(item);
       });
     } else {

@@ -2019,13 +2019,26 @@
 </div>
 <div class="ka-setting-row">
 <div>
-<strong>Objective HUD</strong>
-<small>Use the full operation panel or a compact progress-only view during combat.</small>
+<strong>Objective Panel</strong>
+<small>Choose full mission detail, a compact combat view, or hide the panel while keeping world markers and objective alerts.</small>
 </div>
 <div>
 <select class="ka-setting-control" id="objective-hud-mode-select">
 <option value="full">Full Detail</option>
 <option value="compact">Compact</option>
+<option value="hidden">Hidden</option>
+</select>
+</div>
+</div>
+<div class="ka-setting-row">
+<div>
+<strong>Run Challenges</strong>
+<small>Show or hide the persistent challenge checklist during gameplay. Progress and rewards continue while hidden.</small>
+</div>
+<div>
+<select class="ka-setting-control" id="run-challenges-visibility-select">
+<option value="show">Show</option>
+<option value="hide">Hide</option>
 </select>
 </div>
 </div>
@@ -2624,6 +2637,25 @@
 </select>
 </div>
 </div>
+
+<section id="pause-hud-visibility-panel" class="ka-pause-hud-panel" aria-labelledby="pause-hud-visibility-title">
+<div class="ka-pause-hud-head">
+<div><span>GAMEPLAY HUD</span><strong id="pause-hud-visibility-title">OBJECTIVE VISIBILITY</strong></div>
+<small>Changes apply immediately</small>
+</div>
+<div class="ka-pause-hud-grid">
+<label for="pause-objective-hud-mode-select"><span>Objective Panel</span><select id="pause-objective-hud-mode-select">
+<option value="full">Full Detail</option>
+<option value="compact">Compact</option>
+<option value="hidden">Hidden</option>
+</select></label>
+<label for="pause-run-challenges-visibility-select"><span>Run Challenges</span><select id="pause-run-challenges-visibility-select">
+<option value="show">Show</option>
+<option value="hide">Hide</option>
+</select></label>
+</div>
+<div class="ka-pause-hud-status"><span id="pause-objective-hud-current">FULL DETAIL</span><b>World markers and objective alerts remain active.</b></div>
+</section>
 
 <div class="pause-c13-grid">
 <div>

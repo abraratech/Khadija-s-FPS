@@ -320,3 +320,33 @@ html[data-ka-tv="true"] .ka-mode-card { min-height: 170px; }
     font-size: 12px !important;
   }
 }
+/* VIS.1 R1.1 — keep the primary Pause action visible on full-size displays.
+   VIS.1 adds enough settings that vertically centering the full menu can place
+   its opening controls above the scrollport. Desktop now starts at the top,
+   and RESUME remains sticky while the settings below it are reviewed. */
+@media (min-width: 921px) and (min-height: 561px) {
+  #pause-screen {
+    justify-content: flex-start !important;
+    align-items: center !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scroll-padding-top: 12px;
+    scroll-padding-bottom: 24px;
+    padding-top: max(18px, var(--ka-ui9-safe-top)) !important;
+    padding-bottom: max(24px, var(--ka-ui9-safe-bottom)) !important;
+  }
+
+  #pause-screen > div:first-child,
+  #pause-summary-panel {
+    flex: 0 0 auto;
+  }
+
+  #resume-btn {
+    position: sticky !important;
+    top: max(10px, var(--ka-ui9-safe-top)) !important;
+    z-index: 115 !important;
+    flex: 0 0 auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45), 0 0 22px rgba(0, 212, 255, .28);
+  }
+}
+

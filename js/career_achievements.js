@@ -3,6 +3,7 @@
 import { buildCareerPresentation } from './career_achievements_core.js';
 
 let initialized = false;
+let achievementFilter = 'all';
 let getProgression = () => ({ profile: {}, maxLevel: 50, unlocks: [] });
 let getChallenges = () => ({ achievements: [], totalUnlocked: 0 });
 let equipCosmetic = () => ({ ok: false, reason: 'UNAVAILABLE' });
@@ -93,8 +94,12 @@ function installStyle() {
     .ka-reward-list,.ka-achievement-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ka-reward-card,.ka-achievement-card{padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.04)}.ka-reward-card.unlocked,.ka-achievement-card.unlocked{border-color:rgba(34,255,136,.34);background:rgba(34,255,136,.05)}.ka-reward-card.locked,.ka-achievement-card.locked{opacity:.58}.ka-reward-kind,.ka-achievement-state{font-size:9px;font-weight:1000;letter-spacing:.1em;color:#ffaa00}.ka-reward-card.unlocked .ka-reward-kind,.ka-achievement-card.unlocked .ka-achievement-state{color:#22ff88}.ka-reward-card strong,.ka-achievement-card strong{display:block;margin:4px 0}.ka-reward-card small,.ka-achievement-card small{display:block;color:#9fb4c5;line-height:1.4}.ka-reward-card button{margin-top:9px;width:100%;font-size:11px}.ka-reward-card.equipped{box-shadow:inset 0 0 0 1px #00d4ff}
     .ka-recent-list{display:grid;gap:7px}.ka-recent-row{display:grid;grid-template-columns:1.2fr .7fr repeat(4,.55fr);gap:8px;align-items:center;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:rgba(255,255,255,.025);font-size:12px}.ka-recent-row span{color:#8fa5b4}.ka-recent-row b{font-size:12px}
     .ka-career-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 4px}.ka-career-actions button{flex:1;min-width:180px}
+    .ka-career-showcase{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0 4px}.ka-career-showcase>div{position:relative;overflow:hidden;min-height:96px;padding:14px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.06),rgba(255,255,255,.015))}.ka-career-showcase>div:after{content:'';position:absolute;width:86px;height:86px;border-radius:50%;right:-28px;top:-30px;background:var(--showcase-tone,#00d4ff);opacity:.12;filter:blur(2px)}.ka-career-showcase span{display:block;color:#7894a8;font-size:9px;font-weight:1000;letter-spacing:.12em}.ka-career-showcase b{display:block;margin-top:6px;color:#fff;font-size:24px}.ka-career-showcase small{display:block;margin-top:3px;color:#9db2bf}
+    .ka-achievement-toolbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px}.ka-achievement-filter{padding:7px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.035);color:#9eb2c0;font-size:9px;font-weight:1000;letter-spacing:.08em}.ka-achievement-filter.active{border-color:#80ffc1;background:rgba(34,255,136,.1);color:#dffff0;box-shadow:0 0 18px rgba(34,255,136,.12)}
+    .ka-achievement-list{grid-template-columns:repeat(4,minmax(0,1fr))}.ka-achievement-card{position:relative;overflow:hidden;min-height:210px;padding:14px;background:linear-gradient(155deg,color-mix(in srgb,var(--achievement-tone,#00d4ff) 13%,rgba(8,14,22,.98)),rgba(4,8,14,.98));border-color:color-mix(in srgb,var(--achievement-tone,#00d4ff) 34%,rgba(255,255,255,.08));transition:transform .18s ease,border-color .18s ease,filter .18s ease}.ka-achievement-card:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--achievement-tone,#00d4ff) 72%,white)}.ka-achievement-card.locked{opacity:1;filter:saturate(.48)}.ka-achievement-card[hidden]{display:none}.ka-achievement-glow{position:absolute;inset:auto -35px -50px auto;width:130px;height:130px;border-radius:50%;background:var(--achievement-tone,#00d4ff);opacity:.12;filter:blur(18px);pointer-events:none}.ka-achievement-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.ka-achievement-icon{width:58px;height:58px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--achievement-tone,#00d4ff) 62%,white);border-radius:17px;background:color-mix(in srgb,var(--achievement-tone,#00d4ff) 18%,rgba(0,0,0,.5));color:var(--achievement-tone,#00d4ff);font-size:28px;font-weight:1000;box-shadow:0 0 24px color-mix(in srgb,var(--achievement-tone,#00d4ff) 22%,transparent)}.ka-achievement-card.locked .ka-achievement-icon{color:#74818c;border-color:#485560;background:rgba(255,255,255,.035);box-shadow:none}.ka-achievement-tags{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}.ka-achievement-tags span{padding:4px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:#a8bbc8;font-size:7px;font-weight:1000;letter-spacing:.09em}.ka-achievement-tags .rarity{color:var(--achievement-tone,#00d4ff);border:1px solid color-mix(in srgb,var(--achievement-tone,#00d4ff) 35%,transparent)}.ka-achievement-card strong{font-size:15px;margin:13px 0 5px}.ka-achievement-card>small{min-height:42px}.ka-achievement-progress{margin-top:11px}.ka-achievement-progress-line{display:flex;justify-content:space-between;gap:8px;color:#8095a4;font-size:8px;font-weight:1000;letter-spacing:.08em}.ka-achievement-progress-track{height:7px;margin-top:6px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.09)}.ka-achievement-progress-track i{display:block;height:100%;width:var(--achievement-progress,0%);border-radius:inherit;background:linear-gradient(90deg,color-mix(in srgb,var(--achievement-tone,#00d4ff) 60%,white),var(--achievement-tone,#00d4ff));box-shadow:0 0 12px color-mix(in srgb,var(--achievement-tone,#00d4ff) 34%,transparent)}.ka-achievement-footer{display:flex;justify-content:space-between;gap:8px;margin-top:12px;padding-top:9px;border-top:1px solid rgba(255,255,255,.07);font-size:8px;font-weight:1000;letter-spacing:.08em}.ka-achievement-footer span:first-child{color:var(--achievement-tone,#00d4ff)}.ka-achievement-footer span:last-child{color:#8195a3;text-align:right}
+    .ka-reward-card{position:relative;overflow:hidden}.ka-reward-card:before{content:attr(data-reward-icon);display:grid;place-items:center;width:40px;height:40px;margin-bottom:8px;border-radius:12px;background:color-mix(in srgb,var(--reward-tone,#00d4ff) 18%,transparent);color:var(--reward-tone,#00d4ff);font-size:20px}.ka-reward-card.unlocked{border-color:color-mix(in srgb,var(--reward-tone,#22ff88) 40%,transparent)}
     .prog1-postmatch-panel{margin-top:14px;padding:13px;border:1px solid rgba(34,255,136,.3);border-radius:10px;background:rgba(3,22,15,.45);text-align:left}.prog1-postmatch-head{display:flex;justify-content:space-between;gap:10px;color:#80ffc1;font-size:11px;letter-spacing:.08em}.prog1-postmatch-meter{height:8px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden;margin:9px 0}.prog1-postmatch-meter>div{height:100%;background:linear-gradient(90deg,#00d4ff,#22ff88);transition:width .3s ease}.prog1-postmatch-breakdown{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.prog1-postmatch-breakdown>div{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.045);font-size:10px}.prog1-postmatch-events{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px}.prog1-postmatch-events>div{padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;font-size:10px;color:#b9c9d4}.prog1-postmatch-events>div>span{display:block;color:#ffaa00;font-weight:900;letter-spacing:.08em;margin-bottom:4px}
-    @media(max-width:820px){.ka-career-grid{grid-template-columns:repeat(2,1fr)}.ka-operation-groups{grid-template-columns:1fr}.ka-reward-list,.ka-achievement-list{grid-template-columns:1fr}.ka-career-identity{grid-template-columns:auto 1fr}.ka-career-level-meta{grid-column:1/-1;text-align:left}.ka-recent-row{grid-template-columns:1fr 1fr}.prog1-postmatch-breakdown{grid-template-columns:1fr 1fr}.prog1-postmatch-events{grid-template-columns:1fr}}
+    @media(max-width:820px){.ka-career-grid{grid-template-columns:repeat(2,1fr)}.ka-operation-groups{grid-template-columns:1fr}.ka-reward-list,.ka-achievement-list{grid-template-columns:1fr}.ka-career-showcase{grid-template-columns:1fr}.ka-career-identity{grid-template-columns:auto 1fr}.ka-career-level-meta{grid-column:1/-1;text-align:left}.ka-recent-row{grid-template-columns:1fr 1fr}.prog1-postmatch-breakdown{grid-template-columns:1fr 1fr}.prog1-postmatch-events{grid-template-columns:1fr}}
   `;
   document.head.append(style);
 }
@@ -170,8 +175,11 @@ function renderRewards(value) {
   if (!root) return;
   root.replaceChildren();
   value.unlocks.forEach((reward) => {
+    const rewardIcon = reward.kind === 'TITLE' ? 'T' : (reward.kind === 'BADGE' ? '◆' : '▰');
     const card = make('article', {
-      class: `ka-reward-card ${reward.unlocked ? 'unlocked' : 'locked'} ${reward.equipped ? 'equipped' : ''}`
+      class: `ka-reward-card ${reward.unlocked ? 'unlocked' : 'locked'} ${reward.equipped ? 'equipped' : ''}`,
+      'data-reward-icon': rewardIcon,
+      style: `--reward-tone:${reward.tone || '#00d4ff'}`
     });
     card.append(
       make('div', { class: 'ka-reward-kind' }, `${reward.kind} · ${reward.equipped ? 'EQUIPPED' : (reward.unlocked ? 'UNLOCKED' : 'LOCKED')}`),
@@ -192,20 +200,72 @@ function renderRewards(value) {
   });
 }
 
+function applyAchievementFilter() {
+  const cards = Array.from(document.querySelectorAll('#ka-achievement-list .ka-achievement-card'));
+  cards.forEach((card) => {
+    const category = String(card.dataset.category || '').toLowerCase();
+    const unlocked = card.dataset.unlocked === 'true';
+    card.hidden = !(
+      achievementFilter === 'all'
+      || (achievementFilter === 'unlocked' && unlocked)
+      || achievementFilter === category
+    );
+  });
+  document.querySelectorAll('.ka-achievement-filter').forEach((button) => {
+    const active = button.dataset.achievementFilter === achievementFilter;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+}
+
 function renderAchievements(value) {
   const list = document.getElementById('ka-achievement-list');
   if (!list) return;
   list.replaceChildren();
   value.achievements.forEach((achievement) => {
-    const card = make('article', { class: `ka-achievement-card ${achievement.unlocked ? 'unlocked' : 'locked'}` });
+    const card = make('article', {
+      class: `ka-achievement-card ${achievement.unlocked ? 'unlocked' : 'locked'}`,
+      'data-category': achievement.category.toLowerCase(),
+      'data-unlocked': achievement.unlocked ? 'true' : 'false',
+      style: `--achievement-tone:${achievement.tone};--achievement-progress:${achievement.progressPercent}%`
+    });
+    const top = make('div', { class: 'ka-achievement-top' });
+    const tags = make('div', { class: 'ka-achievement-tags' });
+    tags.append(
+      make('span', {}, achievement.category),
+      make('span', { class: 'rarity' }, achievement.rarity)
+    );
+    top.append(
+      make('div', { class: 'ka-achievement-icon', 'aria-hidden': 'true' }, achievement.unlocked ? achievement.icon : '◇'),
+      tags
+    );
+    const progress = make('div', { class: 'ka-achievement-progress' });
+    const progressLine = make('div', { class: 'ka-achievement-progress-line' });
+    progressLine.append(
+      make('span', {}, achievement.unlocked ? 'MILESTONE COMPLETE' : 'PROGRESS'),
+      make('span', {}, achievement.progressMeasurable
+        ? `${achievement.progressCurrent}/${achievement.progressTarget}`
+        : (achievement.unlocked ? '100%' : 'CLASSIFIED'))
+    );
+    const track = make('div', { class: 'ka-achievement-progress-track' });
+    track.append(make('i'));
+    progress.append(progressLine, track);
+    const footer = make('div', { class: 'ka-achievement-footer' });
+    footer.append(
+      make('span', {}, `+${achievement.xp} XP`),
+      make('span', {}, achievement.unlocked ? `UNLOCKED ${formatDate(achievement.unlockedAt)}` : 'LOCKED')
+    );
     card.append(
-      make('div', { class: 'ka-achievement-state' }, achievement.unlocked ? 'COMPLETED' : 'LOCKED'),
+      make('div', { class: 'ka-achievement-glow', 'aria-hidden': 'true' }),
+      top,
       make('strong', {}, achievement.label),
       make('small', {}, achievement.description),
-      make('small', { style: 'margin-top:7px;color:#718899' }, `${achievement.xp} XP · ${achievement.unlocked ? formatDate(achievement.unlockedAt) : 'Milestone not completed'}`)
+      progress,
+      footer
     );
     list.append(card);
   });
+  applyAchievementFilter();
 }
 
 function renderRecentRuns(value) {
@@ -256,6 +316,12 @@ function render() {
     : `${value.level.xpIntoLevel.toLocaleString()} / ${value.level.xpToNext.toLocaleString()} XP`;
   if (meter) meter.style.width = `${value.level.progressPercent}%`;
   if (count) count.textContent = `${value.unlockedRewards}/${value.totalRewards} REWARDS · ${value.unlockedCount}/${value.totalAchievements} ACHIEVEMENTS`;
+  const showcaseUnlocked = document.getElementById('ka-career-showcase-unlocked');
+  const showcaseCompletion = document.getElementById('ka-career-showcase-completion');
+  const showcaseOperations = document.getElementById('ka-career-showcase-operations');
+  if (showcaseUnlocked) showcaseUnlocked.textContent = `${value.unlockedCount}/${value.totalAchievements}`;
+  if (showcaseCompletion) showcaseCompletion.textContent = `${value.totalAchievements ? Math.round((value.unlockedCount / value.totalAchievements) * 100) : 0}%`;
+  if (showcaseOperations) showcaseOperations.textContent = String(value.stats.operationsCompleted);
 
   renderStats(value);
   renderOperations(value);
@@ -338,6 +404,17 @@ function buildUi() {
   const intro = make('div', { class: 'ka-career-intro' });
   intro.textContent = 'Career progression is cosmetic and profile-focused. XP, operations, titles, badges, banners, statistics, and achievements never increase weapon damage, health, or hidden combat power. Progress is included in the existing player-profile backup and cloud systems.';
 
+  const showcase = make('div', { class: 'ka-career-showcase' });
+  [
+    ['ACHIEVEMENTS', 'ka-career-showcase-unlocked', '0/0', 'Unlocked milestones', '#22ff88'],
+    ['COLLECTION', 'ka-career-showcase-completion', '0%', 'Career completion', '#c084fc'],
+    ['OPERATIONS', 'ka-career-showcase-operations', '0', 'Completed objectives', '#22d3ee']
+  ].forEach(([label, id, value, detail, tone]) => {
+    const card = make('div', { style: `--showcase-tone:${tone}` });
+    card.append(make('span', {}, label), make('b', { id }, value), make('small', {}, detail));
+    showcase.append(card);
+  });
+
   const statsSection = section('CAREER STATISTICS', 'Lifetime local-player attribution');
   const stats = make('div', { class: 'ka-career-grid' });
   [
@@ -360,7 +437,15 @@ function buildUi() {
   rewardSection.append(make('div', { id: 'ka-reward-list', class: 'ka-reward-list' }));
 
   const achievementSection = section('ACHIEVEMENTS', 'Permanent career milestones');
-  achievementSection.append(make('div', { id: 'ka-achievement-list', class: 'ka-achievement-list' }));
+  const achievementToolbar = make('div', { class: 'ka-achievement-toolbar', 'aria-label': 'Achievement filters' });
+  [
+    ['all', 'ALL'], ['unlocked', 'UNLOCKED'], ['combat', 'COMBAT'], ['survival', 'SURVIVAL'],
+    ['operations', 'OPERATIONS'], ['arsenal', 'ARSENAL'], ['mastery', 'MASTERY'], ['hunter', 'HUNTER']
+  ].forEach(([filter, label]) => achievementToolbar.append(make('button', {
+    type: 'button', class: `ka-achievement-filter${filter === 'all' ? ' active' : ''}`,
+    'data-achievement-filter': filter, 'aria-pressed': filter === 'all' ? 'true' : 'false'
+  }, label)));
+  achievementSection.append(achievementToolbar, make('div', { id: 'ka-achievement-list', class: 'ka-achievement-list' }));
 
   const recentSection = section('RECENT DEPLOYMENTS', 'Your latest completed runs');
   recentSection.append(make('div', { id: 'ka-recent-list', class: 'ka-recent-list' }));
@@ -371,7 +456,7 @@ function buildUi() {
     make('button', { type: 'button', id: 'ka-career-import', class: 'ka-link-btn' }, 'IMPORT PROFILE BACKUP')
   );
 
-  shell.append(head, identity, intro, statsSection, operationSection, rewardSection, achievementSection, recentSection, actions);
+  shell.append(head, identity, intro, showcase, statsSection, operationSection, rewardSection, achievementSection, recentSection, actions);
   dialog.append(shell);
   document.body.append(dialog);
 
@@ -380,6 +465,12 @@ function buildUi() {
   dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeDialog(); });
   dialog.addEventListener('click', (event) => { if (event.target === dialog) closeDialog(); });
   dialog.addEventListener('click', (event) => {
+    const filter = event.target?.closest?.('[data-achievement-filter]');
+    if (filter) {
+      achievementFilter = filter.dataset.achievementFilter || 'all';
+      applyAchievementFilter();
+      return;
+    }
     const control = event.target?.closest?.('[data-equip-reward]');
     if (!control) return;
     const result = equipCosmetic(control.dataset.equipReward);
@@ -415,7 +506,7 @@ export function initCareerAchievements({
   }
   render();
   document.documentElement.dataset.kaCareerAchievements = 'ready';
-  document.documentElement.dataset.kaProgressionPatch = 'prog1-r1-unified-progression-retention';
+  document.documentElement.dataset.kaProgressionPatch = 'vis1-r1-visual-achievements-competitive-profile';
 }
 
 export function getCareerAchievementsSnapshot() {

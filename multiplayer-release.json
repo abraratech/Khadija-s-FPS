@@ -841,5 +841,63 @@
     ],
     "gameplayAuthorityUnchanged": true,
     "workerProtocolUnchanged": true
+  },
+  "hud1": {
+    "schema": 1,
+    "patch": "hud1-r1-configurable-objective-display",
+    "objectivePanelModes": [
+      "full",
+      "compact",
+      "hidden"
+    ],
+    "runChallengesVisibility": true,
+    "quickCycleControl": true,
+    "preferencesPersisted": true,
+    "worldMarkersPreservedWhenHidden": true,
+    "objectiveAlertsPreservedWhenHidden": true,
+    "criticalDecisionOverride": true,
+    "frontendOnly": true,
+    "workerChangeRequired": false,
+    "pauseMenuControls": true,
+    "immediateInGameApply": true
+  },
+  "vis1": {
+    "schema": 1,
+    "patch": "vis1-r1-visual-achievements-competitive-profile-hud-controls",
+    "visualAchievementCards": true,
+    "achievementCategories": [
+      "combat",
+      "survival",
+      "operations",
+      "arsenal",
+      "mastery",
+      "hunter"
+    ],
+    "achievementRarityTiers": [
+      "common",
+      "rare",
+      "epic"
+    ],
+    "achievementFilters": true,
+    "visualCompetitiveRankTiers": [
+      "recruit",
+      "bronze",
+      "silver",
+      "gold",
+      "platinum",
+      "diamond",
+      "vanguard"
+    ],
+    "competitiveMilestoneBadges": true,
+    "pauseObjectiveControls": true,
+    "pauseRunChallengeControls": true,
+    "preferencesPersisted": true,
+    "gameplayAuthorityUnchanged": true,
+    "frontendOnly": true,
+    "workerChangeRequired": false,
+    "pauseResumeVisibilityHotfix": "vis1-r1-1-pause-resume-visibility",
+    "desktopPauseTopAligned": true,
+    "resumeActionSticky": true,
+    "pauseScrollResetOnOpen": true
   }
 }

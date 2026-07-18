@@ -6,6 +6,7 @@ import {
   normalizePvp2Leaderboard,
   normalizePvp2QueueMode,
   normalizePvp2Stats,
+  pvp2RankPresentation,
   pvp2StatsPresentation
 } from './pvp2_core.js';
 
@@ -29,7 +30,13 @@ const stats = normalizePvp2Stats({
 assert.equal(stats.matchesPlayed, 0);
 assert.equal(stats.rating, 1080);
 assert.equal(stats.eliminationDeathRatio, 2);
-assert.match(pvp2StatsPresentation(stats).headline, /1080/);
+const presentation = pvp2StatsPresentation(stats);
+assert.match(presentation.headline, /BRONZE.*1080/);
+assert.equal(presentation.rank.id, 'BRONZE');
+assert.equal(presentation.rank.nextLabel, 'Silver');
+assert.equal(presentation.rank.ratingToNext, 20);
+assert.equal(presentation.milestones[0].unlocked, true);
+assert.equal(pvp2RankPresentation(1750).id, 'DIAMOND');
 
 const board = normalizePvp2Leaderboard({
   ok: true,

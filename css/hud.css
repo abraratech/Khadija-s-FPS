@@ -1654,3 +1654,233 @@ body[data-ka-performance-profile="suspended"] #hud *::after {
   border-color: rgba(255, 74, 54, 0.72);
   color: var(--ka-signal-enemy);
 }
+
+
+/* HUD.1 R1 — configurable objective display and challenge visibility. */
+.ka-content1-hud {
+  padding-top: 34px;
+}
+
+.ka-objective-hud-content {
+  min-width: 0;
+}
+
+.ka-objective-hud-toggle {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 70px;
+  min-height: 23px;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--ka-content1-accent) 54%, rgba(255,255,255,.18));
+  border-radius: 999px;
+  background: rgba(1, 9, 15, .82);
+  color: #eafcff;
+  box-shadow: 0 4px 14px rgba(0,0,0,.28);
+  cursor: pointer;
+  pointer-events: auto;
+  font: 900 .50rem/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ka-objective-hud-toggle:hover,
+.ka-objective-hud-toggle:focus-visible {
+  border-color: var(--ka-content1-accent);
+  color: #fff;
+  outline: 2px solid rgba(255,255,255,.72);
+  outline-offset: 2px;
+}
+
+.ka-objective-hud-toggle span {
+  color: var(--ka-content1-accent);
+  font-size: .82rem;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact {
+  padding-top: 31px;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-content1-kicker,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal7-mission,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal7-stages,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-faction,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-modifiers,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal8-boss,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal4-description,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-postfinal4-team,
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-content1-encounter {
+  display: none !important;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) .ka-objective-hud-content {
+  display: none;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) .ka-objective-hud-toggle {
+  position: relative;
+  top: auto;
+  right: auto;
+  min-width: 42px;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: rgba(1, 9, 15, .68);
+  opacity: .58;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) .ka-objective-hud-toggle b {
+  display: none;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) .ka-objective-hud-toggle:hover,
+.ka-postfinal4-hud.ka-objective-hud-hidden:not(.ka-objective-hud-critical) .ka-objective-hud-toggle:focus-visible {
+  opacity: 1;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-hidden.ka-objective-hud-critical {
+  width: min(360px, calc(100vw - 28px));
+}
+
+body.ka-objective-hud-compact #objective-panel {
+  width: min(230px, calc(46vw - var(--ka-ui9-safe-left, 16px))) !important;
+}
+
+body.ka-objective-hud-compact #objective-panel .objective-description,
+body.ka-objective-hud-compact #objective-panel .objective-meter {
+  display: none !important;
+}
+
+body.ka-objective-hud-hidden #objective-panel {
+  display: none !important;
+}
+
+body.ka-run-challenges-hidden .challenge-panel-wrap {
+  display: none !important;
+}
+
+@media (max-width: 760px) {
+  .ka-objective-hud-toggle {
+    min-width: 62px;
+    min-height: 26px;
+    font-size: .46rem;
+  }
+}
+
+/* VIS.1 R1 — in-game objective visibility controls. */
+.ka-pause-hud-panel {
+  width: min(420px, 88%);
+  margin: 0 0 20px;
+  padding: 13px 14px;
+  border: 1px solid rgba(61, 242, 155, .34);
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 92% 0, rgba(61, 242, 155, .14), transparent 35%),
+    rgba(2, 18, 17, .72);
+  color: #f4fffb;
+  font-family: system-ui, sans-serif;
+  text-align: left;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .22);
+}
+
+.ka-pause-hud-head,
+.ka-pause-hud-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ka-pause-hud-head span {
+  display: block;
+  color: #3df29b;
+  font-size: 9px;
+  font-weight: 1000;
+  letter-spacing: .16em;
+}
+
+.ka-pause-hud-head strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  letter-spacing: .08em;
+}
+
+.ka-pause-hud-head small,
+.ka-pause-hud-status b {
+  color: #8ca7a0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ka-pause-hud-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ka-pause-hud-grid label > span {
+  display: block;
+  margin-bottom: 6px;
+  color: #c7fff0;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.ka-pause-hud-grid select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px;
+  border: 1px solid rgba(61, 242, 155, .72);
+  border-radius: 6px;
+  background: #061612;
+  color: #fff;
+  font-weight: 850;
+}
+
+.ka-pause-hud-status {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.ka-pause-hud-status span {
+  color: #3df29b;
+  font-size: 11px;
+  font-weight: 1000;
+  letter-spacing: .08em;
+}
+
+body.ka-pvp-native-hud-isolated #pause-hud-visibility-panel {
+  display: none !important;
+}
+
+@media (max-width: 620px) {
+  .ka-pause-hud-grid {
+    grid-template-columns: 1fr;
+  }
+  .ka-pause-hud-head,
+  .ka-pause-hud-status {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}

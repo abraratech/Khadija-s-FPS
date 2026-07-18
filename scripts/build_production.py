@@ -64,6 +64,10 @@ PVP4_RELEASE_SEQUENCE = 2026071805
 MPNET1_PATCH = 'mpnet1-r1-relay-transaction-resupply-integrity'
 MPNET1_SOURCE_BASELINE_SHA = '1c6ef18390936d2c5c42689e728135ed393ed350'
 MPNET1_RELEASE_SEQUENCE = 2026071806
+PVP5_PATCH = 'pvp5-r1-competitive-match-completion-stabilization'
+PVP5_FRONTEND_BASELINE_SHA = '9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87'
+PVP5_WORKER_BASELINE_SHA = 'deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7'
+PVP5_RELEASE_SEQUENCE = 2026071807
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -564,11 +568,35 @@ def main() -> None:
             "worker_change_required": False,
             "frontend_only": True
         },
+        "pvp5": {
+            "schema": 1,
+            "patch": PVP5_PATCH,
+            "frontend_baseline_sha": PVP5_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": PVP5_WORKER_BASELINE_SHA,
+            "release_sequence": PVP5_RELEASE_SEQUENCE,
+            "competitive_maps": ["crossfire_terminal", "foundry_ring", "skyline_relay"],
+            "complete_one_vs_one_lifecycle": True,
+            "complete_two_vs_two_lifecycle": True,
+            "eliminated_player_spectating": True,
+            "server_authoritative_round_reset": True,
+            "server_authoritative_match_completion": True,
+            "assists": True,
+            "competitive_scoreboard": True,
+            "rematch_voting": True,
+            "rematch_map_voting": True,
+            "reconnect_restoration": True,
+            "abandonment_forfeit": True,
+            "idempotent_rated_result_submission": True,
+            "worker_repository_cleanup": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": MPNET1_PATCH,
-            "source_baseline_sha": MPNET1_SOURCE_BASELINE_SHA,
-            "release_sequence": MPNET1_RELEASE_SEQUENCE,
+            "patch": PVP5_PATCH,
+            "source_baseline_sha": PVP5_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": PVP5_WORKER_BASELINE_SHA,
+            "release_sequence": PVP5_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
             "worker_change_required": True
         },

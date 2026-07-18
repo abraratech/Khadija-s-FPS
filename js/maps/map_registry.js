@@ -113,7 +113,7 @@ export const MAP_REGISTRY = Object.freeze({
     spawnProfile: 'outer ring',
     previewSize: 'large single level',
     accentColor: '#19d8ff'
-  }
+  },
 
   [MAP_IDS.CROSSFIRE_TERMINAL]: {
     id: MAP_IDS.CROSSFIRE_TERMINAL,

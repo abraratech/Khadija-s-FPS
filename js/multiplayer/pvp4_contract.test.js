@@ -29,7 +29,8 @@ for (const marker of ['pvp4PickupTelegraphed', 'pvp4PickupCountdownSeconds', 'NE
 assert.ok(main.includes('pvp4-r1-competitive-maps-dynamic-hot-drops'));
 assert.ok(release.releaseSequence >= 2026071805);
 assert.equal(metadata.pvp4?.patch, 'pvp4-r1-competitive-maps-dynamic-hot-drops');
-assert.equal(release.sourceBaselineSha, '1c6ef18390936d2c5c42689e728135ed393ed350');
+assert.equal(metadata.pvp4?.sourceBaselineSha, '1c6ef18390936d2c5c42689e728135ed393ed350');
+assert.ok(release.releaseSequence >= 2026071805);
 for (const field of [
   'mirroredTeamSpawns','multiLaneCombat','elevatedCoverPositions','dynamicHotDropRelocation',
   'serverAuthoritativeRelocation','consecutiveLocationReuseBlocked','nearbyLocationReuseBlocked',

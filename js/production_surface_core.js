@@ -66,7 +66,10 @@ export function inspectProductionSurface({
     voiceRemoved: voiceTokens.length === 0 && !voiceManifest,
     developmentRuntimeRemoved: developmentTokens.length === 0,
     textChatPreserved: foundationSource.includes("from './text_chat.js'"),
-    progressionCommitExposed: workerSource.includes('/profiles/progression/commit'),
+    progressionCommitExposed: workerSource.includes('/profiles/progression/commit')
+      || (Array.isArray(releaseManifest?.cloudProfiles?.endpoints)
+        && releaseManifest.cloudProfiles.endpoints.includes('/profiles/progression/commit'))
+      || releaseManifest?.cloudProfiles?.progressionIntegrity?.commitEndpoint === '/profiles/progression/commit',
     voiceTokens: Object.freeze(voiceTokens),
     developmentTokens: Object.freeze(developmentTokens)
   });

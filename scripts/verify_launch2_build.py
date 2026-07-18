@@ -172,6 +172,29 @@ def main() -> None:
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"MPNET.1 R1 production runtime file missing: {required_runtime}")
 
+    pvp5 = manifest.get("pvp5", {})
+    if current_release.get("patch") == "pvp5-r1-competitive-match-completion-stabilization":
+        if pvp5.get("patch") != current_release.get("patch"):
+            raise SystemExit("PVP.5 R1 production manifest patch mismatch")
+        for field in (
+            "complete_one_vs_one_lifecycle", "complete_two_vs_two_lifecycle",
+            "eliminated_player_spectating", "server_authoritative_round_reset",
+            "server_authoritative_match_completion", "assists",
+            "competitive_scoreboard", "rematch_voting", "rematch_map_voting",
+            "reconnect_restoration", "abandonment_forfeit",
+            "idempotent_rated_result_submission", "worker_repository_cleanup",
+            "worker_change_required", "frontend_and_worker"
+        ):
+            if pvp5.get(field) is not True:
+                raise SystemExit(f"PVP.5 R1 production policy mismatch: {field}")
+        for required_runtime in (
+            "js/multiplayer/pvp5_core.js",
+            "js/multiplayer/pvp1_core.js",
+            "js/multiplayer/pvp1.js"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"PVP.5 R1 production runtime file missing: {required_runtime}")
+
     post_seal1 = manifest.get("post_seal1", {})
     if current_release.get("patch") == "post-seal1-r1-console-lifecycle-form-hygiene":
         if post_seal1.get("patch") != current_release.get("patch"):

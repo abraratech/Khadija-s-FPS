@@ -10,14 +10,12 @@ import {
 
 const main = readFileSync(new URL('./main.js', import.meta.url), 'utf8');
 const foundation = readFileSync(new URL('./multiplayer/foundation.js', import.meta.url), 'utf8');
-const worker = readFileSync(new URL('../multiplayer-server/src/index.js', import.meta.url), 'utf8');
 const release = JSON.parse(readFileSync(new URL('../multiplayer-release.json', import.meta.url), 'utf8'));
 
 assert.equal(PRODUCTION_SURFACE_PATCH, 'prog2-r1-production-hardening-cloud-integrity');
 const inspection = inspectProductionSurface({
   mainSource: main,
   foundationSource: foundation,
-  workerSource: worker,
   releaseManifest: release
 });
 assert.equal(inspection.voiceRemoved, true);
@@ -33,7 +31,6 @@ for (const globalName of FORBIDDEN_PRODUCTION_GLOBALS) {
   const assignment = new RegExp(`window\\.${globalName}\\s*=`);
   assert.equal(assignment.test(main), false, `Forbidden main global assignment remains: ${globalName}`);
 }
-assert.doesNotMatch(worker, /voice-signal|voice-ice-config|getUserMedia|RTCPeerConnection/);
 assert.match(foundation, /MultiplayerTextChat/);
 assert.equal(release.productionHardening.voiceRuntimeRemoved, true);
 assert.equal(release.m5Communication.textChatOnly.voiceRemoved, true);

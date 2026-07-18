@@ -1099,5 +1099,47 @@
     "frontendOnly": true,
     "realTwoClientCoopIntegrityTestRequired": true,
     "transactionRetentionMs": 120000
+  },
+  "pvp5": {
+    "schema": 1,
+    "patch": "pvp5-r1-competitive-match-completion-stabilization",
+    "productVersion": "1.1.0-pvp5",
+    "frontendBaselineSha": "9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87",
+    "workerBaselineSha": "deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7",
+    "competitiveMaps": [
+      "crossfire_terminal",
+      "foundry_ring",
+      "skyline_relay"
+    ],
+    "completeOneVsOneLifecycle": true,
+    "completeTwoVsTwoLifecycle": true,
+    "eliminatedPlayerSpectating": true,
+    "spectatorCycleControls": [
+      "Q",
+      "E",
+      "ARROW_LEFT",
+      "ARROW_RIGHT"
+    ],
+    "serverAuthoritativeRoundReset": true,
+    "serverAuthoritativeMatchCompletion": true,
+    "assists": true,
+    "assistWindowMs": 8000,
+    "competitiveScoreboard": true,
+    "rematchVoting": true,
+    "rematchMapVoting": true,
+    "unanimousConnectedPlayerRematch": true,
+    "rematchVoteWindowMs": 45000,
+    "reconnectRestoration": true,
+    "disconnectGraceMs": 45000,
+    "abandonmentForfeit": true,
+    "idempotentRatedResultSubmission": true,
+    "spawnAndHotDropSafeguardsPreserved": true,
+    "mpnet1RelayResiliencePreserved": true,
+    "workerRepositoryCleanup": true,
+    "workerGitIgnoreAdded": true,
+    "obsoleteMonorepoReadmeRemoved": true,
+    "workerChangeRequired": true,
+    "frontendAndWorker": true,
+    "realTwoClientCertificationRequired": true
   }
 }

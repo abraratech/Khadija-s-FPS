@@ -228,6 +228,7 @@ initializeMultiplayerFoundation(player, {
     showToast: showStatusToast
   },
   pvpAdapter: {
+    camera,
     showToast: showStatusToast,
     syncHud: syncHudFromPlayer,
     placePvpSpawn,
@@ -261,16 +262,17 @@ configureMultiplayerPvp({
 });
 window.KHADIJA_MULTIPLAYER_BUILD = 'final2-consolidated-production-r1';
 window.KHADIJA_MULTIPLAYER_PATCH = 'final2-r1-full-product-certification';
-window.KHADIJA_PVP_PATCH = 'pvp4-r1-competitive-maps-dynamic-hot-drops';
+window.KHADIJA_PVP_PATCH = 'pvp5-r1-competitive-match-completion-stabilization';
+window.KHADIJA_PVP4_PATCH = 'pvp4-r1-competitive-maps-dynamic-hot-drops';
 window.KHADIJA_PVP_HOTFIX = 'pvp3-r2-1-null-matchmaking-region-fix';
 window.KHADIJA_MPNET_PATCH = 'mpnet1-r1-relay-transaction-resupply-integrity';
 window.KHADIJA_MULTIPLAYER_LAUNCH_UI_PATCH = 'pvp2-r2-1-launch-connection-hardening';
 window.KHADIJA_MULTIPLAYER_HUB_PATCH = 'mpui1-r1-full-section-hub-foundation';
 console.info('[Multiplayer Build] final2-consolidated-production-r1 | protocol 6');
 console.info('[Multiplayer Patch] final2-r1-full-product-certification');
-console.info('[PvP Patch] pvp4-r1-competitive-maps-dynamic-hot-drops');
+console.info('[PvP Patch] pvp5-r1-competitive-match-completion-stabilization');
 console.info('[Multiplayer Network Patch] mpnet1-r1-relay-transaction-resupply-integrity');
-console.info('[PvP Milestone] pvp4-r1-competitive-maps-dynamic-hot-drops');
+console.info('[PvP Milestone] pvp5-r1-competitive-match-completion-stabilization');
 console.info('[Multiplayer Launch UI] pvp2-r2-1-launch-connection-hardening');
 console.info('[Multiplayer Hub] mpui1-r1-full-section-hub-foundation');
 

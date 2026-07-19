@@ -51,6 +51,13 @@ import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './c
 import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted, recordRunPointsEarned } from './run_summary.js';
 import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
 import { initSocialSystems } from './social.js';
+import {
+  crazyGamesGameplayStart,
+  crazyGamesGameplayStop,
+  initCrazyGamesIntegration,
+  isCrazyGamesEmbedded,
+  requestCrazyGamesMidgameAd
+} from './crazygames.js';
 import { initLive1Systems, beginLive1Run, endLive1Run } from './live1.js';
 import { initOps1Systems, recordOps1Performance } from './ops1.js';
 import {
@@ -94,7 +101,7 @@ import {
   consumeTutorialEvents,
   recordTutorialAction
 } from './tutorial.js';
-import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, getMultiplayerCoopStatsSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession, getMultiplayerGameMode, isMultiplayerPvpRun, attemptMultiplayerPvpShot, requestMultiplayerPvpPickup, getMultiplayerPvpSnapshot } from './multiplayer/foundation.js';
+import { initializeMultiplayerFoundation, beginMultiplayerRun, endMultiplayerRun, syncMultiplayerFrame, registerMultiplayerRunLauncher, registerMultiplayerRunEndHandler, notifyMultiplayerPlayerDeath, openMultiplayerLobby, leaveMultiplayerRoom, isOnlineMultiplayerRun, initializeSharedMultiplayerEnemies, updateSharedMultiplayerWorld, isSharedMultiplayerWorldAuthority, initializeSharedMultiplayerEconomy, finalizeMultiplayerResume, updateSharedMultiplayerEconomy, requestMultiplayerInteraction, awardMultiplayerCombat, refundMultiplayerPoints, isSharedMultiplayerEconomyAuthority, getLocalMultiplayerPlayerId, updateMultiplayerRevive, getMultiplayerReviveSnapshot, getMultiplayerCoopStatsSnapshot, notifyMultiplayerLocalDowned, isMultiplayerLifeInputBlocked, isMultiplayerRefreshGameplayBlocked, placeMultiplayerTacticalPing, placeMultiplayerQuickMessage, setMultiplayerScoreboardHeld, multiplayerSession, getMultiplayerGameMode, isMultiplayerPvpRun, attemptMultiplayerPvpShot, requestMultiplayerPvpPickup, getMultiplayerPvpSnapshot, getMultiplayerSocialContext } from './multiplayer/foundation.js';
 
 import { initMultiplayerQuickMessageWheel } from './multiplayer/quick_message_wheel.js';
 // POST.1A: live voice was removed from the player-facing build. Text chat remains.
@@ -729,6 +736,7 @@ initializeLoadoutSystems({
 });
 initCloudProfile({ showToast: showStatusToast });
 initSocialSystems({ showToast: showStatusToast });
+void initCrazyGamesIntegration({ showToast: showStatusToast });
 initLive1Systems({
   getProgressionSnapshot,
   showToast: showStatusToast
@@ -826,6 +834,7 @@ function pauseGameplay(source = 'input') {
     if (!isMobile && document.pointerLockElement) {
       document.exitPointerLock();
     }
+    crazyGamesGameplayStop();
     console.log(`Co-op menu opened from ${source}; match remains live.`);
     return true;
   }
@@ -834,6 +843,7 @@ function pauseGameplay(source = 'input') {
   if (!isMobile && document.pointerLockElement) {
     document.exitPointerLock();
   }
+  crazyGamesGameplayStop();
   console.log(`Game paused from ${source}.`);
   return true;
 } function resumeGameplay(source = 'input') {
@@ -855,6 +865,7 @@ function pauseGameplay(source = 'input') {
       }
     }
 
+    crazyGamesGameplayStart({ mode: getMultiplayerGameMode(), roomCode: getMultiplayerSocialContext?.()?.roomCode || '' });
     console.log(`Co-op menu closed from ${source}; match stayed live.`);
     return true;
   }
@@ -883,6 +894,7 @@ function pauseGameplay(source = 'input') {
     }
   }
 
+  crazyGamesGameplayStart({ mode: 'single', mapId: currentMapMeta?.id || document.getElementById('map-select')?.value || 'grid_bunker' });
   console.log(`Game resumed from ${source}.`);
   return true;
 } function togglePauseGameplay(source = 'input') {
@@ -1392,7 +1404,7 @@ function showMenuScreen(name = 'home') {
 }
 
 async function enterGameplayPresentation({ requestPointerLock = true } = {}) {
-  if (isMobile) {
+  if (isMobile && !isCrazyGamesEmbedded()) {
     try {
       if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
         await document.documentElement.requestFullscreen();
@@ -1541,6 +1553,12 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     syncHudFromPlayer();
 
     gs = 'playing';
+    const crazyGamesRoom = getMultiplayerSocialContext();
+    crazyGamesGameplayStart({
+      mode: pvpRun ? 'pvp' : (isOnlineMultiplayerRun() ? 'coop' : 'single'),
+      mapId: chosenMap,
+      roomCode: crazyGamesRoom?.roomCode || ''
+    });
     const economyTier = getEconomyBalanceSnapshot().tier;
     showStatusToast(
       pvpRun
@@ -1587,6 +1605,7 @@ function handleOnlineRunEnded(details = {}) {
   coOpMenuOpen = false;
   onlineDeathReportPending = false;
 
+  crazyGamesGameplayStop();
   gs = 'menu';
   player.alive = false;
 
@@ -1733,6 +1752,7 @@ function returnToMenu(source = 'pause') {
   coOpMenuOpen = false;
   onlineDeathReportPending = false;
 
+  crazyGamesGameplayStop();
   gs = 'menu';
   player.alive = false;
 
@@ -2001,6 +2021,8 @@ enforceCameraPresentationVisibility();
       resetCombatStatusHUD();
       updateDeathStats();
       scheduleDeathScreen();
+      crazyGamesGameplayStop();
+      void requestCrazyGamesMidgameAd({ reason: 'single-player-death' });
     }
   }
 
@@ -2065,7 +2087,7 @@ if (isMobile) {
   let layoutData = JSON.parse(localStorage.getItem('mobile_layout_v3')) || {};
 
   document.addEventListener('visibilitychange', async () => {
-    if (document.visibilityState === 'visible' && gs === 'playing') {
+    if (document.visibilityState === 'visible' && gs === 'playing' && !isCrazyGamesEmbedded()) {
       try {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
           await document.documentElement.requestFullscreen();

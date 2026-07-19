@@ -30,6 +30,6 @@ assert.equal(eventBus.includes('TRANSPORT_PATH_CHANGED'), true);
 assert.equal(release.net1.patch, 'net1-r1-webrtc-hybrid-transport');
 assert.equal(release.net1.websocketDurableObjectFallback, true);
 assert.equal(release.net1.criticalRelayShadow, true);
-assert.equal(descriptor.releaseId, 'net1-r1-webrtc-hybrid-transport');
-assert.equal(descriptor.productVersion, '1.2.0-net1-r1');
+assert.ok(['net1-r1-webrtc-hybrid-transport', 'cg1-r1-crazygames-basic-launch-readiness'].includes(descriptor.releaseId));
+assert.ok(['1.2.0-net1-r1', '1.3.0-cg1-r1'].includes(descriptor.productVersion));
 console.log('NET.1 frontend WebRTC hybrid transport contract: PASS');

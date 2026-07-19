@@ -1,9 +1,9 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'net1-r1-webrtc-hybrid-transport',
-  releaseSequence: 2026071901,
-  productVersion: '1.2.0-net1-r1'
+  releaseId: 'cg1-r1-crazygames-basic-launch-readiness',
+  releaseSequence: 2026071902,
+  productVersion: '1.3.0-cg1-r1'
 });
 
 function cleanText(value, max = 160) {

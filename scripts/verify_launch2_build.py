@@ -218,6 +218,35 @@ def main() -> None:
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"NET.1 R1 production runtime file missing: {required_runtime}")
 
+    cg1 = manifest.get("cg1", {})
+    if current_release.get("patch") == "cg1-r1-crazygames-basic-launch-readiness":
+        if cg1.get("patch") != current_release.get("patch"):
+            raise SystemExit("CG.1 R1 production manifest patch mismatch")
+        for field in (
+            "sdk_v3", "safe_disabled_environment_fallback",
+            "loading_lifecycle", "gameplay_lifecycle",
+            "basic_launch_ad_safe", "platform_audio_mute",
+            "platform_chat_disable", "crazygames_username",
+            "room_update_and_join", "instant_multiplayer_entry",
+            "iframe_safe_area", "custom_fullscreen_suppressed",
+            "external_passkey_ui_suppressed_on_platform",
+            "webrtc_and_cloud_relay_preserved", "frontend_only"
+        ):
+            if cg1.get(field) is not True:
+                raise SystemExit(f"CG.1 R1 production policy mismatch: {field}")
+        if cg1.get("worker_change_required") is not False:
+            raise SystemExit("CG.1 R1 must remain frontend-only")
+        for required_runtime in (
+            "js/crazygames_core.js", "js/crazygames.js",
+            "css/crazygames.css", "js/multiplayer/webrtc_transport.js",
+            "js/multiplayer/transport.js"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"CG.1 R1 production runtime file missing: {required_runtime}")
+        index_text = (build / "index.html").read_text(encoding="utf-8")
+        if "crazygames-sdk-v3.js" not in index_text:
+            raise SystemExit("CG.1 R1 SDK v3 script missing from production index")
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

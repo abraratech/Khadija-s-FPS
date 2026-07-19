@@ -1,0 +1,33 @@
+KHADIJA'S ARENA — CRAZYGAMES BASIC LAUNCH CHECKLIST
+CG.1 R1
+
+UPLOAD
+[ ] Upload the complete CG.1 production build folder, not the source repository.
+[ ] Main file is index.html.
+[ ] Test through CrazyGames Preview on desktop Chrome/Edge and one mobile device.
+
+PORTAL SETTINGS
+[ ] Mark the game as multiplayer.
+[ ] Enable landscape orientation.
+[ ] Enable Automatic Progress Save when offered by the portal.
+[ ] Do not add a custom external-login requirement for Basic Launch.
+[ ] Configure Instant Multiplayer only after private/public matchmaking flow passes Preview testing.
+
+FUNCTIONAL
+[ ] SDK initializes without blocking when unavailable.
+[ ] Menu does not trigger gameplayStart.
+[ ] Starting/resuming a run triggers gameplayStart.
+[ ] Pause, death, run completion and returning to menu trigger gameplayStop.
+[ ] Basic Launch ad-disabled response never freezes the game.
+[ ] Audio mutes during a real ad and follows CrazyGames muteAudio settings.
+[ ] disableChat hides and disables in-game text chat.
+[ ] CrazyGames username populates the multiplayer display name.
+[ ] Join/invite opens the correct room.
+[ ] Room joinability updates as players join/leave.
+[ ] Co-op and PvP retain WebRTC DIRECT / TURN-ready / CLOUD RELAY fallback behavior.
+
+QUALITY
+[ ] No custom fullscreen button is exposed.
+[ ] Iframe resize, pointer lock, touch and safe-area behavior pass.
+[ ] Initial playable download and load time are reviewed in Preview.
+[ ] No console errors from first load through one complete Co-op and PvP session.

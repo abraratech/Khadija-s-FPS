@@ -26,6 +26,6 @@ assert.equal(pvp.includes('ka-pvp-social-add'), true);
 assert.equal(css.includes('ka-social-profile-panel'), true);
 assert.equal(release.social.patch, 'social2-r1-arena-id-friend-discovery');
 assert.equal(release.social2.exactArenaIdSearch, true);
-assert.ok(['social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport'].includes(descriptor.releaseId));
-assert.ok(['1.1.0-social2-r1', '1.2.0-net1-r1'].includes(descriptor.productVersion));
+assert.ok(['social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'cg1-r1-crazygames-basic-launch-readiness'].includes(descriptor.releaseId));
+assert.ok(['1.1.0-social2-r1', '1.2.0-net1-r1', '1.3.0-cg1-r1'].includes(descriptor.productVersion));
 console.log('SOCIAL.2 frontend discovery, party and match-action contract: PASS');

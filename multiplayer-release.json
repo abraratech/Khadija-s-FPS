@@ -142,8 +142,8 @@
     "textChatPreserved": true
   },
   "social": {
-    "schema": 1,
-    "patch": "social1-r1-friends-parties-player-safety",
+    "schema": 2,
+    "patch": "social2-r1-arena-id-friend-discovery",
     "authentication": "passkey-required",
     "friends": true,
     "recentPlayers": true,
@@ -160,6 +160,7 @@
       "/social/identity/ticket",
       "/social/presence",
       "/social/privacy",
+      "/social/players/find",
       "/social/friends/request",
       "/social/friends/respond",
       "/social/friends/remove",
@@ -186,7 +187,17 @@
     "reporterStatus": true,
     "appeals": true,
     "restrictedAccountsCanAccessSafetyCenter": true,
-    "authenticatedRestrictionEnforcedOnTickets": true
+    "authenticatedRestrictionEnforcedOnTickets": true,
+    "permanentArenaId": true,
+    "legacyFriendCodeCompatible": true,
+    "exactArenaIdSearch": true,
+    "incomingRequests": true,
+    "outgoingRequests": true,
+    "shareableProfileLink": true,
+    "localQrGeneration": true,
+    "unifiedSocialHub": true,
+    "scoreboardFriendActions": true,
+    "deepLinkFriendSearch": true
   },
   "matchmaking": {
     "schema": 2,
@@ -1173,6 +1184,25 @@
       "RELAY_DEGRADATION_AND_RECONCILIATION",
       "DESKTOP_MOBILE_CONTROLLER_BROWSER"
     ],
+    "workerChangeRequired": true,
+    "frontendAndWorker": true
+  },
+  "social2": {
+    "schema": 2,
+    "patch": "social2-r1-arena-id-friend-discovery",
+    "productVersion": "1.1.0-social2-r1",
+    "frontendBaselineSha": "2d41fb1e0a23a12ca970184acf00272ead91d4ba",
+    "workerBaselineSha": "24976152c3e9f0fe780cb20838627f5cf17dbedc",
+    "baselineWorkerVersionId": "f1936d32-3c25-491a-b214-a16ab79e2c2f",
+    "permanentArenaId": true,
+    "exactArenaIdSearch": true,
+    "incomingAndOutgoingRequests": true,
+    "shareableProfileLink": true,
+    "localQrGeneration": true,
+    "unifiedSocialHub": true,
+    "scoreboardFriendActions": true,
+    "partyFromFriends": true,
+    "deepLinkFriendSearch": true,
     "workerChangeRequired": true,
     "frontendAndWorker": true
   }

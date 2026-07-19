@@ -1,9 +1,9 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'pvp6-r1-final-pvp-certification-candidate',
-  releaseSequence: 2026071808,
-  productVersion: '1.1.0-pvp6-rc1'
+  releaseId: 'social2-r1-arena-id-friend-discovery',
+  releaseSequence: 2026071809,
+  productVersion: '1.1.0-social2-r1'
 });
 
 function cleanText(value, max = 160) {

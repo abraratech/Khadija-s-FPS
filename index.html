@@ -1852,51 +1852,86 @@
 
 <section class="ka-menu-screen" data-menu-screen="social" id="social-screen">
 <div class="ka-section-heading">
-  <div><span>Connected operatives</span><strong>SOCIAL COMMAND</strong></div>
-  <small id="social-auth-note">PASSKEY ACCOUNT REQUIRED FOR DURABLE SOCIAL FEATURES</small>
+  <div><span>Find players. Build your squad.</span><strong>SOCIAL HUB</strong></div>
+  <small id="social-auth-note">SIGN IN WITH A PASSKEY TO USE FRIENDS, PARTIES AND SAFETY</small>
 </div>
 <div id="social-status" class="ka-social-status" data-tone="neutral">SOCIAL INITIALIZING</div>
-<div class="ka-social-layout" style="margin-top:14px;">
-  <div class="ka-social-column">
-    <section class="ka-social-panel">
-      <div class="ka-social-panel-heading">
-        <div><h3>FRIENDS</h3><small>Share your code or add another operative.</small></div>
-        <button class="ka-social-btn" data-action="refresh" type="button">REFRESH</button>
-      </div>
+
+<div class="ka-social-hero">
+  <section class="ka-social-panel ka-social-profile-panel">
+    <div class="ka-social-profile-copy">
+      <span class="ka-social-kicker">YOUR PUBLIC PROFILE</span>
+      <strong id="social-profile-name">SIGN IN REQUIRED</strong>
       <div class="ka-social-code">
         <strong id="social-friend-code">SIGN IN REQUIRED</strong>
-        <button class="ka-social-btn" data-action="copy-code" type="button">COPY</button>
+        <button class="ka-social-btn" data-action="copy-code" type="button">COPY ID</button>
       </div>
-      <div class="ka-social-form-row">
-        <input id="social-friend-code-input" maxlength="8" placeholder="8-character Friend Code" autocomplete="off"/>
-        <button class="ka-social-btn" data-action="friend-request" type="button">SEND REQUEST</button>
+      <small id="social-legacy-code" class="ka-social-legacy-code"></small>
+      <p>Share your Arena ID. Your friend can search it from any device without meeting you in a match first.</p>
+      <input id="social-arena-share" class="ka-social-share-link" readonly aria-label="Shareable Arena profile link"/>
+      <div class="ka-social-profile-actions">
+        <button class="ka-social-btn" data-action="copy-link" type="button">COPY LINK</button>
+        <button class="ka-social-btn ka-social-btn-primary" data-action="share-profile" type="button">SHARE PROFILE</button>
+        <button class="ka-social-btn" data-action="refresh" type="button">REFRESH</button>
       </div>
-      <div id="social-friends-list" class="ka-social-list"></div>
+    </div>
+    <div class="ka-social-qr-wrap">
+      <canvas id="social-arena-qr" width="176" height="176" aria-label="Arena ID QR code"></canvas>
+      <small>SCAN TO OPEN FRIEND SEARCH</small>
+    </div>
+  </section>
+
+  <section class="ka-social-panel ka-social-find-panel">
+    <div class="ka-social-panel-heading">
+      <div><span class="ka-social-kicker">ADD A FRIEND</span><h3>SEARCH ARENA ID</h3></div>
+      <span id="social-request-count" class="ka-social-request-badge" hidden>0</span>
+    </div>
+    <p>Ask your friend for an ID such as <b>ABRAR#7K2P</b>.</p>
+    <div class="ka-social-form-row">
+      <input id="social-friend-code-input" maxlength="21" placeholder="PLAYER#CODE" autocomplete="off" autocapitalize="characters" spellcheck="false"/>
+      <button class="ka-social-btn ka-social-btn-primary" data-action="friend-search" type="button">FIND PLAYER</button>
+    </div>
+    <div id="social-search-result" class="ka-social-list ka-social-search-result"></div>
+  </section>
+</div>
+
+<div class="ka-social-layout ka-social-unified-layout">
+  <div class="ka-social-column">
+    <section class="ka-social-panel">
+      <div class="ka-social-panel-heading"><div><h3>FRIEND REQUESTS</h3><small>Accept incoming requests or review sent requests.</small></div></div>
+      <div class="ka-social-request-columns">
+        <div><h4>INCOMING</h4><div id="social-incoming-list" class="ka-social-list"></div></div>
+        <div><h4>SENT</h4><div id="social-outgoing-list" class="ka-social-list"></div></div>
+      </div>
     </section>
 
     <section class="ka-social-panel">
-      <h3>INCOMING REQUESTS</h3>
-      <div id="social-incoming-list" class="ka-social-list"></div>
+      <div class="ka-social-panel-heading"><div><h3>FRIENDS</h3><small>Invite online friends directly into your party.</small></div></div>
+      <div id="social-friends-list" class="ka-social-list ka-social-list-tall"></div>
     </section>
 
     <section class="ka-social-panel">
       <h3>RECENT PLAYERS</h3>
-      <p>Authenticated players from completed or active co-op rooms appear here.</p>
+      <p>Add players directly after authenticated Co-op or PvP matches.</p>
       <div id="social-recent-list" class="ka-social-list"></div>
     </section>
   </div>
 
   <div class="ka-social-column">
-    <section class="ka-social-panel">
-      <h3>PARTY</h3>
-      <p>Parties preserve the group while the leader creates, joins, or enters a co-op room.</p>
+    <section class="ka-social-panel ka-social-party-panel">
+      <div class="ka-social-panel-heading"><div><h3>PARTY</h3><small>Invite friends, then enter Co-op or PvP together.</small></div></div>
       <div id="social-party-state"></div>
       <div id="social-party-members" class="ka-social-list"></div>
       <div id="social-party-invites" class="ka-social-list"></div>
     </section>
 
     <section class="ka-social-panel">
-      <h3>PRIVACY</h3>
+      <h3>NOTIFICATIONS</h3>
+      <div id="social-notifications-list" class="ka-social-list"></div>
+    </section>
+
+    <details class="ka-social-panel ka-social-details">
+      <summary>PRIVACY &amp; VISIBILITY</summary>
       <div class="ka-social-privacy-grid">
         <label class="ka-social-privacy-row"><span>Presence visibility</span>
           <select id="social-privacy-presence"><option value="friends">Friends</option><option value="party">Party only</option><option value="private">Private</option></select>
@@ -1911,61 +1946,40 @@
         <label class="ka-social-check"><input id="social-privacy-recent" type="checkbox" checked/> Keep authenticated recent-player history</label>
         <button class="ka-social-btn" data-action="privacy-save" type="button">SAVE PRIVACY</button>
       </div>
-    </section>
+    </details>
 
-    <section class="ka-social-panel">
-      <h3>BLOCKED PLAYERS</h3>
+    <details class="ka-social-panel ka-social-details">
+      <summary>BLOCKED PLAYERS &amp; REPORTING</summary>
+      <h4>BLOCKED PLAYERS</h4>
       <div id="social-blocked-list" class="ka-social-list"></div>
-    </section>
-
-    <section class="ka-social-panel">
-      <h3>REPORT PLAYER</h3>
+      <h4>REPORT PLAYER</h4>
       <p>Reports are private. The reported player is never told who submitted them.</p>
       <div class="ka-social-privacy-grid">
         <select id="social-report-target" aria-label="Player to report"></select>
         <select id="social-report-category" aria-label="Report category">
-          <option value="harassment">Harassment</option>
-          <option value="hate">Hate or abusive language</option>
-          <option value="cheating">Cheating</option>
-          <option value="griefing">Griefing</option>
-          <option value="inappropriate-name">Inappropriate name</option>
-          <option value="spam">Spam</option>
-          <option value="other">Other</option>
+          <option value="harassment">Harassment</option><option value="hate">Hate or abusive language</option>
+          <option value="cheating">Cheating</option><option value="griefing">Griefing</option>
+          <option value="inappropriate-name">Inappropriate name</option><option value="spam">Spam</option><option value="other">Other</option>
         </select>
         <textarea id="social-report-note" maxlength="240" placeholder="Optional short description"></textarea>
         <button class="ka-social-btn ka-social-btn-danger" data-action="report-submit" type="button">SUBMIT REPORT</button>
       </div>
-    </section>
+    </details>
 
-    <section class="ka-social-panel ka-social-safety-panel">
-      <div class="ka-social-panel-heading">
-        <div><h3>SAFETY CENTER</h3><small>Private report receipts, restrictions and appeals.</small></div>
-        <button class="ka-social-btn" data-action="safety-refresh" type="button">REFRESH</button>
-      </div>
+    <details class="ka-social-panel ka-social-details ka-social-safety-panel">
+      <summary>SAFETY CENTER</summary>
+      <div class="ka-social-panel-heading"><small>Private report receipts, restrictions and appeals.</small><button class="ka-social-btn" data-action="safety-refresh" type="button">REFRESH</button></div>
       <div id="social-safety-restriction" class="ka-social-safety-restriction" data-active="false">NO ACTIVE RESTRICTION</div>
       <small id="social-safety-service" class="ka-social-safety-service">SAFETY STATUS VERIFYING</small>
-      <div class="ka-social-safety-section">
-        <strong>YOUR SUBMITTED REPORTS</strong>
-        <p>Only receipt and review-complete status are shown. Moderation outcomes remain private.</p>
-        <div id="social-report-status-list" class="ka-social-safety-list"></div>
+      <div class="ka-social-safety-section"><strong>YOUR SUBMITTED REPORTS</strong><div id="social-report-status-list" class="ka-social-safety-list"></div></div>
+      <div class="ka-social-safety-section"><strong>APPEALS</strong><div id="social-appeal-status-list" class="ka-social-safety-list"></div>
+        <div id="social-appeal-form" class="ka-social-appeal-form" hidden><textarea id="social-appeal-note" maxlength="500" placeholder="Explain why the restriction should be reviewed (minimum 12 characters)"></textarea><button class="ka-social-btn" data-action="appeal-submit" type="button">SUBMIT APPEAL</button></div>
       </div>
-      <div class="ka-social-safety-section">
-        <strong>APPEALS</strong>
-        <div id="social-appeal-status-list" class="ka-social-safety-list"></div>
-        <div id="social-appeal-form" class="ka-social-appeal-form" hidden>
-          <textarea id="social-appeal-note" maxlength="500" placeholder="Explain why the restriction should be reviewed (minimum 12 characters)"></textarea>
-          <button class="ka-social-btn" data-action="appeal-submit" type="button">SUBMIT APPEAL</button>
-        </div>
-      </div>
-    </section>
+    </details>
   </div>
 </div>
-<div class="ka-nav-row">
-  <button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
-  <button class="ka-nav-btn" data-next-screen="settings" type="button">Account Settings →</button>
-</div>
+<div class="ka-nav-row"><button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button><button class="ka-nav-btn" data-next-screen="multiplayer" type="button">Open Multiplayer →</button></div>
 </section>
-
 
 <section class="ka-menu-screen" data-menu-screen="live" id="live1-screen">
 <div class="ka-section-heading">

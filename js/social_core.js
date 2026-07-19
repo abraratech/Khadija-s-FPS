@@ -2,8 +2,8 @@
 
 import { normalizeSocialSafety } from './social_safety_core.js';
 
-export const SOCIAL1_PATCH = 'social1-r1-friends-parties-player-safety';
-export const SOCIAL1_SCHEMA = 1;
+export const SOCIAL1_PATCH = 'social2-r1-arena-id-friend-discovery';
+export const SOCIAL1_SCHEMA = 2;
 export const SOCIAL1_RECENT_LIMIT = 32;
 export const SOCIAL1_FRIEND_LIMIT = 100;
 export const SOCIAL1_BLOCK_LIMIT = 100;
@@ -40,6 +40,17 @@ export function normalizeFriendCode(value) {
     .replace(/[^A-Z2-9]/g, '')
     .slice(0, 8);
   return FRIEND_CODE_PATTERN.test(code) ? code : '';
+}
+
+export function normalizeArenaId(value) {
+  const arenaId = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .slice(0, 21);
+  return /^[A-Z0-9][A-Z0-9_-]{1,15}#[A-HJ-NP-Z2-9]{4}$/.test(arenaId)
+    ? arenaId
+    : '';
 }
 
 export function normalizePartyCode(value) {
@@ -96,8 +107,9 @@ export function normalizeSocialPlayer(value = {}, now = Date.now()) {
   return Object.freeze({
     socialId,
     displayName: cleanSocialText(value.displayName, 'Player', 24),
+    arenaId: normalizeArenaId(value.arenaId),
     friendCode: normalizeFriendCode(value.friendCode),
-    relationship: ['friend', 'incoming', 'outgoing', 'blocked', 'recent', 'self'].includes(value.relationship)
+    relationship: ['friend', 'incoming', 'outgoing', 'blocked', 'recent', 'self', 'search'].includes(value.relationship)
       ? value.relationship
       : 'recent',
     presence: normalizePresence(value.presence, now),

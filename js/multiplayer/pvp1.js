@@ -748,11 +748,22 @@ export class MultiplayerPvp1Manager {
         </div>
         ${rows.map((entry) => `
           <div style="display:grid;grid-template-columns:1.4fr repeat(5,.65fr);gap:6px;padding:8px 10px;border-top:1px solid rgba(255,255,255,.06);font-size:12px">
-            <strong>${entry.playerId === this.localPlayerId ? 'YOU' : escapeHtml(cleanText(entry.playerId, 'PLAYER', 10))} · ${escapeHtml(entry.team)}</strong>
+            <strong>${entry.playerId === this.localPlayerId ? 'YOU' : escapeHtml(cleanText(entry.playerId, 'PLAYER', 10))} · ${escapeHtml(entry.team)}${entry.playerId === this.localPlayerId ? '' : ` <button type="button" class="ka-pvp-social-add" data-social-add-player="${escapeHtml(entry.playerId)}">+ FRIEND</button>`}</strong>
             <span>${entry.eliminations}</span><span>${entry.assists}</span><span>${entry.deaths}</span><span>${entry.damageDealt}</span><span>${entry.headshots}</span>
           </div>
         `).join('')}
       `;
+      scoreboardEl.onclick = (event) => {
+        const button = event.target instanceof Element
+          ? event.target.closest('[data-social-add-player]')
+          : null;
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        window.dispatchEvent(new CustomEvent('ka:social-add-player', {
+          detail: { playerId: button.dataset.socialAddPlayer || '' }
+        }));
+      };
     }
     if (mapSelect) {
       const current = state.pvp5?.currentMapId || state.mapId || PVP5_COMPETITIVE_MAPS[0];

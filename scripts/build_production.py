@@ -74,6 +74,12 @@ PVP6_FRONTEND_BASELINE_SHA = '36c020aeddcf2c10bf117063167d6f6d2d59b556'
 PVP6_WORKER_BASELINE_SHA = '334268d77dbd30b3ca1d7e3c3ad883cf27235944'
 PVP6_BASELINE_WORKER_VERSION_ID = '76fbfcdc-178a-4394-97c9-5872fd0de52d'
 PVP6_RELEASE_SEQUENCE = 2026071808
+SOCIAL2_PATCH = 'social2-r1-arena-id-friend-discovery'
+SOCIAL2_PRODUCT_VERSION = '1.1.0-social2-r1'
+SOCIAL2_FRONTEND_BASELINE_SHA = '2d41fb1e0a23a12ca970184acf00272ead91d4ba'
+SOCIAL2_WORKER_BASELINE_SHA = '24976152c3e9f0fe780cb20838627f5cf17dbedc'
+SOCIAL2_BASELINE_WORKER_VERSION_ID = 'f1936d32-3c25-491a-b214-a16ab79e2c2f'
+SOCIAL2_RELEASE_SEQUENCE = 2026071809
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -617,13 +623,33 @@ def main() -> None:
             "worker_change_required": True,
             "frontend_and_worker": True
         },
+        "social2": {
+            "schema": 2,
+            "patch": SOCIAL2_PATCH,
+            "product_version": SOCIAL2_PRODUCT_VERSION,
+            "frontend_baseline_sha": SOCIAL2_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": SOCIAL2_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": SOCIAL2_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": SOCIAL2_RELEASE_SEQUENCE,
+            "permanent_arena_id": True,
+            "exact_arena_id_search": True,
+            "incoming_and_outgoing_requests": True,
+            "shareable_profile_link": True,
+            "local_qr_generation": True,
+            "unified_social_hub": True,
+            "scoreboard_friend_actions": True,
+            "party_from_friends": True,
+            "deep_link_friend_search": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": PVP6_PATCH,
-            "source_baseline_sha": PVP6_FRONTEND_BASELINE_SHA,
-            "worker_baseline_sha": PVP6_WORKER_BASELINE_SHA,
-            "baseline_worker_version_id": PVP6_BASELINE_WORKER_VERSION_ID,
-            "release_sequence": PVP6_RELEASE_SEQUENCE,
+            "patch": SOCIAL2_PATCH,
+            "source_baseline_sha": SOCIAL2_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": SOCIAL2_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": SOCIAL2_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": SOCIAL2_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
             "paired_seal_descriptor": "pvp-production-seal.json",
             "worker_change_required": True

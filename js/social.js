@@ -1,4 +1,4 @@
-// SOCIAL.1 — Friends, recent players, parties and player safety.
+// SOCIAL.2 — discoverable Arena IDs, unified friends, parties and player safety.
 
 import { ONLINE_LEADERBOARD_WORKER_URL } from './online_leaderboards_core.js';
 import {
@@ -9,12 +9,14 @@ import {
   addLocalRecentPlayer,
   buildSocialReport,
   normalizePrivacy,
+  normalizeArenaId,
   normalizeSocialBootstrap,
   normalizeSocialId,
   SOCIAL1_PATCH,
   socialStatusLabel
 } from './social_core.js';
 import { setSocialRuntimeProvider } from './social_bridge.js';
+import { buildArenaShareUrl, renderQrCanvas } from './social2_qr.js';
 import {
   restrictionLabel,
   safetyAppealStatusLabel,
@@ -45,6 +47,8 @@ let lastRoomFingerprint = '';
 let busy = false;
 let toastHandler = null;
 let cloudAuthListenerBound = false;
+let searchResult = null;
+let deepLinkHandled = false;
 
 function readJson(key, fallback) {
   try {
@@ -160,6 +164,10 @@ function socialFailureLabel(error) {
   if (code.includes('RESTRICTED') || code.includes('BLOCKED')) return 'SOCIAL ACCESS RESTRICTED';
   if (code === 'SOCIAL_REQUEST_TIMEOUT') return 'SOCIAL SERVICE TIMED OUT — RETRY';
   if (code === 'SOCIAL_UPSTREAM_UNAVAILABLE') return 'SOCIAL SERVICE TEMPORARILY UNAVAILABLE';
+  if (code === 'SOCIAL_PLAYER_NOT_FOUND') return 'NO PLAYER FOUND WITH THAT ARENA ID';
+  if (code === 'SOCIAL_ARENA_ID_INVALID') return 'ENTER A COMPLETE ARENA ID';
+  if (code === 'SOCIAL_SELF_REQUEST_INVALID') return 'THAT IS YOUR OWN ARENA ID';
+  if (code === 'SOCIAL_FRIEND_REQUEST_FORBIDDEN') return 'THIS PLAYER IS NOT ACCEPTING FRIEND REQUESTS';
   return code.replaceAll('_', ' ').slice(0, 140);
 }
 
@@ -177,6 +185,31 @@ function setStatus(text, tone = 'neutral', { toast = false } = {}) {
   render();
   if (toast && typeof toastHandler === 'function') {
     toastHandler(statusText);
+  }
+}
+
+async function copyText(value, successMessage = 'COPIED') {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const input = document.createElement('textarea');
+      input.value = text;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand('copy');
+      input.remove();
+    }
+    setStatus(successMessage, 'good', { toast: true });
+    return true;
+  } catch {
+    setStatus('COPY FAILED — SELECT THE ID MANUALLY', 'error', { toast: true });
+    return false;
   }
 }
 
@@ -270,7 +303,8 @@ function getSnapshot() {
     state,
     status: statusText,
     tone: statusTone,
-    blockedSocialIds: [...blockedSocialIds()]
+    blockedSocialIds: [...blockedSocialIds()],
+    searchResult
   });
 }
 
@@ -309,7 +343,8 @@ function makePlayerCard(player, actions = []) {
   const name = document.createElement('strong');
   name.textContent = player.displayName || 'Player';
   const meta = document.createElement('small');
-  meta.textContent = `${socialStatusLabel(player.presence)}${player.lastPlayedAt ? ` · ${displayTime(player.lastPlayedAt)}` : ''}`;
+  const identity = player.arenaId ? `${player.arenaId} · ` : '';
+  meta.textContent = `${identity}${socialStatusLabel(player.presence)}${player.lastPlayedAt ? ` · ${displayTime(player.lastPlayedAt)}` : ''}`;
   if (player.presence?.online) card.dataset.online = 'true';
   copy.append(name, meta);
 
@@ -523,6 +558,77 @@ function renderSafety() {
   }
 }
 
+function renderProfile() {
+  const self = state.self;
+  const profileName = document.getElementById('social-profile-name');
+  const arenaId = document.getElementById('social-friend-code');
+  const legacyCode = document.getElementById('social-legacy-code');
+  const share = document.getElementById('social-arena-share');
+  const canvas = document.getElementById('social-arena-qr');
+  if (profileName) profileName.textContent = self?.displayName || 'SIGN IN REQUIRED';
+  if (arenaId) arenaId.textContent = self?.arenaId || 'SIGN IN REQUIRED';
+  if (legacyCode) legacyCode.textContent = self?.friendCode ? `LEGACY CODE ${self.friendCode}` : '';
+  const shareUrl = self?.arenaId ? buildArenaShareUrl(self.arenaId) : '';
+  if (share) share.value = shareUrl;
+  if (canvas) {
+    canvas.hidden = !shareUrl;
+    if (shareUrl) renderQrCanvas(canvas, shareUrl, { size: 176 });
+  }
+}
+
+function renderSearchResult() {
+  const root = document.getElementById('social-search-result');
+  if (!root) return;
+  clearElement(root);
+  if (!searchResult?.player) {
+    const empty = document.createElement('small');
+    empty.className = 'ka-social-empty';
+    empty.textContent = 'Enter the exact Arena ID your friend shared with you.';
+    root.append(empty);
+    return;
+  }
+  const player = searchResult.player;
+  const actions = [];
+  if (player.relationship === 'friend') {
+    actions.push({ label: 'FRIEND', action: 'noop' });
+    actions.push({ label: 'PARTY', action: 'party-invite' });
+  } else if (player.relationship === 'incoming') {
+    actions.push({ label: 'ACCEPT', action: 'friend-accept' });
+    actions.push({ label: 'DECLINE', action: 'friend-decline', danger: true });
+  } else if (player.relationship === 'outgoing') {
+    actions.push({ label: 'REQUEST SENT', action: 'noop' });
+  } else if (player.relationship === 'self') {
+    actions.push({ label: 'THIS IS YOU', action: 'noop' });
+  } else if (searchResult.canRequest === true) {
+    actions.push({ label: 'ADD FRIEND', action: 'friend-request-id' });
+  }
+  root.append(makePlayerCard(player, actions));
+}
+
+function renderNotifications() {
+  const root = document.getElementById('social-notifications-list');
+  if (!root) return;
+  clearElement(root);
+  const notifications = [...(state.notifications || [])].reverse().slice(0, 8);
+  if (!notifications.length) {
+    const empty = document.createElement('small');
+    empty.className = 'ka-social-empty';
+    empty.textContent = 'Friend requests and party invitations appear here.';
+    root.append(empty);
+    return;
+  }
+  notifications.forEach((entry) => {
+    const row = document.createElement('article');
+    row.className = 'ka-social-notification';
+    const text = document.createElement('strong');
+    text.textContent = entry.text || entry.kind || 'SOCIAL UPDATE';
+    const time = document.createElement('small');
+    time.textContent = displayTime(entry.at);
+    row.append(text, time);
+    root.append(row);
+  });
+}
+
 function render() {
   if (typeof document === 'undefined') return;
   const auth = authContext();
@@ -534,22 +640,34 @@ function render() {
   const authNote = document.getElementById('social-auth-note');
   if (authNote) {
     authNote.textContent = auth.valid && auth.accountType === 'passkey'
-      ? 'PASSKEY SOCIAL PROFILE ACTIVE'
-      : 'PASSKEY ACCOUNT REQUIRED FOR FRIENDS, PARTIES, BLOCKS AND REPORTS';
+      ? 'SHARE YOUR ARENA ID TO ADD FRIENDS FROM ANY DEVICE'
+      : 'SIGN IN WITH A PASSKEY TO USE FRIENDS, PARTIES AND SAFETY';
   }
-  const code = document.getElementById('social-friend-code');
-  if (code) code.textContent = state.self?.friendCode || 'SIGN IN REQUIRED';
+  const requestCount = document.getElementById('social-request-count');
+  if (requestCount) {
+    const count = state.incoming?.length || 0;
+    requestCount.textContent = String(count);
+    requestCount.hidden = count <= 0;
+  }
+
+  renderProfile();
+  renderSearchResult();
+  renderNotifications();
 
   renderPlayerList('social-friends-list', state.friends, [
     { label: 'PARTY', action: 'party-invite' },
     { label: 'REMOVE', action: 'friend-remove', danger: true },
     { label: 'BLOCK', action: 'block-add', danger: true }
-  ], 'No friends yet. Share your Friend Code or add another player.');
+  ], 'No friends yet. Share your Arena ID or search for another player.');
 
   renderPlayerList('social-incoming-list', state.incoming, [
     { label: 'ACCEPT', action: 'friend-accept' },
     { label: 'DECLINE', action: 'friend-decline', danger: true }
   ], 'No incoming requests.');
+
+  renderPlayerList('social-outgoing-list', state.outgoing, [
+    { label: 'PENDING', action: 'noop' }
+  ], 'No sent requests waiting for a response.');
 
   const recent = state.authenticated && state.recent.length
     ? state.recent
@@ -558,7 +676,7 @@ function render() {
     { label: 'ADD', action: 'friend-request-id' },
     { label: 'BLOCK', action: 'block-add', danger: true },
     { label: 'REPORT', action: 'report-select', danger: true }
-  ], 'Recent authenticated co-op players will appear here.');
+  ], 'Players from authenticated Co-op and PvP matches appear here.');
 
   renderPlayerList('social-blocked-list', state.blocked, [
     { label: 'UNBLOCK', action: 'block-remove' }
@@ -625,6 +743,37 @@ async function refreshSocial({ silent = false } = {}) {
   return state;
 }
 
+async function findPlayerByArenaId(rawArenaId, { announce = true } = {}) {
+  const arenaId = normalizeArenaId(rawArenaId);
+  if (!arenaId) {
+    searchResult = null;
+    setStatus('ENTER A COMPLETE ARENA ID', 'warning', { toast: announce });
+    return null;
+  }
+  if (busy) return null;
+  busy = true;
+  if (announce) setStatus('SEARCHING FOR PLAYER…', 'neutral');
+  try {
+    const value = await socialRequest('/social/players/find', {
+      method: 'POST',
+      body: { arenaId }
+    });
+    searchResult = {
+      player: value.player || null,
+      canRequest: value.canRequest === true
+    };
+    setStatus(searchResult.player ? 'PLAYER FOUND' : 'PLAYER NOT FOUND', searchResult.player ? 'good' : 'warning');
+    return searchResult;
+  } catch (error) {
+    searchResult = null;
+    setStatus(socialFailureLabel(error), socialAuthFailure(error) ? 'warning' : 'error', { toast: announce });
+    return null;
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
 async function mutate(path, body, successMessage) {
   if (busy) return false;
   busy = true;
@@ -635,6 +784,7 @@ async function mutate(path, body, successMessage) {
       body
     });
     state = normalizeSocialBootstrap(value);
+    if (path.startsWith('/social/friends/')) searchResult = null;
     setStatus(successMessage, 'good', { toast: true });
     return true;
   } catch (error) {
@@ -733,19 +883,48 @@ function recordRoomPlayers(room) {
 
 async function handleAction(action, id = '') {
   switch (action) {
+    case 'noop':
+      break;
     case 'refresh':
       await refreshSocial();
       break;
     case 'copy-code':
-      if (state.self?.friendCode && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(state.self.friendCode);
-        setStatus('FRIEND CODE COPIED', 'good');
+      await copyText(state.self?.arenaId, 'ARENA ID COPIED');
+      break;
+    case 'copy-link':
+      await copyText(buildArenaShareUrl(state.self?.arenaId), 'FRIEND LINK COPIED');
+      break;
+    case 'share-profile': {
+      const url = buildArenaShareUrl(state.self?.arenaId);
+      if (navigator.share && url) {
+        try {
+          await navigator.share({
+            title: `Add ${state.self?.displayName || 'me'} in Khadija's Arena`,
+            text: `My Arena ID is ${state.self?.arenaId || ''}`,
+            url
+          });
+          setStatus('FRIEND LINK SHARED', 'good');
+        } catch (error) {
+          if (error?.name !== 'AbortError') await copyText(url, 'FRIEND LINK COPIED');
+        }
+      } else {
+        await copyText(url, 'FRIEND LINK COPIED');
       }
       break;
+    }
+    case 'friend-search': {
+      const input = document.getElementById('social-friend-code-input');
+      await findPlayerByArenaId(input?.value || '');
+      break;
+    }
     case 'friend-request': {
       const input = document.getElementById('social-friend-code-input');
-      const code = String(input?.value || '').trim();
-      if (await mutate('/social/friends/request', { friendCode: code }, 'FRIEND REQUEST SENT')) {
+      const arenaId = normalizeArenaId(input?.value || '');
+      if (!arenaId) {
+        setStatus('ENTER A COMPLETE ARENA ID', 'warning', { toast: true });
+        break;
+      }
+      if (await mutate('/social/friends/request', { arenaId }, 'FRIEND REQUEST SENT')) {
         if (input) input.value = '';
       }
       break;
@@ -895,6 +1074,54 @@ function bindCloudAuthEvents() {
   window.addEventListener('ka:cloud-auth-changed', handleCloudAuthChanged);
 }
 
+function openSocialScreen() {
+  const socialButton = document.querySelector('[data-next-screen="social"]');
+  socialButton?.click?.();
+  document.getElementById('social-screen')?.scrollIntoView?.({ block: 'start' });
+}
+
+async function requestFriendByRoomPlayerId(playerId) {
+  const player = socialPlayerForRoomPlayer(String(playerId || ''));
+  const socialId = normalizeSocialId(player?.socialId);
+  if (!socialId || player?.isBot === true) {
+    setStatus('THIS PLAYER DOES NOT HAVE A SHAREABLE SOCIAL PROFILE', 'warning', { toast: true });
+    return false;
+  }
+  if (socialId === state.self?.socialId) {
+    setStatus('THAT IS YOUR OWN PROFILE', 'warning', { toast: true });
+    return false;
+  }
+  openSocialScreen();
+  return mutate('/social/friends/request', { socialId }, 'FRIEND REQUEST SENT');
+}
+
+function handleSocialAddPlayer(event) {
+  const playerId = String(event?.detail?.playerId || '');
+  if (!playerId) return;
+  void requestFriendByRoomPlayerId(playerId);
+}
+
+async function handleArenaDeepLink() {
+  if (deepLinkHandled || typeof window === 'undefined') return false;
+  deepLinkHandled = true;
+  let arenaId = '';
+  try {
+    const url = new URL(window.location.href);
+    arenaId = normalizeArenaId(url.searchParams.get('friend'));
+    if (!arenaId) return false;
+    url.searchParams.delete('friend');
+    history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash || ''}`);
+  } catch {
+    return false;
+  }
+  const input = document.getElementById('social-friend-code-input');
+  if (input) input.value = arenaId;
+  openSocialScreen();
+  if (state.authenticated) await findPlayerByArenaId(arenaId, { announce: false });
+  else setStatus('SIGN IN TO ADD THIS PLAYER', 'warning', { toast: true });
+  return true;
+}
+
 function bindUi() {
   document.getElementById('social-screen')?.addEventListener('click', (event) => {
     const target = event.target instanceof Element
@@ -904,6 +1131,12 @@ function bindUi() {
     event.preventDefault();
     void handleAction(target.dataset.action || '', target.dataset.id || '');
   });
+  document.getElementById('social-friend-code-input')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    void handleAction('friend-search');
+  });
+  window.addEventListener('ka:social-add-player', handleSocialAddPlayer);
 }
 
 export function initSocialSystems({ showToast = null } = {}) {
@@ -933,7 +1166,16 @@ export function initSocialSystems({ showToast = null } = {}) {
     if (document.visibilityState !== 'hidden') void publishPresence();
   }, PRESENCE_INTERVAL_MS);
 
-  void refreshSocial({ silent: true }).then(() => publishPresence({ force: true }));
+  window.KhadijasArenaSocial = Object.freeze({
+    getSnapshot,
+    open: openSocialScreen,
+    requestFriendByPlayerId: requestFriendByRoomPlayerId
+  });
+
+  void refreshSocial({ silent: true }).then(async () => {
+    await publishPresence({ force: true });
+    await handleArenaDeepLink();
+  });
   render();
   return getSnapshot();
 }

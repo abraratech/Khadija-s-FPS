@@ -68,6 +68,30 @@ function addStat(parent, label, value) {
   parent.appendChild(item);
 }
 
+function playerNameCell(player = {}, label = 'Player') {
+  const root = document.createElement('span');
+  root.className = 'ka-scoreboard-name ka-scoreboard-social-name';
+  const name = document.createElement('span');
+  name.textContent = label;
+  root.appendChild(name);
+  if (player.isBot !== true && player.playerId) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'ka-scoreboard-social-add';
+    add.textContent = '+ FRIEND';
+    add.title = `Add ${label} as a friend`;
+    add.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.dispatchEvent(new CustomEvent('ka:social-add-player', {
+        detail: { playerId: player.playerId }
+      }));
+    });
+    root.appendChild(add);
+  }
+  return root;
+}
+
 export class MultiplayerCoopScoreboard {
   constructor({ stats = null, session = null } = {}) {
     this.stats = stats;
@@ -149,8 +173,8 @@ export class MultiplayerCoopScoreboard {
         ? '-'
         : `${whole(player.networkRttMs)}ms`;
       const hp = `${whole(player.health)}/${whole(player.maxHealth || 100)}`;
-      const values = [
-        player.displayName || 'Player',
+      grid.appendChild(playerNameCell(player, player.displayName || 'Player'));
+      [
         status,
         hp,
         whole(player.currentPoints),
@@ -160,13 +184,10 @@ export class MultiplayerCoopScoreboard {
         whole(counters.revives),
         whole(counters.timesDowned),
         rtt
-      ];
-      values.forEach((value, index) => {
+      ].forEach((value, index) => {
         const className = index === 0
-          ? 'ka-scoreboard-name'
-          : index === 1
-            ? `ka-scoreboard-status ka-scoreboard-status-${status.toLowerCase()}`
-            : 'ka-scoreboard-cell';
+          ? `ka-scoreboard-status ka-scoreboard-status-${status.toLowerCase()}`
+          : 'ka-scoreboard-cell';
         grid.appendChild(cell(value, className));
       });
     });
@@ -244,8 +265,8 @@ export class MultiplayerCoopScoreboard {
     ['PLAYER', 'ROLE', 'K', 'HS', 'ACC', 'DMG', 'TAKEN', 'PTS+', 'PTS-', 'REV', 'DOWN', 'DEATHS']
       .forEach((label) => grid.appendChild(cell(label, 'ka-scoreboard-grid-head')));
     (summary.players || []).forEach((player) => {
+      grid.appendChild(playerNameCell(player, player.displayName || 'Player'));
       [
-        player.displayName || 'Player',
         player.isBot === true || player.role === 'COMPANION'
           ? 'WINGMAN'
           : player.role === 'HOST' ? 'HOST' : 'ALLY',
@@ -259,8 +280,8 @@ export class MultiplayerCoopScoreboard {
         whole(player.revives),
         whole(player.timesDowned),
         whole(player.deaths)
-      ].forEach((value, index) => {
-        grid.appendChild(cell(value, index === 0 ? 'ka-scoreboard-name' : 'ka-scoreboard-cell'));
+      ].forEach((value) => {
+        grid.appendChild(cell(value, 'ka-scoreboard-cell'));
       });
     });
     panel.appendChild(grid);

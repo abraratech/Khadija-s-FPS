@@ -35,8 +35,8 @@ assert.equal(transport.includes("url.searchParams.set('socialTicket'"), true);
 assert.equal(foundation.includes('joinMultiplayerSocialRoom'), true);
 assert.equal(room.includes('socialId:'), true);
 assert.equal(chat.includes('isSocialPlayerBlocked'), true);
-assert.equal(release.social?.patch, 'social1-r1-friends-parties-player-safety');
+assert.equal(release.social?.patch, 'social2-r1-arena-id-friend-discovery');
 assert.equal(release.social?.voiceChat, false);
 assert.equal(release.social?.textChat, true);
 
-console.log('SOCIAL.1 frontend integration contract tests: PASS');
+console.log('SOCIAL.1 compatibility contract tests: PASS');

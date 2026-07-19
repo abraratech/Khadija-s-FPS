@@ -21,7 +21,8 @@ assert.ok(main.includes('pvp5-r1-competitive-match-completion-stabilization'));
 assert.ok(main.includes('pvpAdapter: {\n    camera,'));
 assert.ok([
   'pvp5-r1-competitive-match-completion-stabilization',
-  'pvp6-r1-final-pvp-certification-candidate'
+  'pvp6-r1-final-pvp-certification-candidate',
+  'social2-r1-arena-id-friend-discovery'
 ].includes(release.releaseId));
 assert.equal(metadata.pvp5?.frontendBaselineSha, '9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87');
 assert.equal(metadata.pvp5?.workerBaselineSha, 'deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7');

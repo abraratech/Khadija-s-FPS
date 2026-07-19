@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.1.0-pvp6-rc1",
-  "releaseId": "pvp6-r1-final-pvp-certification-candidate",
-  "releaseSequence": 2026071808,
-  "sourceBaselineSha": "36c020aeddcf2c10bf117063167d6f6d2d59b556",
+  "productVersion": "1.1.0-social2-r1",
+  "releaseId": "social2-r1-arena-id-friend-discovery",
+  "releaseSequence": 2026071809,
+  "sourceBaselineSha": "2d41fb1e0a23a12ca970184acf00272ead91d4ba",
   "updateDelivery": true,
   "workerChangeRequired": true,
-  "workerBaselineSha": "334268d77dbd30b3ca1d7e3c3ad883cf27235944",
-  "baselineWorkerVersionId": "76fbfcdc-178a-4394-97c9-5872fd0de52d",
-  "certificationStatus": "STATIC_CERTIFIED_LIVE_PENDING"
+  "workerBaselineSha": "24976152c3e9f0fe780cb20838627f5cf17dbedc",
+  "baselineWorkerVersionId": "f1936d32-3c25-491a-b214-a16ab79e2c2f",
+  "certificationStatus": "STATIC_CERTIFIED_DEPLOYMENT_PENDING"
 }

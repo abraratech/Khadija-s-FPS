@@ -172,6 +172,28 @@ def main() -> None:
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"MPNET.1 R1 production runtime file missing: {required_runtime}")
 
+    social2 = manifest.get("social2", {})
+    if current_release.get("patch") == "social2-r1-arena-id-friend-discovery":
+        if social2.get("patch") != current_release.get("patch"):
+            raise SystemExit("SOCIAL.2 R1 production manifest patch mismatch")
+        for field in (
+            "permanent_arena_id", "exact_arena_id_search",
+            "incoming_and_outgoing_requests", "shareable_profile_link",
+            "local_qr_generation", "unified_social_hub",
+            "scoreboard_friend_actions", "party_from_friends",
+            "deep_link_friend_search", "worker_change_required",
+            "frontend_and_worker"
+        ):
+            if social2.get(field) is not True:
+                raise SystemExit(f"SOCIAL.2 R1 production policy mismatch: {field}")
+        for required_runtime in (
+            "js/social.js", "js/social_core.js", "js/social2_qr.js",
+            "js/vendor/qrcode/index.js", "js/multiplayer/coop_scoreboard.js",
+            "js/multiplayer/pvp1.js", "css/social.css"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"SOCIAL.2 R1 production runtime file missing: {required_runtime}")
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

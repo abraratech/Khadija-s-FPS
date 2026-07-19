@@ -1,0 +1,316 @@
+js/vendor/qrcode/QR8bitByte.js:14: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:12: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:18: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:22: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:24: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:29: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRBitBuffer.js:33: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:4: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:8: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/QRMath.js:11: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:13: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:17: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:21: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:24: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:26: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRMath.js:30: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:26: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:30: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:32: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:34: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:40: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:43: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:45: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:49: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:51: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRPolynomial.js:53: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/QRPolynomial.js:57: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/QRPolynomial.js:61: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:21: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:34: trailing whitespace.
+[32m+[m	[32m// 4[m[41m		[m
+js/vendor/qrcode/QRRSBlock.js:39: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:45: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:51: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:52: trailing whitespace.
+[32m+[m	[32m// 7[m[41m		[m
+js/vendor/qrcode/QRRSBlock.js:57: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:63: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:69: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:70: trailing whitespace.
+[32m+[m	[32m// 10[m[41m		[m
+js/vendor/qrcode/QRRSBlock.js:258: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:260: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:266: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:268: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:276: trailing whitespace.
+[32m+[m			[32mlist.push(new QRRSBlock(totalCount, dataCount) );[m[41m	[m
+js/vendor/qrcode/QRRSBlock.js:279: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/QRUtil.js:23: trailing whitespace.
+[32m+[m[32m        [6, 30, 54],[m[41m        [m
+js/vendor/qrcode/QRUtil.js:62: trailing whitespace.
+[32m+[m[32m            d ^= (QRUtil.G15 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G15) ) );[m[41m    [m
+js/vendor/qrcode/QRUtil.js:70: trailing whitespace.
+[32m+[m[32m            d ^= (QRUtil.G18 << (QRUtil.getBCHDigit(d) - QRUtil.getBCHDigit(QRUtil.G18) ) );[m[41m    [m
+js/vendor/qrcode/QRUtil.js:92: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:94: trailing whitespace.
+[32m+[m[41m            [m
+js/vendor/qrcode/QRUtil.js:167: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:170: trailing whitespace.
+[32m+[m[32m        var row = 0;[m[41m [m
+js/vendor/qrcode/QRUtil.js:173: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:175: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:230: trailing whitespace.
+[32m+[m[32m                if (qrCode.isDark(row, col) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:231: trailing whitespace.
+[32m+[m[32m                        !qrCode.isDark(row, col + 1) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:232: trailing whitespace.
+[32m+[m[32m                         qrCode.isDark(row, col + 2) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:233: trailing whitespace.
+[32m+[m[32m                         qrCode.isDark(row, col + 3) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:234: trailing whitespace.
+[32m+[m[32m                         qrCode.isDark(row, col + 4) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:235: trailing whitespace.
+[32m+[m[32m                        !qrCode.isDark(row, col + 5) &&[m[41m [m
+js/vendor/qrcode/QRUtil.js:257: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:267: trailing whitespace.
+[32m+[m[41m        [m
+js/vendor/qrcode/QRUtil.js:271: trailing whitespace.
+[32m+[m[32m        return lostPoint;[m[41m       [m
+js/vendor/qrcode/index.js:16: trailing whitespace.
+[32m+[m[32m// The word "QR Code" is registered trademark of[m[41m [m
+js/vendor/qrcode/index.js:40: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:46: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:57: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:84: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:86: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:89: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:91: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:93: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:98: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:105: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:109: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:113: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:118: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:120: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:122: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:124: trailing whitespace.
+[32m+[m[41m				[m
+js/vendor/qrcode/index.js:126: trailing whitespace.
+[32m+[m[41m				[m
+js/vendor/qrcode/index.js:127: trailing whitespace.
+[32m+[m				[32mif ( (0 <= r && r <= 6 && (c === 0 || c === 6) ) ||[m[41m [m
+js/vendor/qrcode/index.js:128: trailing whitespace.
+[32m+[m[32m                     (0 <= c && c <= 6 && (r === 0 || r === 6) ) ||[m[41m [m
+js/vendor/qrcode/index.js:134: trailing whitespace.
+[32m+[m			[32m}[m[41m		[m
+js/vendor/qrcode/index.js:135: trailing whitespace.
+[32m+[m		[32m}[m[41m		[m
+js/vendor/qrcode/index.js:137: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:139: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:142: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:144: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:146: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:148: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:154: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:157: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:159: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:162: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:166: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:168: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:170: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:173: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:184: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:189: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:196: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:204: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:206: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:208: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:210: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:212: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:215: trailing whitespace.
+[32m+[m[41m				[m
+js/vendor/qrcode/index.js:219: trailing whitespace.
+[32m+[m[41m				[m
+js/vendor/qrcode/index.js:221: trailing whitespace.
+[32m+[m[41m				[m
+js/vendor/qrcode/index.js:223: trailing whitespace.
+[32m+[m[41m					[m
+js/vendor/qrcode/index.js:224: trailing whitespace.
+[32m+[m						[32mif (Math.abs(r) === 2 ||[m[41m [m
+js/vendor/qrcode/index.js:236: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:238: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:241: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:246: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:252: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:254: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:258: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:259: trailing whitespace.
+[32m+[m		[32m// vertical[m[41m		[m
+js/vendor/qrcode/index.js:261: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:263: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:272: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:275: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:277: trailing whitespace.
+[32m+[m[41m			[m
+js/vendor/qrcode/index.js:286: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:289: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:291: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:293: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:298: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:300: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:302: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:304: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:306: trailing whitespace.
+[32m+[m[41m					[m
+js/vendor/qrcode/index.js:308: trailing whitespace.
+[32m+[m[41m						[m
+js/vendor/qrcode/index.js:310: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:314: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:316: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:320: trailing whitespace.
+[32m+[m[41m						[m
+js/vendor/qrcode/index.js:323: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:330: trailing whitespace.
+[32m+[m[41m								[m
+js/vendor/qrcode/index.js:332: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:340: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:349: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:351: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:353: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:368: trailing whitespace.
+[32m+[m		[32mthrow new Error("code length overflow. (" +[m[41m [m
+js/vendor/qrcode/index.js:369: trailing whitespace.
+[32m+[m[32m            buffer.getLengthInBits() +[m[41m [m
+js/vendor/qrcode/index.js:370: trailing whitespace.
+[32m+[m[32m            ">" +[m[41m  [m
+js/vendor/qrcode/index.js:371: trailing whitespace.
+[32m+[m[32m            totalDataCount * 8 +[m[41m [m
+js/vendor/qrcode/index.js:387: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:392: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:405: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:408: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:411: trailing whitespace.
+[32m+[m[41m	[m
+js/vendor/qrcode/index.js:419: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:421: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:426: trailing whitespace.
+[32m+[m[41m		[m
+js/vendor/qrcode/index.js:438: trailing whitespace.
+[32m+[m[41m	[m

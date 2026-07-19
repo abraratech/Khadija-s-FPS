@@ -80,6 +80,12 @@ SOCIAL2_FRONTEND_BASELINE_SHA = '2d41fb1e0a23a12ca970184acf00272ead91d4ba'
 SOCIAL2_WORKER_BASELINE_SHA = '24976152c3e9f0fe780cb20838627f5cf17dbedc'
 SOCIAL2_BASELINE_WORKER_VERSION_ID = 'f1936d32-3c25-491a-b214-a16ab79e2c2f'
 SOCIAL2_RELEASE_SEQUENCE = 2026071809
+NET1_PATCH = 'net1-r1-webrtc-hybrid-transport'
+NET1_PRODUCT_VERSION = '1.2.0-net1-r1'
+NET1_FRONTEND_BASELINE_SHA = '8e0552196f9f59962a79905a2da55789ffc9d478'
+NET1_WORKER_BASELINE_SHA = '1aa92025a774aa19d4dece995caae8b300fa28bf'
+NET1_BASELINE_WORKER_VERSION_ID = '1ce125a4-d79c-43aa-914e-a1f689116618'
+NET1_RELEASE_SEQUENCE = 2026071901
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -643,13 +649,36 @@ def main() -> None:
             "worker_change_required": True,
             "frontend_and_worker": True
         },
+        "net1": {
+            "schema": 1,
+            "patch": NET1_PATCH,
+            "product_version": NET1_PRODUCT_VERSION,
+            "frontend_baseline_sha": NET1_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": NET1_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": NET1_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": NET1_RELEASE_SEQUENCE,
+            "cloudflare_central_signaling": True,
+            "small_room_full_mesh": True,
+            "direct_data_channels": True,
+            "reliable_ordered_channel": True,
+            "unreliable_snapshot_channel": True,
+            "websocket_durable_object_fallback": True,
+            "critical_relay_shadow": True,
+            "delivery_deduplication": True,
+            "bounded_data_channel_buffers": True,
+            "host_migration_preserved": True,
+            "reconnect_fallback_preserved": True,
+            "turn_optional": True,
+            "worker_change_required": True,
+            "frontend_and_worker": True
+        },
         "current_release": {
             "schema": 1,
-            "patch": SOCIAL2_PATCH,
-            "source_baseline_sha": SOCIAL2_FRONTEND_BASELINE_SHA,
-            "worker_baseline_sha": SOCIAL2_WORKER_BASELINE_SHA,
-            "baseline_worker_version_id": SOCIAL2_BASELINE_WORKER_VERSION_ID,
-            "release_sequence": SOCIAL2_RELEASE_SEQUENCE,
+            "patch": NET1_PATCH,
+            "source_baseline_sha": NET1_FRONTEND_BASELINE_SHA,
+            "worker_baseline_sha": NET1_WORKER_BASELINE_SHA,
+            "baseline_worker_version_id": NET1_BASELINE_WORKER_VERSION_ID,
+            "release_sequence": NET1_RELEASE_SEQUENCE,
             "release_descriptor": "release-version.json",
             "paired_seal_descriptor": "pvp-production-seal.json",
             "worker_change_required": True

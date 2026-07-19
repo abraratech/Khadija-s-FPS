@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.1.0-social2-r1",
-  "releaseId": "social2-r1-arena-id-friend-discovery",
-  "releaseSequence": 2026071809,
-  "sourceBaselineSha": "2d41fb1e0a23a12ca970184acf00272ead91d4ba",
+  "productVersion": "1.2.0-net1-r1",
+  "releaseId": "net1-r1-webrtc-hybrid-transport",
+  "releaseSequence": 2026071901,
+  "sourceBaselineSha": "8e0552196f9f59962a79905a2da55789ffc9d478",
   "updateDelivery": true,
   "workerChangeRequired": true,
-  "workerBaselineSha": "24976152c3e9f0fe780cb20838627f5cf17dbedc",
-  "baselineWorkerVersionId": "f1936d32-3c25-491a-b214-a16ab79e2c2f",
+  "workerBaselineSha": "1aa92025a774aa19d4dece995caae8b300fa28bf",
+  "baselineWorkerVersionId": "1ce125a4-d79c-43aa-914e-a1f689116618",
   "certificationStatus": "STATIC_CERTIFIED_DEPLOYMENT_PENDING"
 }

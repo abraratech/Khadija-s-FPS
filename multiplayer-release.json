@@ -395,7 +395,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "PVP.1 R1 \u2014 Isolated Team Elimination Foundation",
+  "releaseLabel": "PVP.1 R1 — Isolated Team Elimination Foundation",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -706,7 +706,7 @@
     "workerChangeRequired": true,
     "frontendOnly": false
   },
-  "productVersion": "1.0.0",
+  "productVersion": "1.2.0-net1-r1",
   "postFinal10": {
     "schema": 1,
     "patch": "post-final10-r1-version1-stabilization-accessibility-performance",
@@ -1205,5 +1205,45 @@
     "deepLinkFriendSearch": true,
     "workerChangeRequired": true,
     "frontendAndWorker": true
+  },
+  "net1": {
+    "schema": 1,
+    "patch": "net1-r1-webrtc-hybrid-transport",
+    "productVersion": "1.2.0-net1-r1",
+    "releaseSequence": 2026071901,
+    "frontendBaselineSha": "8e0552196f9f59962a79905a2da55789ffc9d478",
+    "workerBaselineSha": "1aa92025a774aa19d4dece995caae8b300fa28bf",
+    "baselineWorkerVersionId": "1ce125a4-d79c-43aa-914e-a1f689116618",
+    "architecture": "cloudflare-central-signaling-browser-webrtc-gameplay",
+    "cloudflareCentralMatchmaker": true,
+    "cloudflareWorkerSignaling": true,
+    "smallRoomFullMesh": true,
+    "directDataChannels": true,
+    "reliableOrderedChannel": "ka-reliable",
+    "unreliableSnapshotChannel": "ka-snapshot",
+    "stunDefault": "stun:stun.cloudflare.com:3478",
+    "turnCredentials": "optional-short-lived-worker-generated",
+    "websocketDurableObjectFallback": true,
+    "automaticTransportSelection": true,
+    "transportLabels": [
+      "LOCAL",
+      "NEGOTIATING",
+      "DIRECT",
+      "TURN RELAY",
+      "CLOUD RELAY"
+    ],
+    "criticalRelayShadow": true,
+    "movementDirectWhenMeshReady": true,
+    "deliveryDeduplication": true,
+    "boundedDataChannelBuffers": true,
+    "hostMigrationPreserved": true,
+    "reconnectFallbackPreserved": true,
+    "coopSupported": true,
+    "pvpOneVsOneSupported": true,
+    "pvpTwoVsTwoSupported": true,
+    "crazyGamesSecureIframeReady": true,
+    "workerChangeRequired": true,
+    "frontendAndWorker": true,
+    "realTwoClientCertificationRequired": true
   }
 }

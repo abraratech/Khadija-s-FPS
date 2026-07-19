@@ -12,13 +12,13 @@ const QUALITY_COLORS = Object.freeze({
   RECONNECTING: '#ff4fd8'
 });
 const QUALITY_LABELS = Object.freeze({
-  WAITING: 'MEASURING CLOUD RELAY',
-  EXCELLENT: 'CLOUD RELAY EXCELLENT',
-  GOOD: 'CLOUD RELAY READY',
-  FAIR: 'CLOUD RELAY DEGRADED - PREDICTION ACTIVE',
-  POOR: 'CLOUD RELAY POOR - STATE RECOVERY ACTIVE',
-  UNSTABLE: 'CLOUD RELAY UNSTABLE - ACTIONS ARE BEING RESYNCHRONIZED',
-  RECONNECTING: 'RESTORING CLOUD RELAY'
+  WAITING: 'MEASURING CONNECTION',
+  EXCELLENT: 'EXCELLENT CONNECTION',
+  GOOD: 'CONNECTION READY',
+  FAIR: 'MODERATE LATENCY - PREDICTION ACTIVE',
+  POOR: 'HIGH LATENCY - STATE RECOVERY ACTIVE',
+  UNSTABLE: 'UNSTABLE CONNECTION - ACTIONS ARE BEING RESYNCHRONIZED',
+  RECONNECTING: 'RESTORING CONNECTION'
 });
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -134,6 +134,7 @@ export class MultiplayerNetworkHud {
       || this.runtime?.getSnapshot?.()?.networkQuality
       || {};
     const reconciliation = this.runtime?.getReconciliationSnapshot?.(Date.now()) || {};
+    const transport = this.runtime?.transport?.getConnectionSnapshot?.() || {};
     const localPlayerId = this.runtime?.localPlayerId || null;
     const hostPlayerId = room.hostPlayerId || this.session?.hostPlayerId || null;
     const gameMode = roomUsesPvp1(room) ? PVP1_MODE : 'coop';
@@ -175,6 +176,7 @@ export class MultiplayerNetworkHud {
       roomCode: room.roomCode || null,
       gameMode,
       network,
+      transport,
       reconciliation,
       authorityEpoch: safeNumber(room.authorityEpoch, migration.authorityEpoch || 0),
       migrationStatus: migration.status || null,
@@ -188,6 +190,8 @@ export class MultiplayerNetworkHud {
     root.replaceChildren();
     const network = snapshot.network || {};
     const reconciliation = snapshot.reconciliation || {};
+    const transport = snapshot.transport || {};
+    const path = String(transport.transportPath || 'CLOUD RELAY').toUpperCase();
     const quality = String(network.level || 'WAITING').toUpperCase();
 
     const heading = document.createElement('div');
@@ -205,16 +209,19 @@ export class MultiplayerNetworkHud {
     root.appendChild(heading);
 
     const qualityDetail = document.createElement('div');
-    qualityDetail.textContent = QUALITY_LABELS[quality] || 'CLOUD RELAY STATUS UNKNOWN';
+    qualityDetail.textContent = `${path} · ${QUALITY_LABELS[quality] || 'CONNECTION STATUS UNKNOWN'}`;
     Object.assign(qualityDetail.style, {
       marginBottom: '7px',
       color: quality === 'UNSTABLE' ? '#ff9696' : '#b9d8ea'
     });
     root.appendChild(qualityDetail);
-    root.title = (
-      'This status measures the peer-to-peer path through the shared '
-      + 'Cloudflare room relay, not the speed between devices on the same LAN.'
-    );
+    root.title = path === 'DIRECT'
+      ? 'Gameplay packets are using a direct encrypted WebRTC path between players.'
+      : path === 'TURN RELAY'
+        ? 'Gameplay packets are using an encrypted WebRTC relay because a direct path was unavailable.'
+        : path === 'NEGOTIATING'
+          ? 'A direct WebRTC path is being negotiated while the Cloudflare relay remains active.'
+          : 'Gameplay packets are using the Cloudflare room relay fallback.';
 
     const showPlayerMetrics = [
       'FAIR',

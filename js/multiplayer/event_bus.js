@@ -10,6 +10,7 @@ export const MULTIPLAYER_EVENTS = Object.freeze({
   PLAYER_STATE_CHANGED: 'multiplayer:player-state-changed',
   ROOM_STATE_CHANGED: 'multiplayer:room-state-changed',
   TRANSPORT_STATE_CHANGED: 'multiplayer:transport-state-changed',
+  TRANSPORT_PATH_CHANGED: 'multiplayer:transport-path-changed',
   TRANSPORT_MESSAGE: 'multiplayer:transport-message',
   TRANSPORT_CONTROL: 'multiplayer:transport-control',
   TRANSPORT_ERROR: 'multiplayer:transport-error'

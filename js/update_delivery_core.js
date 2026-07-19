@@ -1,9 +1,9 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
 export const CURRENT_RELEASE = Object.freeze({
   schema: 1,
-  releaseId: 'social2-r1-arena-id-friend-discovery',
-  releaseSequence: 2026071809,
-  productVersion: '1.1.0-social2-r1'
+  releaseId: 'net1-r1-webrtc-hybrid-transport',
+  releaseSequence: 2026071901,
+  productVersion: '1.2.0-net1-r1'
 });
 
 function cleanText(value, max = 160) {

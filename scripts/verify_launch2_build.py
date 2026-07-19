@@ -194,6 +194,30 @@ def main() -> None:
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"SOCIAL.2 R1 production runtime file missing: {required_runtime}")
 
+    net1 = manifest.get("net1", {})
+    if current_release.get("patch") == "net1-r1-webrtc-hybrid-transport":
+        if net1.get("patch") != current_release.get("patch"):
+            raise SystemExit("NET.1 R1 production manifest patch mismatch")
+        for field in (
+            "cloudflare_central_signaling", "small_room_full_mesh",
+            "direct_data_channels", "reliable_ordered_channel",
+            "unreliable_snapshot_channel", "websocket_durable_object_fallback",
+            "critical_relay_shadow", "delivery_deduplication",
+            "bounded_data_channel_buffers", "host_migration_preserved",
+            "reconnect_fallback_preserved", "turn_optional",
+            "worker_change_required", "frontend_and_worker"
+        ):
+            if net1.get(field) is not True:
+                raise SystemExit(f"NET.1 R1 production policy mismatch: {field}")
+        for required_runtime in (
+            "js/multiplayer/webrtc_core.js",
+            "js/multiplayer/webrtc_transport.js",
+            "js/multiplayer/transport.js",
+            "js/multiplayer/network_hud.js"
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(f"NET.1 R1 production runtime file missing: {required_runtime}")
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

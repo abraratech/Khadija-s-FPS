@@ -21,6 +21,8 @@ const VENT_ACTIVE_DURATION = 3.2;
 const VENT_IDLE_MIN = 8.5;
 const VENT_IDLE_MAX = 13.0;
 const VENT_RADIUS = 3.4;
+const GAMEPLAY2_HAZARD_PLAYER_TICK = 0.65;
+const GAMEPLAY2_HAZARD_ENEMY_TICK = 0.45;
 
 const REACTOR_VENTS = Object.freeze([
   Object.freeze({ x: -28, z: -17, label: 'NW STEAM VENT' }),
@@ -57,6 +59,14 @@ const state = {
   defenseEnemyHits: 0,
   defenseEnemyTick: 0,
   defenseField: null,
+  gameplay2Snapshot: null,
+  gameplay2HazardRing: null,
+  gameplay2HazardPhase: 'OFFLINE',
+  gameplay2HazardPlayerTick: 0,
+  gameplay2HazardEnemyTick: 0,
+  gameplay2HazardPlayerHits: 0,
+  gameplay2HazardEnemyHits: 0,
+  gameplay2HazardAnnouncementKey: '',
   pendingEvents: [],
   lastEvent: 'IDLE'
 };
@@ -155,6 +165,119 @@ function createVent(anchor, index) {
   return { ...anchor, ring, cap, index };
 }
 
+function gameplay2HazardSnapshot() {
+  const hazard = state.gameplay2Snapshot?.hazard || null;
+  return hazard?.enabled === true ? hazard : null;
+}
+
+function ensureGameplay2HazardRing() {
+  if (state.gameplay2HazardRing || !state.scene) return state.gameplay2HazardRing;
+  const ring = createRing(0, 0, 4.2, 0xffaa00, 0.24);
+  ring.name = 'gameplay2_hazard_shift';
+  ring.visible = false;
+  state.gameplay2HazardRing = ring;
+  return ring;
+}
+
+function renderGameplay2Hazard() {
+  const hazard = gameplay2HazardSnapshot();
+  const ring = ensureGameplay2HazardRing();
+  if (!ring) return;
+  const visible = Boolean(
+    hazard
+    && hazard.anchor
+    && ['WARNING', 'ACTIVE'].includes(hazard.phase)
+  );
+  ring.visible = visible;
+  if (!visible) {
+    state.gameplay2HazardPhase = hazard?.phase || 'OFFLINE';
+    return;
+  }
+
+  const radius = Math.max(2.5, finite(hazard.radius, 4.2));
+  ring.position.set(finite(hazard.anchor.x), 0.065, finite(hazard.anchor.z));
+  ring.scale.set(radius / 4.2, radius / 4.2, radius / 4.2);
+  const active = hazard.phase === 'ACTIVE';
+  ring.material.color.setHex(active ? 0xff3344 : 0xffb000);
+  ring.material.opacity = active
+    ? 0.58 + Math.sin(performance.now() * 0.014) * 0.08
+    : 0.22 + Math.sin(performance.now() * 0.010) * 0.08;
+
+  const announcementKey = `${hazard.cycle}:${hazard.phase}`;
+  if (announcementKey !== state.gameplay2HazardAnnouncementKey) {
+    state.gameplay2HazardAnnouncementKey = announcementKey;
+    state.pendingEvents.push({
+      type: active ? 'GAMEPLAY2_HAZARD_ACTIVE' : 'GAMEPLAY2_HAZARD_WARNING',
+      text: active ? 'MUTATION HAZARD ACTIVE · CLEAR THE RED ZONE' : 'MUTATION HAZARD SHIFT · ZONE DESTABILIZING',
+      color: active ? '#ff3344' : '#ffb000',
+      duration: active ? 1800 : 1500
+    });
+  }
+  state.gameplay2HazardPhase = hazard.phase;
+}
+
+export function configureGameplay2MapMutation(snapshot = null) {
+  state.gameplay2Snapshot = snapshot && typeof snapshot === 'object'
+    ? JSON.parse(JSON.stringify(snapshot))
+    : null;
+  const hazard = gameplay2HazardSnapshot();
+  if (!hazard) {
+    state.gameplay2HazardPhase = 'OFFLINE';
+    state.gameplay2HazardAnnouncementKey = '';
+    if (state.gameplay2HazardRing) state.gameplay2HazardRing.visible = false;
+  } else {
+    renderGameplay2Hazard();
+  }
+  return state.gameplay2Snapshot;
+}
+
+export function updateGameplay2MapMutation(dt, {
+  player,
+  enemies = [],
+  damagePlayer = null,
+  killEnemy = null,
+  affectEnemies = false
+} = {}) {
+  const hazard = gameplay2HazardSnapshot();
+  renderGameplay2Hazard();
+  if (!hazard || hazard.phase !== 'ACTIVE' || !hazard.anchor) return;
+
+  const safeDt = clamp(dt, 0, 0.05);
+  const radius = Math.max(2.5, finite(hazard.radius, 4.2));
+  const damage = Math.max(1, finite(hazard.damage, 7));
+  state.gameplay2HazardPlayerTick -= safeDt;
+
+  // Every machine evaluates its own local player so Co-op clients receive the
+  // same synchronized environmental threat without trusting remote proxies.
+  if (player?.alive && state.gameplay2HazardPlayerTick <= 0) {
+    state.gameplay2HazardPlayerTick = GAMEPLAY2_HAZARD_PLAYER_TICK;
+    if (flatDistanceSq(player.pos?.x, player.pos?.z, hazard.anchor.x, hazard.anchor.z) <= radius * radius) {
+      if (typeof damagePlayer === 'function') {
+        const source = state.gameplay2HazardRing?.position || { x: hazard.anchor.x, y: 0, z: hazard.anchor.z };
+        damagePlayer(damage, source, 'MUTATION_HAZARD');
+      }
+      state.gameplay2HazardPlayerHits += 1;
+    }
+  }
+
+  // Enemy damage remains host/solo authoritative to prevent duplicate hits.
+  if (affectEnemies === true) {
+    state.gameplay2HazardEnemyTick -= safeDt;
+    if (state.gameplay2HazardEnemyTick <= 0) {
+      state.gameplay2HazardEnemyTick = GAMEPLAY2_HAZARD_ENEMY_TICK;
+      state.gameplay2HazardEnemyHits += damageEnemiesInRadius(
+        enemies,
+        hazard.anchor.x,
+        hazard.anchor.z,
+        radius,
+        damage * 2.2,
+        killEnemy,
+        'MUTATION_HAZARD'
+      );
+    }
+  }
+}
+
 function clearObjects() {
   for (const object of state.objects) {
     if (object?.parent) object.parent.remove(object);
@@ -165,6 +288,7 @@ function clearObjects() {
     });
   }
   state.objects.length = 0;
+  state.gameplay2HazardRing = null;
 }
 
 function chooseRandom(array) {
@@ -274,10 +398,21 @@ export function resetMapGameplay({ mapId = 'unknown', scene = null } = {}) {
   state.defenseActivations = 0;
   state.defenseEnemyHits = 0;
   state.defenseField = null;
+  state.gameplay2HazardRing = null;
+  state.gameplay2HazardPhase = 'OFFLINE';
+  state.gameplay2HazardPlayerTick = 0;
+  state.gameplay2HazardEnemyTick = 0;
+  state.gameplay2HazardPlayerHits = 0;
+  state.gameplay2HazardEnemyHits = 0;
+  state.gameplay2HazardAnnouncementKey = '';
   state.pendingEvents.length = 0;
   state.lastEvent = state.active ? 'REACTOR SYSTEMS ONLINE' : 'OFFLINE';
 
-  if (!state.active || !scene) return getMapGameplaySnapshot();
+  if (scene && gameplay2HazardSnapshot()) ensureGameplay2HazardRing();
+  if (!state.active || !scene) {
+    renderGameplay2Hazard();
+    return getMapGameplaySnapshot();
+  }
 
   const objective = getObjectiveSnapshot();
   const anchor = objective.objective?.worldAnchor;
@@ -311,6 +446,12 @@ export function endMapGameplay() {
   state.defenseState = 'OFFLINE';
   state.defenseConsole = null;
   state.defenseField = null;
+  state.gameplay2Snapshot = null;
+  state.gameplay2HazardRing = null;
+  state.gameplay2HazardPhase = 'OFFLINE';
+  state.gameplay2HazardPlayerTick = 0;
+  state.gameplay2HazardEnemyTick = 0;
+  state.gameplay2HazardAnnouncementKey = '';
   state.pendingEvents.length = 0;
   state.lastEvent = 'ENDED';
 }
@@ -321,9 +462,11 @@ export function updateMapGameplay(dt, {
   damagePlayer = null,
   killEnemy = null
 } = {}) {
-  if (!state.active) return;
+  const mutationHazardActive = gameplay2HazardSnapshot()?.enabled === true;
+  if (!state.active && !mutationHazardActive) return;
 
   const safeDt = clamp(dt, 0, 0.05);
+  if (!state.active) return;
   updateZoneMarker();
 
   state.ventTimer -= safeDt;
@@ -462,7 +605,7 @@ export function activateMapGameplayInteractable(interactable) {
 }
 
 export function getMapGameplayMinimapMarkers() {
-  if (!state.active) return [];
+  if (!state.active && !gameplay2HazardSnapshot()) return [];
   const markers = [];
 
   if (state.zoneAnchor) {
@@ -496,6 +639,17 @@ export function getMapGameplayMinimapMarkers() {
     });
   }
 
+  const mutationHazard = gameplay2HazardSnapshot();
+  if (mutationHazard?.anchor && ['WARNING', 'ACTIVE'].includes(mutationHazard.phase)) {
+    markers.push({
+      type: 'MUTATION_HAZARD',
+      x: mutationHazard.anchor.x,
+      z: mutationHazard.anchor.z,
+      color: mutationHazard.phase === 'ACTIVE' ? '#ff3344' : '#ffb000',
+      radius: Math.max(3, finite(mutationHazard.radius, 4.2))
+    });
+  }
+
   return markers;
 }
 
@@ -523,10 +677,16 @@ export function getMapGameplaySnapshot() {
     defenseCooldown: DEFENSE_COOLDOWN,
     defenseActivations: state.defenseActivations,
     defenseEnemyHits: state.defenseEnemyHits,
+    gameplay2Hazard: gameplay2HazardSnapshot()
+      ? JSON.parse(JSON.stringify(gameplay2HazardSnapshot()))
+      : null,
+    gameplay2HazardPlayerHits: state.gameplay2HazardPlayerHits,
+    gameplay2HazardEnemyHits: state.gameplay2HazardEnemyHits,
     lastEvent: state.lastEvent
   };
 }
 
 if (typeof window !== 'undefined') {
   window.KAGetMapGameplay = getMapGameplaySnapshot;
+  window.KAConfigureGameplay2MapMutation = configureGameplay2MapMutation;
 }

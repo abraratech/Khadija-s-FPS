@@ -235,6 +235,67 @@ const MAP_ENVIRONMENTS = {
 
 const DEFAULT_MAP_ENVIRONMENT = MAP_ENVIRONMENTS[MAP_IDS.GRID_BUNKER];
 let activeMapEnvironment = DEFAULT_MAP_ENVIRONMENT;
+let swarmLightingActive = false;
+let gameplay2LightingState = Object.freeze({
+  blackout: false,
+  ambientScale: 1,
+  directionalScale: 1,
+  fogDensityScale: 1,
+  bloomScale: 1
+});
+
+function applyGameplay2LightingOverlay({ applyLights = true } = {}) {
+  const tuning = gameplay2LightingState;
+  if (!tuning.blackout) return;
+
+  const profile = getGraphicsProfile();
+  if (!applyLights) {
+    if (scene.fog) {
+      scene.fog.color.setHex(swarmLightingActive ? 0x220000 : activeMapEnvironment.fogColor);
+      scene.fog.density = swarmLightingActive
+        ? Math.max(activeMapEnvironment.fogDensity * 1.25, 0.028)
+        : activeMapEnvironment.fogDensity * profile.fogScale;
+    }
+    renderer.setClearColor(activeMapEnvironment.clearColor, 1);
+    if (swarmLightingActive && profile.bloomEnabled) {
+      bloomPass.enabled = true;
+      bloomPass.strength = Math.max(activeMapEnvironment.bloomStrength, 0.85) * profile.bloomStrengthScale;
+      bloomPass.radius = Math.max(activeMapEnvironment.bloomRadius, 0.35) * profile.bloomRadiusScale;
+      bloomPass.threshold = Math.min(activeMapEnvironment.bloomThreshold, 0.82);
+    }
+  }
+  if (applyLights) {
+    ambLight.intensity *= Math.max(0.12, Number(tuning.ambientScale) || 1);
+    dirLight.intensity *= Math.max(0.12, Number(tuning.directionalScale) || 1);
+  }
+  if (scene.fog) {
+    scene.fog.density *= Math.max(1, Number(tuning.fogDensityScale) || 1);
+    scene.fog.color.multiplyScalar(0.52);
+  }
+  const clear = new THREE.Color(activeMapEnvironment.clearColor);
+  clear.multiplyScalar(0.32);
+  renderer.setClearColor(clear, 1);
+  if (profile.bloomEnabled && bloomPass?.enabled !== false) {
+    bloomPass.strength *= Math.max(0.35, Number(tuning.bloomScale) || 1);
+    bloomPass.threshold = Math.min(0.9, Math.max(0.78, bloomPass.threshold + 0.04));
+  }
+}
+
+export function applyGameplay2MutationLighting(snapshot = null) {
+  const tuning = snapshot?.tuning?.map || snapshot?.map || {};
+  const next = Object.freeze({
+    blackout: tuning.blackout === true,
+    ambientScale: Math.max(0.12, Number(tuning.ambientScale) || 1),
+    directionalScale: Math.max(0.12, Number(tuning.directionalScale) || 1),
+    fogDensityScale: Math.max(1, Number(tuning.fogDensityScale) || 1),
+    bloomScale: Math.max(0.35, Number(tuning.bloomScale) || 1)
+  });
+  const changed = Object.keys(next).some((key) => next[key] !== gameplay2LightingState[key]);
+  if (!changed) return gameplay2LightingState;
+  gameplay2LightingState = next;
+  toggleSwarmLighting(swarmLightingActive);
+  return gameplay2LightingState;
+}
 
 export function getActiveMapEnvironmentName() {
   return activeMapEnvironment?.name || DEFAULT_MAP_ENVIRONMENT.name;
@@ -416,6 +477,10 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
     obj.visible = profile.showMapDressing && effectiveRank >= minRank;
   });
 
+  if (!options.skipGameplay2Overlay) {
+    applyGameplay2LightingOverlay({ applyLights: false });
+  }
+
   if (!options.silent) {
     const label = graphicsQuality === "auto" ? `Auto → ${profile.name}` : profile.name;
     console.log(`Graphics quality: ${label}`);
@@ -552,13 +617,15 @@ export function applyMapEnvironment(mapId = currentMapId) {
   bloomPass.radius = env.bloomRadius;
   bloomPass.threshold = env.bloomThreshold;
 
-  applyGraphicsQuality(graphicsQuality, { silent: true });
+  applyGraphicsQuality(graphicsQuality, { silent: true, skipGameplay2Overlay: true });
+  applyGameplay2LightingOverlay();
 
   console.log(`Environment profile: ${env.name}`);
 }
 
 export function toggleSwarmLighting(isSwarm) {
-  if (isSwarm) {
+  swarmLightingActive = isSwarm === true;
+  if (swarmLightingActive) {
     scene.fog.color.setHex(0x220000);
     scene.fog.density = Math.max(activeMapEnvironment.fogDensity * 1.25, 0.028);
 
@@ -578,6 +645,7 @@ export function toggleSwarmLighting(isSwarm) {
     } else {
       bloomPass.enabled = false;
     }
+    applyGameplay2LightingOverlay();
   } else {
     applyMapEnvironment(currentMapId);
   }

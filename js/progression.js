@@ -121,6 +121,7 @@ const run = {
   runId: null,
   mapId: 'unknown',
   mode: 'single',
+  gameMode: 'survival',
   difficulty: 1,
   startedAt: 0,
   endedAt: 0,
@@ -301,17 +302,20 @@ export function awardProgressionXP(amount, reason = 'PROGRESS') {
 }
 
 export function resetProgressionRun({
+  runId = '',
   mapId = 'unknown',
   difficulty = 1,
-  mode = 'single'
+  mode = 'single',
+  gameMode = 'survival'
 } = {}) {
   profile = normalizeProgressionProfile(profile, Date.now());
   Object.assign(run, {
     active: true,
     finalized: false,
-    runId: makeRunId(),
+    runId: String(runId || '').trim().slice(0, 120) || makeRunId(),
     mapId: String(mapId || 'unknown'),
     mode: String(mode || 'single') === 'multiplayer' ? 'multiplayer' : 'single',
+    gameMode: String(gameMode || 'survival').toLowerCase().includes('pvp') ? 'pvp' : 'survival',
     difficulty: clamp(difficulty, 0.5, 2),
     startedAt: Date.now(),
     endedAt: 0,
@@ -514,7 +518,16 @@ export function finalizeProgressionRun({
     contributionRole: String(localMissionMedal?.role || details.contributionRole || 'VANGUARD').slice(0, 32),
     loadoutId: String(details.loadoutId || 'default-loadout').slice(0, 100),
     primaryWeaponId: String(details.primaryWeaponId || 'PISTOL').slice(0, 80),
-    missionId: String(details.lastMission?.missionId || details.missionId || run.mapId).slice(0, 100)
+    missionId: String(details.lastMission?.missionId || details.missionId || run.mapId).slice(0, 100),
+    gameplay2Patch: String(details.gameplay2Patch || '').slice(0, 100),
+    mutationActiveIds: Array.isArray(details.mutationActiveIds)
+      ? details.mutationActiveIds.map((entry) => String(entry || '').slice(0, 60)).slice(0, 3)
+      : [],
+    mutationActiveCount: integer(details.mutationActiveCount, 0),
+    mutationHistoryCount: integer(details.mutationHistoryCount, 0),
+    mutationPeakActiveCount: integer(details.mutationPeakActiveCount, 0),
+    mutationRewardMultiplier: clamp(details.mutationRewardMultiplier, 1, 1.75),
+    mutationPeakRewardMultiplier: clamp(details.mutationPeakRewardMultiplier, 1, 1.75)
   };
   const economyResult = applyPostFinal9EconomyReceipt(
     profile.economy,
@@ -523,11 +536,14 @@ export function finalizeProgressionRun({
       endedAt: run.endedAt,
       reason: run.endReason,
       difficulty: run.difficulty,
+      gameMode: run.gameMode,
       kills: run.kills,
       headshots: run.headshots,
       assists: run.assists,
       revives: run.revives,
       damageDealt: Math.round(run.damageDealt),
+      wave: run.finalWave,
+      mapId: run.mapId,
       wavesCleared: run.wavesCleared,
       objectivesCompleted: run.objectivesCompleted,
       ...run.economyReceiptFields
@@ -556,6 +572,7 @@ export function finalizeProgressionRun({
       endedAt: run.endedAt,
       mapId: run.mapId,
       mode: run.mode,
+      gameMode: run.gameMode,
       difficulty: run.difficulty,
       score: run.finalScore,
       wave: run.finalWave,
@@ -584,6 +601,7 @@ export function finalizeProgressionRun({
     runId: run.runId,
     mapId: run.mapId,
     mode: run.mode,
+    gameMode: run.gameMode,
     difficulty: run.difficulty,
     startedAt: run.startedAt,
     endedAt: run.endedAt,

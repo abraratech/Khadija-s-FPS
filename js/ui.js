@@ -590,6 +590,14 @@ export function renderRunSummaryScreen() {
       : 'NONE'
   );
   setText(
+    'final-arena-mutations',
+    Array.isArray(summary.mutationActiveLabels) && summary.mutationActiveLabels.length
+      ? summary.mutationActiveLabels.join(' · ')
+      : 'NONE'
+  );
+  setText('final-mutation-events', Math.max(0, Math.round(Number(summary.mutationHistoryCount) || 0)));
+  setText('final-mutation-multiplier', `×${Math.max(1, Number(summary.mutationPeakRewardMultiplier) || 1).toFixed(2)}`);
+  setText(
     'final-replay-medals',
     Array.isArray(summary.replayMedals) && summary.replayMedals.length
       ? summary.replayMedals.map((entry) => entry.label || entry.id || 'MEDAL').join(' · ')

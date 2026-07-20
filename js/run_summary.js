@@ -56,6 +56,15 @@ const state = {
   replayMedals: [],
   noDownedMastery: false,
   lastReplayability: null,
+  gameplay2Patch: '',
+  mutationActiveIds: [],
+  mutationActiveLabels: [],
+  mutationActiveCount: 0,
+  mutationHistoryCount: 0,
+  mutationPeakActiveCount: 0,
+  mutationRewardMultiplier: 1,
+  mutationPeakRewardMultiplier: 1,
+  mutationHistory: [],
   botAssisted: false,
   leaderboardEligible: true,
   botProfile: null,
@@ -124,6 +133,15 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     replayMedals: [],
     noDownedMastery: false,
     lastReplayability: null,
+    gameplay2Patch: '',
+    mutationActiveIds: [],
+    mutationActiveLabels: [],
+    mutationActiveCount: 0,
+    mutationHistoryCount: 0,
+    mutationPeakActiveCount: 0,
+    mutationRewardMultiplier: 1,
+    mutationPeakRewardMultiplier: 1,
+    mutationHistory: [],
     botAssisted: false,
     leaderboardEligible: true,
     botProfile: null,
@@ -362,6 +380,48 @@ export function recordRunPostFinal8Replayability({
     noDownedEligible: state.noDownedMastery
   };
   state.lastEvent = 'FACTION MASTERY COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunGameplay2Mutation({ snapshot = null, event = null } = {}) {
+  if (!state.active || !snapshot || !event?.eventId) return getRunSummarySnapshot();
+  const eventId = String(event.eventId || '').slice(0, 220);
+  if (!eventId || state.mutationHistory.some((entry) => entry.eventId === eventId)) {
+    return getRunSummarySnapshot();
+  }
+  const active = Array.isArray(snapshot.activeMutations) ? snapshot.activeMutations : [];
+  state.gameplay2Patch = String(snapshot.patch || '').slice(0, 100);
+  state.mutationActiveIds = active.map((entry) => String(entry?.id || '').slice(0, 60)).filter(Boolean).slice(0, 3);
+  state.mutationActiveLabels = active.map((entry) => {
+    const label = String(entry?.label || entry?.id || 'MUTATION').slice(0, 80);
+    const level = Math.max(1, Math.floor(finite(entry?.level, 1)));
+    return level > 1 ? `${label} L${level}` : label;
+  }).slice(0, 3);
+  state.mutationActiveCount = state.mutationActiveIds.length;
+  state.mutationHistoryCount = Math.max(
+    state.mutationHistoryCount,
+    Math.max(0, Math.floor(finite(snapshot.history?.length, 0)))
+  );
+  state.mutationPeakActiveCount = Math.max(
+    state.mutationPeakActiveCount,
+    state.mutationActiveCount,
+    Math.max(0, Math.floor(finite(snapshot.peakActiveCount, 0)))
+  );
+  state.mutationRewardMultiplier = Math.max(1, Math.min(1.75, finite(snapshot.rewardMultiplier, 1)));
+  state.mutationPeakRewardMultiplier = Math.max(
+    state.mutationPeakRewardMultiplier,
+    Math.max(1, Math.min(1.75, finite(snapshot.peakRewardMultiplier, state.mutationRewardMultiplier)))
+  );
+  state.mutationHistory.push({
+    eventId,
+    type: String(event.type || 'ACTIVATED').slice(0, 24),
+    wave: Math.max(1, Math.floor(finite(event.wave, 1))),
+    mutationId: String(event.mutation?.id || '').slice(0, 60),
+    mutationLabel: String(event.mutation?.label || event.mutation?.id || 'MUTATION').slice(0, 80),
+    level: Math.max(1, Math.floor(finite(event.mutation?.level, 1)))
+  });
+  state.mutationHistory = state.mutationHistory.slice(-24);
+  state.lastEvent = `ARENA MUTATION ${String(event.type || 'ACTIVE').toUpperCase()}`;
   return getRunSummarySnapshot();
 }
 

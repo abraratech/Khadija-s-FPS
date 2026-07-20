@@ -86,12 +86,12 @@ NET1_FRONTEND_BASELINE_SHA = '8e0552196f9f59962a79905a2da55789ffc9d478'
 NET1_WORKER_BASELINE_SHA = '1aa92025a774aa19d4dece995caae8b300fa28bf'
 NET1_BASELINE_WORKER_VERSION_ID = '1ce125a4-d79c-43aa-914e-a1f689116618'
 NET1_RELEASE_SEQUENCE = 2026071901
-CG1_PATCH = 'cg1-r1-crazygames-basic-launch-readiness'
-CG1_PRODUCT_VERSION = '1.3.0-cg1-r1'
-CG1_FRONTEND_BASELINE_SHA = 'debaeba8e15820d61158078ebd2ade55ef963aa5'
-CG1_WORKER_BASELINE_SHA = '62a74627e24dc52dcf9fc524fddd8f949f2fd3cf'
-CG1_BASELINE_WORKER_VERSION_ID = 'b4e4860b-78a4-4b63-8df4-e6ef596ec3ad'
-CG1_RELEASE_SEQUENCE = 2026071902
+GAMEPLAY2_PATCH = 'gameplay2-r1-late-round-arena-mutations'
+GAMEPLAY2_PRODUCT_VERSION = '1.3.0-gameplay2-r1'
+GAMEPLAY2_SOURCE_BASELINE_SHA = 'debaeba8e15820d61158078ebd2ade55ef963aa5'
+GAMEPLAY2_WORKER_BASELINE_SHA = '62a74627e24dc52dcf9fc524fddd8f949f2fd3cf'
+GAMEPLAY2_BASELINE_WORKER_VERSION_ID = 'b4e4860b-78a4-4b63-8df4-e6ef596ec3ad'
+GAMEPLAY2_RELEASE_SEQUENCE = 2026072001
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -678,45 +678,53 @@ def main() -> None:
             "worker_change_required": True,
             "frontend_and_worker": True
         },
-        "cg1": {
-            "schema": 1,
-            "patch": CG1_PATCH,
-            "product_version": CG1_PRODUCT_VERSION,
-            "frontend_baseline_sha": CG1_FRONTEND_BASELINE_SHA,
-            "worker_baseline_sha": CG1_WORKER_BASELINE_SHA,
-            "baseline_worker_version_id": CG1_BASELINE_WORKER_VERSION_ID,
-            "release_sequence": CG1_RELEASE_SEQUENCE,
-            "sdk_v3": True,
-            "safe_disabled_environment_fallback": True,
-            "loading_lifecycle": True,
-            "gameplay_lifecycle": True,
-            "basic_launch_ad_safe": True,
-            "platform_audio_mute": True,
-            "platform_chat_disable": True,
-            "crazygames_username": True,
-            "room_update_and_join": True,
-            "instant_multiplayer_entry": True,
-            "iframe_safe_area": True,
-            "custom_fullscreen_suppressed": True,
-            "external_passkey_ui_suppressed_on_platform": True,
-            "webrtc_and_cloud_relay_preserved": True,
-            "worker_change_required": False,
-            "frontend_only": True
-        },
+        "gameplay2": {
+        "schema": 1,
+        "patch": GAMEPLAY2_PATCH,
+        "product_version": GAMEPLAY2_PRODUCT_VERSION,
+        "source_baseline_sha": GAMEPLAY2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY2_RELEASE_SEQUENCE,
+        "modes": [
+            "solo-survival",
+            "cooperative-survival",
+            "objective-operations",
+        ],
+        "pvp_excluded": True,
+        "host_authoritative": True,
+        "mutation_milestones": [8, 11, 14],
+        "late_round_first_wave": 17,
+        "late_round_every_waves": 4,
+        "mutations": [
+            "BLACKOUT",
+            "ELITE_INFESTATION",
+            "SUPPLY_CRISIS",
+            "HAZARD_SHIFT",
+            "BERSERK_THREATS",
+        ],
+        "stacking": True,
+        "late_join_snapshot": True,
+        "reconnect_restoration": True,
+        "host_migration_checkpoint": True,
+        "reward_authority": True,
+        "run_summary_history": True,
+        "cross_run_cleanup": True,
+        "worker_change_required": True,
+        "frontend_and_worker": True,
+    },
         "current_release": {
-            "schema": 1,
-            "patch": CG1_PATCH,
-            "product_version": CG1_PRODUCT_VERSION,
-            "source_baseline_sha": CG1_FRONTEND_BASELINE_SHA,
-            "worker_baseline_sha": CG1_WORKER_BASELINE_SHA,
-            "baseline_worker_version_id": CG1_BASELINE_WORKER_VERSION_ID,
-            "release_sequence": CG1_RELEASE_SEQUENCE,
-            "release_descriptor": "release-version.json",
-            "paired_seal_descriptor": "pvp-production-seal.json",
-            "worker_change_required": False,
-            "frontend_only": True
-        },
-        "built_at_utc": datetime.now(timezone.utc).isoformat(),
+        "schema": 1,
+        "patch": GAMEPLAY2_PATCH,
+        "source_baseline_sha": GAMEPLAY2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY2_RELEASE_SEQUENCE,
+        "release_descriptor": "release-version.json",
+        "paired_seal_descriptor": "pvp-production-seal.json",
+        "worker_change_required": True,
+    },
+    "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),
         "policy": {
             "root_files": list(ROOT_FILES),

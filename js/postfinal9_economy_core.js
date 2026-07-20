@@ -1,3 +1,8 @@
+import {
+  GAMEPLAY2_PATCH,
+  deriveGameplay2MutationReceipt
+} from './gameplay2_mutation_core.js';
+
 // POST-FINAL.9 R1 — server-authoritative economy, prestige, mastery, reputation, and collections.
 
 export const POST_FINAL9_PATCH = 'post-final9-r1-economy-rewards-long-term-progression';
@@ -308,6 +313,18 @@ export function normalizePostFinal9ReceiptFields(value = {}) {
   const grade = clean(source.replayMasteryGrade, 'UNRANKED', 16).toUpperCase();
   const risk = clean(source.missionRiskChoice, 'NONE', 24).toUpperCase();
   const bossDefeatedText = clean(source.bossDefeated, '', 100).toUpperCase();
+  const gameMode = clean(source.gameMode, 'survival', 40).toLowerCase();
+  const gameplay2Receipt = source.gameplay2Patch === GAMEPLAY2_PATCH && gameMode !== 'pvp'
+    ? deriveGameplay2MutationReceipt({
+        runId: source.runId,
+        mapId: source.mapId,
+        difficulty: source.difficulty,
+        wave: source.wave || (integer(source.wavesCleared, 0, 0, 249) + 1),
+        gameMode: 'survival',
+        enabled: true,
+        now: integer(source.endedAt, Date.now(), 1)
+      })
+    : null;
   return Object.freeze({
     factionId,
     bossId: clean(source.bossId, '', 100),
@@ -324,6 +341,14 @@ export function normalizePostFinal9ReceiptFields(value = {}) {
     loadoutId: clean(source.loadoutId, 'default-loadout', 100),
     primaryWeaponId: clean(source.primaryWeaponId, 'PISTOL', 80).toUpperCase(),
     missionId: clean(source.missionId, source.mapId || 'unknown-mission', 100),
+    gameMode: gameMode === 'pvp' ? 'pvp' : 'survival',
+    gameplay2Patch: gameplay2Receipt?.patch || '',
+    mutationActiveIds: Object.freeze([...(gameplay2Receipt?.activeIds || [])]),
+    mutationActiveCount: integer(gameplay2Receipt?.activeCount, 0, 0, 3),
+    mutationHistoryCount: integer(gameplay2Receipt?.historyCount, 0, 0, 64),
+    mutationPeakActiveCount: integer(gameplay2Receipt?.peakActiveCount, 0, 0, 3),
+    mutationRewardMultiplier: Math.max(1, Math.min(1.75, finite(gameplay2Receipt?.rewardMultiplier, 1))),
+    mutationPeakRewardMultiplier: Math.max(1, Math.min(1.75, finite(gameplay2Receipt?.peakRewardMultiplier, 1))),
     objectivesCompleted: integer(source.objectivesCompleted, 0, 0, 100),
     assists: integer(source.assists, 0, 0, 5000),
     revives: integer(source.revives, 0, 0, 100),
@@ -437,7 +462,12 @@ export function calculatePostFinal9EconomyAward(receiptValue = {}, {
     + dailyCompleted * 35
     + weeklyCompleted * 140
   );
-  const credits = Math.max(0, Math.round(baseCredits * gradeScale * difficultyScale));
+  const unmutatedCredits = Math.max(0, Math.round(baseCredits * gradeScale * difficultyScale));
+  const mutationRewardMultiplier = abandoned
+    ? 1
+    : Math.max(1, Math.min(1.75, finite(receipt.mutationRewardMultiplier, 1)));
+  const credits = Math.max(0, Math.round(unmutatedCredits * mutationRewardMultiplier));
+  const mutationBonusCredits = Math.max(0, credits - unmutatedCredits);
   const salvage = abandoned ? 0 : Math.max(0, Math.round(
     4
     + (receipt.bossDefeated ? 12 : 0)
@@ -447,6 +477,8 @@ export function calculatePostFinal9EconomyAward(receiptValue = {}, {
     + receipt.missionOptionalStagesCompleted * 5
     + dailyCompleted * 2
     + weeklyCompleted * 6
+    + receipt.mutationActiveCount * 2
+    + Math.min(12, receipt.mutationHistoryCount)
   ));
   const factionTokens = abandoned || !receipt.factionId ? 0 : Math.max(0, Math.round(
     6
@@ -469,12 +501,15 @@ export function calculatePostFinal9EconomyAward(receiptValue = {}, {
   ));
   const loadoutMasteryXp = abandoned ? 0 : Math.max(0, Math.round(
     50 + receipt.wavesCleared * 12 + support * 16 + receipt.missionStagesCompleted * 8
+    + receipt.mutationHistoryCount * 8
   ));
   const missionMasteryXp = abandoned ? 0 : Math.max(0, Math.round(
     receipt.missionChainsCompleted * 150
     + receipt.missionStagesCompleted * 20
     + receipt.missionOptionalStagesCompleted * 35
     + (receipt.bossDefeated ? 120 : 0)
+    + receipt.mutationHistoryCount * 15
+    + receipt.mutationPeakActiveCount * 30
     + ({ S: 140, A: 100, B: 70, C: 45, D: 25 }[receipt.replayMasteryGrade] || 0)
   ));
   const goalResult = updateGoals(current.goals, receipt);
@@ -486,6 +521,12 @@ export function calculatePostFinal9EconomyAward(receiptValue = {}, {
     award: Object.freeze({
       credits: credits + goalResult.credits,
       baseCredits: credits,
+      unmutatedCredits,
+      mutationBonusCredits,
+      mutationRewardMultiplier,
+      mutationActiveCount: receipt.mutationActiveCount,
+      mutationHistoryCount: receipt.mutationHistoryCount,
+      mutationPeakActiveCount: receipt.mutationPeakActiveCount,
       goalCredits: goalResult.credits,
       salvage: salvage + goalResult.salvage,
       baseSalvage: salvage,

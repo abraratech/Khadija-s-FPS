@@ -1,10 +1,5 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
-export const CURRENT_RELEASE = Object.freeze({
-  schema: 1,
-  releaseId: 'cg1-r1-crazygames-basic-launch-readiness',
-  releaseSequence: 2026071902,
-  productVersion: '1.3.0-cg1-r1'
-});
+export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'gameplay2-r1-late-round-arena-mutations', releaseSequence: 2026072001, productVersion: '1.3.0-gameplay2-r1' });
 
 function cleanText(value, max = 160) {
   return String(value ?? '').trim().slice(0, max);

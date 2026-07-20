@@ -5,7 +5,6 @@ const AUDIO_DEBUG = false;
 
 const MASTER_VOLUME_KEY = 'ka_master_volume';
 let masterVolume = readStoredMasterVolume();
-let platformAudioMuted = false;
 
 function readStoredMasterVolume() {
   try {
@@ -35,22 +34,8 @@ export function setMasterVolume(value) {
   return masterVolume;
 }
 
-export function setPlatformAudioMuted(muted) {
-  platformAudioMuted = muted === true;
-  try {
-    globalThis.document?.documentElement?.setAttribute?.('data-platform-audio-muted', platformAudioMuted ? 'true' : 'false');
-  } catch {
-    // Ignore non-browser test environments.
-  }
-  return platformAudioMuted;
-}
-
-export function isPlatformAudioMuted() {
-  return platformAudioMuted;
-}
-
 export function getMasterVolume() {
-  return platformAudioMuted ? 0 : masterVolume;
+  return masterVolume;
 }
 
 export function getMasterVolumePercent() {
@@ -346,7 +331,7 @@ export function playSound(name, volume = 1.0, randomizePitch = false, options = 
 
   if (AUDIO_DEBUG) console.log(`🔊 Playing: ${name}`);
 
-  const safeVolume = clamp01(volume, 1.0) * getMasterVolume();
+  const safeVolume = clamp01(volume, 1.0) * masterVolume;
 
   if (safeVolume <= 0.001) {
     return false;
@@ -584,7 +569,7 @@ export function playTeamAlertCue(kind, {
   }
 
   const routeVolume = clamp01(volume, 1)
-    * getMasterVolume()
+    * masterVolume
     * teamAlertsVolume
     * 0.42;
   if (routeVolume <= 0.001) return false;

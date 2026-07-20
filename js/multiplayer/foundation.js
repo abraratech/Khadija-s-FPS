@@ -521,6 +521,8 @@ export function initializeMultiplayerFoundation(
     },
     getBotSnapshot: () => botManager?.getSnapshot?.() || null,
     getActiveEnemies: worldAdapter?.getActiveEnemies || (() => []),
+    applyGameplay2MutationState:
+      worldAdapter?.applyGameplay2MutationState || (() => null),
     awardTeamObjective: ({ points = 0, label = 'OBJECTIVE COMPLETE' } = {}) => {
       const reward = Math.max(0, Math.floor(Number(points) || 0));
       if (reward <= 0) return false;

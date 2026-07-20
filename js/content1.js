@@ -29,9 +29,14 @@ import {
   PostFinal8ReplayDirector,
   computePostFinal8Reward
 } from './postfinal8_replayability_core.js';
+import {
+  GAMEPLAY2_PATCH,
+  Gameplay2MutationDirector
+} from './gameplay2_mutation_core.js';
 import { recordProgressionContentOperation } from './progression.js';
 import {
   recordRunDynamicOperation,
+  recordRunGameplay2Mutation,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -48,6 +53,7 @@ const ZONE_TICK_INTERVAL_MS = 1000;
 const INTERACT_TICK_INTERVAL_MS = 250;
 const SURVIVOR_TICK_INTERVAL_MS = 200;
 const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'RANGED']);
+const MUTATION_ELITE_TYPES = new Set(['RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']);
 const OBJECTIVE_HUD_KEY = 'ka_objective_hud_mode_v1';
 const RUN_CHALLENGES_HUD_KEY = 'ka_run_challenges_visibility_v1';
 const OBJECTIVE_HUD_MODES = Object.freeze(['full', 'compact', 'hidden']);
@@ -189,6 +195,7 @@ export class Content1Manager {
     getParticipants = () => [],
     getBotSnapshot = () => null,
     getActiveEnemies = () => [],
+    applyGameplay2MutationState = () => null,
     awardTeamObjective = () => false,
     handleObjectiveDirective = () => false,
     getInteractLabel = () => 'INTERACT'
@@ -202,6 +209,7 @@ export class Content1Manager {
     this.getParticipants = getParticipants;
     this.getBotSnapshot = getBotSnapshot;
     this.getActiveEnemies = getActiveEnemies;
+    this.applyGameplay2MutationState = applyGameplay2MutationState;
     this.awardTeamObjective = awardTeamObjective;
     this.handleObjectiveDirective = handleObjectiveDirective;
     this.getInteractLabel = getInteractLabel;
@@ -209,6 +217,7 @@ export class Content1Manager {
     this.objectiveDirector = new PostFinal4ObjectiveDirector();
     this.missionDirector = new PostFinal7MissionDirector();
     this.replayDirector = new PostFinal8ReplayDirector();
+    this.mutationDirector = new Gameplay2MutationDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -229,6 +238,7 @@ export class Content1Manager {
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
+    this.observedMutationEventIds = new Set();
     this.hud = null;
     this.hudOperation = null;
     this.hudDescription = null;
@@ -244,6 +254,7 @@ export class Content1Manager {
     this.hudFaction = null;
     this.hudModifiers = null;
     this.hudBoss = null;
+    this.hudMutations = null;
     this.hudModeToggle = null;
     this.hudContent = null;
     this.objectiveHudMode = 'full';
@@ -289,6 +300,10 @@ export class Content1Manager {
       window.KAGetPostFinal4Objective = () => this.getSnapshot()?.postFinal4 || null;
       window.KAGetPostFinal7Mission = () => this.getSnapshot()?.postFinal7 || null;
       window.KAGetPostFinal8Replayability = () => this.getSnapshot()?.postFinal8 || null;
+      window.KAGetGameplay2MutationSnapshot = () => (this.active ? this.mutationDirector.getSnapshot(Date.now()) : null);
+      window.KAGetGameplay2EnemyTuning = () => (this.active ? this.mutationDirector.getTuning().enemy : null);
+      window.KAGetGameplay2SupplyTuning = () => (this.active ? this.mutationDirector.getTuning().supply : null);
+      window.KAGetGameplay2RewardMultiplier = () => (this.active ? this.mutationDirector.getTuning().rewardMultiplier : 1);
       window.KASetObjectiveHudMode = (mode) => this.setObjectiveHudMode(mode, { persist: true, announce: true });
       window.KASetRunChallengesVisible = (visible) => this.setRunChallengesVisible(visible === true, { persist: true, announce: true });
       window.KAGetHudPreferences = () => Object.freeze({
@@ -362,6 +377,7 @@ export class Content1Manager {
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
+    this.observedMutationEventIds.clear();
     this.core.reset({
       runId: resolvedRunId,
       mapId: resolvedMapId,
@@ -387,6 +403,13 @@ export class Content1Manager {
       playerCount: humans,
       now: Date.now()
     });
+    this.mutationDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
+      gameMode: 'survival',
+      now: Date.now()
+    });
     this.replayDirector.reset({
       runId: resolvedRunId,
       mapId: resolvedMapId,
@@ -399,6 +422,7 @@ export class Content1Manager {
     this.ensureHud();
     this.clearObjectiveVisuals();
     this.consumeAuthorityEvents();
+    this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.updateHud(true);
     if (this.isOnline() && !this.isAuthority()) this.requestSnapshot(true);
     else this.publishSnapshot(true);
@@ -411,10 +435,12 @@ export class Content1Manager {
     this.hideHud();
     this.clearObjectiveVisuals();
     this.handleObjectiveDirective?.(null);
+    this.applyGameplay2MutationState?.(null);
     this.warnedOperationIds.clear();
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
+    this.observedMutationEventIds.clear();
   }
 
   nextEventId(kind) {
@@ -579,6 +605,9 @@ export class Content1Manager {
       bossPhaseCount: finite(replay.boss?.phaseCount, 3),
       bossStagger: finite(replay.boss?.stagger, 0),
       weakPointHits: finite(replay.boss?.weakPointHits, 0),
+      gameplay2Patch: GAMEPLAY2_PATCH,
+      mutationIds: Object.freeze(this.mutationDirector.getTuning().activeIds),
+      mutationRewardMultiplier: this.mutationDirector.getTuning().rewardMultiplier,
       humanSquadCommandsOverride: true
     });
   }
@@ -600,7 +629,10 @@ export class Content1Manager {
       factionId: replay.faction?.id || '',
       factionLabel: replay.faction?.label || '',
       bossId: replay.boss?.bossId || '',
-      modifierIds: Object.freeze((replay.modifiers || []).map((entry) => entry.id))
+      modifierIds: Object.freeze((replay.modifiers || []).map((entry) => entry.id)),
+      gameplay2Patch: GAMEPLAY2_PATCH,
+      mutationIds: Object.freeze(this.mutationDirector.getTuning().activeIds),
+      mutationRewardMultiplier: this.mutationDirector.getTuning().rewardMultiplier
     });
   }
 
@@ -612,7 +644,8 @@ export class Content1Manager {
     const postFinal4 = this.objectiveDirector.update(epochNow);
     const postFinal7 = this.missionDirector.getSnapshot(epochNow);
     const postFinal8 = this.replayDirector.getSnapshot(epochNow);
-    return { ...base, postFinal4, postFinal7, postFinal8 };
+    const gameplay2 = this.mutationDirector.update(epochNow);
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2 };
   }
 
   publishSnapshot(force = false) {
@@ -622,6 +655,7 @@ export class Content1Manager {
     this.lastSnapshotSentAt = now;
     const snapshot = this.buildSnapshot(now);
     this.latestSnapshot = clone(snapshot);
+    this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
     const envelope = this.isOnline()
       ? this.runtime?.sendContent1State?.({ kind: 'snapshot', snapshot })
       : null;
@@ -692,6 +726,7 @@ export class Content1Manager {
     this.objectiveDirector.state.currentWave = normalizedWave;
     this.missionDirector.state.playerCount = humans;
     this.replayDirector.state.playerCount = humans;
+    this.mutationDirector.startWave(normalizedWave, Date.now());
     const encounter = this.core.startWave(normalizedWave, nowMs());
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.consumeAuthorityEvents();
@@ -790,6 +825,16 @@ export class Content1Manager {
     const bossStage = missionStage?.type === POST_FINAL7_STAGE_TYPES.HUNT;
     const directive = this.core.getEncounterDirective();
     const type = cleanText(enemy.type, 'SHAMBLER', 40).toUpperCase();
+    const mutationTuning = this.mutationDirector.getTuning();
+    enemy.gameplay2Patch = GAMEPLAY2_PATCH;
+    enemy.gameplay2MutationIds = [...mutationTuning.activeIds];
+    enemy.speed = finite(enemy.speed, 1) * finite(mutationTuning.enemy.speedScale, 1);
+    enemy.damage = Math.max(1, Math.round(finite(enemy.damage, 1) * finite(mutationTuning.enemy.damageScale, 1)));
+    enemy.attackRate = Math.max(0.28, finite(enemy.attackRate, 1) * finite(mutationTuning.enemy.attackRateScale, 1));
+    if (MUTATION_ELITE_TYPES.has(type)) {
+      enemy.maxHealth = Math.max(1, Math.round(finite(enemy.maxHealth, enemy.health) * finite(mutationTuning.enemy.eliteHealthScale, 1)));
+      enemy.health = enemy.maxHealth;
+    }
     const eliteCandidate = (
       directive.elitePending
       || (
@@ -907,6 +952,8 @@ export class Content1Manager {
       if (snapshot.postFinal4) this.objectiveDirector.replaceSnapshot(snapshot.postFinal4, Date.now());
       if (snapshot.postFinal7) this.missionDirector.replaceSnapshot(snapshot.postFinal7, Date.now());
       if (snapshot.postFinal8) this.replayDirector.replaceSnapshot(snapshot.postFinal8, Date.now());
+      if (snapshot.gameplay2) this.mutationDirector.replaceSnapshot(snapshot.gameplay2, Date.now());
+      this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
       if (restoredBoss?.enemyId) {
         const enemy = this.getActiveEnemies?.().find((entry) => (
@@ -981,6 +1028,7 @@ export class Content1Manager {
       || this.isAuthority()
       || envelope.playerId !== this.session?.hostPlayerId
     ) return false;
+    const hadRemoteSnapshot = Boolean(this.latestSnapshot);
     if (!this.core.replaceSnapshot(payload.snapshot, nowMs())) return false;
     if (payload.snapshot?.postFinal4) {
       this.objectiveDirector.replaceSnapshot(payload.snapshot.postFinal4, Date.now());
@@ -991,12 +1039,17 @@ export class Content1Manager {
     if (payload.snapshot?.postFinal8) {
       this.replayDirector.replaceSnapshot(payload.snapshot.postFinal8, Date.now());
     }
+    if (payload.snapshot?.gameplay2) {
+      this.mutationDirector.replaceSnapshot(payload.snapshot.gameplay2, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
       postFinal7: this.missionDirector.getSnapshot(Date.now()),
-      postFinal8: this.replayDirector.getSnapshot(Date.now())
+      postFinal8: this.replayDirector.getSnapshot(Date.now()),
+      gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now()))
     });
+    this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyLocalOperationRewards();
     this.observeDynamicOperation(this.latestSnapshot, { transitions: true });
     this.updateHud(true);
@@ -1156,6 +1209,48 @@ export class Content1Manager {
     }
   }
 
+  formatGameplay2Mutation(event) {
+    const mutation = event?.mutation || {};
+    const level = Math.max(1, Math.floor(finite(mutation.level, 1)));
+    const suffix = level > 1 ? ` · LEVEL ${level}` : '';
+    if (event?.type === 'ROTATED') {
+      return `ARENA MUTATION ROTATED · ${String(mutation.label || mutation.id || 'UNKNOWN').toUpperCase()}${suffix}`;
+    }
+    if (event?.type === 'ESCALATED') {
+      return `ARENA MUTATION ESCALATED · ${String(mutation.label || mutation.id || 'UNKNOWN').toUpperCase()}${suffix}`;
+    }
+    return `ARENA MUTATION ACTIVE · ${String(mutation.label || mutation.id || 'UNKNOWN').toUpperCase()}${suffix}`;
+  }
+
+  applyGameplay2Snapshot(snapshot, { transitions = false } = {}) {
+    if (!snapshot || snapshot.patch !== GAMEPLAY2_PATCH) {
+      this.applyGameplay2MutationState?.(null);
+      return false;
+    }
+    const tuning = this.mutationDirector.getTuning();
+    const presentation = Object.freeze({
+      ...clone(snapshot),
+      tuning
+    });
+    this.applyGameplay2MutationState?.(presentation);
+    for (const event of snapshot.history || []) {
+      const eventId = cleanText(event?.eventId, '', 220);
+      if (!eventId || this.observedMutationEventIds.has(eventId)) continue;
+      this.observedMutationEventIds.add(eventId);
+      recordRunGameplay2Mutation({ snapshot, event });
+      if (transitions) {
+        this.showToast?.(this.formatGameplay2Mutation(event));
+        playUISound('warning', 0.24, true, {
+          cooldownKey: `gameplay2_${eventId}`,
+          cooldownMs: 900,
+          pitchMin: event?.type === 'ESCALATED' ? 0.78 : 0.92,
+          pitchMax: event?.type === 'ESCALATED' ? 0.90 : 1.08
+        });
+      }
+    }
+    return true;
+  }
+
   observeDynamicOperation(snapshot, { transitions = false } = {}) {
     const operation = snapshot?.postFinal4?.current || null;
     if (!operation) return false;
@@ -1220,12 +1315,24 @@ export class Content1Manager {
   consumeAuthorityEvents() {
     const events = [
       ...this.core.consumeEvents(),
-      ...this.objectiveDirector.consumeEvents()
+      ...this.objectiveDirector.consumeEvents(),
+      ...this.mutationDirector.consumeEvents()
     ];
     const missionTransitions = [];
 
     for (const event of events) {
-      if (event.type === 'ENCOUNTER_STARTED') {
+      if (['ACTIVATED', 'ESCALATED', 'ROTATED'].includes(event.type) && event.mutation) {
+        const mutationSnapshot = this.mutationDirector.getSnapshot(Date.now());
+        const eventId = cleanText(event.eventId, '', 220);
+        if (eventId) this.observedMutationEventIds.add(eventId);
+        recordRunGameplay2Mutation({ snapshot: mutationSnapshot, event });
+        this.showToast?.(this.formatGameplay2Mutation(event));
+        playUISound('warning', 0.24, true, {
+          cooldownKey: `gameplay2_${eventId || event.type}`, cooldownMs: 900,
+          pitchMin: event.type === 'ESCALATED' ? 0.78 : 0.92,
+          pitchMax: event.type === 'ESCALATED' ? 0.90 : 1.08
+        });
+      } else if (event.type === 'ENCOUNTER_STARTED') {
         this.showToast?.(event.encounter?.announcement || 'ENCOUNTER ACTIVE');
       } else if (event.type === 'ELITE_SPAWNED') {
         this.showToast?.('ELITE TARGET DEPLOYED');
@@ -1346,12 +1453,14 @@ export class Content1Manager {
       }
     }
 
+    this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
     return [...events, ...missionEvents, ...replayEvents];
   }
 
   applyLocalOperationRewards() {
     const snapshot = this.getSnapshot();
+    const mutationRewardMultiplier = Math.max(1, Math.min(1.75, finite(snapshot?.gameplay2?.rewardMultiplier, 1)));
     const base = snapshot?.operation;
     if (base?.completed && base.completionId && !this.awardedCompletionIds.has(base.completionId)) {
       this.awardedCompletionIds.add(base.completionId);
@@ -1388,7 +1497,7 @@ export class Content1Manager {
         this.awardTeamObjective?.({
           completionId: operation.completionId,
           operationId: operation.operationId,
-          points: Math.max(0, Math.floor(finite(operation.rewardPoints))),
+          points: Math.max(0, Math.floor(finite(operation.rewardPoints) * mutationRewardMultiplier)),
           label: cleanText(operation.label, 'OBJECTIVE COMPLETE', 80),
           contributors: clone(operation.contributors || {})
         });
@@ -1402,13 +1511,13 @@ export class Content1Manager {
       && !this.missionRewardedCompletionIds.has(mission.completionId)
     ) {
       this.missionRewardedCompletionIds.add(mission.completionId);
-      const missionPoints = computePostFinal7Reward({
+      const missionPoints = Math.round(computePostFinal7Reward({
         basePoints: 350,
         difficulty: mission.difficulty,
         playerCount: mission.playerCount,
         riskChoice: mission.riskChoice,
         optionalStagesCompleted: mission.optionalStagesCompleted
-      });
+      }) * mutationRewardMultiplier);
       const missionXp = Math.max(180, Math.round(240 * finite(mission.rewardMultiplier, 1)));
       recordProgressionContentOperation({
         operationId: mission.missionId,
@@ -1439,7 +1548,7 @@ export class Content1Manager {
       && !this.replayRewardedCompletionIds.has(replay.completionId)
     ) {
       this.replayRewardedCompletionIds.add(replay.completionId);
-      const replayPoints = computePostFinal8Reward(replay);
+      const replayPoints = Math.round(computePostFinal8Reward(replay) * mutationRewardMultiplier);
       const replayXp = Math.max(
         120,
         Math.round(160 * finite(replay.rewardMultiplier, 1))
@@ -1489,7 +1598,10 @@ export class Content1Manager {
       factionId: replay?.faction?.id || '',
       factionLabel: replay?.faction?.label || '',
       bossId: replay?.boss?.bossId || '',
-      modifierIds: Object.freeze((replay?.modifiers || []).map((entry) => entry.id))
+      modifierIds: Object.freeze((replay?.modifiers || []).map((entry) => entry.id)),
+      gameplay2Patch: this.latestSnapshot?.gameplay2?.patch || GAMEPLAY2_PATCH,
+      mutationIds: Object.freeze((this.latestSnapshot?.gameplay2?.activeMutations || []).map((entry) => entry.id)),
+      mutationRewardMultiplier: finite(this.latestSnapshot?.gameplay2?.rewardMultiplier, 1)
     });
   }
 
@@ -1651,6 +1763,7 @@ export class Content1Manager {
       <div class="ka-postfinal7-stages">STAGE 0 / 0</div>
       <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
       <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
+      <div class="ka-gameplay2-mutations">ARENA MUTATIONS · STANDBY</div>
       <div class="ka-postfinal8-boss" hidden>BOSS TELEMETRY STANDBY</div>
       <div class="ka-content1-operation">STANDBY</div>
       <div class="ka-postfinal4-description">OBJECTIVE DIRECTOR INITIALIZING</div>
@@ -1676,6 +1789,7 @@ export class Content1Manager {
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
     this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
+    this.hudMutations = hud.querySelector('.ka-gameplay2-mutations');
     this.hudBoss = hud.querySelector('.ka-postfinal8-boss');
     this.hudOperation = hud.querySelector('.ka-content1-operation');
     this.hudDescription = hud.querySelector('.ka-postfinal4-description');
@@ -1739,6 +1853,14 @@ export class Content1Manager {
       this.hudModifiers.textContent = labels.length
         ? `MODIFIERS · ${labels.join(' · ')}`
         : 'STANDARD CONDITIONS';
+    }
+    if (this.hudMutations) {
+      const mutationState = snapshot.gameplay2;
+      const active = mutationState?.activeMutations || [];
+      this.hudMutations.classList.toggle('is-active', active.length > 0);
+      this.hudMutations.textContent = active.length
+        ? `ARENA MUTATIONS · ${active.map((entry) => `${entry.label}${entry.level > 1 ? ` L${entry.level}` : ''}`).join(' · ')} · ×${finite(mutationState.rewardMultiplier, 1).toFixed(2)} REWARD`
+        : `ARENA MUTATIONS · NEXT WAVE ${Math.max(0, Math.floor(finite(mutationState?.nextMilestoneWave, 8)))}`;
     }
     if (this.hudBoss) {
       const boss = replay?.boss;
@@ -1939,6 +2061,7 @@ export class Content1Manager {
     this.hud = null;
     this.hudModeToggle = null;
     this.hudContent = null;
+    this.hudMutations = null;
     this.clearObjectiveVisuals();
   }
 }

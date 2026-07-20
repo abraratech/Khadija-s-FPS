@@ -218,34 +218,46 @@ def main() -> None:
             if not (build / required_runtime).is_file():
                 raise SystemExit(f"NET.1 R1 production runtime file missing: {required_runtime}")
 
-    cg1 = manifest.get("cg1", {})
-    if current_release.get("patch") == "cg1-r1-crazygames-basic-launch-readiness":
-        if cg1.get("patch") != current_release.get("patch"):
-            raise SystemExit("CG.1 R1 production manifest patch mismatch")
+    gameplay2 = manifest.get("gameplay2", {})
+    if current_release.get("patch") == "gameplay2-r1-late-round-arena-mutations":
+        if gameplay2.get("patch") != current_release.get("patch"):
+            raise SystemExit("GAMEPLAY.2 production manifest patch mismatch")
         for field in (
-            "sdk_v3", "safe_disabled_environment_fallback",
-            "loading_lifecycle", "gameplay_lifecycle",
-            "basic_launch_ad_safe", "platform_audio_mute",
-            "platform_chat_disable", "crazygames_username",
-            "room_update_and_join", "instant_multiplayer_entry",
-            "iframe_safe_area", "custom_fullscreen_suppressed",
-            "external_passkey_ui_suppressed_on_platform",
-            "webrtc_and_cloud_relay_preserved", "frontend_only"
+            "pvp_excluded",
+            "host_authoritative",
+            "stacking",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "reward_authority",
+            "run_summary_history",
+            "cross_run_cleanup",
+            "worker_change_required",
+            "frontend_and_worker",
         ):
-            if cg1.get(field) is not True:
-                raise SystemExit(f"CG.1 R1 production policy mismatch: {field}")
-        if cg1.get("worker_change_required") is not False:
-            raise SystemExit("CG.1 R1 must remain frontend-only")
+            if gameplay2.get(field) is not True:
+                raise SystemExit(f"GAMEPLAY.2 production policy mismatch: {field}")
+        if gameplay2.get("mutation_milestones") != [8, 11, 14]:
+            raise SystemExit("GAMEPLAY.2 mutation milestone mismatch")
+        if int(gameplay2.get("late_round_first_wave", -1)) != 17:
+            raise SystemExit("GAMEPLAY.2 late-round first-wave mismatch")
+        if int(gameplay2.get("late_round_every_waves", -1)) != 4:
+            raise SystemExit("GAMEPLAY.2 late-round cadence mismatch")
+        if gameplay2.get("mutations") != ['BLACKOUT', 'ELITE_INFESTATION', 'SUPPLY_CRISIS', 'HAZARD_SHIFT', 'BERSERK_THREATS']:
+            raise SystemExit("GAMEPLAY.2 mutation registry mismatch")
         for required_runtime in (
-            "js/crazygames_core.js", "js/crazygames.js",
-            "css/crazygames.css", "js/multiplayer/webrtc_transport.js",
-            "js/multiplayer/transport.js"
+            "js/gameplay2_mutation_core.js",
+            "js/content1.js",
+            "js/enemy.js",
+            "js/main.js",
+            "js/map.js",
+            "js/map_gameplay.js",
+            "js/run_summary.js",
         ):
             if not (build / required_runtime).is_file():
-                raise SystemExit(f"CG.1 R1 production runtime file missing: {required_runtime}")
-        index_text = (build / "index.html").read_text(encoding="utf-8")
-        if "crazygames-sdk-v3.js" not in index_text:
-            raise SystemExit("CG.1 R1 SDK v3 script missing from production index")
+                raise SystemExit(
+                    f"GAMEPLAY.2 production runtime file missing: {required_runtime}"
+                )
 
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":

@@ -105,7 +105,6 @@ export class MultiplayerTextChat {
   }
 
   isAvailable() {
-    if (globalThis.document?.documentElement?.dataset?.cgDisableChat === 'true') return false;
     const room = this.currentRoom();
     return this.transport?.getMode?.() === TRANSPORT_MODES.ONLINE
       && this.transport?.getState?.() === TRANSPORT_STATES.CONNECTED

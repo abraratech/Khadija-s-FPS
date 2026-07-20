@@ -138,6 +138,33 @@ const rangedSightHits = [];
 const ENEMY_GROUND_SAMPLE_NEAR = 0.055;
 const ENEMY_GROUND_SAMPLE_FAR = 0.13;
 
+
+function getGameplay2EnemyTuning() {
+  try {
+    const tuning = globalThis.KAGetGameplay2EnemyTuning?.();
+    return tuning && typeof tuning === 'object' ? tuning : {};
+  } catch {
+    return {};
+  }
+}
+
+function getGameplay2SupplyTuning() {
+  try {
+    const tuning = globalThis.KAGetGameplay2SupplyTuning?.();
+    return tuning && typeof tuning === 'object' ? tuning : {};
+  } catch {
+    return {};
+  }
+}
+
+function getGameplay2RewardMultiplier() {
+  try {
+    return Math.max(1, Math.min(1.75, Number(globalThis.KAGetGameplay2RewardMultiplier?.()) || 1));
+  } catch {
+    return 1;
+  }
+}
+
 // ── C10 ENEMY / ROUND PACING ──
 const NORMAL_WAVE_LEAD_IN = 0.65;
 const SPECIAL_WAVE_LEAD_IN = 0.35;
@@ -682,14 +709,15 @@ export function getEnemyTypeMeta(typeName) {
 
 export function getEnemyPointReward(enemy, isHeadshot = false) {
   const config = getEnemyTypeMeta(enemy?.type);
+  const mutationRewardMultiplier = getGameplay2RewardMultiplier();
 
   return {
     label: config.label || config.name,
-    basePoints: scaleEconomyReward(
+    basePoints: Math.round(scaleEconomyReward(
       isHeadshot ? (config.headshotScore || 100) : (config.killScore || 50),
       isHeadshot ? 'HEADSHOT_KILL' : 'KILL'
-    ),
-    bonusPoints: scaleEconomyReward(config.bossBounty || 0, 'BOSS_BOUNTY'),
+    ) * mutationRewardMultiplier),
+    bonusPoints: Math.round(scaleEconomyReward(config.bossBounty || 0, 'BOSS_BOUNTY') * mutationRewardMultiplier),
     toast: config.name === 'GOLIATH' ? 'GOLIATH ELIMINATED' : `${config.label || config.name} eliminated`,
     color: config.radarColor || '#ffaa00'
   };
@@ -1451,7 +1479,8 @@ function getSpawnInterval() {
 
   return baseInterval
     * getAIDirectorTuning().spawnIntervalScale
-    * getCoopScalingProfile().spawnIntervalScale;
+    * getCoopScalingProfile().spawnIntervalScale
+    * Math.max(0.72, Math.min(1, Number(getGameplay2EnemyTuning().spawnIntervalScale) || 1));
 }
 
 function getActiveZombieCap() {
@@ -1476,6 +1505,7 @@ function getActiveZombieCap() {
     baseCap
       + getAIDirectorTuning().activeCapBonus
       + getCoopScalingProfile().activeCapBonus
+      + Math.max(0, Math.min(4, Math.floor(Number(getGameplay2EnemyTuning().activeCapBonus) || 0)))
   );
 }
 
@@ -1566,11 +1596,22 @@ function applyContent1SpawnPressure(mix) {
   });
 }
 
+function applyGameplay2SpawnPressure(mix) {
+  const specialScale = Math.max(1, Math.min(3, Number(getGameplay2EnemyTuning().specialWeightScale) || 1));
+  if (specialScale <= 1.001) return mix;
+  return mix.map(([config, weight]) => {
+    const special = config?.name && config.name !== 'SHAMBLER';
+    return [config, Math.max(0, Number(weight) || 0) * (special ? specialScale : 1)];
+  });
+}
+
 function getSpawnMixForWave(wave = currentWave) {
-  return applyContent1SpawnPressure(
-    adaptEnemySpawnMix(
-      applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
-      { wave, isSpecialRound }
+  return applyGameplay2SpawnPressure(
+    applyContent1SpawnPressure(
+      adaptEnemySpawnMix(
+        applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
+        { wave, isSpecialRound }
+      )
     )
   );
 }
@@ -3436,7 +3477,7 @@ export function killEnemy(e, context = {}) {
     activePowerups.push({ mesh: pMesh, type: maxAmmoType, life: 15.0 });
   }
   // ── STANDARD RANDOM POWERUP DROP ──
-  else if (Math.random() < 0.10) {
+  else if (Math.random() < 0.10 * Math.max(0.12, Math.min(1, Number(getGameplay2SupplyTuning().powerupDropScale) || 1))) {
     const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
     const pMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshStandardMaterial({ color: type.color, emissive: type.color, emissiveIntensity: 0.8 }));
     pMesh.position.copy(e.mesh.position); pMesh.position.y = 0.8; scene.add(pMesh);

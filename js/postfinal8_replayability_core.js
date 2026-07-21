@@ -110,7 +110,7 @@ const FACTION_DEFINITIONS = Object.freeze({
     }),
     enemyScales: Object.freeze({ health: 0.96, speed: 1.13, damage: 1.10 }),
     bosses: Object.freeze([
-      boss('DEMOLITION-CHIEF', 'Raider Demolition Chief', 'GOLIATH', 'Evade volatile barrages and stagger the Chief before the blast phase.'),
+      boss('DEMOLITION-CHIEF', 'Raider Demolition Chief', 'EXPLODER', 'Evade volatile barrages and stagger the Chief before the blast phase.'),
       boss('STEALTH-HUNTER', 'Stealth Hunter', 'RUNNER', 'Track rapid repositioning and punish the Hunter during exposed attack windows.')
     ])
   }),
@@ -132,7 +132,7 @@ const FACTION_DEFINITIONS = Object.freeze({
     enemyScales: Object.freeze({ health: 1.07, speed: 1.06, damage: 1.04 }),
     bosses: Object.freeze([
       boss('BIOHAZARD-BEHEMOTH', 'Biohazard Behemoth', 'GOLIATH', 'Break regenerating tissue and survive escalating contamination phases.'),
-      boss('PLAGUE-MATRIARCH', 'Plague Matriarch', 'BRUTE', 'Destroy hardened weak points before the Matriarch floods the arena with spores.')
+      boss('PLAGUE-MATRIARCH', 'Plague Matriarch', 'RANGED', 'Destroy hardened weak points before the Matriarch floods the arena with spores.')
     ])
   }),
   [POST_FINAL8_FACTIONS.MACHINE_COLLECTIVE]: Object.freeze({
@@ -545,6 +545,10 @@ export class PostFinal8ReplayDirector {
     ['RUNNER', 'EXPLODER', 'RANGED', 'BRUTE'].forEach((type) => {
       multipliers[type] = Math.max(0.35, finite(multipliers[type], 1) * phasePressure);
     });
+    if (this.state.boss?.status === POST_FINAL8_BOSS_STATUS.PENDING) {
+      const requiredBossType = clean(this.state.boss.enemyType, 'GOLIATH', 40).toUpperCase();
+      multipliers[requiredBossType] = Math.max(4.5, finite(multipliers[requiredBossType], 1) * 4.5);
+    }
     return Object.freeze({ ...multipliers });
   }
 
@@ -588,7 +592,8 @@ export class PostFinal8ReplayDirector {
     if (
       bossStage
       && this.state.boss.status === POST_FINAL8_BOSS_STATUS.PENDING
-      && ['BRUTE', 'GOLIATH', 'RUNNER', 'RANGED'].includes(type)
+      && ['BRUTE', 'GOLIATH', 'RUNNER', 'RANGED', 'EXPLODER'].includes(type)
+      && type === clean(this.state.boss.enemyType, type, 40).toUpperCase()
     ) {
       bossProfile = clone(this.state.boss);
       healthScale *= 2.15 + Math.max(0, this.state.playerCount - 1) * 0.22;

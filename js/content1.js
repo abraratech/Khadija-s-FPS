@@ -37,10 +37,19 @@ import {
   GAMEPLAY3_PATCH,
   Gameplay3EvolutionDirector
 } from './gameplay3_map_evolution_core.js';
+import {
+  GAMEPLAY4_BOSS_STATUS,
+  GAMEPLAY4_PATCH,
+  Gameplay4BossDirector,
+  computeGameplay4Reward,
+  getGameplay4BossDamageScale,
+  getGameplay4ReinforcementTuning
+} from './gameplay4_boss_encounter_core.js';
 import { recordProgressionContentOperation } from './progression.js';
 import {
   recordRunDynamicOperation,
   recordRunGameplay2Mutation,
+  recordRunGameplay4BossEncounter,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -56,7 +65,7 @@ const COMMAND_INTERVAL_MS = 45;
 const ZONE_TICK_INTERVAL_MS = 1000;
 const INTERACT_TICK_INTERVAL_MS = 250;
 const SURVIVOR_TICK_INTERVAL_MS = 200;
-const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'RANGED']);
+const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']);
 const MUTATION_ELITE_TYPES = new Set(['RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']);
 const OBJECTIVE_HUD_KEY = 'ka_objective_hud_mode_v1';
 const RUN_CHALLENGES_HUD_KEY = 'ka_run_challenges_visibility_v1';
@@ -146,6 +155,7 @@ function normalizeParticipant(entry = {}) {
     connected: entry.connected !== false,
     alive: entry.alive !== false && String(entry.lifeState || 'ACTIVE').toUpperCase() === 'ACTIVE',
     lifeState: cleanText(entry.lifeState, entry.alive === false ? 'DOWNED' : 'ACTIVE', 30).toUpperCase(),
+    roleId: cleanText(entry.roleId, 'VANGUARD', 40).toUpperCase(),
     position: entry.position ? {
       x: finite(entry.position.x),
       y: finite(entry.position.y),
@@ -225,6 +235,7 @@ export class Content1Manager {
     this.replayDirector = new PostFinal8ReplayDirector();
     this.mutationDirector = new Gameplay2MutationDirector();
     this.mapEvolutionDirector = new Gameplay3EvolutionDirector();
+    this.bossEncounterDirector = new Gameplay4BossDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -240,6 +251,7 @@ export class Content1Manager {
     this.teamRewardedCompletionIds = new Set();
     this.missionRewardedCompletionIds = new Set();
     this.replayRewardedCompletionIds = new Set();
+    this.bossEncounterRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -315,6 +327,22 @@ export class Content1Manager {
       window.KAGetGameplay3EvolutionSnapshot = () => (
         this.active ? this.mapEvolutionDirector.getSnapshot(Date.now()) : null
       );
+      window.KAGetGameplay4BossSnapshot = () => (
+        this.active ? this.bossEncounterDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetGameplay4BossDamageScale = ({ enemyId = '', headshot = false } = {}) => (
+        getGameplay4BossDamageScale(
+          this.bossEncounterDirector.getSnapshot(Date.now()),
+          enemyId,
+          { headshot }
+        )
+      );
+      window.KAIsGameplay4Authority = () => this.active && this.isAuthority();
+      window.KAClaimGameplay4AbilityCommit = (serial) => (
+        this.active
+        && this.isAuthority()
+        && this.bossEncounterDirector.claimAbilityCommit(serial, Date.now())
+      );
       window.KARequestGameplay3Interaction = (controlId) => (
         this.requestGameplay3Interaction(controlId)
       );
@@ -386,6 +414,7 @@ export class Content1Manager {
     this.teamRewardedCompletionIds.clear();
     this.missionRewardedCompletionIds.clear();
     this.replayRewardedCompletionIds.clear();
+    this.bossEncounterRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -439,6 +468,12 @@ export class Content1Manager {
       playerCount: humans,
       now: Date.now()
     });
+    this.bossEncounterDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      gameMode: 'survival',
+      now: Date.now()
+    });
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.ensureHud();
     this.clearObjectiveVisuals();
@@ -464,6 +499,7 @@ export class Content1Manager {
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
     this.observedMutationEventIds.clear();
+    this.bossEncounterDirector.reset({ gameMode: 'survival', now: Date.now() });
   }
 
   nextEventId(kind) {
@@ -712,7 +748,18 @@ export class Content1Manager {
     const postFinal8 = this.replayDirector.getSnapshot(epochNow);
     const gameplay2 = this.mutationDirector.update(epochNow);
     const gameplay3 = this.mapEvolutionDirector.update(epochNow);
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3 };
+    const bossEnemy = this.bossEncounterDirector.state.enemyId
+      ? this.getActiveEnemies?.().find((entry) => (
+          cleanText(entry?.content1Id || entry?.networkId, '', 180)
+            === this.bossEncounterDirector.state.enemyId
+        ))
+      : null;
+    const gameplay4 = this.bossEncounterDirector.update(epochNow, {
+      boss: postFinal8?.boss || null,
+      bossPosition: bossEnemy?.mesh?.position || null,
+      participants: this.participants(now)
+    });
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4 };
   }
 
   publishSnapshot(force = false) {
@@ -824,6 +871,16 @@ export class Content1Manager {
     }, Date.now());
     if (!result?.accepted) return false;
 
+    const gameplay4Result = this.bossEncounterDirector.observeBossDamage({
+      enemyId: normalizedId,
+      damage,
+      headshot,
+      actorId,
+      health,
+      maxHealth,
+      postFinal8Phase: result?.boss?.phase
+    }, Date.now());
+
     const enemy = this.getActiveEnemies?.().find((entry) => (
       cleanText(entry?.content1Id || entry?.networkId, '', 180) === normalizedId
     ));
@@ -845,7 +902,7 @@ export class Content1Manager {
 
     this.consumeAuthorityEvents();
     const now = nowMs();
-    if ((result.events || []).length || now - this.lastBossDamageSnapshotAt >= 220) {
+    if ((result.events || []).length || (gameplay4Result?.events || []).length || now - this.lastBossDamageSnapshotAt >= 220) {
       this.lastBossDamageSnapshotAt = now;
       this.publishSnapshot(true);
     }
@@ -864,6 +921,12 @@ export class Content1Manager {
           actorId
         }, Date.now())
       : false;
+    const gameplay4BossKilled = this.isAuthority()
+      ? this.bossEncounterDirector.recordBossKilled({
+          enemyId: baseId,
+          actorId
+        }, Date.now())
+      : false;
     this.recordAction('KILL', {
       actorId,
       enemyId: baseId,
@@ -871,7 +934,7 @@ export class Content1Manager {
       headshot,
       eventId: `${this.session?.run?.runId || 'run'}:content-kill:${baseId}`
     });
-    if (elite || bossKilled) {
+    if (elite || bossKilled || gameplay4BossKilled) {
       this.recordAction('ELITE_KILL', {
         actorId,
         amount: 1,
@@ -879,7 +942,7 @@ export class Content1Manager {
         eventId: `${this.session?.run?.runId || 'run'}:content-elite-kill:${baseId}`
       });
     }
-    if (bossKilled) {
+    if (bossKilled || gameplay4BossKilled) {
       this.consumeAuthorityEvents();
       this.publishSnapshot(true);
     }
@@ -937,6 +1000,25 @@ export class Content1Manager {
       replayTuning.bossProfile ? 0.68 : (eliteCandidate ? 0.42 : 0.18)
     );
 
+    const gameplay4Reinforcement = getGameplay4ReinforcementTuning(
+      this.bossEncounterDirector.getSnapshot(Date.now()),
+      enemy.content1Id || enemy.networkId || ''
+    );
+    if (gameplay4Reinforcement.active) {
+      enemy.gameplay4Patch = GAMEPLAY4_PATCH;
+      enemy.gameplay4ReinforcementPhase = gameplay4Reinforcement.phase;
+      enemy.maxHealth = Math.max(
+        1,
+        Math.round(finite(enemy.maxHealth, enemy.health) * gameplay4Reinforcement.healthScale)
+      );
+      enemy.health = enemy.maxHealth;
+      enemy.speed = finite(enemy.speed, 1) * gameplay4Reinforcement.speedScale;
+      enemy.damage = Math.max(
+        1,
+        Math.round(finite(enemy.damage, 1) * gameplay4Reinforcement.damageScale)
+      );
+    }
+
     if (
       dynamic?.status === POST_FINAL4_OPERATION_STATUS.ACTIVE
       && dynamic.kind === POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET
@@ -975,6 +1057,17 @@ export class Content1Manager {
           maxHealth: enemy.maxHealth,
           health: enemy.health
         }, Date.now());
+        this.bossEncounterDirector.bindBoss({
+          bossId: replayTuning.bossProfile.bossId,
+          bossLabel: replayTuning.bossProfile.label,
+          enemyId: targetId,
+          enemyType: type,
+          maxHealth: enemy.maxHealth,
+          health: enemy.health,
+          position: enemy.mesh?.position
+        }, Date.now());
+        enemy.gameplay4Patch = GAMEPLAY4_PATCH;
+        enemy.gameplay4BossProfileId = this.bossEncounterDirector.state.profileId;
         tintEnemyForFaction(enemy, replayTuning.emissiveHex, 0.82);
       }
       changed = this.objectiveDirector.assignPriorityTarget({
@@ -1023,6 +1116,7 @@ export class Content1Manager {
       if (snapshot.postFinal8) this.replayDirector.replaceSnapshot(snapshot.postFinal8, Date.now());
       if (snapshot.gameplay2) this.mutationDirector.replaceSnapshot(snapshot.gameplay2, Date.now());
       if (snapshot.gameplay3) this.mapEvolutionDirector.replaceSnapshot(snapshot.gameplay3, Date.now());
+      if (snapshot.gameplay4) this.bossEncounterDirector.replaceSnapshot(snapshot.gameplay4, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
@@ -1119,13 +1213,17 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay3) {
       this.mapEvolutionDirector.replaceSnapshot(payload.snapshot.gameplay3, Date.now());
     }
+    if (payload.snapshot?.gameplay4) {
+      this.bossEncounterDirector.replaceSnapshot(payload.snapshot.gameplay4, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
       postFinal7: this.missionDirector.getSnapshot(Date.now()),
       postFinal8: this.replayDirector.getSnapshot(Date.now()),
       gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now())),
-      gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now()))
+      gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now())),
+      gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
@@ -1546,9 +1644,42 @@ export class Content1Manager {
       }
     }
 
+    const gameplay4Events = this.bossEncounterDirector.consumeEvents();
+    for (const event of gameplay4Events) {
+      if (event.type === 'GAMEPLAY4_BOSS_BOUND') {
+        this.showToast?.(`EXPANDED BOSS ENCOUNTER · ${event.bossLabel || 'MISSION BOSS'}`);
+      } else if (event.type === 'GAMEPLAY4_PHASE_CHANGED') {
+        this.showToast?.(`BOSS PHASE ${event.phase}/3 · ATTACK PATTERN CHANGED`);
+        playUISound('warning', 0.34, true, {
+          cooldownKey: `gameplay4_phase_${event.phase}`,
+          cooldownMs: 1000,
+          pitchMin: 0.70,
+          pitchMax: 0.84
+        });
+      } else if (event.type === 'GAMEPLAY4_ABILITY_WARNING') {
+        this.showToast?.(`${event.ability?.label || 'BOSS ATTACK'} · INTERRUPT OR EVADE`);
+        playTeamAlertCue('ENEMY_MARK', {
+          cooldownKey: `gameplay4_warning_${event.ability?.serial}`,
+          cooldownMs: 800
+        });
+      } else if (event.type === 'GAMEPLAY4_ABILITY_INTERRUPTED') {
+        this.showToast?.('BOSS ATTACK INTERRUPTED · VULNERABILITY OPEN');
+        playUISound('waveClear', 0.34, true, {
+          cooldownKey: `gameplay4_interrupt_${event.ability?.serial}`,
+          cooldownMs: 800,
+          pitchMin: 1.08,
+          pitchMax: 1.18
+        });
+      } else if (event.type === 'GAMEPLAY4_VULNERABILITY_OPENED') {
+        this.showToast?.('BOSS VULNERABLE · FOCUS FIRE');
+      } else if (event.type === 'GAMEPLAY4_BOSS_DEFEATED') {
+        this.showToast?.(`BOSS ENCOUNTER COMPLETE · +${event.rewardPoints || 0} BONUS`);
+      }
+    }
+
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents, ...replayEvents];
+    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events];
   }
 
   applyLocalOperationRewards() {
@@ -1671,6 +1802,35 @@ export class Content1Manager {
       this.showToast?.(
         `MASTERY ${replay.masteryGrade || 'COMPLETE'} · +${replayXp} XP`
       );
+    }
+    const gameplay4 = snapshot?.gameplay4;
+    if (
+      gameplay4?.status === GAMEPLAY4_BOSS_STATUS.DEFEATED
+      && gameplay4.completionId
+      && !this.bossEncounterRewardedCompletionIds.has(gameplay4.completionId)
+    ) {
+      this.bossEncounterRewardedCompletionIds.add(gameplay4.completionId);
+      const bossBonusPoints = Math.round(computeGameplay4Reward(gameplay4) * mutationRewardMultiplier);
+      const bossBonusXp = Math.max(140, Math.round(180 + finite(gameplay4.interruptCount) * 20));
+      recordProgressionContentOperation({
+        operationId: `${gameplay4.bossId || 'BOSS'}-ENCOUNTER`,
+        completionId: gameplay4.completionId,
+        xp: bossBonusXp
+      });
+      recordRunGameplay4BossEncounter({
+        encounter: gameplay4,
+        rewardPoints: bossBonusPoints
+      });
+      if (this.isAuthority()) {
+        this.awardTeamObjective?.({
+          completionId: gameplay4.completionId,
+          operationId: gameplay4.bossId || 'GAMEPLAY.4',
+          points: bossBonusPoints,
+          label: cleanText(`${gameplay4.bossLabel || 'BOSS'} ENCOUNTER BONUS`, 'BOSS BONUS', 80),
+          contributors: clone(mission?.totalContributions || {})
+        });
+      }
+      this.showToast?.(`${String(gameplay4.bossLabel || 'BOSS').toUpperCase()} · +${bossBonusXp} XP`);
     }
     return true;
   }
@@ -1964,9 +2124,14 @@ export class Content1Manager {
         const healthPct = boss.maxHealth > 0
           ? Math.max(0, Math.round((finite(boss.health) / finite(boss.maxHealth, 1)) * 100))
           : 0;
+        const expandedBoss = snapshot.gameplay4;
+        const ability = expandedBoss?.ability;
+        const abilityText = ability
+          ? ` · ${String(ability.label || ability.id).toUpperCase()} ${String(ability.state || '').toUpperCase()}`
+          : '';
         this.hudBoss.textContent = boss.status === POST_FINAL8_BOSS_STATUS.DEFEATED
           ? `${String(boss.label || 'BOSS').toUpperCase()} · DEFEATED · ${boss.staggerCount || 0} STAGGERS`
-          : `${String(boss.label || 'BOSS').toUpperCase()} · PHASE ${finite(boss.phase, 0) + 1}/${finite(boss.phaseCount, 3)} · ${healthPct}% · STAGGER ${Math.round(finite(boss.stagger))}% · WEAK ${finite(boss.weakPointHits)}`;
+          : `${String(boss.label || 'BOSS').toUpperCase()} · PHASE ${finite(boss.phase, 0) + 1}/${finite(boss.phaseCount, 3)} · ${healthPct}% · STAGGER ${Math.round(finite(boss.stagger))}% · WEAK ${finite(boss.weakPointHits)}${abilityText}`;
       }
     }
     if (this.hudRisk) {

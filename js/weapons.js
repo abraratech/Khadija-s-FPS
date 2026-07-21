@@ -3488,15 +3488,24 @@ if (e.isNetworkProxy && typeof e.handleNetworkHit === 'function') {
   return;
 }
 
+const gameplay4DamageScale = Math.max(0.5, Math.min(2,
+  Number(globalThis.KAGetGameplay4BossDamageScale?.({
+    enemyId: e.content1Id || e.networkId || '',
+    headshot: hs
+  })) || 1
+));
+const appliedDamage = isInstaKill
+  ? finalDamage
+  : Math.max(1, Math.round(finalDamage * gameplay4DamageScale));
 const wasHealth = e.health;
-    const killed = wasHealth > 0 && wasHealth - finalDamage <= 0;
+    const killed = wasHealth > 0 && wasHealth - appliedDamage <= 0;
 
-    e.health -= finalDamage;
-    recordRunDamageDealt(Math.min(wasHealth, finalDamage));
+    e.health -= appliedDamage;
+    recordRunDamageDealt(Math.min(wasHealth, appliedDamage));
     try {
       globalThis.KAContent1EnemyDamaged?.({
         enemyId: e.content1Id || e.networkId || '',
-        damage: Math.min(wasHealth, finalDamage),
+        damage: Math.min(wasHealth, appliedDamage),
         headshot: hs,
         actorId: localMultiplayerPlayerId() || 'local',
         health: Math.max(0, Number(e.health) || 0),
@@ -3600,7 +3609,7 @@ const wasHealth = e.health;
         headshot: hs,
         distance: fxDistance,
         weaponFamily: getWeaponFamily(w),
-        damage: finalDamage,
+        damage: appliedDamage,
         source: 'WEAPON',
         creditPlayerId: isOnlineEconomyRun()
           ? localMultiplayerPlayerId()

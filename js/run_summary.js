@@ -56,6 +56,11 @@ const state = {
   replayMedals: [],
   noDownedMastery: false,
   lastReplayability: null,
+  gameplay4BossProfile: 'NONE',
+  gameplay4BossInterrupts: 0,
+  gameplay4VulnerabilityHits: 0,
+  gameplay4RewardPoints: 0,
+  lastGameplay4Encounter: null,
   gameplay2Patch: '',
   mutationActiveIds: [],
   mutationActiveLabels: [],
@@ -133,6 +138,11 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     replayMedals: [],
     noDownedMastery: false,
     lastReplayability: null,
+    gameplay4BossProfile: 'NONE',
+    gameplay4BossInterrupts: 0,
+    gameplay4VulnerabilityHits: 0,
+    gameplay4RewardPoints: 0,
+    lastGameplay4Encounter: null,
     gameplay2Patch: '',
     mutationActiveIds: [],
     mutationActiveLabels: [],
@@ -380,6 +390,35 @@ export function recordRunPostFinal8Replayability({
     noDownedEligible: state.noDownedMastery
   };
   state.lastEvent = 'FACTION MASTERY COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunGameplay4BossEncounter({
+  encounter = null,
+  rewardPoints = 0
+} = {}) {
+  if (!state.active || !encounter?.completionId) return getRunSummarySnapshot();
+  if (state.lastGameplay4Encounter?.completionId === encounter.completionId) {
+    return getRunSummarySnapshot();
+  }
+  const points = Math.max(0, Math.round(finite(rewardPoints)));
+  state.gameplay4BossProfile = String(encounter.profileLabel || encounter.profileId || 'BOSS').slice(0, 100);
+  state.gameplay4BossInterrupts += Math.max(0, Math.round(finite(encounter.interruptCount)));
+  state.gameplay4VulnerabilityHits += Math.max(0, Math.round(finite(encounter.vulnerabilityHits)));
+  state.gameplay4RewardPoints += points;
+  state.objectiveRewardPoints += points;
+  state.lastGameplay4Encounter = {
+    completionId: String(encounter.completionId).slice(0, 220),
+    bossId: String(encounter.bossId || '').slice(0, 100),
+    bossLabel: String(encounter.bossLabel || 'BOSS').slice(0, 120),
+    profileId: String(encounter.profileId || '').slice(0, 60),
+    profileLabel: state.gameplay4BossProfile,
+    phaseTransitions: Math.max(0, Math.round(finite(encounter.phaseTransitions))),
+    interruptCount: Math.max(0, Math.round(finite(encounter.interruptCount))),
+    vulnerabilityHits: Math.max(0, Math.round(finite(encounter.vulnerabilityHits))),
+    rewardPoints: points
+  };
+  state.lastEvent = 'EXPANDED BOSS ENCOUNTER COMPLETE';
   return getRunSummarySnapshot();
 }
 

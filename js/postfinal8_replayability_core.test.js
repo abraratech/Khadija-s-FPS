@@ -58,8 +58,9 @@ assert.equal(normalTuning.patch, POST_FINAL8_PATCH);
 assert.ok(normalTuning.healthScale > 0);
 assert.equal(normalTuning.bossProfile, null);
 
+const requiredBossType = director.state.boss.enemyType;
 const bossTuning = director.nextSpawnTuning({
-  enemyType: 'GOLIATH',
+  enemyType: requiredBossType,
   bossStage: true,
   elite: true
 });
@@ -69,7 +70,7 @@ assert.ok(bossTuning.healthScale > normalTuning.healthScale);
 
 assert.equal(director.bindBoss({
   enemyId: 'boss-1',
-  enemyType: 'GOLIATH',
+  enemyType: requiredBossType,
   maxHealth: 3000,
   health: 3000
 }, 1100), true);

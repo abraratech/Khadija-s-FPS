@@ -1,5 +1,5 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
-export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'gameplay3-r1-interactive-evolving-maps', releaseSequence: 2026072101, productVersion: '1.4.0-gameplay3-r1' });
+export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'gameplay4-r1-expanded-boss-encounters', releaseSequence: 2026072102, productVersion: '1.5.0-gameplay4-r1' });
 
 function cleanText(value, max = 160) {
   return String(value ?? '').trim().slice(0, max);

@@ -892,10 +892,20 @@ getRemoteAuthorityTargets(now = nowMs()) {
       return;
     }
 
-    const damage = Math.max(
+    const baseDamage = Math.max(
       1,
       Math.min(MAX_REMOTE_DAMAGE, Math.round(Number(hit?.damage) || 1))
     );
+    const gameplay4DamageScale = Math.max(0.5, Math.min(2,
+      Number(globalThis.KAGetGameplay4BossDamageScale?.({
+        enemyId: enemy.content1Id || enemy.networkId || enemyId,
+        headshot: hit?.headshot === true
+      })) || 1
+    ));
+    const damage = Math.max(1, Math.min(
+      Math.round(MAX_REMOTE_DAMAGE * 2),
+      Math.round(baseDamage * gameplay4DamageScale)
+    ));
     const previousHealth = Math.max(0, Number(enemy.health) || 0);
     const killed = previousHealth > 0 && previousHealth - damage <= 0;
 

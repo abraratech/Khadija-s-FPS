@@ -98,6 +98,12 @@ GAMEPLAY3_SOURCE_BASELINE_SHA = '336298a125d70f2b98f4299cea74f8c08c6cefca'
 GAMEPLAY3_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 GAMEPLAY3_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 GAMEPLAY3_RELEASE_SEQUENCE = 2026072101
+GAMEPLAY4_PATCH = 'gameplay4-r1-expanded-boss-encounters'
+GAMEPLAY4_PRODUCT_VERSION = '1.5.0-gameplay4-r1'
+GAMEPLAY4_SOURCE_BASELINE_SHA = 'f48d86332933f9a4e02c78b072cc5861d41d3e48'
+GAMEPLAY4_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
+GAMEPLAY4_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
+GAMEPLAY4_RELEASE_SEQUENCE = 2026072102
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -751,13 +757,53 @@ def main() -> None:
         "worker_change_required": False,
         "frontend_only": True,
     },
+        "gameplay4": {
+        "schema": 1,
+        "patch": GAMEPLAY4_PATCH,
+        "product_version": GAMEPLAY4_PRODUCT_VERSION,
+        "source_baseline_sha": GAMEPLAY4_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY4_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY4_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY4_RELEASE_SEQUENCE,
+        "modes": [
+            "solo-survival",
+            "cooperative-survival",
+            "objective-operations",
+        ],
+        "boss_profiles": [
+            "JUGGERNAUT",
+            "MATRIARCH",
+            "DETONATOR",
+        ],
+        "boss_phases": 3,
+        "telegraphed_abilities": True,
+        "interruptible_abilities": True,
+        "vulnerability_windows": True,
+        "arena_damage_zones": True,
+        "phase_reinforcement_pressure": True,
+        "solo_damage_scaling": True,
+        "coop_role_aware_targeting": True,
+        "bounded_reinforcement_scaling": True,
+        "ability_commit_idempotence": True,
+        "boss_type_matching": True,
+        "pvp_excluded": True,
+        "host_authoritative": True,
+        "late_join_snapshot": True,
+        "reconnect_restoration": True,
+        "host_migration_checkpoint": True,
+        "reward_authority": True,
+        "run_summary_integration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": GAMEPLAY3_PATCH,
-        "source_baseline_sha": GAMEPLAY3_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": GAMEPLAY3_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": GAMEPLAY3_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": GAMEPLAY3_RELEASE_SEQUENCE,
+        "patch": GAMEPLAY4_PATCH,
+        "source_baseline_sha": GAMEPLAY4_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY4_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY4_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY4_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
         "worker_change_required": False,

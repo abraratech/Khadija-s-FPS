@@ -297,6 +297,53 @@ def main() -> None:
                     f"GAMEPLAY.3 production runtime file missing: {required_runtime}"
                 )
 
+    gameplay4 = manifest.get("gameplay4", {})
+    if current_release.get("patch") == "gameplay4-r1-expanded-boss-encounters":
+        if gameplay4.get("patch") != current_release.get("patch"):
+            raise SystemExit("GAMEPLAY.4 production manifest patch mismatch")
+        for field in (
+            "telegraphed_abilities",
+            "interruptible_abilities",
+            "vulnerability_windows",
+            "arena_damage_zones",
+            "phase_reinforcement_pressure",
+            "solo_damage_scaling",
+            "coop_role_aware_targeting",
+            "bounded_reinforcement_scaling",
+            "ability_commit_idempotence",
+            "boss_type_matching",
+            "pvp_excluded",
+            "host_authoritative",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "reward_authority",
+            "run_summary_integration",
+            "protocol_unchanged",
+            "frontend_only",
+        ):
+            if gameplay4.get(field) is not True:
+                raise SystemExit(f"GAMEPLAY.4 production policy mismatch: {field}")
+        if gameplay4.get("worker_change_required") is not False:
+            raise SystemExit("GAMEPLAY.4 must remain frontend-only")
+        if gameplay4.get("boss_phases") != 3:
+            raise SystemExit("GAMEPLAY.4 boss-phase count mismatch")
+        if gameplay4.get("boss_profiles") != ["JUGGERNAUT", "MATRIARCH", "DETONATOR"]:
+            raise SystemExit("GAMEPLAY.4 boss-profile registry mismatch")
+        for required_runtime in (
+            "js/gameplay4_boss_encounter_core.js",
+            "js/content1.js",
+            "js/enemy.js",
+            "js/weapons.js",
+            "js/multiplayer/shared_world.js",
+            "js/run_summary.js",
+            "js/postfinal8_replayability_core.js",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"GAMEPLAY.4 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

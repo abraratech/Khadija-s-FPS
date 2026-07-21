@@ -395,7 +395,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "GAMEPLAY.3 R1 - Interactive and Evolving Maps",
+  "releaseLabel": "GAMEPLAY.4 R1 - Expanded Boss Encounters",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -1322,5 +1322,45 @@
     "protocolUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "gameplay4": {
+    "schema": 1,
+    "patch": "gameplay4-r1-expanded-boss-encounters",
+    "productVersion": "1.5.0-gameplay4-r1",
+    "releaseSequence": 2026072102,
+    "sourceBaselineSha": "f48d86332933f9a4e02c78b072cc5861d41d3e48",
+    "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
+    "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
+    "modes": [
+      "solo-survival",
+      "cooperative-survival",
+      "objective-operations"
+    ],
+    "bossProfiles": [
+      "JUGGERNAUT",
+      "MATRIARCH",
+      "DETONATOR"
+    ],
+    "bossPhases": 3,
+    "telegraphedAbilities": true,
+    "interruptibleAbilities": true,
+    "vulnerabilityWindows": true,
+    "arenaDamageZones": true,
+    "phaseReinforcementPressure": true,
+    "bossTypeMatching": true,
+    "pvpExcluded": true,
+    "hostAuthoritative": true,
+    "lateJoinSnapshot": true,
+    "reconnectRestoration": true,
+    "hostMigrationCheckpoint": true,
+    "rewardAuthority": true,
+    "runSummaryIntegration": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true,
+    "soloDamageScaling": true,
+    "coopRoleAwareTargeting": true,
+    "boundedReinforcementScaling": true,
+    "abilityCommitIdempotence": true
   }
 }

@@ -1889,6 +1889,10 @@ function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
     recycled.role = config.role || 'standard';
     recycled.isContent1Elite = false;
     recycled.content1Id = null;
+    recycled.gameplay4Patch = null;
+    recycled.gameplay4BossProfileId = null;
+    recycled.gameplay4ReinforcementPhase = 0;
+    recycled.gameplay4NextWarningFxAt = 0;
     try {
       globalThis.KAContent1EnemySpawned?.(recycled);
     } catch {
@@ -2107,6 +2111,122 @@ function damageEnemyTarget(
     sourcePosition,
     damageType
   ) !== false;
+}
+
+
+let gameplay4TelegraphMesh = null;
+const gameplay4AbilityCenter = new THREE.Vector3();
+
+function ensureGameplay4TelegraphMesh() {
+  if (gameplay4TelegraphMesh) return gameplay4TelegraphMesh;
+  const geometry = new THREE.RingGeometry(0.76, 1, 48);
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xff5522,
+    transparent: true,
+    opacity: 0.64,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  gameplay4TelegraphMesh = new THREE.Mesh(geometry, material);
+  gameplay4TelegraphMesh.rotation.x = -Math.PI / 2;
+  gameplay4TelegraphMesh.position.y = 0.08;
+  gameplay4TelegraphMesh.visible = false;
+  gameplay4TelegraphMesh.renderOrder = 9;
+  gameplay4TelegraphMesh.userData.isMapDressing = true;
+  gameplay4TelegraphMesh.userData.playerNonBlockingProjectile = true;
+  scene.add(gameplay4TelegraphMesh);
+  return gameplay4TelegraphMesh;
+}
+
+function hideGameplay4Telegraph() {
+  if (gameplay4TelegraphMesh) gameplay4TelegraphMesh.visible = false;
+}
+
+function updateGameplay4BossRuntime(enemy, teamTargets) {
+  const snapshot = globalThis.KAGetGameplay4BossSnapshot?.();
+  if (
+    !snapshot?.active
+    || snapshot.status !== 'ACTIVE'
+    || !snapshot.enemyId
+    || String(enemy?.content1Id || enemy?.networkId || '') !== String(snapshot.enemyId)
+  ) {
+    return false;
+  }
+
+  const ability = snapshot.ability;
+  if (!ability || !['WARNING', 'ACTIVE', 'VULNERABLE'].includes(ability.state)) {
+    hideGameplay4Telegraph();
+    return true;
+  }
+
+  const centered = ['GROUND_SLAM', 'SHOCKWAVE', 'MELTDOWN_RING'].includes(ability.id);
+  const center = centered ? (ability.origin || ability.target) : (ability.target || ability.origin);
+  const centerX = Number(center?.x);
+  const centerY = Number(center?.y);
+  const centerZ = Number(center?.z);
+  gameplay4AbilityCenter.set(
+    Number.isFinite(centerX) ? centerX : enemy.mesh.position.x,
+    Number.isFinite(centerY) ? centerY : 0,
+    Number.isFinite(centerZ) ? centerZ : enemy.mesh.position.z
+  );
+
+  const ring = ensureGameplay4TelegraphMesh();
+  ring.position.set(gameplay4AbilityCenter.x, 0.08, gameplay4AbilityCenter.z);
+  const radius = Math.max(2, Math.min(12, Number(ability.radius) || 4));
+  const pulse = 1 + Math.sin(performance.now() * 0.012) * 0.055;
+  ring.scale.setScalar(radius * pulse);
+  ring.material.color.setHex(
+    ability.state === 'VULNERABLE'
+      ? 0x55f2ff
+      : (ability.state === 'ACTIVE' ? 0xff2200 : 0xff8a2b)
+  );
+  ring.material.opacity = ability.state === 'WARNING'
+    ? 0.46 + Math.abs(Math.sin(performance.now() * 0.014)) * 0.34
+    : (ability.state === 'VULNERABLE' ? 0.50 : 0.82);
+  ring.visible = true;
+
+  if (ability.state === 'WARNING') {
+    const now = performance.now();
+    if (now >= Number(enemy.gameplay4NextWarningFxAt || 0)) {
+      enemy.gameplay4NextWarningFxAt = now + 260;
+      spawnEnemyAttackWarning(gameplay4AbilityCenter, enemy.type === 'GOLIATH' ? 'HEAVY_GOLIATH' : 'EXPLODER', 0.46);
+      playEnemySound('heavyWindup', 0.28, true, {
+        cooldownKey: `gameplay4_warning_${ability.serial}`,
+        cooldownMs: 520,
+        pitchMin: 0.66,
+        pitchMax: 0.80
+      });
+    }
+  }
+
+  if (
+    ability.state === 'ACTIVE'
+    && globalThis.KAIsGameplay4Authority?.() === true
+    && globalThis.KAClaimGameplay4AbilityCommit?.(ability.serial) === true
+  ) {
+    const damage = Math.max(1, Math.min(60, Number(ability.damage) || 18));
+    const radiusSq = radius * radius;
+    for (const target of teamTargets || []) {
+      const dx = Number(target?.pos?.x || 0) - gameplay4AbilityCenter.x;
+      const dz = Number(target?.pos?.z || 0) - gameplay4AbilityCenter.z;
+      if (dx * dx + dz * dz <= radiusSq) {
+        damageEnemyTarget(target, damage, gameplay4AbilityCenter, ability.id || 'BOSS_ABILITY');
+      }
+    }
+    addScreenShake(Math.min(0.8, 0.30 + damage / 70));
+    spawnEnemyExplosionFX(gameplay4AbilityCenter, Math.min(1.8, 0.85 + radius / 10));
+    playEnemySound('exploder', 0.62, true, {
+      cooldownKey: `gameplay4_commit_${ability.serial}`,
+      cooldownMs: 800,
+      pitchMin: 0.72,
+      pitchMax: 0.88
+    });
+  }
+
+  if (ability.state === 'VULNERABLE') {
+    enemy.hitReactT = Math.max(Number(enemy.hitReactT) || 0, 0.04);
+  }
+  return true;
 }
 
 function hasRangedLineOfSight(enemy, targetPosition = player.pos) {
@@ -2378,8 +2498,15 @@ export function getEnemyReliabilitySnapshot() {
 
 
 export function updateEnemies(dt) {
+  const gameplay4Snapshot = globalThis.KAGetGameplay4BossSnapshot?.();
+  if (!gameplay4Snapshot?.active || gameplay4Snapshot.status !== 'ACTIVE') {
+    hideGameplay4Telegraph();
+  }
   const teamTargets = getEnemyTargetCandidates();
-  if (teamTargets.length === 0) return;
+  if (teamTargets.length === 0) {
+    hideGameplay4Telegraph();
+    return;
+  }
 
   const targetLoads = _enemyTargetLoads;
   targetLoads.clear();
@@ -2853,6 +2980,8 @@ if (!e.alive) continue;
 // Calculate dynamic distance components against the assigned living player.
     const enemyTarget = chooseEnemyTarget(e, teamTargets, targetLoads);
     if (!enemyTarget) continue;
+
+    updateGameplay4BossRuntime(e, teamTargets);
 
     const targetPos = enemyTarget.pos;
     _eToP.set(
@@ -3502,7 +3631,14 @@ export function damageEnemyForBot(enemy, damage, {
     };
   }
 
-  const amount = Math.max(0, Number(damage) || 0);
+  const baseAmount = Math.max(0, Number(damage) || 0);
+  const gameplay4Scale = Math.max(0.5, Math.min(2,
+    Number(globalThis.KAGetGameplay4BossDamageScale?.({
+      enemyId: enemy.content1Id || enemy.networkId || '',
+      headshot: false
+    })) || 1
+  ));
+  const amount = Math.max(0, Math.round(baseAmount * gameplay4Scale));
   if (amount <= 0) {
     return {
       applied: false,

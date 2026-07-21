@@ -515,6 +515,7 @@ export function initializeMultiplayerFoundation(
           connected: entry.connected !== false,
           alive: lifeState === 'ACTIVE' && (local ? player?.alive !== false : botState?.alive !== false),
           lifeState,
+          roleId: coop2Manager?.getRoleForPlayer?.(entry.playerId) || 'VANGUARD',
           position
         };
       }).filter((entry) => entry.playerId && entry.position);

@@ -6,6 +6,11 @@
 import * as THREE from 'three';
 import { getObjectiveSnapshot } from './objectives.js';
 import { scaleEconomyPrice } from './economy_balance.js';
+import { walls, mapMeshes } from './map.js';
+import {
+  GAMEPLAY3_PATCH,
+  getGameplay3MapProfile
+} from './gameplay3_map_evolution_core.js';
 
 const REACTOR_MAP_ID = 'reactor_courtyard';
 const BASE_DEFENSE_COST = 1250;
@@ -67,6 +72,20 @@ const state = {
   gameplay2HazardPlayerHits: 0,
   gameplay2HazardEnemyHits: 0,
   gameplay2HazardAnnouncementKey: '',
+  gameplay3Snapshot: null,
+  gameplay3Profile: null,
+  gameplay3Control: null,
+  gameplay3RouteA: null,
+  gameplay3RouteB: null,
+  gameplay3Cover: null,
+  gameplay3HazardRing: null,
+  gameplay3CollisionObjects: [],
+  gameplay3HazardPlayerTick: 0,
+  gameplay3HazardEnemyTick: 0,
+  gameplay3HazardPlayerHits: 0,
+  gameplay3HazardEnemyHits: 0,
+  gameplay3AnnouncementKey: '',
+  gameplay3LastRevision: -1,
   pendingEvents: [],
   lastEvent: 'IDLE'
 };
@@ -163,6 +182,334 @@ function createVent(anchor, index) {
   addObject(cap);
 
   return { ...anchor, ring, cap, index };
+}
+
+function removeArrayItem(array, item) {
+  const index = array.indexOf(item);
+  if (index >= 0) array.splice(index, 1);
+}
+
+function setGameplay3Collision(item, active) {
+  if (!item?.mesh || !item?.wall) return;
+  item.mesh.visible = active === true;
+  if (active === true) {
+    if (!mapMeshes.includes(item.mesh)) mapMeshes.push(item.mesh);
+    if (!walls.includes(item.wall)) walls.push(item.wall);
+  } else {
+    removeArrayItem(mapMeshes, item.mesh);
+    removeArrayItem(walls, item.wall);
+  }
+}
+
+function createGameplay3Barrier(definition, color = 0x00d4ff) {
+  if (!definition || !state.scene) return null;
+  const width = Math.max(0.5, finite(definition.w, 1));
+  const height = Math.max(0.8, finite(definition.h, 2.4));
+  const depth = Math.max(0.5, finite(definition.d, 1));
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, depth),
+    new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.34,
+      transparent: true,
+      opacity: 0.84,
+      roughness: 0.42,
+      metalness: 0.44
+    })
+  );
+  mesh.name = String(definition.id || 'gameplay3_barrier');
+  mesh.position.set(finite(definition.x), height / 2, finite(definition.z));
+  mesh.userData.isMapGameplay = true;
+  mesh.userData.gameplay3 = true;
+  mesh.userData.playerNonWalkable = true;
+  addObject(mesh);
+
+  const wall = {
+    minX: mesh.position.x - width / 2,
+    maxX: mesh.position.x + width / 2,
+    maxY: height,
+    minZ: mesh.position.z - depth / 2,
+    maxZ: mesh.position.z + depth / 2,
+    isDoor: false,
+    playerClimbable: false,
+    playerNonWalkable: true,
+    supportTag: 'gameplay3_dynamic_barrier',
+    mesh,
+    pos: new THREE.Vector3(mesh.position.x, 0, mesh.position.z)
+  };
+  const item = { mesh, wall, definition: { ...definition }, active: false };
+  state.gameplay3CollisionObjects.push(item);
+  setGameplay3Collision(item, false);
+  return item;
+}
+
+function createGameplay3Control(definition) {
+  if (!definition || !state.scene) return null;
+  const group = new THREE.Group();
+  group.name = String(definition.id || 'gameplay3_control');
+  group.position.set(finite(definition.x), 0, finite(definition.z));
+  group.userData.isMapGameplay = true;
+  group.userData.gameplay3 = true;
+
+  const base = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 1.25, 0.75),
+    new THREE.MeshStandardMaterial({
+      color: 0x1f2a32,
+      roughness: 0.68,
+      metalness: 0.35
+    })
+  );
+  base.position.y = 0.625;
+
+  const screen = new THREE.Mesh(
+    new THREE.BoxGeometry(0.68, 0.38, 0.045),
+    new THREE.MeshBasicMaterial({ color: 0x22ff88 })
+  );
+  screen.position.set(0, 0.82, -0.40);
+
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.10, 0.42, 10),
+    new THREE.MeshBasicMaterial({ color: 0x22ff88 })
+  );
+  beacon.position.y = 1.47;
+
+  group.add(base, screen, beacon);
+  addObject(group);
+  return {
+    group,
+    screen,
+    beacon,
+    pos: new THREE.Vector3(group.position.x, 0, group.position.z),
+    definition: { ...definition }
+  };
+}
+
+function clearGameplay3Runtime() {
+  for (const item of state.gameplay3CollisionObjects) {
+    setGameplay3Collision(item, false);
+  }
+  state.gameplay3CollisionObjects.length = 0;
+  state.gameplay3Control = null;
+  state.gameplay3RouteA = null;
+  state.gameplay3RouteB = null;
+  state.gameplay3Cover = null;
+  state.gameplay3HazardRing = null;
+  state.gameplay3Profile = null;
+}
+
+function ensureGameplay3Runtime() {
+  const snapshot = state.gameplay3Snapshot;
+  if (
+    !snapshot
+    || snapshot.patch !== GAMEPLAY3_PATCH
+    || snapshot.active !== true
+    || !state.scene
+  ) return false;
+
+  const profile = snapshot.profile || getGameplay3MapProfile(snapshot.mapId);
+  if (!profile || profile.mapId !== state.mapId) return false;
+  if (
+    state.gameplay3Profile?.mapId === profile.mapId
+    && state.gameplay3Control
+    && state.gameplay3RouteA
+    && state.gameplay3RouteB
+    && state.gameplay3Cover
+    && state.gameplay3HazardRing
+  ) return true;
+
+  clearGameplay3Runtime();
+  state.gameplay3Profile = JSON.parse(JSON.stringify(profile));
+  state.gameplay3Control = createGameplay3Control(profile.control);
+  state.gameplay3RouteA = createGameplay3Barrier(profile.routeA, 0xffaa00);
+  state.gameplay3RouteB = createGameplay3Barrier(profile.routeB, 0x00d4ff);
+  state.gameplay3Cover = createGameplay3Barrier(profile.cover, 0x22ff88);
+  state.gameplay3HazardRing = createRing(
+    profile.hazard.x,
+    profile.hazard.z,
+    profile.hazard.radius,
+    0xffaa00,
+    0.20
+  );
+  if (state.gameplay3HazardRing) {
+    state.gameplay3HazardRing.name = String(profile.hazard.id || 'gameplay3_hazard');
+    state.gameplay3HazardRing.visible = false;
+  }
+  return true;
+}
+
+function gameplay3Snapshot() {
+  const snapshot = state.gameplay3Snapshot;
+  return (
+    snapshot
+    && snapshot.patch === GAMEPLAY3_PATCH
+    && snapshot.active === true
+  ) ? snapshot : null;
+}
+
+function updateGameplay3ControlVisuals(snapshot) {
+  const control = state.gameplay3Control;
+  if (!control) return;
+  const controlState = String(snapshot?.control?.state || 'OFFLINE').toUpperCase();
+  let color = 0x667788;
+  if (controlState === 'READY') color = 0x22ff88;
+  else if (controlState === 'ACTIVE') color = 0x00d4ff;
+  else if (controlState === 'COOLDOWN') color = 0xffaa00;
+  control.screen.material.color.setHex(color);
+  control.beacon.material.color.setHex(color);
+  control.beacon.scale.y = controlState === 'ACTIVE'
+    ? 1.0 + Math.sin(performance.now() * 0.012) * 0.18
+    : 1;
+}
+
+function renderGameplay3Evolution() {
+  const snapshot = gameplay3Snapshot();
+  if (!snapshot) {
+    setGameplay3Collision(state.gameplay3RouteA, false);
+    setGameplay3Collision(state.gameplay3RouteB, false);
+    setGameplay3Collision(state.gameplay3Cover, false);
+    if (state.gameplay3Control?.group) state.gameplay3Control.group.visible = false;
+    if (state.gameplay3HazardRing) state.gameplay3HazardRing.visible = false;
+    return false;
+  }
+  if (!ensureGameplay3Runtime()) return false;
+
+  const routeVariant = Math.max(0, Math.min(1, Math.floor(finite(snapshot.routeVariant))));
+  const shutterClosed = snapshot.shutterClosed === true;
+  setGameplay3Collision(state.gameplay3RouteA, shutterClosed && routeVariant === 0);
+  setGameplay3Collision(state.gameplay3RouteB, shutterClosed && routeVariant === 1);
+  setGameplay3Collision(state.gameplay3Cover, snapshot.coverDeployed === true);
+  if (state.gameplay3Control?.group) state.gameplay3Control.group.visible = true;
+  updateGameplay3ControlVisuals(snapshot);
+
+  const hazard = snapshot.hazard;
+  const hazardVisible = Boolean(
+    hazard?.enabled === true
+    && ['WARNING', 'ACTIVE'].includes(String(hazard.phase || '').toUpperCase())
+  );
+  if (state.gameplay3HazardRing) {
+    state.gameplay3HazardRing.visible = hazardVisible;
+    if (hazardVisible) {
+      const active = String(hazard.phase).toUpperCase() === 'ACTIVE';
+      state.gameplay3HazardRing.position.set(
+        finite(hazard.x, state.gameplay3Profile?.hazard?.x),
+        0.07,
+        finite(hazard.z, state.gameplay3Profile?.hazard?.z)
+      );
+      const baseRadius = Math.max(2, finite(state.gameplay3Profile?.hazard?.radius, 4));
+      const radius = Math.max(2, finite(hazard.radius, baseRadius));
+      state.gameplay3HazardRing.scale.set(radius / baseRadius, radius / baseRadius, radius / baseRadius);
+      state.gameplay3HazardRing.material.color.setHex(active ? 0xff3344 : 0xffb000);
+      state.gameplay3HazardRing.material.opacity = active
+        ? 0.54 + Math.sin(performance.now() * 0.015) * 0.08
+        : 0.22 + Math.sin(performance.now() * 0.010) * 0.06;
+    }
+  }
+
+  const hazardKey = `${snapshot.revision}:${hazard?.cycle}:${hazard?.phase}`;
+  if (
+    hazardVisible
+    && hazardKey !== state.gameplay3AnnouncementKey
+  ) {
+    state.gameplay3AnnouncementKey = hazardKey;
+    const active = String(hazard.phase).toUpperCase() === 'ACTIVE';
+    state.pendingEvents.push({
+      type: active ? 'GAMEPLAY3_HAZARD_ACTIVE' : 'GAMEPLAY3_HAZARD_WARNING',
+      text: active
+        ? 'MAP HAZARD ACTIVE · CLEAR THE MARKED ZONE'
+        : 'MAP HAZARD WARNING · FLOOR INSTABILITY DETECTED',
+      color: active ? '#ff3344' : '#ffb000',
+      duration: active ? 1700 : 1450
+    });
+  }
+
+  if (snapshot.revision !== state.gameplay3LastRevision) {
+    const previous = state.gameplay3LastRevision;
+    state.gameplay3LastRevision = snapshot.revision;
+    if (previous >= 0) {
+      state.pendingEvents.push({
+        type: 'GAMEPLAY3_MAP_SHIFT',
+        text: snapshot.overrideActive === true
+          ? `${String(snapshot.control?.label || 'MAP OVERRIDE').toUpperCase()} ACTIVE`
+          : `MAP SHIFT · ${String(snapshot.phaseLabel || 'ROUTING UPDATED').toUpperCase()}`,
+        color: snapshot.overrideActive === true ? '#22ff88' : '#00d4ff',
+        duration: 1750
+      });
+    }
+  }
+  return true;
+}
+
+export function configureGameplay3MapEvolution(snapshot = null) {
+  state.gameplay3Snapshot = snapshot && typeof snapshot === 'object'
+    ? JSON.parse(JSON.stringify(snapshot))
+    : null;
+  if (!gameplay3Snapshot()) {
+    state.gameplay3AnnouncementKey = '';
+    state.gameplay3LastRevision = -1;
+  }
+  renderGameplay3Evolution();
+  return state.gameplay3Snapshot;
+}
+
+export function updateGameplay3MapEvolution(dt, {
+  player = null,
+  enemies = [],
+  damagePlayer = null,
+  killEnemy = null,
+  affectEnemies = false
+} = {}) {
+  const snapshot = gameplay3Snapshot();
+  renderGameplay3Evolution();
+  const hazard = snapshot?.hazard;
+  if (
+    !hazard
+    || hazard.enabled !== true
+    || String(hazard.phase || '').toUpperCase() !== 'ACTIVE'
+  ) return;
+
+  const safeDt = clamp(dt, 0, 0.05);
+  const radius = Math.max(2, finite(hazard.radius, 4));
+  const damage = Math.max(1, finite(hazard.damage, 7));
+  state.gameplay3HazardPlayerTick -= safeDt;
+
+  if (player?.alive && state.gameplay3HazardPlayerTick <= 0) {
+    state.gameplay3HazardPlayerTick = 0.65;
+    if (
+      flatDistanceSq(
+        player.pos?.x,
+        player.pos?.z,
+        hazard.x,
+        hazard.z
+      ) <= radius * radius
+    ) {
+      if (typeof damagePlayer === 'function') {
+        const source = state.gameplay3HazardRing?.position || {
+          x: hazard.x,
+          y: 0,
+          z: hazard.z
+        };
+        damagePlayer(damage, source, 'MAP_EVOLUTION_HAZARD');
+      }
+      state.gameplay3HazardPlayerHits += 1;
+    }
+  }
+
+  if (affectEnemies === true) {
+    state.gameplay3HazardEnemyTick -= safeDt;
+    if (state.gameplay3HazardEnemyTick <= 0) {
+      state.gameplay3HazardEnemyTick = 0.45;
+      state.gameplay3HazardEnemyHits += damageEnemiesInRadius(
+        enemies,
+        hazard.x,
+        hazard.z,
+        radius,
+        damage * 2.0,
+        killEnemy,
+        'MAP_EVOLUTION_HAZARD'
+      );
+    }
+  }
 }
 
 function gameplay2HazardSnapshot() {
@@ -279,6 +626,7 @@ export function updateGameplay2MapMutation(dt, {
 }
 
 function clearObjects() {
+  clearGameplay3Runtime();
   for (const object of state.objects) {
     if (object?.parent) object.parent.remove(object);
     object?.traverse?.((child) => {
@@ -405,12 +753,26 @@ export function resetMapGameplay({ mapId = 'unknown', scene = null } = {}) {
   state.gameplay2HazardPlayerHits = 0;
   state.gameplay2HazardEnemyHits = 0;
   state.gameplay2HazardAnnouncementKey = '';
+  state.gameplay3Control = null;
+  state.gameplay3RouteA = null;
+  state.gameplay3RouteB = null;
+  state.gameplay3Cover = null;
+  state.gameplay3HazardRing = null;
+  state.gameplay3CollisionObjects.length = 0;
+  state.gameplay3HazardPlayerTick = 0;
+  state.gameplay3HazardEnemyTick = 0;
+  state.gameplay3HazardPlayerHits = 0;
+  state.gameplay3HazardEnemyHits = 0;
+  state.gameplay3AnnouncementKey = '';
+  state.gameplay3LastRevision = -1;
   state.pendingEvents.length = 0;
   state.lastEvent = state.active ? 'REACTOR SYSTEMS ONLINE' : 'OFFLINE';
 
   if (scene && gameplay2HazardSnapshot()) ensureGameplay2HazardRing();
+  if (scene && gameplay3Snapshot()) ensureGameplay3Runtime();
   if (!state.active || !scene) {
     renderGameplay2Hazard();
+    renderGameplay3Evolution();
     return getMapGameplaySnapshot();
   }
 
@@ -452,6 +814,10 @@ export function endMapGameplay() {
   state.gameplay2HazardPlayerTick = 0;
   state.gameplay2HazardEnemyTick = 0;
   state.gameplay2HazardAnnouncementKey = '';
+  state.gameplay3Snapshot = null;
+  state.gameplay3Profile = null;
+  state.gameplay3AnnouncementKey = '';
+  state.gameplay3LastRevision = -1;
   state.pendingEvents.length = 0;
   state.lastEvent = 'ENDED';
 }
@@ -547,6 +913,32 @@ export function updateMapGameplay(dt, {
 }
 
 export function getClosestMapGameplayInteractable(playerPos, maxDistance = 2.8) {
+  const evolution = gameplay3Snapshot();
+  if (evolution?.active === true && state.gameplay3Control && playerPos) {
+    const distance = Math.sqrt(flatDistanceSq(
+      playerPos.x,
+      playerPos.z,
+      state.gameplay3Control.pos.x,
+      state.gameplay3Control.pos.z
+    ));
+    const allowed = Math.max(
+      maxDistance,
+      finite(evolution.profile?.control?.radius, 3.2)
+    );
+    if (distance <= allowed) {
+      return {
+        kind: 'GAMEPLAY3_CONTROL',
+        label: evolution.control?.label || evolution.profile?.control?.label || 'MAP CONTROL',
+        distance,
+        state: evolution.control?.state || 'OFFLINE',
+        timer: Math.max(0, finite(evolution.control?.remainingMs) / 1000),
+        cost: 0,
+        controlId: evolution.control?.id || evolution.profile?.control?.id || '',
+        phaseLabel: evolution.phaseLabel || 'MAP EVOLUTION'
+      };
+    }
+  }
+
   if (!state.active || !state.defenseConsole || !playerPos) return null;
   const distance = Math.sqrt(flatDistanceSq(
     playerPos.x,
@@ -567,7 +959,21 @@ export function getClosestMapGameplayInteractable(playerPos, maxDistance = 2.8) 
 }
 
 export function getMapGameplayInteractionPrompt(interactable) {
-  if (!interactable || interactable.kind !== 'REACTOR_DEFENSE') return '';
+  if (!interactable) return '';
+  if (interactable.kind === 'GAMEPLAY3_CONTROL') {
+    const controlState = String(interactable.state || 'OFFLINE').toUpperCase();
+    if (controlState === 'READY') {
+      return `Press [E] to activate ${String(interactable.label || 'Map Override')}`;
+    }
+    if (controlState === 'ACTIVE') {
+      return `${String(interactable.label || 'MAP OVERRIDE').toUpperCase()} ACTIVE (${Math.ceil(finite(interactable.timer))}s)`;
+    }
+    if (controlState === 'COOLDOWN') {
+      return `${String(interactable.label || 'MAP OVERRIDE').toUpperCase()} RECHARGING (${Math.ceil(finite(interactable.timer))}s)`;
+    }
+    return `${String(interactable.label || 'MAP CONTROL').toUpperCase()} OFFLINE`;
+  }
+  if (interactable.kind !== 'REACTOR_DEFENSE') return '';
   if (state.defenseState === 'READY') {
     return `Press [E] to activate Coolant Override [${getDefenseCost()} PTS]`;
   }
@@ -581,6 +987,29 @@ export function getMapGameplayInteractionPrompt(interactable) {
 }
 
 export function activateMapGameplayInteractable(interactable) {
+  if (interactable?.kind === 'GAMEPLAY3_CONTROL') {
+    if (String(interactable.state || '').toUpperCase() !== 'READY') {
+      return { success: false, reason: interactable.state || 'NOT_READY' };
+    }
+    const request = typeof window !== 'undefined'
+      ? window.KARequestGameplay3Interaction
+      : null;
+    const accepted = typeof request === 'function'
+      ? request(interactable.controlId)
+      : false;
+    return {
+      success: accepted === true,
+      reason: accepted === true ? 'ACCEPTED' : 'REJECTED',
+      cost: 0,
+      title: accepted === true
+        ? `${String(interactable.label || 'MAP OVERRIDE').toUpperCase()} REQUESTED`
+        : 'MAP OVERRIDE REJECTED',
+      body: accepted === true
+        ? 'Host-authoritative map routing update requested'
+        : 'Map control is unavailable or out of range'
+    };
+  }
+
   if (!state.active || interactable?.kind !== 'REACTOR_DEFENSE') {
     return { success: false, reason: 'INVALID' };
   }
@@ -605,7 +1034,7 @@ export function activateMapGameplayInteractable(interactable) {
 }
 
 export function getMapGameplayMinimapMarkers() {
-  if (!state.active && !gameplay2HazardSnapshot()) return [];
+  if (!state.active && !gameplay2HazardSnapshot() && !gameplay3Snapshot()) return [];
   const markers = [];
 
   if (state.zoneAnchor) {
@@ -650,6 +1079,29 @@ export function getMapGameplayMinimapMarkers() {
     });
   }
 
+  const evolution = gameplay3Snapshot();
+  if (evolution?.profile?.control) {
+    markers.push({
+      type: 'MAP_CONTROL',
+      x: evolution.profile.control.x,
+      z: evolution.profile.control.z,
+      color: evolution.control?.state === 'READY' ? '#22ff88' : '#00d4ff',
+      radius: 2.8
+    });
+  }
+  if (
+    evolution?.hazard?.enabled === true
+    && ['WARNING', 'ACTIVE'].includes(String(evolution.hazard.phase || '').toUpperCase())
+  ) {
+    markers.push({
+      type: 'MAP_EVOLUTION_HAZARD',
+      x: evolution.hazard.x,
+      z: evolution.hazard.z,
+      color: evolution.hazard.phase === 'ACTIVE' ? '#ff3344' : '#ffb000',
+      radius: Math.max(3, finite(evolution.hazard.radius, 4.2))
+    });
+  }
+
   return markers;
 }
 
@@ -682,6 +1134,11 @@ export function getMapGameplaySnapshot() {
       : null,
     gameplay2HazardPlayerHits: state.gameplay2HazardPlayerHits,
     gameplay2HazardEnemyHits: state.gameplay2HazardEnemyHits,
+    gameplay3: gameplay3Snapshot()
+      ? JSON.parse(JSON.stringify(gameplay3Snapshot()))
+      : null,
+    gameplay3HazardPlayerHits: state.gameplay3HazardPlayerHits,
+    gameplay3HazardEnemyHits: state.gameplay3HazardEnemyHits,
     lastEvent: state.lastEvent
   };
 }
@@ -689,4 +1146,5 @@ export function getMapGameplaySnapshot() {
 if (typeof window !== 'undefined') {
   window.KAGetMapGameplay = getMapGameplaySnapshot;
   window.KAConfigureGameplay2MapMutation = configureGameplay2MapMutation;
+  window.KAConfigureGameplay3MapEvolution = configureGameplay3MapEvolution;
 }

@@ -2302,6 +2302,15 @@ export function endMultiplayerEconomy() {
 function getOnlineInteractionPromptAndRequest() {
   prepareNetworkIds();
 
+  const mapInteractable = getClosestMapGameplayInteractable(player.pos, 3.4);
+  if (mapInteractable?.kind === 'GAMEPLAY3_CONTROL') {
+    return {
+      prompt: getMapGameplayInteractionPrompt(mapInteractable),
+      mapInteractable,
+      request: null
+    };
+  }
+
   let closestBarricade = null;
   let barricadeDistance = MULTIPLAYER_INTERACTION_RANGES.barricade;
   barricades.forEach((barricade) => {
@@ -2470,10 +2479,20 @@ function checkMultiplayerWorldInteractions(checkInteractionPressed = false) {
   }
 
   setInteractionPrompt(true, interaction.prompt);
-  if (
-    interaction.request
-    && shouldHandleInteraction(checkInteractionPressed)
-  ) {
+  if (!shouldHandleInteraction(checkInteractionPressed)) return;
+
+  if (interaction.mapInteractable?.kind === 'GAMEPLAY3_CONTROL') {
+    const result = activateMapGameplayInteractable(interaction.mapInteractable);
+    if (!result.success) {
+      showBlockedShopFeedback(
+        result.title || 'MAP OVERRIDE REJECTED',
+        result.body || 'The host rejected this map control request.'
+      );
+    }
+    return;
+  }
+
+  if (interaction.request) {
     multiplayerEconomy?.requestInteraction?.(interaction.request);
   }
 }
@@ -2505,26 +2524,35 @@ export function checkWorldInteractions(checkInteractionPressed = false) {
         const result = activateMapGameplayInteractable(mapInteractable);
 
         if (result.success) {
-          player.score -= cost;
-          updateScoreHUD(player.score);
-          recordProgressionPurchase(cost, 'MAP_DEFENSE');
-          recordRunPointsSpent(cost);
-          playWorldSound('trapActivate', 0.68, false, {
-            cooldownKey: 'reactor_override',
+          if (cost > 0) {
+            player.score -= cost;
+            updateScoreHUD(player.score);
+            recordProgressionPurchase(cost, 'MAP_DEFENSE');
+            recordRunPointsSpent(cost);
+          }
+          const gameplay3Control = mapInteractable.kind === 'GAMEPLAY3_CONTROL';
+          playWorldSound('trapActivate', gameplay3Control ? 0.58 : 0.68, false, {
+            cooldownKey: gameplay3Control ? 'gameplay3_override' : 'reactor_override',
             cooldownMs: 900,
-            pitchMin: 0.84,
-            pitchMax: 0.96
+            pitchMin: gameplay3Control ? 0.96 : 0.84,
+            pitchMax: gameplay3Control ? 1.08 : 0.96
           });
           showShopFeedback({
-            title: result.title || 'MAP DEFENSE ACTIVE',
-            body: result.body || 'Defensive system activated.',
+            title: result.title || (gameplay3Control ? 'MAP OVERRIDE ACTIVE' : 'MAP DEFENSE ACTIVE'),
+            body: result.body || (gameplay3Control
+              ? 'Host-authoritative routing update applied.'
+              : 'Defensive system activated.'),
             tone: 'ready',
             durationMs: 2100,
             progress: 1
           });
-          showStatusToast(result.title || 'DEFENSE ACTIVE', '#00ddff', 1700);
+          showStatusToast(
+            result.title || (gameplay3Control ? 'MAP OVERRIDE ACTIVE' : 'DEFENSE ACTIVE'),
+            gameplay3Control ? '#22ff88' : '#00ddff',
+            1700
+          );
         }
-      } else {
+      } else if (cost > 0) {
         showNotEnoughPoints(cost, 'Coolant Override');
       }
     }

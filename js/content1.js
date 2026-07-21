@@ -33,6 +33,10 @@ import {
   GAMEPLAY2_PATCH,
   Gameplay2MutationDirector
 } from './gameplay2_mutation_core.js';
+import {
+  GAMEPLAY3_PATCH,
+  Gameplay3EvolutionDirector
+} from './gameplay3_map_evolution_core.js';
 import { recordProgressionContentOperation } from './progression.js';
 import {
   recordRunDynamicOperation,
@@ -196,6 +200,7 @@ export class Content1Manager {
     getBotSnapshot = () => null,
     getActiveEnemies = () => [],
     applyGameplay2MutationState = () => null,
+    applyGameplay3EvolutionState = () => null,
     awardTeamObjective = () => false,
     handleObjectiveDirective = () => false,
     getInteractLabel = () => 'INTERACT'
@@ -210,6 +215,7 @@ export class Content1Manager {
     this.getBotSnapshot = getBotSnapshot;
     this.getActiveEnemies = getActiveEnemies;
     this.applyGameplay2MutationState = applyGameplay2MutationState;
+    this.applyGameplay3EvolutionState = applyGameplay3EvolutionState;
     this.awardTeamObjective = awardTeamObjective;
     this.handleObjectiveDirective = handleObjectiveDirective;
     this.getInteractLabel = getInteractLabel;
@@ -218,6 +224,7 @@ export class Content1Manager {
     this.missionDirector = new PostFinal7MissionDirector();
     this.replayDirector = new PostFinal8ReplayDirector();
     this.mutationDirector = new Gameplay2MutationDirector();
+    this.mapEvolutionDirector = new Gameplay3EvolutionDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -239,6 +246,7 @@ export class Content1Manager {
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
     this.observedMutationEventIds = new Set();
+    this.lastObservedGameplay3Revision = -1;
     this.hud = null;
     this.hudOperation = null;
     this.hudDescription = null;
@@ -304,6 +312,12 @@ export class Content1Manager {
       window.KAGetGameplay2EnemyTuning = () => (this.active ? this.mutationDirector.getTuning().enemy : null);
       window.KAGetGameplay2SupplyTuning = () => (this.active ? this.mutationDirector.getTuning().supply : null);
       window.KAGetGameplay2RewardMultiplier = () => (this.active ? this.mutationDirector.getTuning().rewardMultiplier : 1);
+      window.KAGetGameplay3EvolutionSnapshot = () => (
+        this.active ? this.mapEvolutionDirector.getSnapshot(Date.now()) : null
+      );
+      window.KARequestGameplay3Interaction = (controlId) => (
+        this.requestGameplay3Interaction(controlId)
+      );
       window.KASetObjectiveHudMode = (mode) => this.setObjectiveHudMode(mode, { persist: true, announce: true });
       window.KASetRunChallengesVisible = (visible) => this.setRunChallengesVisible(visible === true, { persist: true, announce: true });
       window.KAGetHudPreferences = () => Object.freeze({
@@ -378,6 +392,7 @@ export class Content1Manager {
     this.lastObservedOperationStatus = null;
     this.lastObservedOperationStage = null;
     this.observedMutationEventIds.clear();
+    this.lastObservedGameplay3Revision = -1;
     this.core.reset({
       runId: resolvedRunId,
       mapId: resolvedMapId,
@@ -410,6 +425,12 @@ export class Content1Manager {
       gameMode: 'survival',
       now: Date.now()
     });
+    this.mapEvolutionDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      gameMode: 'survival',
+      now: Date.now()
+    });
     this.replayDirector.reset({
       runId: resolvedRunId,
       mapId: resolvedMapId,
@@ -423,6 +444,7 @@ export class Content1Manager {
     this.clearObjectiveVisuals();
     this.consumeAuthorityEvents();
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
+    this.applyGameplay3Snapshot(this.mapEvolutionDirector.getSnapshot(Date.now()), { transitions: false });
     this.updateHud(true);
     if (this.isOnline() && !this.isAuthority()) this.requestSnapshot(true);
     else this.publishSnapshot(true);
@@ -436,6 +458,7 @@ export class Content1Manager {
     this.clearObjectiveVisuals();
     this.handleObjectiveDirective?.(null);
     this.applyGameplay2MutationState?.(null);
+    this.applyGameplay3EvolutionState?.(null);
     this.warnedOperationIds.clear();
     this.lastObservedOperationId = null;
     this.lastObservedOperationStatus = null;
@@ -465,6 +488,49 @@ export class Content1Manager {
     if (!force && now - this.lastSnapshotRequestedAt < SNAPSHOT_REQUEST_INTERVAL_MS) return null;
     this.lastSnapshotRequestedAt = now;
     return this.sendCommand({ action: 'SNAPSHOT_REQUEST' }, true);
+  }
+
+  requestGameplay3Interaction(controlId, actorId = this.localPlayerId()) {
+    if (!this.active) return false;
+    const normalizedControlId = cleanText(controlId, '', 120);
+    if (!normalizedControlId) return false;
+
+    if (!this.isAuthority()) {
+      return Boolean(this.sendCommand({
+        action: 'GAMEPLAY3_INTERACT',
+        controlId: normalizedControlId
+      }, true));
+    }
+
+    const snapshot = this.mapEvolutionDirector.getSnapshot(Date.now());
+    if (!snapshot?.active || snapshot.control?.id !== normalizedControlId) return false;
+
+    let actor = this.participants().find((entry) => entry.playerId === actorId) || null;
+    if (!actor && actorId === this.localPlayerId() && this.player?.pos) {
+      actor = {
+        playerId: actorId,
+        connected: true,
+        alive: this.player.alive !== false,
+        position: this.player.pos
+      };
+    }
+    if (!actor?.connected || !actor?.alive || !actor.position) return false;
+
+    const control = snapshot.profile?.control;
+    if (!control) return false;
+    const allowedRadius = Math.max(2.4, finite(control.radius, 3.2)) + 0.8;
+    if (flatDistance(actor.position, control) > allowedRadius) return false;
+
+    const result = this.mapEvolutionDirector.interact({
+      controlId: normalizedControlId,
+      actorId,
+      now: Date.now()
+    });
+    if (!result?.accepted) return false;
+
+    this.applyGameplay3Snapshot(result.snapshot, { transitions: true });
+    this.publishSnapshot(true);
+    return true;
   }
 
   tuneMissionOperation(operation, stage = this.missionDirector.currentStage()) {
@@ -645,7 +711,8 @@ export class Content1Manager {
     const postFinal7 = this.missionDirector.getSnapshot(epochNow);
     const postFinal8 = this.replayDirector.getSnapshot(epochNow);
     const gameplay2 = this.mutationDirector.update(epochNow);
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2 };
+    const gameplay3 = this.mapEvolutionDirector.update(epochNow);
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3 };
   }
 
   publishSnapshot(force = false) {
@@ -656,6 +723,7 @@ export class Content1Manager {
     const snapshot = this.buildSnapshot(now);
     this.latestSnapshot = clone(snapshot);
     this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
+    this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
     const envelope = this.isOnline()
       ? this.runtime?.sendContent1State?.({ kind: 'snapshot', snapshot })
       : null;
@@ -727,6 +795,7 @@ export class Content1Manager {
     this.missionDirector.state.playerCount = humans;
     this.replayDirector.state.playerCount = humans;
     this.mutationDirector.startWave(normalizedWave, Date.now());
+    this.mapEvolutionDirector.startWave(normalizedWave, Date.now());
     const encounter = this.core.startWave(normalizedWave, nowMs());
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.consumeAuthorityEvents();
@@ -953,7 +1022,9 @@ export class Content1Manager {
       if (snapshot.postFinal7) this.missionDirector.replaceSnapshot(snapshot.postFinal7, Date.now());
       if (snapshot.postFinal8) this.replayDirector.replaceSnapshot(snapshot.postFinal8, Date.now());
       if (snapshot.gameplay2) this.mutationDirector.replaceSnapshot(snapshot.gameplay2, Date.now());
+      if (snapshot.gameplay3) this.mapEvolutionDirector.replaceSnapshot(snapshot.gameplay3, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
+      this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
       if (restoredBoss?.enemyId) {
         const enemy = this.getActiveEnemies?.().find((entry) => (
@@ -1006,6 +1077,9 @@ export class Content1Manager {
       if (payload.action === 'MISSION_RISK_CHOICE') {
         return this.chooseMissionRisk(payload.choice, actorId);
       }
+      if (payload.action === 'GAMEPLAY3_INTERACT') {
+        return this.requestGameplay3Interaction(payload.controlId, actorId);
+      }
       if (payload.action === 'OPERATION_ACTION' && payload.operationAction) {
         if (!this.validateRemoteDynamicAction(payload.operationAction, actorId)) return false;
         const action = { ...payload.operationAction, actorId };
@@ -1042,14 +1116,19 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay2) {
       this.mutationDirector.replaceSnapshot(payload.snapshot.gameplay2, Date.now());
     }
+    if (payload.snapshot?.gameplay3) {
+      this.mapEvolutionDirector.replaceSnapshot(payload.snapshot.gameplay3, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
       postFinal7: this.missionDirector.getSnapshot(Date.now()),
       postFinal8: this.replayDirector.getSnapshot(Date.now()),
-      gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now()))
+      gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now())),
+      gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
+    this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
     this.applyLocalOperationRewards();
     this.observeDynamicOperation(this.latestSnapshot, { transitions: true });
     this.updateHud(true);
@@ -1248,6 +1327,20 @@ export class Content1Manager {
         });
       }
     }
+    return true;
+  }
+
+  applyGameplay3Snapshot(snapshot, { transitions = false } = {}) {
+    if (!snapshot || snapshot.patch !== GAMEPLAY3_PATCH || snapshot.active !== true) {
+      this.applyGameplay3EvolutionState?.(null);
+      this.lastObservedGameplay3Revision = -1;
+      return false;
+    }
+
+    const revision = Math.max(0, Math.floor(finite(snapshot.revision)));
+    this.applyGameplay3EvolutionState?.(clone(snapshot));
+    this.lastObservedGameplay3Revision = revision;
+    void transitions;
     return true;
   }
 

@@ -24,7 +24,9 @@ import {
   updateMapGameplay,
   consumeMapGameplayEvents,
   configureGameplay2MapMutation,
-  updateGameplay2MapMutation
+  updateGameplay2MapMutation,
+  configureGameplay3MapEvolution,
+  updateGameplay3MapEvolution
 } from './map_gameplay.js';
 import {
   resetAIDirectorRun,
@@ -146,6 +148,9 @@ initializeMultiplayerFoundation(player, {
     applyGameplay2MutationState: (snapshot) => {
       applyGameplay2MutationLighting(snapshot);
       configureGameplay2MapMutation(snapshot);
+    },
+    applyGameplay3EvolutionState: (snapshot) => {
+      configureGameplay3MapEvolution(snapshot);
     }
   },
   reviveAdapter: {
@@ -1916,6 +1921,13 @@ if (isSharedMultiplayerWorldAuthority()) { updateAIDirector(dt, {
 mdx = 0; mdy = 0;
 const sharedWorldAuthority = isSharedMultiplayerWorldAuthority();
 updateGameplay2MapMutation(dt, {
+  player,
+  enemies: sharedWorldAuthority ? frameEnemies : [],
+  damagePlayer,
+  killEnemy: sharedWorldAuthority ? killEnemy : null,
+  affectEnemies: sharedWorldAuthority
+});
+updateGameplay3MapEvolution(dt, {
   player,
   enemies: sharedWorldAuthority ? frameEnemies : [],
   damagePlayer,

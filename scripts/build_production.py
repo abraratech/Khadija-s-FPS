@@ -104,6 +104,12 @@ GAMEPLAY4_SOURCE_BASELINE_SHA = 'f48d86332933f9a4e02c78b072cc5861d41d3e48'
 GAMEPLAY4_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 GAMEPLAY4_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 GAMEPLAY4_RELEASE_SEQUENCE = 2026072102
+GAMEPLAY5_PATCH = 'gameplay5-r1-narrative-operations'
+GAMEPLAY5_PRODUCT_VERSION = '1.6.0-gameplay5-r1'
+GAMEPLAY5_SOURCE_BASELINE_SHA = '1547495baab59056c5b89d4b207a8e1b2c660a69'
+GAMEPLAY5_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
+GAMEPLAY5_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
+GAMEPLAY5_RELEASE_SEQUENCE = 2026072103
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -797,13 +803,57 @@ def main() -> None:
         "worker_change_required": False,
         "frontend_only": True,
     },
+        "gameplay5": {
+        "schema": 1,
+        "patch": GAMEPLAY5_PATCH,
+        "product_version": GAMEPLAY5_PRODUCT_VERSION,
+        "source_baseline_sha": GAMEPLAY5_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY5_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY5_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY5_RELEASE_SEQUENCE,
+        "modes": [
+            "solo-survival",
+            "cooperative-survival",
+            "objective-operations",
+        ],
+        "supported_maps": [
+            "grid_bunker",
+            "industrial_yard",
+            "neon_depot",
+            "parking_garage",
+            "hospital_wing",
+            "reactor_courtyard",
+        ],
+        "map_specific_briefings": True,
+        "stage_transmissions": True,
+        "branch_consequences": True,
+        "objective_outcome_influence": True,
+        "boss_narrative_integration": True,
+        "mutation_narrative_integration": True,
+        "evolving_map_narrative_integration": True,
+        "text_only_narrative": True,
+        "voice_runtime_reintroduced": False,
+        "nonverbal_audio_cues": True,
+        "cinematic_hud_presentation": True,
+        "deterministic_outcomes": True,
+        "pvp_excluded": True,
+        "host_authoritative": True,
+        "late_join_snapshot": True,
+        "reconnect_restoration": True,
+        "host_migration_checkpoint": True,
+        "reward_authority": True,
+        "run_summary_integration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": GAMEPLAY4_PATCH,
-        "source_baseline_sha": GAMEPLAY4_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": GAMEPLAY4_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": GAMEPLAY4_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": GAMEPLAY4_RELEASE_SEQUENCE,
+        "patch": GAMEPLAY5_PATCH,
+        "source_baseline_sha": GAMEPLAY5_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY5_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY5_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY5_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
         "worker_change_required": False,

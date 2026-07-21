@@ -31,7 +31,7 @@ assert.match(core, /replaceSnapshot\(snapshot, now = Date\.now\(\)\)/);
 assert.match(content, /Gameplay3EvolutionDirector/);
 assert.match(content, /this\.mapEvolutionDirector = new Gameplay3EvolutionDirector\(\)/);
 assert.match(content, /const gameplay3 = this\.mapEvolutionDirector\.update\(epochNow\)/);
-assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4 \}/);
+assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5 \}/);
 assert.match(content, /payload\.action === 'GAMEPLAY3_INTERACT'/);
 assert.match(content, /snapshot\.gameplay3/);
 assert.match(content, /this\.mapEvolutionDirector\.replaceSnapshot\(snapshot\.gameplay3/);
@@ -66,20 +66,20 @@ const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.inde
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
 
 
-assert.equal(release.releaseId, 'gameplay4-r1-expanded-boss-encounters');
-assert.equal(release.productVersion, '1.5.0-gameplay4-r1');
-assert.equal(release.releaseSequence, 2026072102);
-assert.equal(release.sourceBaselineSha, 'f48d86332933f9a4e02c78b072cc5861d41d3e48');
+assert.equal(release.releaseId, 'gameplay5-r1-narrative-operations');
+assert.equal(release.productVersion, '1.6.0-gameplay5-r1');
+assert.equal(release.releaseSequence, 2026072103);
+assert.equal(release.sourceBaselineSha, '1547495baab59056c5b89d4b207a8e1b2c660a69');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.4 R1 - Expanded Boss Encounters');
+assert.equal(metadata.releaseLabel, 'GAMEPLAY.5 R1 - Narrative Operations');
 assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
 assert.equal(metadata.gameplay3?.pvpExcluded, true);
 assert.equal(metadata.gameplay3?.workerChangeRequired, false);
-assert.match(updateDeliveryCore, /gameplay4-r1-expanded-boss-encounters/);
-assert.match(updateDeliveryCore, /releaseSequence: 2026072102/);
+assert.match(updateDeliveryCore, /gameplay5-r1-narrative-operations/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072103/);
 assert.match(buildProduction, /GAMEPLAY3_PATCH/);
 assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
 assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);

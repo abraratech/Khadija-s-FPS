@@ -344,6 +344,58 @@ def main() -> None:
                     f"GAMEPLAY.4 production runtime file missing: {required_runtime}"
                 )
 
+    gameplay5 = manifest.get("gameplay5", {})
+    if current_release.get("patch") == "gameplay5-r1-narrative-operations":
+        if gameplay5.get("patch") != current_release.get("patch"):
+            raise SystemExit("GAMEPLAY.5 production manifest patch mismatch")
+        for field in (
+            "map_specific_briefings",
+            "stage_transmissions",
+            "branch_consequences",
+            "objective_outcome_influence",
+            "boss_narrative_integration",
+            "mutation_narrative_integration",
+            "evolving_map_narrative_integration",
+            "text_only_narrative",
+            "nonverbal_audio_cues",
+            "cinematic_hud_presentation",
+            "deterministic_outcomes",
+            "pvp_excluded",
+            "host_authoritative",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "reward_authority",
+            "run_summary_integration",
+            "protocol_unchanged",
+            "frontend_only",
+        ):
+            if gameplay5.get(field) is not True:
+                raise SystemExit(f"GAMEPLAY.5 production policy mismatch: {field}")
+        if gameplay5.get("voice_runtime_reintroduced") is not False:
+            raise SystemExit("GAMEPLAY.5 must not reintroduce voice runtime")
+        if gameplay5.get("worker_change_required") is not False:
+            raise SystemExit("GAMEPLAY.5 must remain frontend-only")
+        if gameplay5.get("supported_maps") != [
+            "grid_bunker",
+            "industrial_yard",
+            "neon_depot",
+            "parking_garage",
+            "hospital_wing",
+            "reactor_courtyard",
+        ]:
+            raise SystemExit("GAMEPLAY.5 supported-map registry mismatch")
+        for required_runtime in (
+            "js/gameplay5_narrative_operation_core.js",
+            "js/content1.js",
+            "js/run_summary.js",
+            "css/hud.css",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"GAMEPLAY.5 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

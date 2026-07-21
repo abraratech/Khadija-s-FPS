@@ -45,11 +45,18 @@ import {
   getGameplay4BossDamageScale,
   getGameplay4ReinforcementTuning
 } from './gameplay4_boss_encounter_core.js';
+import {
+  GAMEPLAY5_PATCH,
+  GAMEPLAY5_STATUS,
+  Gameplay5NarrativeDirector,
+  computeGameplay5NarrativeReward
+} from './gameplay5_narrative_operation_core.js';
 import { recordProgressionContentOperation } from './progression.js';
 import {
   recordRunDynamicOperation,
   recordRunGameplay2Mutation,
   recordRunGameplay4BossEncounter,
+  recordRunGameplay5NarrativeOutcome,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -236,6 +243,7 @@ export class Content1Manager {
     this.mutationDirector = new Gameplay2MutationDirector();
     this.mapEvolutionDirector = new Gameplay3EvolutionDirector();
     this.bossEncounterDirector = new Gameplay4BossDirector();
+    this.narrativeDirector = new Gameplay5NarrativeDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -252,6 +260,7 @@ export class Content1Manager {
     this.missionRewardedCompletionIds = new Set();
     this.replayRewardedCompletionIds = new Set();
     this.bossEncounterRewardedCompletionIds = new Set();
+    this.narrativeRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -268,6 +277,7 @@ export class Content1Manager {
     this.hudEncounter = null;
     this.hudMission = null;
     this.hudMissionStages = null;
+    this.hudNarrative = null;
     this.hudRisk = null;
     this.hudRiskSecure = null;
     this.hudRiskOverdrive = null;
@@ -329,6 +339,9 @@ export class Content1Manager {
       );
       window.KAGetGameplay4BossSnapshot = () => (
         this.active ? this.bossEncounterDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetGameplay5NarrativeSnapshot = () => (
+        this.active ? this.narrativeDirector.getSnapshot(Date.now()) : null
       );
       window.KAGetGameplay4BossDamageScale = ({ enemyId = '', headshot = false } = {}) => (
         getGameplay4BossDamageScale(
@@ -415,6 +428,7 @@ export class Content1Manager {
     this.missionRewardedCompletionIds.clear();
     this.replayRewardedCompletionIds.clear();
     this.bossEncounterRewardedCompletionIds.clear();
+    this.narrativeRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -474,6 +488,13 @@ export class Content1Manager {
       gameMode: 'survival',
       now: Date.now()
     });
+    this.narrativeDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      missionId: this.missionDirector.state.missionId,
+      gameMode: 'survival',
+      now: Date.now()
+    });
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.ensureHud();
     this.clearObjectiveVisuals();
@@ -500,6 +521,7 @@ export class Content1Manager {
     this.lastObservedOperationStage = null;
     this.observedMutationEventIds.clear();
     this.bossEncounterDirector.reset({ gameMode: 'survival', now: Date.now() });
+    this.narrativeDirector.reset({ gameMode: 'pvp', now: Date.now() });
   }
 
   nextEventId(kind) {
@@ -594,6 +616,25 @@ export class Content1Manager {
       operation.targetEnemyLabel = cleanText(stage.label, 'ELITE TARGET', 100).toUpperCase();
     }
 
+    const narrativeTuning = this.narrativeDirector.getObjectiveTuning(
+      this.missionDirector.getSnapshot(Date.now())
+    );
+    if (finite(narrativeTuning.targetScale, 1) !== 1) {
+      operation.stageTarget = Math.max(1, Math.ceil(
+        finite(operation.stageTarget, 1) * finite(narrativeTuning.targetScale, 1)
+      ));
+      operation.target = Math.max(finite(operation.target, operation.stageTarget), operation.stageTarget);
+      operation.rewardPoints = Math.max(1, Math.round(
+        finite(operation.rewardPoints, 100) * finite(narrativeTuning.rewardScale, 1)
+      ));
+      operation.description = cleanText(
+        `${operation.description} ${narrativeTuning.descriptionSuffix || ''}`,
+        operation.description,
+        240
+      );
+      operation.gameplay5BranchId = narrativeTuning.branchId;
+    }
+
     if (
       stage.type === POST_FINAL7_STAGE_TYPES.EXTRACT
       && this.missionDirector.state.riskChoice === POST_FINAL7_RISK_CHOICES.OVERDRIVE
@@ -617,6 +658,10 @@ export class Content1Manager {
     if (mission.status !== POST_FINAL7_MISSION_STATUS.ACTIVE) return null;
     const stage = this.missionDirector.currentStage();
     if (!stage) return null;
+    this.narrativeDirector.observeMission(
+      this.missionDirector.getSnapshot(now),
+      now
+    );
 
     const current = this.objectiveDirector.state.current;
     if (
@@ -710,6 +755,11 @@ export class Content1Manager {
       gameplay2Patch: GAMEPLAY2_PATCH,
       mutationIds: Object.freeze(this.mutationDirector.getTuning().activeIds),
       mutationRewardMultiplier: this.mutationDirector.getTuning().rewardMultiplier,
+      gameplay5Patch: GAMEPLAY5_PATCH,
+      narrativeOperationId: this.narrativeDirector.state.operationId,
+      narrativeTitle: this.narrativeDirector.state.title,
+      narrativeBranchId: this.narrativeDirector.state.branchId,
+      narrativeOutcomeId: this.narrativeDirector.state.outcomeId,
       humanSquadCommandsOverride: true
     });
   }
@@ -759,7 +809,13 @@ export class Content1Manager {
       bossPosition: bossEnemy?.mesh?.position || null,
       participants: this.participants(now)
     });
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4 };
+    const gameplay5 = this.narrativeDirector.update(epochNow, {
+      mission: postFinal7,
+      gameplay2,
+      gameplay3,
+      gameplay4
+    });
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5 };
   }
 
   publishSnapshot(force = false) {
@@ -1117,6 +1173,7 @@ export class Content1Manager {
       if (snapshot.gameplay2) this.mutationDirector.replaceSnapshot(snapshot.gameplay2, Date.now());
       if (snapshot.gameplay3) this.mapEvolutionDirector.replaceSnapshot(snapshot.gameplay3, Date.now());
       if (snapshot.gameplay4) this.bossEncounterDirector.replaceSnapshot(snapshot.gameplay4, Date.now());
+      if (snapshot.gameplay5) this.narrativeDirector.replaceSnapshot(snapshot.gameplay5, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
@@ -1216,6 +1273,9 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay4) {
       this.bossEncounterDirector.replaceSnapshot(payload.snapshot.gameplay4, Date.now());
     }
+    if (payload.snapshot?.gameplay5) {
+      this.narrativeDirector.replaceSnapshot(payload.snapshot.gameplay5, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
@@ -1223,7 +1283,8 @@ export class Content1Manager {
       postFinal8: this.replayDirector.getSnapshot(Date.now()),
       gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now())),
       gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now())),
-      gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now()))
+      gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now())),
+      gameplay5: clone(payload.snapshot.gameplay5 || this.narrativeDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
@@ -1677,9 +1738,51 @@ export class Content1Manager {
       }
     }
 
+    this.narrativeDirector.update(Date.now(), {
+      mission: this.missionDirector.getSnapshot(Date.now()),
+      gameplay2: this.mutationDirector.getSnapshot(Date.now()),
+      gameplay3: this.mapEvolutionDirector.getSnapshot(Date.now()),
+      gameplay4: this.bossEncounterDirector.getSnapshot(Date.now())
+    });
+    const gameplay5Events = this.narrativeDirector.consumeEvents();
+    for (const event of gameplay5Events) {
+      const transmission = event.transmission;
+      if (event.type === 'GAMEPLAY5_OPERATION_ASSIGNED') {
+        this.showToast?.(`NARRATIVE OPERATION · ${event.title || 'MISSION DIRECTIVE'}`);
+      } else if (event.type === 'GAMEPLAY5_BRANCH_RESOLVED') {
+        this.showToast?.(event.branchId === 'ASSET_SECURED'
+          ? 'NARRATIVE OUTCOME · SUPPORT ASSET SECURED'
+          : 'NARRATIVE OUTCOME · SUPPORT ASSET LOST');
+        playUISound('warning', 0.18, true, {
+          cooldownKey: `gameplay5_branch_${event.branchId}`,
+          cooldownMs: 1000,
+          pitchMin: event.branchId === 'ASSET_SECURED' ? 1.04 : 0.76,
+          pitchMax: event.branchId === 'ASSET_SECURED' ? 1.14 : 0.88
+        });
+      } else if (event.type === 'GAMEPLAY5_OPERATION_COMPLETED') {
+        this.showToast?.(`OPERATION OUTCOME · ${event.outcome?.label || 'MISSION RESOLVED'} · ${event.outcome?.grade || ''}`);
+        playUISound('waveClear', 0.42, true, {
+          cooldownKey: 'gameplay5_complete',
+          cooldownMs: 1600,
+          pitchMin: 1.05,
+          pitchMax: 1.18
+        });
+      } else if (event.type === 'GAMEPLAY5_OPERATION_FAILED') {
+        this.showToast?.('NARRATIVE OPERATION FAILED');
+      } else if (event.type === 'GAMEPLAY5_TRANSMISSION' && transmission) {
+        this.showToast?.(`${transmission.source} · ${transmission.title}`);
+        playUISound(transmission.cue === 'BOSS' ? 'warning' : 'menuMove', 0.12, true, {
+          cooldownKey: `gameplay5_${transmission.transmissionId}`,
+          cooldownMs: 650,
+          pitchMin: transmission.cue === 'BOSS' ? 0.78 : 0.98,
+          pitchMax: transmission.cue === 'BOSS' ? 0.9 : 1.08
+        });
+      }
+    }
+
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events];
+    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events];
   }
 
   applyLocalOperationRewards() {
@@ -1832,6 +1935,38 @@ export class Content1Manager {
       }
       this.showToast?.(`${String(gameplay4.bossLabel || 'BOSS').toUpperCase()} · +${bossBonusXp} XP`);
     }
+
+    const gameplay5 = snapshot?.gameplay5;
+    if (
+      gameplay5?.status === GAMEPLAY5_STATUS.COMPLETE
+      && gameplay5.completionId
+      && !this.narrativeRewardedCompletionIds.has(gameplay5.completionId)
+    ) {
+      this.narrativeRewardedCompletionIds.add(gameplay5.completionId);
+      const narrativePoints = Math.round(
+        computeGameplay5NarrativeReward(gameplay5) * mutationRewardMultiplier
+      );
+      const narrativeXp = Math.max(120, Math.round(140 + narrativePoints * 0.2));
+      recordProgressionContentOperation({
+        operationId: gameplay5.operationId || 'GAMEPLAY.5',
+        completionId: gameplay5.completionId,
+        xp: narrativeXp
+      });
+      recordRunGameplay5NarrativeOutcome({
+        narrative: gameplay5,
+        rewardPoints: narrativePoints
+      });
+      if (this.isAuthority()) {
+        this.awardTeamObjective?.({
+          completionId: gameplay5.completionId,
+          operationId: gameplay5.operationId || 'GAMEPLAY.5',
+          points: narrativePoints,
+          label: cleanText(`${gameplay5.outcomeLabel || 'MISSION OUTCOME'} ${gameplay5.outcomeGrade || ''}`, 'MISSION OUTCOME', 80),
+          contributors: clone(mission?.totalContributions || {})
+        });
+      }
+      this.showToast?.(`${String(gameplay5.outcomeLabel || 'MISSION OUTCOME').toUpperCase()} · +${narrativeXp} XP`);
+    }
     return true;
   }
 
@@ -1854,7 +1989,11 @@ export class Content1Manager {
       modifierIds: Object.freeze((replay?.modifiers || []).map((entry) => entry.id)),
       gameplay2Patch: this.latestSnapshot?.gameplay2?.patch || GAMEPLAY2_PATCH,
       mutationIds: Object.freeze((this.latestSnapshot?.gameplay2?.activeMutations || []).map((entry) => entry.id)),
-      mutationRewardMultiplier: finite(this.latestSnapshot?.gameplay2?.rewardMultiplier, 1)
+      mutationRewardMultiplier: finite(this.latestSnapshot?.gameplay2?.rewardMultiplier, 1),
+      gameplay5Patch: this.latestSnapshot?.gameplay5?.patch || GAMEPLAY5_PATCH,
+      narrativeOperationId: this.latestSnapshot?.gameplay5?.operationId || '',
+      narrativeBranchId: this.latestSnapshot?.gameplay5?.branchId || '',
+      narrativeOutcomeId: this.latestSnapshot?.gameplay5?.outcomeId || ''
     });
   }
 
@@ -2014,6 +2153,10 @@ export class Content1Manager {
       <div class="ka-content1-kicker">CO-OP OPERATION CHAIN</div>
       <div class="ka-postfinal7-mission">MISSION DIRECTOR INITIALIZING</div>
       <div class="ka-postfinal7-stages">STAGE 0 / 0</div>
+      <div class="ka-gameplay5-narrative" data-cue="BRIEFING">
+        <b>CONTROL // NARRATIVE LINK</b>
+        <span>Awaiting operation briefing.</span>
+      </div>
       <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
       <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
       <div class="ka-gameplay2-mutations">ARENA MUTATIONS · STANDBY</div>
@@ -2040,6 +2183,7 @@ export class Content1Manager {
     this.hudContent = hud.querySelector('.ka-objective-hud-content');
     this.hudMission = hud.querySelector('.ka-postfinal7-mission');
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
+    this.hudNarrative = hud.querySelector('.ka-gameplay5-narrative');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
     this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
     this.hudMutations = hud.querySelector('.ka-gameplay2-mutations');
@@ -2095,6 +2239,27 @@ export class Content1Manager {
       this.hudMissionStages.textContent = mission
         ? `STAGE ${Math.min(total, finite(mission.currentStageIndex, 0) + 1)} / ${total} · ${completed} COMPLETE`
         : 'STAGE 0 / 0';
+    }
+    if (this.hudNarrative) {
+      const narrative = snapshot.gameplay5;
+      const transmission = narrative?.currentTransmission;
+      const heading = this.hudNarrative.querySelector('b');
+      const body = this.hudNarrative.querySelector('span');
+      this.hudNarrative.hidden = !narrative?.active;
+      this.hudNarrative.dataset.cue = transmission?.cue || (
+        narrative?.status === GAMEPLAY5_STATUS.COMPLETE ? 'DEBRIEF' : 'OBJECTIVE'
+      );
+      if (heading) {
+        heading.textContent = transmission
+          ? `${transmission.source} // ${transmission.title}`
+          : `${narrative?.commandSource || 'CONTROL'} // ${narrative?.title || 'NARRATIVE OPERATION'}`;
+      }
+      if (body) {
+        body.textContent = transmission?.body
+          || (narrative?.status === GAMEPLAY5_STATUS.COMPLETE
+            ? `${narrative.outcomeLabel || 'MISSION RESOLVED'} · ${narrative.outcomeGrade || ''}`
+            : narrative?.consequenceText || 'Operation narrative synchronized.');
+      }
     }
     if (this.hudFaction) {
       const faction = replay?.faction?.label || 'UNKNOWN FACTION';

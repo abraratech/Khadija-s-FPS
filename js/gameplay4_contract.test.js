@@ -52,7 +52,7 @@ for (const marker of [
 ]) {
   assert.ok(content.includes(marker), `Missing GAMEPLAY.4 CONTENT.1 marker: ${marker}`);
 }
-assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4 \}/);
+assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5 \}/);
 assert.match(content, /this\.bossEncounterDirector\.replaceSnapshot\(snapshot\.gameplay4/);
 
 for (const marker of [
@@ -76,15 +76,15 @@ assert.match(replayability, /type === clean\(this\.state\.boss\.enemyType/);
 assert.match(runSummary, /recordRunGameplay4BossEncounter/);
 assert.match(runSummary, /gameplay4BossInterrupts/);
 
-assert.equal(release.releaseId, 'gameplay4-r1-expanded-boss-encounters');
-assert.equal(release.productVersion, '1.5.0-gameplay4-r1');
-assert.equal(release.releaseSequence, 2026072102);
-assert.equal(release.sourceBaselineSha, 'f48d86332933f9a4e02c78b072cc5861d41d3e48');
+assert.equal(release.releaseId, 'gameplay5-r1-narrative-operations');
+assert.equal(release.productVersion, '1.6.0-gameplay5-r1');
+assert.equal(release.releaseSequence, 2026072103);
+assert.equal(release.sourceBaselineSha, '1547495baab59056c5b89d4b207a8e1b2c660a69');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.4 R1 - Expanded Boss Encounters');
-assert.equal(metadata.gameplay4?.patch, release.releaseId);
+assert.equal(metadata.releaseLabel, 'GAMEPLAY.5 R1 - Narrative Operations');
+assert.equal(metadata.gameplay4?.patch, 'gameplay4-r1-expanded-boss-encounters');
 assert.equal(metadata.gameplay4?.bossPhases, 3);
 assert.deepEqual(metadata.gameplay4?.bossProfiles, ['JUGGERNAUT', 'MATRIARCH', 'DETONATOR']);
 for (const field of [
@@ -111,8 +111,8 @@ for (const field of [
   assert.equal(metadata.gameplay4?.[field], true, `Missing GAMEPLAY.4 policy: ${field}`);
 }
 assert.equal(metadata.gameplay4?.workerChangeRequired, false);
-assert.match(updateDelivery, /gameplay4-r1-expanded-boss-encounters/);
-assert.match(updateDelivery, /releaseSequence: 2026072102/);
+assert.match(updateDelivery, /gameplay5-r1-narrative-operations/);
+assert.match(updateDelivery, /releaseSequence: 2026072103/);
 assert.match(buildProduction, /GAMEPLAY4_RELEASE_SEQUENCE = 2026072102/);
 assert.match(buildProduction, /"gameplay4":/);
 assert.match(verifyProduction, /GAMEPLAY\.4 production manifest patch mismatch/);

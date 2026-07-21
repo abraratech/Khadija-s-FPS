@@ -395,7 +395,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "GAMEPLAY.4 R1 - Expanded Boss Encounters",
+  "releaseLabel": "GAMEPLAY.5 R1 - Narrative Operations",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -1362,5 +1362,49 @@
     "coopRoleAwareTargeting": true,
     "boundedReinforcementScaling": true,
     "abilityCommitIdempotence": true
+  },
+  "gameplay5": {
+    "schema": 1,
+    "patch": "gameplay5-r1-narrative-operations",
+    "productVersion": "1.6.0-gameplay5-r1",
+    "releaseSequence": 2026072103,
+    "sourceBaselineSha": "1547495baab59056c5b89d4b207a8e1b2c660a69",
+    "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
+    "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
+    "modes": [
+      "solo-survival",
+      "cooperative-survival",
+      "objective-operations"
+    ],
+    "supportedMaps": [
+      "grid_bunker",
+      "industrial_yard",
+      "neon_depot",
+      "parking_garage",
+      "hospital_wing",
+      "reactor_courtyard"
+    ],
+    "mapSpecificBriefings": true,
+    "stageTransmissions": true,
+    "branchConsequences": true,
+    "objectiveOutcomeInfluence": true,
+    "bossNarrativeIntegration": true,
+    "mutationNarrativeIntegration": true,
+    "evolvingMapNarrativeIntegration": true,
+    "textOnlyNarrative": true,
+    "voiceRuntimeReintroduced": false,
+    "nonverbalAudioCues": true,
+    "cinematicHudPresentation": true,
+    "deterministicOutcomes": true,
+    "pvpExcluded": true,
+    "hostAuthoritative": true,
+    "lateJoinSnapshot": true,
+    "reconnectRestoration": true,
+    "hostMigrationCheckpoint": true,
+    "rewardAuthority": true,
+    "runSummaryIntegration": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

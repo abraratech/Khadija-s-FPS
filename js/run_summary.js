@@ -61,6 +61,12 @@ const state = {
   gameplay4VulnerabilityHits: 0,
   gameplay4RewardPoints: 0,
   lastGameplay4Encounter: null,
+  gameplay5NarrativeOperationsCompleted: 0,
+  gameplay5NarrativeRewardPoints: 0,
+  gameplay5NarrativeBranch: 'NONE',
+  gameplay5NarrativeOutcome: 'NONE',
+  gameplay5NarrativeGrade: 'UNRANKED',
+  lastGameplay5Narrative: null,
   gameplay2Patch: '',
   mutationActiveIds: [],
   mutationActiveLabels: [],
@@ -143,6 +149,12 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     gameplay4VulnerabilityHits: 0,
     gameplay4RewardPoints: 0,
     lastGameplay4Encounter: null,
+    gameplay5NarrativeOperationsCompleted: 0,
+    gameplay5NarrativeRewardPoints: 0,
+    gameplay5NarrativeBranch: 'NONE',
+    gameplay5NarrativeOutcome: 'NONE',
+    gameplay5NarrativeGrade: 'UNRANKED',
+    lastGameplay5Narrative: null,
     gameplay2Patch: '',
     mutationActiveIds: [],
     mutationActiveLabels: [],
@@ -419,6 +431,37 @@ export function recordRunGameplay4BossEncounter({
     rewardPoints: points
   };
   state.lastEvent = 'EXPANDED BOSS ENCOUNTER COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunGameplay5NarrativeOutcome({
+  narrative = null,
+  rewardPoints = 0
+} = {}) {
+  if (!state.active || !narrative?.completionId) return getRunSummarySnapshot();
+  if (state.lastGameplay5Narrative?.completionId === narrative.completionId) {
+    return getRunSummarySnapshot();
+  }
+  const points = Math.max(0, Math.round(finite(rewardPoints)));
+  state.gameplay5NarrativeOperationsCompleted += 1;
+  state.gameplay5NarrativeRewardPoints += points;
+  state.objectiveRewardPoints += points;
+  state.gameplay5NarrativeBranch = String(narrative.branchLabel || narrative.branchId || 'UNRESOLVED').slice(0, 80);
+  state.gameplay5NarrativeOutcome = String(narrative.outcomeLabel || narrative.outcomeId || 'MISSION RESOLVED').slice(0, 100);
+  state.gameplay5NarrativeGrade = String(narrative.outcomeGrade || 'UNRANKED').slice(0, 12);
+  state.lastGameplay5Narrative = {
+    completionId: String(narrative.completionId).slice(0, 240),
+    operationId: String(narrative.operationId || '').slice(0, 120),
+    title: String(narrative.title || 'Narrative operation').slice(0, 140),
+    branchId: String(narrative.branchId || 'UNRESOLVED').slice(0, 40),
+    branchLabel: state.gameplay5NarrativeBranch,
+    outcomeId: String(narrative.outcomeId || '').slice(0, 60),
+    outcomeLabel: state.gameplay5NarrativeOutcome,
+    outcomeGrade: state.gameplay5NarrativeGrade,
+    transmissions: Math.max(0, Math.round(finite(narrative.transmissions?.length))),
+    rewardPoints: points
+  };
+  state.lastEvent = 'NARRATIVE OPERATION COMPLETE';
   return getRunSummarySnapshot();
 }
 

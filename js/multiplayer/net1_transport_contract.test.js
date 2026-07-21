@@ -30,6 +30,6 @@ assert.equal(eventBus.includes('TRANSPORT_PATH_CHANGED'), true);
 assert.equal(release.net1.patch, 'net1-r1-webrtc-hybrid-transport');
 assert.equal(release.net1.websocketDurableObjectFallback, true);
 assert.equal(release.net1.criticalRelayShadow, true);
-assert.ok(['net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters'].includes(descriptor.releaseId));
-assert.ok(['1.2.0-net1-r1', '1.3.0-gameplay2-r1', '1.4.0-gameplay3-r1', '1.5.0-gameplay4-r1'].includes(descriptor.productVersion));
+assert.ok(['net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations'].includes(descriptor.releaseId));
+assert.ok(['1.2.0-net1-r1', '1.3.0-gameplay2-r1', '1.4.0-gameplay3-r1', '1.5.0-gameplay4-r1', '1.6.0-gameplay5-r1'].includes(descriptor.productVersion));
 console.log('NET.1 frontend WebRTC hybrid transport contract: PASS');

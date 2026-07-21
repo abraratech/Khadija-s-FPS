@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -46,6 +46,14 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.sourceBaselineSha, 'debaeba8e15820d61158078ebd2ade55ef963aa5');
   assert.equal(release.workerBaselineSha, '62a74627e24dc52dcf9fc524fddd8f949f2fd3cf');
   assert.equal(release.baselineWorkerVersionId, 'b4e4860b-78a4-4b63-8df4-e6ef596ec3ad');
+  assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
+} else if (release.releaseId === 'gameplay3-r1-interactive-evolving-maps') {
+  assert.equal(release.productVersion, '1.4.0-gameplay3-r1');
+  assert.equal(release.releaseSequence, 2026072101);
+  assert.equal(release.sourceBaselineSha, '336298a125d70f2b98f4299cea74f8c08c6cefca');
+  assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
+  assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
+  assert.equal(release.workerChangeRequired, false);
   assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
 } else {
   assert.fail(`Unsupported release descriptor: ${release.releaseId}`);

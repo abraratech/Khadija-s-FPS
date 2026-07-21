@@ -259,6 +259,44 @@ def main() -> None:
                     f"GAMEPLAY.2 production runtime file missing: {required_runtime}"
                 )
 
+    gameplay3 = manifest.get("gameplay3", {})
+    if current_release.get("patch") == "gameplay3-r1-interactive-evolving-maps":
+        if gameplay3.get("patch") != current_release.get("patch"):
+            raise SystemExit("GAMEPLAY.3 production manifest patch mismatch")
+        for field in (
+            "pvp_excluded",
+            "host_authoritative",
+            "interactive_controls",
+            "route_evolution",
+            "temporary_cover",
+            "hazard_evolution",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "protocol_unchanged",
+            "frontend_only",
+        ):
+            if gameplay3.get(field) is not True:
+                raise SystemExit(f"GAMEPLAY.3 production policy mismatch: {field}")
+        if gameplay3.get("worker_change_required") is not False:
+            raise SystemExit("GAMEPLAY.3 must remain frontend-only")
+        if gameplay3.get("stage_waves") != [4, 7, 10]:
+            raise SystemExit("GAMEPLAY.3 stage-wave schedule mismatch")
+        if gameplay3.get("supported_maps") != ["grid_bunker", "industrial_yard", "hospital_wing"]:
+            raise SystemExit("GAMEPLAY.3 supported-map registry mismatch")
+        for required_runtime in (
+            "js/gameplay3_map_evolution_core.js",
+            "js/content1.js",
+            "js/main.js",
+            "js/map_gameplay.js",
+            "js/multiplayer/foundation.js",
+            "js/weapons.js",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"GAMEPLAY.3 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

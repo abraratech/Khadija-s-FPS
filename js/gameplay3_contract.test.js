@@ -13,6 +13,11 @@ const mapGameplay = read('map_gameplay.js');
 const main = read('main.js');
 const weapons = read('weapons.js');
 const foundation = read('multiplayer/foundation.js');
+const updateDeliveryCore = read('update_delivery_core.js');
+const buildProduction = read('../scripts/build_production.py');
+const verifyProduction = read('../scripts/verify_launch2_build.py');
+const release = JSON.parse(read('../release-version.json'));
+const metadata = JSON.parse(read('../multiplayer-release.json'));
 
 assert.match(core, /GAMEPLAY3_PATCH = 'gameplay3-r1-interactive-evolving-maps'/);
 assert.match(core, /GAMEPLAY3_STAGE_WAVES = Object\.freeze\(\[4, 7, 10\]\)/);
@@ -59,5 +64,24 @@ assert.ok(pvpCheck >= 0 && onlineCheck > pvpCheck, 'PvP isolation must precede G
 
 const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.indexOf('if (pvpRun)'));
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
+
+
+assert.equal(release.releaseId, 'gameplay3-r1-interactive-evolving-maps');
+assert.equal(release.productVersion, '1.4.0-gameplay3-r1');
+assert.equal(release.releaseSequence, 2026072101);
+assert.equal(release.sourceBaselineSha, '336298a125d70f2b98f4299cea74f8c08c6cefca');
+assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
+assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(metadata.releaseLabel, 'GAMEPLAY.3 R1 - Interactive and Evolving Maps');
+assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
+assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
+assert.equal(metadata.gameplay3?.pvpExcluded, true);
+assert.equal(metadata.gameplay3?.workerChangeRequired, false);
+assert.match(updateDeliveryCore, /gameplay3-r1-interactive-evolving-maps/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072101/);
+assert.match(buildProduction, /GAMEPLAY3_PATCH/);
+assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
+assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);
 
 console.log('GAMEPLAY.3 source integration contract passed');

@@ -395,7 +395,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "GAMEPLAY.2 R1 - Late-Round Arena Mutations",
+  "releaseLabel": "GAMEPLAY.3 R1 - Interactive and Evolving Maps",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -1286,5 +1286,41 @@
     "crossRunCleanup": true,
     "workerChangeRequired": true,
     "frontendAndWorker": true
+  },
+  "gameplay3": {
+    "schema": 1,
+    "patch": "gameplay3-r1-interactive-evolving-maps",
+    "productVersion": "1.4.0-gameplay3-r1",
+    "releaseSequence": 2026072101,
+    "sourceBaselineSha": "336298a125d70f2b98f4299cea74f8c08c6cefca",
+    "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
+    "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
+    "modes": [
+      "solo-survival",
+      "cooperative-survival",
+      "objective-operations"
+    ],
+    "supportedMaps": [
+      "grid_bunker",
+      "industrial_yard",
+      "hospital_wing"
+    ],
+    "pvpExcluded": true,
+    "hostAuthoritative": true,
+    "stageWaves": [
+      4,
+      7,
+      10
+    ],
+    "interactiveControls": true,
+    "routeEvolution": true,
+    "temporaryCover": true,
+    "hazardEvolution": true,
+    "lateJoinSnapshot": true,
+    "reconnectRestoration": true,
+    "hostMigrationCheckpoint": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true
   }
 }

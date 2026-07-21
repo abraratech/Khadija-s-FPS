@@ -613,7 +613,22 @@ function applyAuthoritativeRemoteProgression(profile) {
   if (!currentProfile) currentProfile = recoverOrCreateProfile();
   const incoming = validation.profile;
   const merged = mergeCloudProfiles(currentProfile, incoming, { now: nowMs() });
+  const mergedWorld6 = JSON.parse(JSON.stringify(
+    merged.progression?.world6
+    || currentProfile?.progression?.world6
+    || {}
+  ));
   merged.progression = JSON.parse(JSON.stringify(incoming.progression || {}));
+  if (mergedWorld6?.patch === 'gameplay6-r1-world-progression') {
+    merged.progression.world6 = mergedWorld6;
+    const progressionStorage = JSON.parse(
+      merged.legacyStorage?.ka_progression_v1
+      || incoming.legacyStorage?.ka_progression_v1
+      || '{}'
+    );
+    progressionStorage.world6 = mergedWorld6;
+    merged.legacyStorage.ka_progression_v1 = JSON.stringify(progressionStorage);
+  }
   merged.updatedAt = Math.max(Number(merged.updatedAt || 0), nowMs());
   writeProfile(merged);
   applyProfileToLegacy(merged, { forceHydrate: true });

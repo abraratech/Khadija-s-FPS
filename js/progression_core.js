@@ -1,5 +1,9 @@
 import { normalizeLive1Profile } from './live1_core.js';
 import {
+  createDefaultGameplay6WorldProfile,
+  normalizeGameplay6WorldProfile
+} from './gameplay6_world_progression_core.js';
+import {
   POST_FINAL9_COSMETIC_CATALOG,
   createDefaultPostFinal9Economy,
   normalizePostFinal9Economy
@@ -9,7 +13,7 @@ import {
 // PROG.1 R1 — deterministic unified progression, operations, rewards, and unlocks.
 
 export const PROGRESSION_PATCH = 'prog1-r1-unified-progression-retention';
-export const PROGRESSION_VERSION = 3;
+export const PROGRESSION_VERSION = 4;
 export const PROGRESSION_MAX_LEVEL = 50;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -264,6 +268,7 @@ export function defaultProgressionProfile(now = Date.now()) {
     operations: normalizeProgressionOperations({}, now),
     recentRuns: [],
     live1: normalizeLive1Profile({}, now),
+    world6: createDefaultGameplay6WorldProfile(now),
     economy: createDefaultPostFinal9Economy(now, 0)
   };
 }
@@ -362,6 +367,7 @@ export function normalizeProgressionProfile(value, now = Date.now()) {
   output.operations = normalizeProgressionOperations(source.operations, now);
   output.recentRuns = normalizeRecentRuns(source.recentRuns);
   output.live1 = normalizeLive1Profile(source.live1, now);
+  output.world6 = normalizeGameplay6WorldProfile(source.world6, now);
   output.economy = normalizePostFinal9Economy(source.economy, { now, totalXp: output.xp });
   return output;
 }

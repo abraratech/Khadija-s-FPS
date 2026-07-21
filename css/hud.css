@@ -2005,3 +2005,64 @@ body.ka-pvp-native-hud-isolated #pause-hud-visibility-panel {
     box-shadow: none;
   }
 }
+
+/* GAMEPLAY.6 R1 — persistent world progression readout. */
+.ka-gameplay6-world {
+  display: grid;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--ka-content1-accent, #00d4ff) 42%, transparent);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(4, 14, 20, 0.88), rgba(8, 24, 30, 0.74));
+}
+
+.ka-gameplay6-world[hidden] {
+  display: none;
+}
+
+.ka-gameplay6-world > b,
+.ka-gameplay6-world > span {
+  display: block;
+}
+
+.ka-gameplay6-world > b {
+  color: var(--ka-content1-accent, #69f0ff);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ka-gameplay6-world > span {
+  color: #d9f7ff;
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.ka-gameplay6-world[data-status="COMPLETE"] {
+  border-color: rgba(111, 255, 174, 0.55);
+  box-shadow: inset 0 0 18px rgba(55, 255, 154, 0.08);
+}
+
+.ka-gameplay6-world[data-status="COMPLETE"] > b {
+  color: #7dffb6;
+}
+
+.ka-postfinal4-hud.ka-objective-hud-compact .ka-gameplay6-world {
+  padding: 5px 7px;
+}
+
+@media (max-width: 700px) {
+  .ka-gameplay6-world {
+    margin-top: 4px;
+    padding: 5px 7px;
+  }
+
+  .ka-gameplay6-world > b {
+    font-size: 0.62rem;
+  }
+
+  .ka-gameplay6-world > span {
+    font-size: 0.66rem;
+  }
+}

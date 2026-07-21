@@ -110,6 +110,12 @@ GAMEPLAY5_SOURCE_BASELINE_SHA = '1547495baab59056c5b89d4b207a8e1b2c660a69'
 GAMEPLAY5_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 GAMEPLAY5_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 GAMEPLAY5_RELEASE_SEQUENCE = 2026072103
+GAMEPLAY6_PATCH = 'gameplay6-r1-world-progression'
+GAMEPLAY6_PRODUCT_VERSION = '1.7.0-gameplay6-r1'
+GAMEPLAY6_SOURCE_BASELINE_SHA = 'b3544e114ce02047b3705af14fcc94428c8cdbe8'
+GAMEPLAY6_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
+GAMEPLAY6_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
+GAMEPLAY6_RELEASE_SEQUENCE = 2026072104
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -847,13 +853,56 @@ def main() -> None:
         "worker_change_required": False,
         "frontend_only": True,
     },
+        "gameplay6": {
+        "schema": 1,
+        "patch": GAMEPLAY6_PATCH,
+        "product_version": GAMEPLAY6_PRODUCT_VERSION,
+        "source_baseline_sha": GAMEPLAY6_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY6_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY6_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY6_RELEASE_SEQUENCE,
+        "modes": [
+            "solo-survival",
+            "cooperative-survival",
+            "objective-operations",
+        ],
+        "supported_maps": [
+            "grid_bunker",
+            "industrial_yard",
+            "neon_depot",
+            "parking_garage",
+            "hospital_wing",
+            "reactor_courtyard",
+        ],
+        "persistent_world_state": True,
+        "sector_progression": True,
+        "world_milestones": True,
+        "operation_tier_unlocks": True,
+        "narrative_outcome_contribution": True,
+        "boss_victory_contribution": True,
+        "mutation_contribution": True,
+        "evolving_map_contribution": True,
+        "profile_owned_state": True,
+        "cloud_merge_safe": True,
+        "protected_progression_rewards": True,
+        "idempotent_contribution_receipts": True,
+        "pvp_excluded": True,
+        "host_authoritative": True,
+        "late_join_snapshot": True,
+        "reconnect_restoration": True,
+        "host_migration_checkpoint": True,
+        "run_summary_integration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": GAMEPLAY5_PATCH,
-        "source_baseline_sha": GAMEPLAY5_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": GAMEPLAY5_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": GAMEPLAY5_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": GAMEPLAY5_RELEASE_SEQUENCE,
+        "patch": GAMEPLAY6_PATCH,
+        "source_baseline_sha": GAMEPLAY6_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY6_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY6_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY6_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
         "worker_change_required": False,

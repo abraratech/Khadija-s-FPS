@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -65,8 +65,10 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
 } else if (release.releaseId === 'gameplay5-r1-narrative-operations') {
   assert.equal(release.productVersion, '1.6.0-gameplay5-r1');
-  assert.equal(release.releaseSequence, 2026072103);
-  assert.equal(release.sourceBaselineSha, '1547495baab59056c5b89d4b207a8e1b2c660a69');
+} else if (release.releaseId === 'gameplay6-r1-world-progression') {
+  assert.equal(release.productVersion, '1.7.0-gameplay6-r1');
+  assert.equal(release.releaseSequence, 2026072104);
+  assert.equal(release.sourceBaselineSha, 'b3544e114ce02047b3705af14fcc94428c8cdbe8');
   assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
   assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
   assert.equal(release.workerChangeRequired, false);

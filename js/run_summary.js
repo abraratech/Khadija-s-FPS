@@ -67,6 +67,12 @@ const state = {
   gameplay5NarrativeOutcome: 'NONE',
   gameplay5NarrativeGrade: 'UNRANKED',
   lastGameplay5Narrative: null,
+  gameplay6WorldContributions: 0,
+  gameplay6WorldPoints: 0,
+  gameplay6WorldSector: 'NONE',
+  gameplay6WorldTier: 0,
+  gameplay6WorldMilestones: [],
+  lastGameplay6World: null,
   gameplay2Patch: '',
   mutationActiveIds: [],
   mutationActiveLabels: [],
@@ -155,6 +161,12 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     gameplay5NarrativeOutcome: 'NONE',
     gameplay5NarrativeGrade: 'UNRANKED',
     lastGameplay5Narrative: null,
+    gameplay6WorldContributions: 0,
+    gameplay6WorldPoints: 0,
+    gameplay6WorldSector: 'NONE',
+    gameplay6WorldTier: 0,
+    gameplay6WorldMilestones: [],
+    lastGameplay6World: null,
     gameplay2Patch: '',
     mutationActiveIds: [],
     mutationActiveLabels: [],
@@ -462,6 +474,58 @@ export function recordRunGameplay5NarrativeOutcome({
     rewardPoints: points
   };
   state.lastEvent = 'NARRATIVE OPERATION COMPLETE';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunGameplay6WorldContribution({
+  world = null,
+  applied = false,
+  unlocked = []
+} = {}) {
+  const contribution = world?.contribution;
+  if (!state.active || !world?.completionId || !contribution?.receiptId) {
+    return getRunSummarySnapshot();
+  }
+  if (state.lastGameplay6World?.completionId === world.completionId) {
+    return getRunSummarySnapshot();
+  }
+  state.gameplay6WorldContributions += applied === true ? 1 : 0;
+  state.gameplay6WorldPoints += applied === true
+    ? Math.max(0, Math.round(finite(contribution.points)))
+    : 0;
+  state.gameplay6WorldSector = String(
+    world.presentation?.sector?.label
+    || contribution.sectorLabel
+    || contribution.sectorId
+    || 'UNKNOWN SECTOR'
+  ).slice(0, 120);
+  state.gameplay6WorldTier = Math.max(
+    state.gameplay6WorldTier,
+    Math.max(0, Math.round(finite(world.presentation?.sector?.tier, 0)))
+  );
+  const milestoneIds = (Array.isArray(unlocked) ? unlocked : [])
+    .map((entry) => String(entry?.id || entry?.label || '').slice(0, 120))
+    .filter(Boolean);
+  state.gameplay6WorldMilestones = Array.from(new Set([
+    ...state.gameplay6WorldMilestones,
+    ...milestoneIds
+  ])).slice(0, 24);
+  state.lastGameplay6World = {
+    completionId: String(world.completionId).slice(0, 240),
+    receiptId: String(contribution.receiptId).slice(0, 240),
+    mapId: String(contribution.mapId || world.mapId || '').slice(0, 80),
+    sectorId: String(contribution.sectorId || '').slice(0, 100),
+    sectorLabel: state.gameplay6WorldSector,
+    region: String(contribution.region || '').slice(0, 100),
+    points: Math.max(0, Math.round(finite(contribution.points))),
+    applied: applied === true,
+    sectorTier: state.gameplay6WorldTier,
+    worldTier: Math.max(0, Math.round(finite(world.presentation?.worldTier, 0))),
+    milestoneIds
+  };
+  state.lastEvent = applied === true
+    ? 'WORLD PROGRESSION ADVANCED'
+    : 'WORLD PROGRESSION RESTORED';
   return getRunSummarySnapshot();
 }
 

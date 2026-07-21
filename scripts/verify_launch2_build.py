@@ -396,6 +396,59 @@ def main() -> None:
                     f"GAMEPLAY.5 production runtime file missing: {required_runtime}"
                 )
 
+    gameplay6 = manifest.get("gameplay6", {})
+    if current_release.get("patch") == "gameplay6-r1-world-progression":
+        if gameplay6.get("patch") != current_release.get("patch"):
+            raise SystemExit("GAMEPLAY.6 production manifest patch mismatch")
+        for field in (
+            "persistent_world_state",
+            "sector_progression",
+            "world_milestones",
+            "operation_tier_unlocks",
+            "narrative_outcome_contribution",
+            "boss_victory_contribution",
+            "mutation_contribution",
+            "evolving_map_contribution",
+            "profile_owned_state",
+            "cloud_merge_safe",
+            "protected_progression_rewards",
+            "idempotent_contribution_receipts",
+            "pvp_excluded",
+            "host_authoritative",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "run_summary_integration",
+            "protocol_unchanged",
+            "frontend_only",
+        ):
+            if gameplay6.get(field) is not True:
+                raise SystemExit(f"GAMEPLAY.6 production policy mismatch: {field}")
+        if gameplay6.get("worker_change_required") is not False:
+            raise SystemExit("GAMEPLAY.6 must remain frontend-only")
+        if gameplay6.get("supported_maps") != [
+            "grid_bunker",
+            "industrial_yard",
+            "neon_depot",
+            "parking_garage",
+            "hospital_wing",
+            "reactor_courtyard",
+        ]:
+            raise SystemExit("GAMEPLAY.6 supported-map registry mismatch")
+        for required_runtime in (
+            "js/gameplay6_world_progression_core.js",
+            "js/content1.js",
+            "js/progression.js",
+            "js/progression_core.js",
+            "js/cloud_profile.js",
+            "js/run_summary.js",
+            "css/hud.css",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"GAMEPLAY.6 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

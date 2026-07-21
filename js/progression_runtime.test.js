@@ -41,7 +41,7 @@ globalThis.CustomEvent = class CustomEvent {
 const progression = await import(`./progression.js?prog1-runtime=${Date.now()}`);
 
 let snapshot = progression.getProgressionSnapshot();
-assert.equal(snapshot.version, 3);
+assert.equal(snapshot.version, 4);
 assert.equal(snapshot.profile.totalRuns, 2);
 assert.ok(localStorage.getItem('ka_progression_backup_v1'));
 
@@ -60,6 +60,28 @@ progression.recordProgressionChallenge();
 progression.recordProgressionRevive({ revivedSelf: false });
 progression.recordProgressionRevive({ revivedSelf: true });
 progression.markProgressionBotAssisted(true);
+
+const worldResult = progression.recordProgressionGameplay6WorldContribution({
+  receiptId: 'runtime-world-receipt',
+  runId: snapshot.run.runId,
+  mapId: 'grid_bunker',
+  sectorId: 'BLACK-VAULT',
+  sectorLabel: 'Black Vault Sector',
+  region: 'NORTHERN FRONT',
+  points: 180,
+  gradeRank: 4,
+  outcomeId: 'DECISIVE_VICTORY',
+  branchId: 'ASSET_SECURED',
+  decisive: true,
+  secured: true,
+  bossVictory: true,
+  mutationOperation: true,
+  evolvedMapOperation: true,
+  completedAt: Date.now()
+});
+assert.equal(worldResult.applied, true);
+assert.equal(worldResult.profile.points, 180);
+assert.equal(progression.getProgressionSnapshot().profile.world6.points, 180);
 
 snapshot = progression.finalizeProgressionRun({
   score: 1800,

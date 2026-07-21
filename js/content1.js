@@ -51,12 +51,22 @@ import {
   Gameplay5NarrativeDirector,
   computeGameplay5NarrativeReward
 } from './gameplay5_narrative_operation_core.js';
-import { recordProgressionContentOperation } from './progression.js';
+import {
+  GAMEPLAY6_PATCH,
+  GAMEPLAY6_STATUS,
+  Gameplay6WorldDirector
+} from './gameplay6_world_progression_core.js';
+import {
+  getProgressionSnapshot,
+  recordProgressionContentOperation,
+  recordProgressionGameplay6WorldContribution
+} from './progression.js';
 import {
   recordRunDynamicOperation,
   recordRunGameplay2Mutation,
   recordRunGameplay4BossEncounter,
   recordRunGameplay5NarrativeOutcome,
+  recordRunGameplay6WorldContribution,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -244,6 +254,7 @@ export class Content1Manager {
     this.mapEvolutionDirector = new Gameplay3EvolutionDirector();
     this.bossEncounterDirector = new Gameplay4BossDirector();
     this.narrativeDirector = new Gameplay5NarrativeDirector();
+    this.worldProgressionDirector = new Gameplay6WorldDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -261,6 +272,7 @@ export class Content1Manager {
     this.replayRewardedCompletionIds = new Set();
     this.bossEncounterRewardedCompletionIds = new Set();
     this.narrativeRewardedCompletionIds = new Set();
+    this.worldProgressionRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -278,6 +290,7 @@ export class Content1Manager {
     this.hudMission = null;
     this.hudMissionStages = null;
     this.hudNarrative = null;
+    this.hudWorld = null;
     this.hudRisk = null;
     this.hudRiskSecure = null;
     this.hudRiskOverdrive = null;
@@ -342,6 +355,9 @@ export class Content1Manager {
       );
       window.KAGetGameplay5NarrativeSnapshot = () => (
         this.active ? this.narrativeDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetGameplay6WorldSnapshot = () => (
+        this.active ? this.worldProgressionDirector.getSnapshot(Date.now()) : null
       );
       window.KAGetGameplay4BossDamageScale = ({ enemyId = '', headshot = false } = {}) => (
         getGameplay4BossDamageScale(
@@ -429,6 +445,7 @@ export class Content1Manager {
     this.replayRewardedCompletionIds.clear();
     this.bossEncounterRewardedCompletionIds.clear();
     this.narrativeRewardedCompletionIds.clear();
+    this.worldProgressionRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -495,6 +512,13 @@ export class Content1Manager {
       gameMode: 'survival',
       now: Date.now()
     });
+    this.worldProgressionDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      gameMode: 'survival',
+      profile: getProgressionSnapshot()?.profile?.world6 || {},
+      now: Date.now()
+    });
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.ensureHud();
     this.clearObjectiveVisuals();
@@ -522,6 +546,7 @@ export class Content1Manager {
     this.observedMutationEventIds.clear();
     this.bossEncounterDirector.reset({ gameMode: 'survival', now: Date.now() });
     this.narrativeDirector.reset({ gameMode: 'pvp', now: Date.now() });
+    this.worldProgressionDirector.reset({ gameMode: 'pvp', now: Date.now() });
   }
 
   nextEventId(kind) {
@@ -760,6 +785,10 @@ export class Content1Manager {
       narrativeTitle: this.narrativeDirector.state.title,
       narrativeBranchId: this.narrativeDirector.state.branchId,
       narrativeOutcomeId: this.narrativeDirector.state.outcomeId,
+      gameplay6Patch: GAMEPLAY6_PATCH,
+      worldSectorId: this.worldProgressionDirector.state.presentation?.sector?.sectorId || '',
+      worldSectorTier: finite(this.worldProgressionDirector.state.presentation?.sector?.tier, 1),
+      worldTier: finite(this.worldProgressionDirector.state.presentation?.worldTier, 0),
       humanSquadCommandsOverride: true
     });
   }
@@ -815,7 +844,14 @@ export class Content1Manager {
       gameplay3,
       gameplay4
     });
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5 };
+    const gameplay6 = this.worldProgressionDirector.update(epochNow, {
+      profile: getProgressionSnapshot()?.profile?.world6 || {},
+      narrative: gameplay5,
+      gameplay2,
+      gameplay3,
+      gameplay4
+    });
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6 };
   }
 
   publishSnapshot(force = false) {
@@ -1174,6 +1210,7 @@ export class Content1Manager {
       if (snapshot.gameplay3) this.mapEvolutionDirector.replaceSnapshot(snapshot.gameplay3, Date.now());
       if (snapshot.gameplay4) this.bossEncounterDirector.replaceSnapshot(snapshot.gameplay4, Date.now());
       if (snapshot.gameplay5) this.narrativeDirector.replaceSnapshot(snapshot.gameplay5, Date.now());
+      if (snapshot.gameplay6) this.worldProgressionDirector.replaceSnapshot(snapshot.gameplay6, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
@@ -1276,6 +1313,9 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay5) {
       this.narrativeDirector.replaceSnapshot(payload.snapshot.gameplay5, Date.now());
     }
+    if (payload.snapshot?.gameplay6) {
+      this.worldProgressionDirector.replaceSnapshot(payload.snapshot.gameplay6, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
@@ -1284,7 +1324,8 @@ export class Content1Manager {
       gameplay2: clone(payload.snapshot.gameplay2 || this.mutationDirector.getSnapshot(Date.now())),
       gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now())),
       gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now())),
-      gameplay5: clone(payload.snapshot.gameplay5 || this.narrativeDirector.getSnapshot(Date.now()))
+      gameplay5: clone(payload.snapshot.gameplay5 || this.narrativeDirector.getSnapshot(Date.now())),
+      gameplay6: clone(payload.snapshot.gameplay6 || this.worldProgressionDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
@@ -1780,9 +1821,24 @@ export class Content1Manager {
       }
     }
 
+    const gameplay6Events = this.worldProgressionDirector.consumeEvents();
+    for (const event of gameplay6Events) {
+      if (event.type === 'GAMEPLAY6_WORLD_LINKED') {
+        this.showToast?.(`WORLD LINK · ${event.sector?.label || 'SECTOR'} · TIER ${event.sector?.tier || 1}`);
+      } else if (event.type === 'GAMEPLAY6_CONTRIBUTION_READY') {
+        this.showToast?.(`WORLD PROGRESS READY · +${event.contribution?.points || 0} · ${event.contribution?.sectorLabel || 'SECTOR'}`);
+        playUISound('waveClear', 0.28, true, {
+          cooldownKey: `gameplay6_${event.contribution?.receiptId || 'world'}`,
+          cooldownMs: 1200,
+          pitchMin: 1.02,
+          pitchMax: 1.12
+        });
+      }
+    }
+
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events];
+    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events, ...gameplay6Events];
   }
 
   applyLocalOperationRewards() {
@@ -1967,6 +2023,31 @@ export class Content1Manager {
       }
       this.showToast?.(`${String(gameplay5.outcomeLabel || 'MISSION OUTCOME').toUpperCase()} · +${narrativeXp} XP`);
     }
+
+    const gameplay6 = snapshot?.gameplay6;
+    if (
+      gameplay6?.status === GAMEPLAY6_STATUS.COMPLETE
+      && gameplay6.completionId
+      && gameplay6.contribution
+      && !this.worldProgressionRewardedCompletionIds.has(gameplay6.completionId)
+    ) {
+      this.worldProgressionRewardedCompletionIds.add(gameplay6.completionId);
+      const result = recordProgressionGameplay6WorldContribution(gameplay6.contribution);
+      recordRunGameplay6WorldContribution({
+        world: gameplay6,
+        applied: result.applied === true,
+        unlocked: result.unlocked || []
+      });
+      const presentation = result.presentation || gameplay6.presentation;
+      const sector = presentation?.sector || gameplay6.presentation?.sector;
+      if (result.applied) {
+        this.showToast?.(
+          `WORLD PROGRESS · +${gameplay6.contribution.points || 0} · ${sector?.label || gameplay6.contribution.sectorLabel || 'SECTOR'} TIER ${sector?.tier || 1}`
+        );
+        const unlock = result.unlocked?.[0];
+        if (unlock) this.showToast?.(`WORLD MILESTONE · ${unlock.label || unlock.id}`);
+      }
+    }
     return true;
   }
 
@@ -1993,7 +2074,11 @@ export class Content1Manager {
       gameplay5Patch: this.latestSnapshot?.gameplay5?.patch || GAMEPLAY5_PATCH,
       narrativeOperationId: this.latestSnapshot?.gameplay5?.operationId || '',
       narrativeBranchId: this.latestSnapshot?.gameplay5?.branchId || '',
-      narrativeOutcomeId: this.latestSnapshot?.gameplay5?.outcomeId || ''
+      narrativeOutcomeId: this.latestSnapshot?.gameplay5?.outcomeId || '',
+      gameplay6Patch: this.latestSnapshot?.gameplay6?.patch || GAMEPLAY6_PATCH,
+      worldSectorId: this.latestSnapshot?.gameplay6?.presentation?.sector?.sectorId || '',
+      worldSectorTier: finite(this.latestSnapshot?.gameplay6?.presentation?.sector?.tier, 1),
+      worldTier: finite(this.latestSnapshot?.gameplay6?.presentation?.worldTier, 0)
     });
   }
 
@@ -2157,6 +2242,10 @@ export class Content1Manager {
         <b>CONTROL // NARRATIVE LINK</b>
         <span>Awaiting operation briefing.</span>
       </div>
+      <div class="ka-gameplay6-world">
+        <b>WORLD PROGRESSION</b>
+        <span>Synchronizing sector state.</span>
+      </div>
       <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
       <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
       <div class="ka-gameplay2-mutations">ARENA MUTATIONS · STANDBY</div>
@@ -2184,6 +2273,7 @@ export class Content1Manager {
     this.hudMission = hud.querySelector('.ka-postfinal7-mission');
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
     this.hudNarrative = hud.querySelector('.ka-gameplay5-narrative');
+    this.hudWorld = hud.querySelector('.ka-gameplay6-world');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
     this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
     this.hudMutations = hud.querySelector('.ka-gameplay2-mutations');
@@ -2259,6 +2349,26 @@ export class Content1Manager {
           || (narrative?.status === GAMEPLAY5_STATUS.COMPLETE
             ? `${narrative.outcomeLabel || 'MISSION RESOLVED'} · ${narrative.outcomeGrade || ''}`
             : narrative?.consequenceText || 'Operation narrative synchronized.');
+      }
+    }
+    if (this.hudWorld) {
+      const world = snapshot.gameplay6;
+      const presentation = world?.presentation;
+      const sector = presentation?.sector;
+      const heading = this.hudWorld.querySelector('b');
+      const body = this.hudWorld.querySelector('span');
+      this.hudWorld.hidden = !world?.active;
+      this.hudWorld.dataset.status = world?.status || GAMEPLAY6_STATUS.INACTIVE;
+      if (heading) {
+        heading.textContent = sector
+          ? `WORLD PROGRESSION // ${String(sector.region || 'SECTOR').toUpperCase()}`
+          : 'WORLD PROGRESSION';
+      }
+      if (body) {
+        const contribution = world?.contribution;
+        body.textContent = contribution
+          ? `${sector?.label || contribution.sectorLabel} · +${contribution.points} WORLD POINTS · TIER ${sector?.tier || 1}`
+          : `${sector?.label || 'SECTOR'} · ${sector?.tierLabel || 'RECON'} · ${finite(sector?.points, 0)} POINTS`;
       }
     }
     if (this.hudFaction) {

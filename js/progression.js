@@ -21,6 +21,12 @@ import {
   getPostFinal9EconomyPresentation
 } from './postfinal9_economy_core.js';
 
+import {
+  GAMEPLAY6_PATCH,
+  applyGameplay6Contribution,
+  getGameplay6WorldPresentation
+} from './gameplay6_world_progression_core.js';
+
 // js/progression.js
 // PROG.1 R1 — unified persistent progression and run perks.
 
@@ -887,6 +893,32 @@ export function equipProgressionCosmetic(unlockId) {
   return { ok: true, unlock: entry, snapshot: getProgressionSnapshot() };
 }
 
+export function recordProgressionGameplay6WorldContribution(receipt = null) {
+  if (!receipt?.receiptId) {
+    return Object.freeze({
+      applied: false,
+      idempotent: false,
+      patch: GAMEPLAY6_PATCH,
+      profile: profile.world6,
+      unlocked: []
+    });
+  }
+  const result = applyGameplay6Contribution(profile.world6, receipt, Date.now());
+  profile.world6 = result.profile;
+  if (result.applied) {
+    run.lastEvent = `WORLD PROGRESS +${Math.max(0, Math.round(Number(receipt.points) || 0))}`;
+    saveProfile(true, 'gameplay6-world-progress');
+  }
+  return Object.freeze({
+    applied: result.applied === true,
+    idempotent: result.idempotent === true,
+    patch: GAMEPLAY6_PATCH,
+    profile: result.profile,
+    presentation: getGameplay6WorldPresentation(result.profile, receipt.mapId || run.mapId),
+    unlocked: result.unlocked || []
+  });
+}
+
 export function getProgressionSnapshot() {
   profile = normalizeProgressionProfile(profile, Date.now());
   const levelInfo = recalculateLevel();
@@ -913,6 +945,8 @@ export function getProgressionSnapshot() {
     maxLevel: PROGRESSION_MAX_LEVEL,
     economy: getPostFinal9EconomyPresentation(profile.economy, profile.xp, Date.now()),
     economyPatch: POST_FINAL9_PATCH,
+    world6: getGameplay6WorldPresentation(profile.world6, run.mapId),
+    world6Patch: GAMEPLAY6_PATCH,
     perkDefinitions: Object.values(PERK_DEFS).map((perk) => ({ ...perk }))
   };
 }

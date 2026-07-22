@@ -66,20 +66,20 @@ const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.inde
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
 
 
-assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
-assert.equal(release.productVersion, '1.9.0-loadout2-r1');
-assert.equal(release.releaseSequence, 2026072201);
-assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
+assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
+assert.equal(release.productVersion, '1.10.0-quality2-r1');
+assert.equal(release.releaseSequence, 2026072202);
+assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
+assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
 assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
 assert.equal(metadata.gameplay3?.pvpExcluded, true);
 assert.equal(metadata.gameplay3?.workerChangeRequired, false);
-assert.match(updateDeliveryCore, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
-assert.match(updateDeliveryCore, /releaseSequence: 2026072201/);
+assert.match(updateDeliveryCore, /quality2-r1-consolidated-low-gpu-rendering/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072202/);
 assert.match(buildProduction, /GAMEPLAY3_PATCH/);
 assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
 assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);

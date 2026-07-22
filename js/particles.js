@@ -4,20 +4,58 @@
 import * as THREE from 'three';
 import { scene, getEffectiveGraphicsQuality } from './map.js';
 import { getPostFinal10ParticleBudgetScale } from './postfinal10_runtime.js';
+import {
+  QUALITY2_FEATURES,
+  QUALITY2_FULL_PARTICLE_LIMITS,
+  QUALITY2_LOW_PARTICLE_LIMITS,
+  getQuality2MaterialTier,
+  getQuality2ParticleLimits,
+  isQuality2FeatureEnabled
+} from './quality2_core.js';
 
-const MAX_DECALS = 110;
-const MAX_BLOOD = 56;
-const MAX_BLOOD_MIST = 18;
-const MAX_SHELLS = 28;
-const MAX_SMOKE = 24;
-const MAX_SPARKS = 64;
-const MAX_IMPACT_DUST = 24;
-const MAX_MUZZLE_FLASH = 16;
-const MAX_SHOCK_RINGS = 14;
-const MAX_ELECTRIC_ARCS = 20;
-const MAX_ENEMY_WARNINGS = 14;
-const MAX_ENEMY_TRAILS = 34;
-const MAX_ENEMY_IMPACTS = 18;
+let activePoolLimits = null;
+
+function getQuality2ParticleFeatureEnabled() {
+  return isQuality2FeatureEnabled(globalThis.localStorage, QUALITY2_FEATURES.PARTICLE_BUDGET);
+}
+
+function getQuality2ParticleMaterialFeatureEnabled() {
+  return isQuality2FeatureEnabled(globalThis.localStorage, QUALITY2_FEATURES.MATERIAL_TIER);
+}
+
+function resolveActivePoolLimits() {
+  if (!activePoolLimits) {
+    activePoolLimits = getQuality2ParticleLimits(qualityName(), getQuality2ParticleFeatureEnabled());
+  }
+  return activePoolLimits;
+}
+
+function poolLimit(name) {
+  const limits = resolveActivePoolLimits();
+  return Math.max(0, Number(limits[name]) || 0);
+}
+
+function makeQuality2ParticleLitMaterial(options = {}) {
+  const tier = getQuality2MaterialTier(qualityName(), getQuality2ParticleMaterialFeatureEnabled());
+  if (tier === 'lambert') {
+    const material = new THREE.MeshLambertMaterial({
+      color: options.color,
+      emissive: options.emissive ?? 0x000000,
+      emissiveIntensity: options.emissiveIntensity ?? 1,
+      transparent: options.transparent === true,
+      opacity: options.opacity ?? 1,
+      depthWrite: options.depthWrite,
+      side: options.side,
+      blending: options.blending,
+      toneMapped: options.toneMapped
+    });
+    material.userData.quality2MaterialTier = 'lambert';
+    return material;
+  }
+  const material = new THREE.MeshStandardMaterial(options);
+  material.userData.quality2MaterialTier = 'standard';
+  return material;
+}
 
 const pools = {
   decals: { items: [], index: 0 },
@@ -100,7 +138,7 @@ function getFlashTexture() {
 
 function qualityName() {
   try {
-    return String(getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
+    return String(window.KAGetGraphicsPerformanceSnapshot?.().startupQuality || getEffectiveGraphicsQuality?.() || 'medium').toLowerCase();
   } catch {
     return 'medium';
   }
@@ -129,6 +167,7 @@ function next(pool, size) {
 
 export function initParticles() {
   if (initialized) return;
+  activePoolLimits = getQuality2ParticleLimits(qualityName(), getQuality2ParticleFeatureEnabled());
 
   const decalGeo = new THREE.RingGeometry(0.028, 0.085, 7);
   const decalMat = new THREE.MeshBasicMaterial({
@@ -140,7 +179,7 @@ export function initParticles() {
     polygonOffsetFactor: -5,
     side: THREE.DoubleSide
   });
-  for (let i = 0; i < MAX_DECALS; i++) {
+  for (let i = 0; i < poolLimit('decals'); i++) {
     const mesh = new THREE.Mesh(decalGeo, decalMat);
     mesh.visible = false;
     scene.add(mesh);
@@ -148,8 +187,8 @@ export function initParticles() {
   }
 
   const bloodGeo = new THREE.IcosahedronGeometry(0.052, 0);
-  for (let i = 0; i < MAX_BLOOD; i++) {
-    const material = new THREE.MeshStandardMaterial({
+  for (let i = 0; i < poolLimit('blood'); i++) {
+    const material = makeQuality2ParticleLitMaterial({
       color: i % 3 === 0 ? 0x5a0507 : 0x8e090c,
       roughness: 0.72,
       metalness: 0.02,
@@ -170,7 +209,7 @@ export function initParticles() {
     depthWrite: false,
     blending: THREE.NormalBlending
   });
-  for (let i = 0; i < MAX_BLOOD_MIST; i++) {
+  for (let i = 0; i < poolLimit('bloodMist'); i++) {
     const mesh = new THREE.Sprite(bloodMistMat.clone());
     mesh.visible = false;
     scene.add(mesh);
@@ -179,8 +218,8 @@ export function initParticles() {
 
   const shellGeo = new THREE.CylinderGeometry(0.01, 0.015, 0.06, 6);
   shellGeo.rotateX(Math.PI / 2);
-  const shellMat = new THREE.MeshStandardMaterial({ color: 0xd89425, metalness: 0.82, roughness: 0.28 });
-  for (let i = 0; i < MAX_SHELLS; i++) {
+  const shellMat = makeQuality2ParticleLitMaterial({ color: 0xd89425, metalness: 0.82, roughness: 0.28 });
+  for (let i = 0; i < poolLimit('shells'); i++) {
     const mesh = new THREE.Mesh(shellGeo, shellMat.clone());
     mesh.visible = false;
     scene.add(mesh);
@@ -201,7 +240,7 @@ export function initParticles() {
     depthWrite: false,
     depthTest: true
   });
-  for (let i = 0; i < MAX_SMOKE; i++) {
+  for (let i = 0; i < poolLimit('smoke'); i++) {
     const mesh = new THREE.Sprite(smokeMat.clone());
     mesh.visible = false;
     scene.add(mesh);
@@ -209,7 +248,7 @@ export function initParticles() {
   }
 
   const sparkGeo = new THREE.BoxGeometry(0.018, 0.018, 0.13);
-  for (let i = 0; i < MAX_SPARKS; i++) {
+  for (let i = 0; i < poolLimit('sparks'); i++) {
     const material = new THREE.MeshBasicMaterial({
       color: i % 4 === 0 ? 0xffffff : 0xffb23f,
       transparent: true,
@@ -230,7 +269,7 @@ export function initParticles() {
     opacity: 0,
     depthWrite: false
   });
-  for (let i = 0; i < MAX_IMPACT_DUST; i++) {
+  for (let i = 0; i < poolLimit('impactDust'); i++) {
     const mesh = new THREE.Sprite(dustMat.clone());
     mesh.visible = false;
     scene.add(mesh);
@@ -246,7 +285,7 @@ export function initParticles() {
     blending: THREE.AdditiveBlending,
     toneMapped: false
   });
-  for (let i = 0; i < MAX_MUZZLE_FLASH; i++) {
+  for (let i = 0; i < poolLimit('muzzleFlash'); i++) {
     const sprite = new THREE.Sprite(flashMat.clone());
     const light = new THREE.PointLight(0xff9a35, 0, 5.5, 2.0);
     sprite.visible = false;
@@ -256,7 +295,7 @@ export function initParticles() {
   }
 
   const shockGeo = new THREE.TorusGeometry(0.48, 0.055, 5, 22);
-  for (let i = 0; i < MAX_SHOCK_RINGS; i++) {
+  for (let i = 0; i < poolLimit('shockRings'); i++) {
     const material = new THREE.MeshBasicMaterial({
       color: 0xff6a18,
       transparent: true,
@@ -272,7 +311,7 @@ export function initParticles() {
     pools.shockRings.items.push({ mesh, life: 0, baseLife: 0.36, startScale: 0.45 });
   }
 
-  for (let i = 0; i < MAX_ELECTRIC_ARCS; i++) {
+  for (let i = 0; i < poolLimit('electricArcs'); i++) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(15), 3));
     const material = new THREE.LineBasicMaterial({
@@ -290,7 +329,7 @@ export function initParticles() {
   }
 
   const warningGeo = new THREE.TorusGeometry(0.42, 0.045, 5, 16);
-  for (let i = 0; i < MAX_ENEMY_WARNINGS; i++) {
+  for (let i = 0; i < poolLimit('enemyWarnings'); i++) {
     const material = new THREE.MeshBasicMaterial({
       color: 0x44ffff,
       transparent: true,
@@ -307,7 +346,7 @@ export function initParticles() {
   }
 
   const trailGeo = new THREE.SphereGeometry(0.052, 5, 4);
-  for (let i = 0; i < MAX_ENEMY_TRAILS; i++) {
+  for (let i = 0; i < poolLimit('enemyTrails'); i++) {
     const material = new THREE.MeshBasicMaterial({
       color: 0x8dff4a,
       transparent: true,
@@ -323,7 +362,7 @@ export function initParticles() {
   }
 
   const impactGeo = new THREE.IcosahedronGeometry(0.16, 1);
-  for (let i = 0; i < MAX_ENEMY_IMPACTS; i++) {
+  for (let i = 0; i < poolLimit('enemyImpacts'); i++) {
     const material = new THREE.MeshBasicMaterial({
       color: 0x8dff4a,
       transparent: true,
@@ -340,12 +379,27 @@ export function initParticles() {
   }
 
   initialized = true;
-  console.log('🟢 VIS.4 pooled combat FX initialized');
+  console.log(`🟢 QUALITY.2 pooled combat FX initialized · ${qualityName()} · ${JSON.stringify(activePoolLimits)}`);
+}
+
+export function getParticlePerformanceSnapshot() {
+  const limits = { ...resolveActivePoolLimits() };
+  return Object.freeze({
+    patch: 'quality2-r1-consolidated-low-gpu-rendering',
+    quality: qualityName(),
+    budgetTier: qualityName() === 'low' && getQuality2ParticleFeatureEnabled() ? 'low' : 'full',
+    materialTier: getQuality2MaterialTier(qualityName(), getQuality2ParticleMaterialFeatureEnabled()),
+    limits: Object.freeze(limits),
+    fullLimits: QUALITY2_FULL_PARTICLE_LIMITS,
+    lowLimits: QUALITY2_LOW_PARTICLE_LIMITS,
+    initialized,
+    allocated: Object.freeze(Object.fromEntries(Object.entries(pools).map(([name, pool]) => [name, pool.items.length])))
+  });
 }
 
 export function spawnBulletHole(pos, normal) {
   if (!initialized) initParticles();
-  const mesh = next(pools.decals, MAX_DECALS);
+  const mesh = next(pools.decals, poolLimit('decals'));
   const safeNormal = normal ? _tempNormal.copy(normal).normalize() : _up;
   mesh.position.copy(pos).addScaledVector(safeNormal, 0.012);
   mesh.quaternion.setFromUnitVectors(_zAxis, safeNormal);
@@ -358,10 +412,10 @@ export function spawnBloodBurst(pos, intensity = 1, isHeadshot = false) {
   if (!initialized) initParticles();
   const burstPower = Math.max(0.72, Math.min(2.25, Number(intensity) || 1));
   const baseCount = qualityCount(2, 4, 6);
-  const dropletCount = Math.min(MAX_BLOOD, Math.ceil(baseCount * burstPower * (isHeadshot ? 1.18 : 1)));
+  const dropletCount = Math.min(poolLimit('blood'), Math.ceil(baseCount * burstPower * (isHeadshot ? 1.18 : 1)));
 
   for (let i = 0; i < dropletCount; i++) {
-    const item = next(pools.blood, MAX_BLOOD);
+    const item = next(pools.blood, poolLimit('blood'));
     item.mesh.position.copy(pos);
     item.mesh.scale.setScalar((0.55 + Math.random() * 0.50) * burstPower * (isHeadshot ? 1.08 : 1));
     item.mesh.material.opacity = 1;
@@ -377,7 +431,7 @@ export function spawnBloodBurst(pos, intensity = 1, isHeadshot = false) {
   }
 
   if (qualityRank() > 0) {
-    const mist = next(pools.bloodMist, MAX_BLOOD_MIST);
+    const mist = next(pools.bloodMist, poolLimit('bloodMist'));
     mist.mesh.position.copy(pos);
     mist.startScale = (isHeadshot ? 0.48 : 0.34) * burstPower;
     mist.mesh.scale.setScalar(mist.startScale);
@@ -391,7 +445,7 @@ export function spawnBloodBurst(pos, intensity = 1, isHeadshot = false) {
 
 export function spawnShell(pos, camDir, options = {}) {
   if (!initialized) initParticles();
-  const item = next(pools.shells, MAX_SHELLS);
+  const item = next(pools.shells, poolLimit('shells'));
   const safeDir = camDir ? _tempNormal.copy(camDir).normalize() : _zAxis;
   const family = String(options.family || 'PISTOL').toUpperCase();
   const sideSpeed = Math.max(0.8, Number(options.sideSpeed) || 2.0);
@@ -434,7 +488,7 @@ export function spawnGunSmoke(pos, dir, power = 1, options = {}) {
   const spread = Math.max(0, Math.min(0.14, Number(options.spread) || 0.035));
 
   for (let index = 0; index < smokeCount; index += 1) {
-    const item = next(pools.smoke, MAX_SMOKE);
+    const item = next(pools.smoke, poolLimit('smoke'));
     const lateral = (index - (smokeCount - 1) * 0.5) * spread;
     _tempRight.crossVectors(dir, _up).normalize();
 
@@ -458,7 +512,7 @@ export function spawnGunSmoke(pos, dir, power = 1, options = {}) {
 
 export function spawnMuzzleFlash(pos, dir, power = 1, options = {}) {
   if (!initialized) initParticles();
-  const item = next(pools.muzzleFlash, MAX_MUZZLE_FLASH);
+  const item = next(pools.muzzleFlash, poolLimit('muzzleFlash'));
   const flashPower = Math.max(0.55, Math.min(1.8, Number(power) || 1));
   const fallbackColor = options.upgraded ? 0xc85cff : 0xffa12a;
   const color = Number(options.color) || fallbackColor;
@@ -485,7 +539,7 @@ export function spawnMuzzleFlash(pos, dir, power = 1, options = {}) {
 
 function spawnImpactDust(pos, normal = _up, power = 1) {
   if (qualityRank() === 0 && Math.random() > 0.55) return;
-  const item = next(pools.impactDust, MAX_IMPACT_DUST);
+  const item = next(pools.impactDust, poolLimit('impactDust'));
   const dustPower = Math.max(0.45, Math.min(1.55, Number(power) || 1));
   item.mesh.position.copy(pos).addScaledVector(normal, 0.018);
   item.startScale = 0.12 + dustPower * 0.07;
@@ -504,8 +558,8 @@ export function spawnImpactSpark(pos, normal = null, power = 1) {
   const count = qualityCount(1, 3, 5) + (sparkPower > 1.25 ? 1 : 0);
   const pushDir = normal ? _tempNormal.copy(normal).normalize() : _up;
 
-  for (let i = 0; i < Math.min(MAX_SPARKS, count); i++) {
-    const item = next(pools.sparks, MAX_SPARKS);
+  for (let i = 0; i < Math.min(poolLimit('sparks'), count); i++) {
+    const item = next(pools.sparks, poolLimit('sparks'));
     item.mesh.position.copy(pos).addScaledVector(pushDir, 0.025);
     item.mesh.scale.set(0.55 + Math.random() * 0.5, 0.55 + Math.random() * 0.5, 0.75 + Math.random() * 0.8);
     item.mesh.material.opacity = 0.82;
@@ -525,7 +579,7 @@ export function spawnImpactSpark(pos, normal = null, power = 1) {
 export function spawnEnemyExplosionFX(pos, power = 1) {
   if (!initialized) initParticles();
   const explosionPower = Math.max(0.7, Math.min(1.8, Number(power) || 1));
-  const ring = next(pools.shockRings, MAX_SHOCK_RINGS);
+  const ring = next(pools.shockRings, poolLimit('shockRings'));
   ring.mesh.position.copy(pos);
   ring.mesh.position.y += 0.12;
   ring.mesh.material.color.setHex(0xff5a12);
@@ -552,7 +606,7 @@ export function spawnEnemyExplosionFX(pos, power = 1) {
 export function spawnElectricArc(start, end, intensity = 1) {
   if (!initialized) initParticles();
   if (qualityRank() === 0 && Math.random() > 0.45) return;
-  const item = next(pools.electricArcs, MAX_ELECTRIC_ARCS);
+  const item = next(pools.electricArcs, poolLimit('electricArcs'));
   const positions = item.line.geometry.attributes.position.array;
   _tempDir.subVectors(end, start);
   _tempMid.copy(start);
@@ -576,7 +630,7 @@ export function spawnElectricArc(start, end, intensity = 1) {
 
 export function spawnEnemyAttackWarning(pos, kind = 'RANGED', duration = 0.55) {
   if (!initialized) initParticles();
-  const item = next(pools.enemyWarnings, MAX_ENEMY_WARNINGS);
+  const item = next(pools.enemyWarnings, poolLimit('enemyWarnings'));
   const colorByKind = {
     INTERRUPTED: 0xffffff,
     RANGED: 0x8dff4a,
@@ -615,7 +669,7 @@ export function spawnEnemyArchetypePulse(pos, kind = 'RUNNER_BURST') {
 
 export function spawnEnemyProjectileTrail(pos) {
   if (!initialized) initParticles();
-  const item = next(pools.enemyTrails, MAX_ENEMY_TRAILS);
+  const item = next(pools.enemyTrails, poolLimit('enemyTrails'));
   item.mesh.position.copy(pos);
   item.mesh.scale.setScalar(0.68 + Math.random() * 0.48);
   item.mesh.material.opacity = qualityRank() === 0 ? 0.42 : 0.68;
@@ -626,7 +680,7 @@ export function spawnEnemyProjectileTrail(pos) {
 
 export function spawnEnemyProjectileImpact(pos, hitPlayer = false) {
   if (!initialized) initParticles();
-  const item = next(pools.enemyImpacts, MAX_ENEMY_IMPACTS);
+  const item = next(pools.enemyImpacts, poolLimit('enemyImpacts'));
   item.mesh.position.copy(pos);
   item.mesh.material.color.setHex(hitPlayer ? 0xff4c4c : 0x8dff4a);
   item.mesh.material.opacity = 0.92;

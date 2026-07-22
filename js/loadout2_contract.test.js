@@ -16,12 +16,12 @@ const updateDelivery = read('./update_delivery_core.js');
 const build = read('../scripts/build_production.py');
 const verifier = read('../scripts/verify_launch2_build.py');
 
-assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
-assert.equal(release.productVersion, '1.9.0-loadout2-r1');
-assert.equal(release.releaseSequence, 2026072201);
-assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
+assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
+assert.equal(release.productVersion, '1.10.0-quality2-r1');
+assert.equal(release.releaseSequence, 2026072202);
+assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(multiplayerRelease.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
+assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
 assert.equal(multiplayerRelease.loadout2.functionalFieldKnife, true);
 assert.equal(multiplayerRelease.loadout2.pvpMeleeDisabled, true);
 assert.equal(multiplayerRelease.loadout2.protocolUnchanged, true);
@@ -36,7 +36,7 @@ assert.match(runtime, /finalizeLoadout2Run/);
 assert.match(core, /idempotent/);
 assert.match(cloud, /mergedLoadout2/);
 assert.match(summary, /recordRunLoadout2Mastery/);
-assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
+assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
 assert.match(build, /LOADOUT2_PATCH/);
 assert.match(verifier, /LOADOUT\.2 production manifest patch mismatch/);
 

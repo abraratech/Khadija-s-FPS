@@ -15,6 +15,20 @@ import { createMapBlock } from './maps/map_helpers.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {
+  QUALITY2_FEATURES,
+  QUALITY2_PATCH,
+  getQuality2MaterialTier,
+  isLikelySoftwareRenderer,
+  isQuality2FeatureEnabled,
+  normalizeQuality2GraphicsMode,
+  quality2NeedsReload,
+  resetQuality2FeatureOverrides,
+  resolveQuality2InitialTier,
+  setQuality2FeatureEnabled,
+  shouldQuality2EnableAntialias,
+  summarizeQuality2Features
+} from './quality2_core.js';
 
 export const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x0a0a11, 0.025); // Moody dark fog
@@ -64,9 +78,28 @@ const PERF1_DEVICE_PROFILE = Object.freeze((() => {
   return { mobile, consoleBrowser, cores, memory, constrained };
 })());
 
+const QUALITY2_INITIAL_REQUESTED_QUALITY = normalizeQuality2GraphicsMode(
+  localStorage.getItem('ka_graphics_quality') || 'auto'
+);
+const QUALITY2_INITIAL_EFFECTIVE_QUALITY = resolveQuality2InitialTier(
+  QUALITY2_INITIAL_REQUESTED_QUALITY,
+  {
+    ...PERF1_DEVICE_PROFILE,
+    dpr: window.devicePixelRatio || 1
+  }
+);
+const QUALITY2_ANTIALIAS_FEATURE_ENABLED = isQuality2FeatureEnabled(
+  localStorage,
+  QUALITY2_FEATURES.ANTIALIAS
+);
+const QUALITY2_STARTUP_ANTIALIAS = shouldQuality2EnableAntialias(
+  QUALITY2_INITIAL_EFFECTIVE_QUALITY,
+  QUALITY2_ANTIALIAS_FEATURE_ENABLED
+);
+
 export const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
+  antialias: QUALITY2_STARTUP_ANTIALIAS,
   powerPreference: 'high-performance'
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -349,7 +382,9 @@ const GRAPHICS_QUALITY_RANK = Object.freeze({
   high: 2
 });
 
-let autoResolvedGraphicsQuality = null;
+let autoResolvedGraphicsQuality = QUALITY2_INITIAL_REQUESTED_QUALITY === 'auto'
+  ? QUALITY2_INITIAL_EFFECTIVE_QUALITY
+  : null;
 let autoTuneTimer = 0;
 let autoTuneCooldown = 0;
 let autoFpsStableTimer = 0;
@@ -362,30 +397,10 @@ function normalizeGraphicsMode(mode) {
 }
 
 function guessAutoGraphicsQuality() {
-  const isMobileDevice = PERF1_DEVICE_PROFILE.mobile;
-  const cores = PERF1_DEVICE_PROFILE.cores;
-  const memory = PERF1_DEVICE_PROFILE.memory || 4;
-  const dpr = window.devicePixelRatio || 1;
-
-  // C5 hotfix: the first auto pick was too conservative. A desktop with
-  // normal/high CPU capacity should not be locked to Low just because DPR or
-  // browser-reported memory looks modest. Start sane, then let FPS promote or
-  // demote during play.
-  if (isMobileDevice || PERF1_DEVICE_PROFILE.consoleBrowser) return "low";
-
-  if (cores <= 4 && memory <= 4 && dpr > 1.6) {
-    return "low";
-  }
-
-  if (cores >= 8 && memory >= 8 && dpr <= 2.25) {
-    return "high";
-  }
-
-  if (cores >= 6 || memory >= 4) {
-    return "medium";
-  }
-
-  return "low";
+  return resolveQuality2InitialTier('auto', {
+    ...PERF1_DEVICE_PROFILE,
+    dpr: window.devicePixelRatio || 1
+  });
 }
 
 function resolveGraphicsQuality(mode = graphicsQuality) {
@@ -407,7 +422,7 @@ function getGraphicsProfile(mode = graphicsQuality) {
   return GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
 }
 
-export let graphicsQuality = normalizeGraphicsMode(localStorage.getItem("ka_graphics_quality") || "auto");
+export let graphicsQuality = normalizeGraphicsMode(QUALITY2_INITIAL_REQUESTED_QUALITY);
 
 export function getGraphicsQuality() {
   return graphicsQuality;
@@ -481,9 +496,17 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
     applyGameplay2LightingOverlay({ applyLights: false });
   }
 
+  const snapshot = getGraphicsPerformanceSnapshot();
+  document.body?.setAttribute?.('data-ka-quality2-tier', snapshot.effective);
+  document.body?.setAttribute?.('data-ka-quality2-restart-required', snapshot.restartRequired ? 'true' : 'false');
+  window.dispatchEvent?.(new CustomEvent('ka-graphics-quality-change', {
+    detail: snapshot
+  }));
+
   if (!options.silent) {
     const label = graphicsQuality === "auto" ? `Auto → ${profile.name}` : profile.name;
-    console.log(`Graphics quality: ${label}`);
+    const restartNote = snapshot.restartRequired ? ' · reload required for full renderer tier' : '';
+    console.log(`Graphics quality: ${label}${restartNote}`);
   }
 
   return graphicsQuality;
@@ -495,15 +518,77 @@ export function shouldUsePostProcessing() {
   return !(graphicsQuality === 'auto' && PERF1_DEVICE_PROFILE.constrained);
 }
 
-export function getGraphicsPerformanceSnapshot() {
+function readQuality2RendererDiagnostics() {
+  const gl = renderer.getContext?.();
+  if (!gl) {
+    return Object.freeze({
+      available: false,
+      vendor: 'UNAVAILABLE',
+      renderer: 'UNAVAILABLE',
+      softwareRenderingLikely: false
+    });
+  }
+
+  let vendor = '';
+  let rendererName = '';
+  try {
+    const debugInfo = gl.getExtension?.('WEBGL_debug_renderer_info');
+    vendor = debugInfo
+      ? String(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || '')
+      : String(gl.getParameter(gl.VENDOR) || '');
+    rendererName = debugInfo
+      ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '')
+      : String(gl.getParameter(gl.RENDERER) || '');
+  } catch {
+    vendor = String(gl.getParameter?.(gl.VENDOR) || '');
+    rendererName = String(gl.getParameter?.(gl.RENDERER) || '');
+  }
+
+  const identity = `${vendor} ${rendererName}`.trim();
   return Object.freeze({
-    patch: 'perf1-cross-platform-r1',
+    available: true,
+    vendor: vendor || 'MASKED',
+    renderer: rendererName || 'MASKED',
+    softwareRenderingLikely: isLikelySoftwareRenderer(identity)
+  });
+}
+
+const QUALITY2_RENDERER_DIAGNOSTICS = readQuality2RendererDiagnostics();
+
+export function getGraphicsPerformanceSnapshot() {
+  const effective = getEffectiveGraphicsQuality();
+  const antialiasFeatureEnabled = isQuality2FeatureEnabled(localStorage, QUALITY2_FEATURES.ANTIALIAS);
+  const desiredAntialias = shouldQuality2EnableAntialias(effective, antialiasFeatureEnabled);
+  const restartRequired = quality2NeedsReload(
+    QUALITY2_INITIAL_EFFECTIVE_QUALITY,
+    effective,
+    QUALITY2_STARTUP_ANTIALIAS,
+    desiredAntialias
+  );
+  const features = summarizeQuality2Features(localStorage);
+
+  return Object.freeze({
+    patch: QUALITY2_PATCH,
     requested: graphicsQuality,
-    effective: getEffectiveGraphicsQuality(),
+    effective,
+    startupQuality: QUALITY2_INITIAL_EFFECTIVE_QUALITY,
     pixelRatio: renderer.getPixelRatio(),
     postProcessing: shouldUsePostProcessing(),
+    antialias: QUALITY2_STARTUP_ANTIALIAS,
+    desiredAntialias,
+    restartRequired,
+    zombieDetailTier: QUALITY2_INITIAL_EFFECTIVE_QUALITY === 'low' && features.zombieDetail ? 'low-core' : 'full',
+    desiredZombieDetailTier: effective === 'low' && features.zombieDetail ? 'low-core' : 'full',
+    materialTier: getQuality2MaterialTier(QUALITY2_INITIAL_EFFECTIVE_QUALITY, features.materialTier),
+    desiredMaterialTier: getQuality2MaterialTier(effective, features.materialTier),
+    particleBudgetTier: QUALITY2_INITIAL_EFFECTIVE_QUALITY === 'low' && features.particleBudget ? 'low' : 'full',
+    desiredParticleBudgetTier: effective === 'low' && features.particleBudget ? 'low' : 'full',
+    rendererVendor: QUALITY2_RENDERER_DIAGNOSTICS.vendor,
+    rendererName: QUALITY2_RENDERER_DIAGNOSTICS.renderer,
+    softwareRenderingLikely: QUALITY2_RENDERER_DIAGNOSTICS.softwareRenderingLikely,
     constrainedDevice: PERF1_DEVICE_PROFILE.constrained,
-    consoleBrowser: PERF1_DEVICE_PROFILE.consoleBrowser
+    consoleBrowser: PERF1_DEVICE_PROFILE.consoleBrowser,
+    featureOverrides: features
   });
 }
 
@@ -588,6 +673,22 @@ window.KAGetGraphicsQuality = getGraphicsQuality;
 window.KAGetEffectiveGraphicsQuality = getEffectiveGraphicsQuality;
 window.KAGetGraphicsPerformanceSnapshot = getGraphicsPerformanceSnapshot;
 window.KARecheckGraphicsQuality = () => applyGraphicsQuality("auto", { repickAuto: true });
+window.KAQuality2Benchmark = Object.freeze({
+  snapshot: getGraphicsPerformanceSnapshot,
+  setFeature(feature, enabled) {
+    const allowed = Object.values(QUALITY2_FEATURES);
+    if (!allowed.includes(feature)) {
+      throw new Error(`Unknown QUALITY.2 feature: ${feature}`);
+    }
+    setQuality2FeatureEnabled(localStorage, feature, enabled !== false);
+    return Object.freeze({ feature, enabled: enabled !== false, reloadRequired: true });
+  },
+  reset() {
+    resetQuality2FeatureOverrides(localStorage);
+    return Object.freeze({ reset: true, reloadRequired: true });
+  },
+  features: QUALITY2_FEATURES
+});
 
 // Apply saved graphics quality after graphicsQuality and helper functions exist.
 applyGraphicsQuality(graphicsQuality, { silent: true });

@@ -1,6 +1,13 @@
 // js/actors/procedural_zombie.js
 // Procedural Zombie V5 — Face, anatomy, and class-silhouette refinement.
 import * as THREE from 'three';
+import {
+  QUALITY2_FEATURES,
+  classifyQuality2ZombiePart,
+  getQuality2MaterialTier,
+  isQuality2FeatureEnabled,
+  shouldQuality2ShowZombiePart
+} from '../quality2_core.js';
 
 function rand(min, max) {
   return min + Math.random() * (max - min);
@@ -21,8 +28,45 @@ function cachedGeometry(key, factory) {
   return GEOMETRY_CACHE.get(key);
 }
 
+function getQuality2ZombieEffectiveQuality() {
+  try {
+    return String(window.KAGetGraphicsPerformanceSnapshot?.().startupQuality || window.KAGetEffectiveGraphicsQuality?.() || localStorage.getItem('ka_graphics_quality') || 'medium').toLowerCase();
+  } catch {
+    return 'medium';
+  }
+}
+
+function getQuality2ZombieFeatureEnabled(feature) {
+  return isQuality2FeatureEnabled(globalThis.localStorage, feature);
+}
+
 function makeStandardMaterial(color, extra = {}) {
-  return new THREE.MeshStandardMaterial({
+  const effectiveQuality = getQuality2ZombieEffectiveQuality();
+  const materialTier = getQuality2MaterialTier(
+    effectiveQuality,
+    getQuality2ZombieFeatureEnabled(QUALITY2_FEATURES.MATERIAL_TIER)
+  );
+
+  if (materialTier === 'lambert') {
+    const material = new THREE.MeshLambertMaterial({
+      color: extra.color ?? color,
+      emissive: extra.emissive ?? 0x000000,
+      emissiveIntensity: extra.emissiveIntensity ?? 1,
+      transparent: extra.transparent === true,
+      opacity: extra.opacity ?? 1,
+      side: extra.side,
+      depthWrite: extra.depthWrite,
+      blending: extra.blending,
+      toneMapped: extra.toneMapped,
+      flatShading: extra.flatShading ?? true,
+      wireframe: extra.wireframe === true,
+      vertexColors: extra.vertexColors
+    });
+    material.userData.quality2MaterialTier = 'lambert';
+    return material;
+  }
+
+  const material = new THREE.MeshStandardMaterial({
     color,
     roughness: 0.86,
     metalness: 0.02,
@@ -30,6 +74,8 @@ function makeStandardMaterial(color, extra = {}) {
     envMapIntensity: 0.34,
     ...extra
   });
+  material.userData.quality2MaterialTier = 'standard';
+  return material;
 }
 
 function makeBasicMaterial(color, extra = {}) {
@@ -47,6 +93,7 @@ function markProcedural(object, name) {
   object.frustumCulled = true;
   object.userData.keepMaterial = true;
   object.userData.isProceduralZombie = true;
+  object.userData.quality2PartTier = classifyQuality2ZombiePart(name);
   object.userData.basePosition = object.position.clone();
   object.userData.baseRotation = object.rotation.clone();
   object.userData.baseScale = object.scale.clone();
@@ -152,6 +199,37 @@ function addHeadFlag(object) {
   object.userData.isHead = true;
   object.traverse?.((child) => {
     child.userData.isHead = true;
+  });
+}
+
+export function applyProceduralZombieQualityTier(group, effectiveQuality = getQuality2ZombieEffectiveQuality()) {
+  if (!group) return Object.freeze({ tier: 'none', visibleMeshes: 0, totalMeshes: 0 });
+
+  const detailEnabled = getQuality2ZombieFeatureEnabled(QUALITY2_FEATURES.ZOMBIE_DETAIL);
+  let totalMeshes = 0;
+  let visibleMeshes = 0;
+
+  group.traverse((child) => {
+    if (!child?.isMesh || child.userData?.isProceduralZombie !== true) return;
+    totalMeshes += 1;
+    const shouldShow = shouldQuality2ShowZombiePart(child.name, effectiveQuality, detailEnabled);
+    if (!shouldShow) child.visible = false;
+    if (child.visible) visibleMeshes += 1;
+  });
+
+  group.userData.quality2DetailTier = String(effectiveQuality) === 'low' && detailEnabled ? 'low-core' : 'full';
+  group.userData.quality2MaterialTier = getQuality2MaterialTier(
+    effectiveQuality,
+    getQuality2ZombieFeatureEnabled(QUALITY2_FEATURES.MATERIAL_TIER)
+  );
+  group.userData.quality2VisibleMeshes = visibleMeshes;
+  group.userData.quality2TotalMeshes = totalMeshes;
+
+  return Object.freeze({
+    tier: group.userData.quality2DetailTier,
+    materialTier: group.userData.quality2MaterialTier,
+    visibleMeshes,
+    totalMeshes
   });
 }
 
@@ -1265,7 +1343,8 @@ export function createProceduralZombieVisual(options = {}) {
   group.userData.motionSpeed = 1.0;
   group.userData.motionPower = 1.0;
   group.userData.typeName = "SHAMBLER";
-  group.userData.visualPatch = "vis6-zombie-face-silhouette-r1";
+  group.userData.visualPatch = "quality2-low-gpu-zombie-tier-r1";
+  applyProceduralZombieQualityTier(group);
 
   return group;
 }
@@ -1582,6 +1661,10 @@ export function updateProceduralZombieStyle(group, config = {}) {
     parts.lowerJaw.position.y -= 0.030;
     parts.mouth.position.y -= 0.020;
   }
+
+  // QUALITY.2 reapplies the Low visibility tier after archetype styling so
+  // class-critical silhouettes remain while micro-detail stays suppressed.
+  applyProceduralZombieQualityTier(group);
 }
 
 export function updateProceduralZombieMotion(group, timeSeconds, speed = 1.0, state = {}) {

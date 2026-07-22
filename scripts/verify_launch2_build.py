@@ -563,6 +563,48 @@ def main() -> None:
                     f"LOADOUT.2 production runtime file missing: {required_runtime}"
                 )
 
+    quality2 = manifest.get("quality2", {})
+    if current_release.get("patch") == "quality2-r1-consolidated-low-gpu-rendering":
+        if quality2.get("patch") != current_release.get("patch"):
+            raise SystemExit("QUALITY.2 production manifest patch mismatch")
+        for field in (
+            "renderer_diagnostics",
+            "software_renderer_warning",
+            "low_zombie_detail_tier",
+            "low_material_tier",
+            "low_map_block_materials",
+            "low_particle_budgets",
+            "conditional_antialias_at_startup",
+            "reload_required_across_low_boundary",
+            "expanded_performance_hud",
+            "independent_benchmark_overrides",
+            "medium_high_unchanged",
+            "enemy_population_unchanged",
+            "static_geometry_merging_deferred",
+            "protocol_unchanged",
+            "frontend_only",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if quality2.get(field) is not True:
+                raise SystemExit(f"QUALITY.2 production policy mismatch: {field}")
+        if quality2.get("worker_change_required") is not False:
+            raise SystemExit("QUALITY.2 must remain frontend-only")
+        for required_runtime in (
+            "js/quality2_core.js",
+            "js/map.js",
+            "js/particles.js",
+            "js/actors/procedural_zombie.js",
+            "js/maps/map_helpers.js",
+            "js/main.js",
+            "css/hud.css",
+            "index.html",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"QUALITY.2 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

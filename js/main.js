@@ -1,6 +1,6 @@
 // PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/main.js
-import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, doors, openDoor, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing, applyGameplay2MutationLighting } from './map.js';
+import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShake, spawnPoints, playerSpawnPoints, doors, openDoor, currentMapMeta, cycleGraphicsQuality, getGraphicsQuality, getGraphicsQualityLabel, applyGraphicsQuality, autoTuneGraphicsFromFps, shouldUsePostProcessing, applyGameplay2MutationLighting, getGraphicsPerformanceSnapshot } from './map.js';
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, damageEnemyForBot, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
@@ -17,7 +17,7 @@ import {
   updateLowHealthHeartbeat
 } from './audio.js';
 import { configureEconomyBalance, getEconomyBalanceSnapshot } from './economy_balance.js';
-import { updateParticles, clearAllDecals } from './particles.js';
+import { updateParticles, clearAllDecals, getParticlePerformanceSnapshot } from './particles.js';
 import {
   resetMapGameplay,
   endMapGameplay,
@@ -366,6 +366,10 @@ function bindGraphicsQualitySelect(selectEl) {
     applyGraphicsQuality(selectEl.value, { repickAuto: selectEl.value === 'auto' });
     syncGraphicsQualityControls();
     updatePauseSummary();
+    const snapshot = getGraphicsPerformanceSnapshot();
+    if (snapshot.restartRequired) {
+      showStatusToast('GRAPHICS SAVED · RELOAD TO APPLY FULL LOW-GPU RENDERER TIER', '#ffaa00', 3600);
+    }
     console.log(`Graphics quality changed from menu: ${getGraphicsQualityLabel()}`);
   });
 }
@@ -374,6 +378,16 @@ function initGraphicsQualityControls() {
   bindGraphicsQualitySelect(document.getElementById('graphics-quality-select'));
   bindGraphicsQualitySelect(document.getElementById('pause-graphics-quality-select'));
   syncGraphicsQualityControls();
+}
+
+function announceQuality2RendererState() {
+  const snapshot = getGraphicsPerformanceSnapshot();
+  if (snapshot.softwareRenderingLikely) {
+    showStatusToast('SOFTWARE WEBGL DETECTED · ENABLE BROWSER HARDWARE ACCELERATION', '#ff6f9f', 5200);
+    console.warn('QUALITY.2 detected a likely software WebGL renderer:', snapshot.rendererName);
+  } else if (snapshot.effective === 'low') {
+    console.log(`QUALITY.2 Low-GPU tier active · AA ${snapshot.antialias ? 'ON' : 'OFF'} · ${snapshot.materialTier} materials · ${snapshot.zombieDetailTier} zombies`);
+  }
 }
 
 let performanceStatsEnabled = localStorage.getItem('ka_performance_stats') === 'on';
@@ -605,6 +619,11 @@ function updatePerformanceStatsPanel(stats) {
   setText('perf-worst-ms', `${stats.worstFrameMs} ms`);
   setText('perf-enemies', stats.enemies);
   setText('perf-draw-calls', stats.drawCalls);
+  setText('perf-quality', stats.quality);
+  setText('perf-aa', stats.antialias);
+  setText('perf-zombie-tier', stats.zombieTier);
+  setText('perf-particle-tier', stats.particleTier);
+  setText('perf-renderer', stats.renderer);
 }
 
 function updatePauseSummary() {
@@ -707,6 +726,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 initGraphicsQualityControls();
+announceQuality2RendererState();
 bindCoreSettingsControls();
 bindAIMemoryControls();
 initControlsUI();
@@ -2060,12 +2080,22 @@ if (performanceStatsEnabled) {
   if (performanceStatsSampleT >= PERF1_STATS_INTERVAL_SECONDS) {
     performanceStatsSampleT = 0;
     const frameMs = performance.now() - frameStart;
+    const graphicsSnapshot = getGraphicsPerformanceSnapshot();
+    const particleSnapshot = getParticlePerformanceSnapshot();
+    const rendererLabel = String(graphicsSnapshot.rendererName || 'MASKED')
+      .replace(/^ANGLE \(/, '')
+      .slice(0, 42);
     updatePerformanceStatsPanel({
       fps: Math.round(smoothFps),
       frameMs: frameMs.toFixed(2),
       worstFrameMs: worstFrameMs.toFixed(2),
       enemies: frameEnemies.length,
-      drawCalls: renderer.info.render.calls
+      drawCalls: renderer.info.render.calls,
+      quality: `${graphicsSnapshot.requested} → ${graphicsSnapshot.effective}`.toUpperCase(),
+      antialias: graphicsSnapshot.antialias ? 'ON' : 'OFF',
+      zombieTier: graphicsSnapshot.zombieDetailTier.toUpperCase(),
+      particleTier: particleSnapshot.budgetTier.toUpperCase(),
+      renderer: rendererLabel
     });
   }
 }

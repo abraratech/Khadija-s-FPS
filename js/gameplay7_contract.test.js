@@ -68,14 +68,14 @@ assert.match(summary, /gameplay7CampaignPoints/);
 assert.match(hud, /GAMEPLAY\.7 R1 — dynamic campaign and faction-control readout/);
 assert.match(hud, /\.ka-gameplay7-campaign/);
 
-assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
-assert.equal(release.productVersion, '1.9.0-loadout2-r1');
-assert.equal(release.releaseSequence, 2026072201);
-assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
+assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
+assert.equal(release.productVersion, '1.10.0-quality2-r1');
+assert.equal(release.releaseSequence, 2026072202);
+assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
+assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
 assert.equal(metadata.gameplay7?.patch, 'gameplay7-r1-dynamic-campaign-faction-control');
 assert.deepEqual(metadata.gameplay7?.supportedMaps, [
   'grid_bunker',
@@ -119,8 +119,8 @@ for (const field of [
   assert.equal(metadata.gameplay7?.[field], true, `Missing GAMEPLAY.7 policy: ${field}`);
 }
 assert.equal(metadata.gameplay7?.workerChangeRequired, false);
-assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
-assert.match(updateDelivery, /releaseSequence: 2026072201/);
+assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
+assert.match(updateDelivery, /releaseSequence: 2026072202/);
 assert.match(buildProduction, /GAMEPLAY7_RELEASE_SEQUENCE = 2026072105/);
 assert.match(buildProduction, /"gameplay7":/);
 assert.match(verifyProduction, /GAMEPLAY\.7 production manifest patch mismatch/);

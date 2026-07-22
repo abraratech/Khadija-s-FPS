@@ -41,7 +41,7 @@ globalThis.CustomEvent = class CustomEvent {
 const progression = await import(`./progression.js?prog1-runtime=${Date.now()}`);
 
 let snapshot = progression.getProgressionSnapshot();
-assert.equal(snapshot.version, 5);
+assert.equal(snapshot.version, 6);
 assert.equal(snapshot.profile.totalRuns, 2);
 assert.ok(localStorage.getItem('ka_progression_backup_v1'));
 

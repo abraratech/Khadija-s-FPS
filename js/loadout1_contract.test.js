@@ -13,12 +13,13 @@ const workerCloud = readFileSync(new URL('../multiplayer-server/src/cloud_profil
 const workerPackage = JSON.parse(readFileSync(new URL('../multiplayer-server/package.json', import.meta.url), 'utf8'));
 
 for (const token of [
-  'loadout1-r1-saved-presets-avatar-cosmetic-collections',
+  'loadout2-r1-weapon-mastery-operator-specialization-melee',
   'ka_loadout_profile_v1',
   'MAX_LOADOUT_PRESETS = 6',
   'MAX_AVATAR_PRESETS = 6',
   'createFrozenLoadoutSnapshot',
-  'grantsCombatPower: false',
+  'grantsCombatPower: true',
+  'pvpIsolated: true',
   'mergeLoadoutProfiles',
 ]) {
   assert.equal(core.includes(token), true, `Missing LOADOUT.1 core token: ${token}`);
@@ -30,7 +31,7 @@ for (const token of [
   'clearFrozenLoadoutForRun',
   'FIELD LOADOUT COMMAND',
   'AVATAR PRESETS',
-  'FAIR-PLAY POLICY',
+  'LOADOUT.2 COMBAT POLICY',
   'ka:player-preferences-change',
 ]) {
   assert.equal(runtime.includes(token), true, `Missing LOADOUT.1 runtime token: ${token}`);
@@ -64,4 +65,4 @@ assert.equal(cloud.includes('mergeLoadoutStorage'), true);
 assert.equal(workerCloud.includes('mergeLoadoutStorage'), true);
 assert.equal(workerPackage.scripts.check.includes('src/loadout_cloud_merge.test.js'), true);
 
-console.log('LOADOUT.1 unified contract tests: PASS');
+console.log('LOADOUT.1 foundation preserved under LOADOUT.2: PASS');

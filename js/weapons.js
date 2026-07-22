@@ -67,6 +67,12 @@ import {
 import { validateShotRay } from './gameplay_reliability_core.js';
 import { scaleEconomyPrice, scaleEconomyReward } from './economy_balance.js';
 import { evaluateEmergencyResupply } from './multiplayer/mpnet1_core.js';
+import {
+  recordLoadout2Shot,
+  recordLoadout2Hit,
+  recordLoadout2MeleeStrike,
+  getLoadout2CombatTuningForFamily
+} from './loadout2_runtime.js';
 
 const ray = new THREE.Raycaster();
 const _shotTargets = [];
@@ -88,6 +94,39 @@ let lastPvpAmmoSerial = -1;
 let lastPvpSpawnSerial = -1;
 let lastPvpRulesRunId = '';
 let networkShotSequence = 0;
+let fieldKnifeViewmodel = null;
+let meleeCooldown = 0;
+let meleeSwingT = 0;
+let meleeSwingDuration = 0.76;
+let meleeImpactResolved = false;
+let meleeStrikeTuning = null;
+let meleeFirearmSuppressed = false;
+const meleeSuppressedWeaponStates = new Map();
+let lastPvpMeleeNoticeAt = -Infinity;
+const FIELD_KNIFE_IMPACT_PROGRESS = 0.66;
+const FIELD_KNIFE_BASE_DAMAGE = 36;
+const FIELD_KNIFE_BASE_RANGE = 1.65;
+const FIELD_KNIFE_FORWARD_POSE = Object.freeze({
+  // Higher and closer to the center line than R1.1 so the blade does not
+  // travel underneath the firearm's former screen position.
+  position: Object.freeze([0.36, -0.18, -0.72]),
+  rotation: Object.freeze([-0.035, -0.10, -0.10]),
+  scale: 0.90
+});
+const FIELD_KNIFE_WINDUP_POSE = Object.freeze({
+  position: Object.freeze([0.56, -0.27, -0.50]),
+  rotation: Object.freeze([0.04, -0.30, -0.34])
+});
+const FIELD_KNIFE_THRUST_POSE = Object.freeze({
+  position: Object.freeze([0.12, -0.08, -1.10]),
+  rotation: Object.freeze([-0.02, -0.025, -0.035])
+});
+const FIELD_KNIFE_IMPACT_POSE = Object.freeze({
+  position: Object.freeze([0.10, -0.07, -1.13]),
+  rotation: Object.freeze([-0.015, -0.02, -0.025])
+});
+const _meleeOffset = new THREE.Vector2();
+const _meleeOffsets = Object.freeze([-0.23, -0.11, 0, 0.11, 0.23]);
 const openedNetworkDoorIds = new Set();
 const networkRepairAwards = new Map();
 const combatReliability = {
@@ -1113,7 +1152,9 @@ function getWeaponBalance(weapon) {
 
 function getReserveAmmoForWeapon(weapon) {
   const balance = getWeaponBalance(weapon);
-  return Math.max(weapon.maxAmmo, Math.round(weapon.maxAmmo * balance.reserveMags));
+  const tuning = getLoadout2CombatTuningForFamily(getWeaponFamily(weapon));
+  const reserveScale = Math.max(1, Number(tuning?.reserveScale) || 1);
+  return Math.max(weapon.maxAmmo, Math.round(weapon.maxAmmo * balance.reserveMags * reserveScale));
 }
 
 function refillWeaponAmmo(weapon) {
@@ -1238,6 +1279,144 @@ function getHeadshotMultiplier(weapon) {
 
 export function getActiveWeapon() { return player.inventory[player.currentWeaponIdx]; }
 
+export function getActiveWeaponFamily() {
+  return getWeaponFamily(getActiveWeapon());
+}
+
+function applyFieldKnifePose(group, pose) {
+  if (!group || !pose) return;
+  group.position.set(...pose.position);
+  group.rotation.set(...pose.rotation);
+}
+
+function lerpFieldKnifePose(group, fromPose, toPose, amount) {
+  const t = THREE.MathUtils.clamp(Number(amount) || 0, 0, 1);
+  group.position.set(
+    THREE.MathUtils.lerp(fromPose.position[0], toPose.position[0], t),
+    THREE.MathUtils.lerp(fromPose.position[1], toPose.position[1], t),
+    THREE.MathUtils.lerp(fromPose.position[2], toPose.position[2], t)
+  );
+  group.rotation.set(
+    THREE.MathUtils.lerp(fromPose.rotation[0], toPose.rotation[0], t),
+    THREE.MathUtils.lerp(fromPose.rotation[1], toPose.rotation[1], t),
+    THREE.MathUtils.lerp(fromPose.rotation[2], toPose.rotation[2], t)
+  );
+}
+
+function createFieldKnifeViewmodel() {
+  const group = new THREE.Group();
+  group.name = 'loadout2-field-knife-viewmodel';
+  group.userData.weaponFamily = 'MELEE';
+  group.userData.isFieldKnife = true;
+  group.userData.forwardBladeAxis = '-Z';
+
+  const handleMaterial = new THREE.MeshStandardMaterial({
+    color: 0x202832,
+    roughness: 0.64,
+    metalness: 0.28
+  });
+  const guardMaterial = new THREE.MeshStandardMaterial({
+    color: 0x65717d,
+    roughness: 0.28,
+    metalness: 0.82
+  });
+  const bladeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xcbd5df,
+    emissive: 0x15202a,
+    emissiveIntensity: 0.16,
+    roughness: 0.24,
+    metalness: 0.94
+  });
+
+  // The knife is authored along camera-forward -Z. Keeping pitch close to zero
+  // prevents the blade from presenting edge-down or tip-down in first person.
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.072, 0.32), handleMaterial);
+  handle.position.z = 0.115;
+  group.add(handle);
+
+  const gripA = new THREE.Mesh(new THREE.TorusGeometry(0.046, 0.008, 6, 12), guardMaterial);
+  gripA.rotation.x = Math.PI / 2;
+  gripA.position.z = 0.035;
+  group.add(gripA);
+
+  const gripB = gripA.clone();
+  gripB.position.z = 0.145;
+  group.add(gripB);
+
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.032, 0.05), guardMaterial);
+  guard.position.z = -0.09;
+  group.add(guard);
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.018, 0.52), bladeMaterial);
+  blade.position.z = -0.375;
+  group.add(blade);
+
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.043, 0.16, 4), bladeMaterial);
+  tip.rotation.x = -Math.PI / 2;
+  tip.rotation.z = Math.PI / 4;
+  tip.position.z = -0.715;
+  group.add(tip);
+
+  group.scale.setScalar(FIELD_KNIFE_FORWARD_POSE.scale);
+  applyFieldKnifePose(group, FIELD_KNIFE_FORWARD_POSE);
+  group.visible = false;
+  return group;
+}
+
+function ensureFieldKnifeViewmodel() {
+  if (fieldKnifeViewmodel?.parent) fieldKnifeViewmodel.parent.remove(fieldKnifeViewmodel);
+  fieldKnifeViewmodel = createFieldKnifeViewmodel();
+  camera.add(fieldKnifeViewmodel);
+  return fieldKnifeViewmodel;
+}
+
+function setMeleeFirearmSuppressed(suppressed) {
+  const shouldSuppress = suppressed === true;
+  const activeWeapon = getActiveWeapon();
+  meleeFirearmSuppressed = shouldSuppress;
+
+  player.inventory.forEach((candidate) => {
+    const group = candidate?.meshGroup;
+    if (!group) return;
+    group.userData.loadout2MeleeSuppressed = shouldSuppress;
+
+    if (shouldSuppress) {
+      // R1.2 uses physical detachment in addition to visibility. This makes
+      // melee presentation exclusive even when another weapon update path
+      // attempts to restore a firearm viewmodel during the strike.
+      if (!meleeSuppressedWeaponStates.has(group)) {
+        meleeSuppressedWeaponStates.set(group, {
+          parent: group.parent || null,
+          visible: group.visible === true
+        });
+      }
+      if (group.parent) group.parent.remove(group);
+      group.visible = false;
+      return;
+    }
+
+    if (group.parent) group.parent.remove(group);
+    group.visible = false;
+    if (candidate === activeWeapon) {
+      camera.add(group);
+      group.visible = true;
+    }
+  });
+
+  if (!shouldSuppress) meleeSuppressedWeaponStates.clear();
+}
+
+function enforceMeleeViewmodelExclusivity() {
+  if (!meleeFirearmSuppressed) return;
+  player.inventory.forEach((candidate) => {
+    const group = candidate?.meshGroup;
+    if (!group) return;
+    if (group.parent) group.parent.remove(group);
+    group.visible = false;
+    group.userData.loadout2MeleeSuppressed = true;
+  });
+}
+
 export function getCombatReliabilitySnapshot() {
   return Object.freeze({
     patch: 'm4-gameplay-reliability-r1',
@@ -1274,6 +1453,7 @@ export function buildGun() {
   openedNetworkDoorIds.clear();
   networkRepairAwards.clear();
   networkShotSequence = 0;
+  ensureFieldKnifeViewmodel();
 
   const pistolDef = WEAPON_DEFS.PISTOL;
   player.inventory.push(createWeaponInstance(pistolDef));
@@ -3066,24 +3246,36 @@ let _lastDryFireAt = 0;
 function getWeaponFeel(weapon) {
   const family = getWeaponFamily(weapon);
   const base = WEAPON_FEEL[family] || WEAPON_FEEL.PISTOL;
-
-  if (!weapon?.isUpgraded) return base;
-
+  const upgraded = weapon?.isUpgraded
+    ? {
+        ...base,
+        screenShake: base.screenShake * 0.86,
+        cameraKick: base.cameraKick * 0.80,
+        yawKick: base.yawKick * 0.85,
+        gunPitch: base.gunPitch * 0.82,
+        gunRoll: base.gunRoll * 0.85,
+        recoilZ: base.recoilZ * 0.82,
+        recoilY: base.recoilY * 0.82,
+        muzzleIntensity: base.muzzleIntensity * 1.18,
+        flashScale: base.flashScale * 1.10,
+        smokePower: base.smokePower * 0.85,
+        soundVolume: Math.min(1, base.soundVolume * 0.96),
+        crosshairKick: base.crosshairKick * 0.86,
+        impactPower: base.impactPower * 1.12
+      }
+    : { ...base };
+  const tuning = getLoadout2CombatTuningForFamily(family);
+  const recoilScale = Math.max(0.72, Math.min(1.08, Number(tuning?.recoilScale) || 1));
   return {
-    ...base,
-    screenShake: base.screenShake * 0.86,
-    cameraKick: base.cameraKick * 0.80,
-    yawKick: base.yawKick * 0.85,
-    gunPitch: base.gunPitch * 0.82,
-    gunRoll: base.gunRoll * 0.85,
-    recoilZ: base.recoilZ * 0.82,
-    recoilY: base.recoilY * 0.82,
-    muzzleIntensity: base.muzzleIntensity * 1.18,
-    flashScale: base.flashScale * 1.10,
-    smokePower: base.smokePower * 0.85,
-    soundVolume: Math.min(1, base.soundVolume * 0.96),
-    crosshairKick: base.crosshairKick * 0.86,
-    impactPower: base.impactPower * 1.12
+    ...upgraded,
+    screenShake: upgraded.screenShake * recoilScale,
+    cameraKick: upgraded.cameraKick * recoilScale,
+    yawKick: upgraded.yawKick * recoilScale,
+    gunPitch: upgraded.gunPitch * recoilScale,
+    gunRoll: upgraded.gunRoll * recoilScale,
+    recoilZ: upgraded.recoilZ * recoilScale,
+    recoilY: upgraded.recoilY * recoilScale,
+    crosshairKick: upgraded.crosshairKick * recoilScale
   };
 }
 
@@ -3257,6 +3449,15 @@ function castFromCamera(offset, targets) {
 export function resetGunState() {
   clearScopedPresentation();
   fireCooldown = 0;
+  meleeCooldown = 0;
+  meleeSwingT = 0;
+  meleeImpactResolved = false;
+  meleeStrikeTuning = null;
+  if (fieldKnifeViewmodel) {
+    fieldKnifeViewmodel.visible = false;
+    applyFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_FORWARD_POSE);
+  }
+  setMeleeFirearmSuppressed(false);
   muzzleT = 0;
   flashVisibleT = 0;
   lastInteractionUseAt = 0;
@@ -3338,17 +3539,20 @@ export function shoot() {
     return;
   }
 
+  const family = getWeaponFamily(w);
   const feel = getWeaponFeel(w);
+  const masteryTuning = getLoadout2CombatTuningForFamily(family);
 
   w.ammo--;
   updateAmmoHUD(w.ammo, w.reserve, w.maxAmmo);
-  fireCooldown = w.fireRate;
+  fireCooldown = w.fireRate * Math.max(0.82, Math.min(1.12, Number(masteryTuning?.fireRateScale) || 1));
   recordRunShot();
+  recordLoadout2Shot(family);
   combatReliability.shots += 1;
   combatReliability.lastShotAt = performance.now();
 
   recordDirectorShot({
-    weaponFamily: getWeaponFamily(w),
+    weaponFamily: family,
     isADS: player.isADS
   });
 
@@ -3443,7 +3647,9 @@ function processHit(hit, shotContext = {}) {
       }
     }
 
-    const baseDamage = w.damage;
+    const weaponFamily = getWeaponFamily(w);
+    const masteryTuning = getLoadout2CombatTuningForFamily(weaponFamily);
+    const baseDamage = Number(w.damage || 0) * Math.max(0.85, Math.min(1.12, Number(masteryTuning?.damageScale) || 1));
     const isInstaKill = player.instaKillTimer > 0;
     const damageScale = getDamageDistanceScale(w, hit.point);
     const headshotMult = getHeadshotMultiplier(w) * getProgressionHeadshotScale();
@@ -3485,7 +3691,11 @@ if (e.isNetworkProxy && typeof e.handleNetworkHit === 'function') {
     recordRunHit({ headshot: hs });
   }
   recordRunDamageDealt(finalDamage);
-  return;
+  const networkBoss = e.isBoss === true || ['GOLIATH', 'BRUTE'].includes(String(e.type || '').toUpperCase());
+  if (weaponFamily !== 'MELEE') {
+    recordLoadout2Hit(weaponFamily, { damage: finalDamage, killed: false, boss: networkBoss, headshot: hs });
+  }
+  return { hit: true, killed: false, damage: finalDamage, boss: networkBoss, headshot: hs, enemy: e };
 }
 
 const gameplay4DamageScale = Math.max(0.5, Math.min(2,
@@ -3618,6 +3828,13 @@ const wasHealth = e.health;
         doublePoints
       });
     }
+
+    const actualDamage = Math.max(0, Math.min(Number(wasHealth) || 0, appliedDamage));
+    const boss = e.isBoss === true || ['GOLIATH', 'BRUTE'].includes(String(e.type || '').toUpperCase());
+    if (weaponFamily !== 'MELEE') {
+      recordLoadout2Hit(weaponFamily, { damage: actualDamage, killed, boss, headshot: hs });
+    }
+    return { hit: true, killed, damage: actualDamage, boss, headshot: hs, enemy: e };
   } else if (!e) {
     const normal = getWorldSurfaceNormal(hit);
     const fxDistance = getHitFxDistance(hit.point);
@@ -3632,7 +3849,163 @@ const wasHealth = e.health;
       const sparkDistanceScale = Math.max(0.35, 1 - fxDistance / 28);
       spawnImpactSpark(hit.point, normal, feel.impactPower * sparkDistanceScale);
     }
+    return { hit: false, killed: false, damage: 0, boss: false, headshot: false, enemy: null };
   }
+  return { hit: false, killed: false, damage: 0, boss: false, headshot: false, enemy: null };
+}
+
+function findMeleeHit(range, arcScale) {
+  const targets = buildShotTargets();
+  let bestEnemyHit = null;
+  let bestDistance = Infinity;
+  const horizontalScale = Math.max(0.75, Math.min(1.35, Number(arcScale) || 1));
+  for (const offset of _meleeOffsets) {
+    _meleeOffset.set(offset * horizontalScale, Math.abs(offset) * -0.05);
+    const hit = castFromCamera(_meleeOffset, targets);
+    if (!hit || !hit.object?.userData?.eRef) continue;
+    const distance = getHitFxDistance(hit.point);
+    if (distance <= range && distance < bestDistance) {
+      bestEnemyHit = hit;
+      bestDistance = distance;
+    }
+  }
+  return bestEnemyHit;
+}
+
+function resolveFieldKnifeImpact() {
+  if (meleeImpactResolved) return;
+  meleeImpactResolved = true;
+
+  const tuning = meleeStrikeTuning || getLoadout2CombatTuningForFamily('MELEE');
+  if (!player.alive || isPvpRulesRun() || tuning?.meleeEnabled !== true || tuning?.pvpExcluded === true) {
+    recordLoadout2MeleeStrike({ hit: false, damage: 0, killed: false, boss: false });
+    return;
+  }
+
+  // R1.3 resolves hit detection only when the blade reaches the impact pose.
+  // This prevents enemies from taking damage at button press before the player
+  // can see the knife make contact.
+  const range = FIELD_KNIFE_BASE_RANGE * Math.max(0.88, Math.min(1.18, Number(tuning?.meleeRangeScale) || 1));
+  const hit = findMeleeHit(range, tuning?.meleeArcScale);
+  if (!hit) {
+    recordLoadout2MeleeStrike({ hit: false, damage: 0, killed: false, boss: false });
+    return;
+  }
+
+  const knifeWeapon = {
+    key: 'MELEE',
+    name: 'Field Knife',
+    damage: Math.max(1, Math.round(FIELD_KNIFE_BASE_DAMAGE * Math.max(0.85, Math.min(1.35, Number(tuning?.meleeDamageScale) || 1)))),
+    isUpgraded: false
+  };
+  const result = processHit(hit, {
+    weapon: knifeWeapon,
+    feel: getWeaponFeel(knifeWeapon),
+    shotId: ++networkShotSequence,
+    scoredEnemies: new Set(),
+    directorHitRegistered: false
+  });
+  addScreenShake(result?.hit === true ? 0.018 : 0.006);
+  recordLoadout2MeleeStrike({
+    hit: result?.hit === true,
+    damage: Number(result?.damage) || 0,
+    killed: result?.killed === true,
+    boss: result?.boss === true
+  });
+}
+
+export function meleeAttack() {
+  const weapon = getActiveWeapon();
+  if (!player.alive || meleeCooldown > 0 || meleeSwingT > 0 || weapon?.reloading) return false;
+
+  const tuning = getLoadout2CombatTuningForFamily('MELEE');
+  if (isPvpRulesRun() || tuning?.meleeEnabled !== true || tuning?.pvpExcluded === true) {
+    const now = performance.now();
+    if (now - lastPvpMeleeNoticeAt > 1200) {
+      lastPvpMeleeNoticeAt = now;
+      showStatusToast('FIELD KNIFE DISABLED IN COMPETITIVE PVP', '#ffb347', 1250);
+    }
+    return false;
+  }
+
+  player.isADS = false;
+  clearScopedPresentation();
+  setMeleeFirearmSuppressed(true);
+  if (fieldKnifeViewmodel) {
+    applyFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_FORWARD_POSE);
+    fieldKnifeViewmodel.visible = true;
+  }
+  const cooldownScale = Math.max(0.72, Math.min(1.20, Number(tuning?.meleeCooldownScale) || 1));
+  meleeCooldown = 0.82 * cooldownScale;
+  meleeSwingDuration = Math.min(0.88, Math.max(0.68, 0.78 * Math.sqrt(cooldownScale)));
+  meleeSwingT = meleeSwingDuration;
+  meleeImpactResolved = false;
+  meleeStrikeTuning = Object.freeze({
+    meleeEnabled: tuning?.meleeEnabled === true,
+    pvpExcluded: tuning?.pvpExcluded === true,
+    meleeDamageScale: Number(tuning?.meleeDamageScale) || 1,
+    meleeCooldownScale: Number(tuning?.meleeCooldownScale) || 1,
+    meleeRangeScale: Number(tuning?.meleeRangeScale) || 1,
+    meleeArcScale: Number(tuning?.meleeArcScale) || 1
+  });
+  addScreenShake(0.004);
+  playUISound('click', 0.13, true, {
+    cooldownKey: 'loadout2_melee_swing',
+    cooldownMs: 180,
+    pitchMin: 0.76,
+    pitchMax: 0.92
+  });
+  recordRunShot();
+  recordDirectorShot({ weaponFamily: 'MELEE', isADS: false });
+  return true;
+}
+
+function updateFieldKnifeViewmodel(dt) {
+  meleeCooldown = Math.max(0, meleeCooldown - dt);
+  if (!fieldKnifeViewmodel) {
+    if (meleeFirearmSuppressed) setMeleeFirearmSuppressed(false);
+    return false;
+  }
+  if (meleeSwingT <= 0) {
+    fieldKnifeViewmodel.visible = false;
+    if (meleeFirearmSuppressed) setMeleeFirearmSuppressed(false);
+    return false;
+  }
+
+  setMeleeFirearmSuppressed(true);
+  meleeSwingT = Math.max(0, meleeSwingT - dt);
+  const progress = 1 - meleeSwingT / Math.max(0.001, meleeSwingDuration);
+  fieldKnifeViewmodel.visible = true;
+
+  if (!meleeImpactResolved && progress >= FIELD_KNIFE_IMPACT_PROGRESS) {
+    resolveFieldKnifeImpact();
+  }
+
+  // Readable center-line stab: deliberate windup, forward thrust, brief impact
+  // hold, then recovery. Every pose keeps the blade's -Z axis toward the crosshair.
+  if (progress < 0.30) {
+    const t = THREE.MathUtils.smoothstep(progress / 0.30, 0, 1);
+    lerpFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_FORWARD_POSE, FIELD_KNIFE_WINDUP_POSE, t);
+  } else if (progress < 0.62) {
+    const t = THREE.MathUtils.smoothstep((progress - 0.30) / 0.32, 0, 1);
+    lerpFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_WINDUP_POSE, FIELD_KNIFE_THRUST_POSE, t);
+  } else if (progress < 0.74) {
+    const t = THREE.MathUtils.smoothstep((progress - 0.62) / 0.12, 0, 1);
+    lerpFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_THRUST_POSE, FIELD_KNIFE_IMPACT_POSE, t);
+  } else {
+    const t = THREE.MathUtils.smoothstep((progress - 0.74) / 0.26, 0, 1);
+    lerpFieldKnifePose(fieldKnifeViewmodel, FIELD_KNIFE_IMPACT_POSE, FIELD_KNIFE_FORWARD_POSE, t);
+  }
+
+  enforceMeleeViewmodelExclusivity();
+
+  if (meleeSwingT <= 0) {
+    fieldKnifeViewmodel.visible = false;
+    setMeleeFirearmSuppressed(false);
+    meleeStrikeTuning = null;
+    return false;
+  }
+  return true;
 }
 
 
@@ -3640,7 +4013,8 @@ export function startReload() {
   const w = getActiveWeapon();
   if (w.reloading || w.ammo === w.maxAmmo || w.reserve <= 0) return;
 
-  const totalReloadDuration = w.reloadDuration * player.reloadMult;
+  const reloadTuning = getLoadout2CombatTuningForFamily(getWeaponFamily(w));
+  const totalReloadDuration = w.reloadDuration * player.reloadMult * Math.max(0.75, Math.min(1.15, Number(reloadTuning?.reloadScale) || 1));
 
   playWeaponReloadSound(
     getWeaponFamily(w),
@@ -3664,7 +4038,8 @@ export function processReloadTick(dt) {
   if (!w || !w.reloading) return;
 
   w.reloadT -= dt;
-  const totalReloadTime = w.reloadDuration * player.reloadMult;
+  const reloadTuning = getLoadout2CombatTuningForFamily(getWeaponFamily(w));
+  const totalReloadTime = w.reloadDuration * player.reloadMult * Math.max(0.75, Math.min(1.15, Number(reloadTuning?.reloadScale) || 1));
   const reloadBar = document.getElementById('reload-bar');
   if (reloadBar) reloadBar.style.width = Math.min(100, (1 - w.reloadT / totalReloadTime) * 100) + '%';
 
@@ -3701,6 +4076,7 @@ export function updateGun(dt, keys, isMoving) {
   }
 
   updateProceduralHandVisibility(w);
+  const meleeActive = updateFieldKnifeViewmodel(dt);
 
   const sniperScopeActive = Boolean(
     player.isADS && isSniperScopeWeapon(w)
@@ -3713,9 +4089,10 @@ export function updateGun(dt, keys, isMoving) {
   // weapon definition as well as mesh metadata so restored/upgraded weapons
   // cannot leave the physical scope or rifle viewmodel visible.
   if (w.meshGroup) {
-    w.meshGroup.visible = !sniperScopeActive;
+    w.meshGroup.visible = !sniperScopeActive && !meleeActive;
     w.meshGroup.userData.scopeOnlyADSActive = sniperScopeActive;
   }
+  if (meleeActive) enforceMeleeViewmodelExclusivity();
 
   if (fireCooldown > 0) fireCooldown -= dt;
 
@@ -3928,7 +4305,7 @@ export function updateGun(dt, keys, isMoving) {
     }
   }
 
-  if (w.isAutomatic && keys['MousedownLeft'] && player.alive && !w.reloading) { shoot(); }
+  if (!meleeActive && w.isAutomatic && keys['MousedownLeft'] && player.alive && !w.reloading) { shoot(); }
   updateCrosshair(dt, isMoving);
 }
 

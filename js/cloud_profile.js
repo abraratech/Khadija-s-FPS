@@ -623,6 +623,11 @@ function applyAuthoritativeRemoteProgression(profile) {
     || currentProfile?.progression?.campaign7
     || {}
   ));
+  const mergedLoadout2 = JSON.parse(JSON.stringify(
+    merged.progression?.loadout2
+    || currentProfile?.progression?.loadout2
+    || {}
+  ));
   merged.progression = JSON.parse(JSON.stringify(incoming.progression || {}));
   const progressionStorage = JSON.parse(
     merged.legacyStorage?.ka_progression_v1
@@ -636,6 +641,10 @@ function applyAuthoritativeRemoteProgression(profile) {
   if (mergedCampaign7?.patch === 'gameplay7-r1-dynamic-campaign-faction-control') {
     merged.progression.campaign7 = mergedCampaign7;
     progressionStorage.campaign7 = mergedCampaign7;
+  }
+  if (mergedLoadout2?.patch === 'loadout2-r1-weapon-mastery-operator-specialization-melee') {
+    merged.progression.loadout2 = mergedLoadout2;
+    progressionStorage.loadout2 = mergedLoadout2;
   }
   merged.legacyStorage.ka_progression_v1 = JSON.stringify(progressionStorage);
   merged.updatedAt = Math.max(Number(merged.updatedAt || 0), nowMs());

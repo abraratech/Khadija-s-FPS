@@ -60,6 +60,7 @@ const loadoutResult = saveLoadoutPreset({
   primary: 'SNIPER',
   secondary: 'RIFLE',
   doctrine: 'PRECISION',
+  specializationId: 'MARKSMAN',
   avatarPresetId: avatarResult.preset.id,
   cosmetics: {
     title: 'TITLE_BUNKER_BREAKER',
@@ -79,7 +80,9 @@ const frozen = freezeActiveLoadoutForRun({
 assert.equal(frozen.loadoutName, 'Night Watch');
 assert.equal(frozen.primary, 'SNIPER');
 assert.equal(frozen.balancePolicy.startingWeapon, 'PISTOL');
-assert.equal(frozen.balancePolicy.grantsCombatPower, false);
+assert.equal(frozen.balancePolicy.grantsCombatPower, true);
+assert.equal(frozen.balancePolicy.pvpIsolated, true);
+assert.equal(frozen.specializationId, 'MARKSMAN');
 assert.equal(frozen.cosmetics.title, 'TITLE_BUNKER_BREAKER');
 assert.equal(frozen.cosmetics.badge, 'BADGE_RECRUIT');
 assert.deepEqual(equipped.slice(-3), [
@@ -92,4 +95,4 @@ assert.equal(getFrozenLoadoutForRun().runId, 'runtime-test-run');
 clearFrozenLoadoutForRun();
 assert.equal(getFrozenLoadoutForRun(), null);
 
-console.log('LOADOUT.1 runtime persistence tests: PASS');
+console.log('LOADOUT.2 runtime persistence tests: PASS');

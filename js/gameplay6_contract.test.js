@@ -54,7 +54,7 @@ for (const marker of [
   assert.ok(content.includes(marker), `Missing GAMEPLAY.6 CONTENT.1 marker: ${marker}`);
 }
 assert.match(content, /postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7/);
-assert.match(progressionCore, /PROGRESSION_VERSION = 5/);
+assert.match(progressionCore, /PROGRESSION_VERSION = 6/);
 assert.match(progressionCore, /world6: createDefaultGameplay6WorldProfile/);
 assert.match(progressionCore, /normalizeGameplay6WorldProfile\(source\.world6/);
 assert.match(progression, /recordProgressionGameplay6WorldContribution/);
@@ -66,14 +66,14 @@ assert.match(summary, /gameplay6WorldPoints/);
 assert.match(hud, /GAMEPLAY\.6 R1 — persistent world progression readout/);
 assert.match(hud, /\.ka-gameplay6-world/);
 
-assert.equal(release.releaseId, 'gameplay7-r1-dynamic-campaign-faction-control');
-assert.equal(release.productVersion, '1.8.0-gameplay7-r1');
-assert.equal(release.releaseSequence, 2026072105);
-assert.equal(release.sourceBaselineSha, 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9');
+assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
+assert.equal(release.productVersion, '1.9.0-loadout2-r1');
+assert.equal(release.releaseSequence, 2026072201);
+assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.7 R1 - Dynamic Campaign & Faction Control');
+assert.equal(metadata.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
 assert.equal(metadata.gameplay6?.patch, 'gameplay6-r1-world-progression');
 assert.deepEqual(metadata.gameplay6?.supportedMaps, [
   'grid_bunker',
@@ -108,8 +108,8 @@ for (const field of [
   assert.equal(metadata.gameplay6?.[field], true, `Missing GAMEPLAY.6 policy: ${field}`);
 }
 assert.equal(metadata.gameplay6?.workerChangeRequired, false);
-assert.match(updateDelivery, /gameplay7-r1-dynamic-campaign-faction-control/);
-assert.match(updateDelivery, /releaseSequence: 2026072105/);
+assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
+assert.match(updateDelivery, /releaseSequence: 2026072201/);
 assert.match(buildProduction, /GAMEPLAY6_RELEASE_SEQUENCE = 2026072104/);
 assert.match(buildProduction, /"gameplay6":/);
 assert.match(verifyProduction, /GAMEPLAY\.6 production manifest patch mismatch/);

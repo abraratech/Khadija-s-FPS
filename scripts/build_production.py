@@ -122,6 +122,12 @@ GAMEPLAY7_SOURCE_BASELINE_SHA = 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9'
 GAMEPLAY7_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 GAMEPLAY7_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 GAMEPLAY7_RELEASE_SEQUENCE = 2026072105
+LOADOUT2_PATCH = 'loadout2-r1-weapon-mastery-operator-specialization-melee'
+LOADOUT2_PRODUCT_VERSION = '1.9.0-loadout2-r1'
+LOADOUT2_SOURCE_BASELINE_SHA = '94fa816f099dec9ae6a6bc11047a2bf1331ee892'
+LOADOUT2_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
+LOADOUT2_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
+LOADOUT2_RELEASE_SEQUENCE = 2026072201
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -948,13 +954,48 @@ def main() -> None:
         "crazygames_readiness_on_hold": True,
         "android_readiness_on_hold": True,
     },
+        "loadout2": {
+        "schema": 1,
+        "patch": LOADOUT2_PATCH,
+        "product_version": LOADOUT2_PRODUCT_VERSION,
+        "source_baseline_sha": LOADOUT2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": LOADOUT2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": LOADOUT2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": LOADOUT2_RELEASE_SEQUENCE,
+        "modes": ["solo-survival", "cooperative-survival", "objective-operations"],
+        "weapon_families": ["PISTOL", "SMG", "RIFLE", "SHOTGUN", "SNIPER", "MELEE"],
+        "functional_field_knife": True,
+        "default_melee_access": True,
+        "keyboard_melee_input": True,
+        "gamepad_melee_input": True,
+        "mobile_melee_input": True,
+        "weapon_mastery": True,
+        "operator_specialization": True,
+        "attachment_unlock_tracks": True,
+        "bounded_pve_combat_tuning": True,
+        "pvp_progression_bonuses_disabled": True,
+        "pvp_melee_disabled": True,
+        "profile_owned_state": True,
+        "cloud_merge_safe": True,
+        "idempotent_mastery_receipts": True,
+        "host_authoritative_melee_damage": True,
+        "late_join_presentation": True,
+        "reconnect_restoration": True,
+        "host_migration_safe": True,
+        "run_summary_integration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+        "crazygames_readiness_on_hold": True,
+        "android_readiness_on_hold": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": GAMEPLAY7_PATCH,
-        "source_baseline_sha": GAMEPLAY7_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": GAMEPLAY7_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": GAMEPLAY7_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": GAMEPLAY7_RELEASE_SEQUENCE,
+        "patch": LOADOUT2_PATCH,
+        "source_baseline_sha": LOADOUT2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": LOADOUT2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": LOADOUT2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": LOADOUT2_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
         "worker_change_required": False,

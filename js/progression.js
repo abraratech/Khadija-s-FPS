@@ -31,6 +31,12 @@ import {
   applyGameplay7Contribution,
   getGameplay7CampaignPresentation
 } from './gameplay7_campaign_core.js';
+import {
+  LOADOUT2_PATCH,
+  applyLoadout2MasteryReceipt,
+  getLoadout2MasteryPresentation,
+  setLoadout2Specialization
+} from './loadout2_mastery_core.js';
 
 // js/progression.js
 // PROG.1 R1 — unified persistent progression and run perks.
@@ -950,6 +956,47 @@ export function recordProgressionGameplay7CampaignContribution(receipt = null) {
   });
 }
 
+export function recordProgressionLoadout2MasteryReceipt(receipt = null) {
+  if (!receipt?.receiptId) {
+    return Object.freeze({
+      applied: false,
+      idempotent: false,
+      pvpExcluded: false,
+      patch: LOADOUT2_PATCH,
+      profile: profile.loadout2,
+      unlocked: []
+    });
+  }
+  const result = applyLoadout2MasteryReceipt(profile.loadout2, receipt, Date.now());
+  profile.loadout2 = result.profile;
+  if (result.applied) {
+    run.lastEvent = `WEAPON MASTERY +${Math.max(0, Math.round(Number(result.totalXp) || 0))}`;
+    saveProfile(true, 'loadout2-weapon-mastery');
+  }
+  return Object.freeze({
+    applied: result.applied === true,
+    idempotent: result.idempotent === true,
+    pvpExcluded: result.pvpExcluded === true,
+    patch: LOADOUT2_PATCH,
+    totalXp: Math.max(0, Math.round(Number(result.totalXp) || 0)),
+    profile: result.profile,
+    presentation: getLoadout2MasteryPresentation(result.profile),
+    unlocked: result.unlocked || []
+  });
+}
+
+export function setProgressionLoadout2Specialization(specializationId) {
+  const result = setLoadout2Specialization(profile.loadout2, specializationId, Date.now());
+  profile.loadout2 = result.profile;
+  if (result.changed) saveProfile(true, 'loadout2-specialization');
+  return Object.freeze({
+    changed: result.changed === true,
+    patch: LOADOUT2_PATCH,
+    profile: result.profile,
+    presentation: getLoadout2MasteryPresentation(result.profile)
+  });
+}
+
 export function getProgressionSnapshot() {
   profile = normalizeProgressionProfile(profile, Date.now());
   const levelInfo = recalculateLevel();
@@ -980,6 +1027,8 @@ export function getProgressionSnapshot() {
     world6Patch: GAMEPLAY6_PATCH,
     campaign7: getGameplay7CampaignPresentation(profile.campaign7, run.mapId),
     campaign7Patch: GAMEPLAY7_PATCH,
+    loadout2: getLoadout2MasteryPresentation(profile.loadout2),
+    loadout2Patch: LOADOUT2_PATCH,
     perkDefinitions: Object.values(PERK_DEFS).map((perk) => ({ ...perk }))
   };
 }

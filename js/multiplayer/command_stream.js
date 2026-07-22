@@ -7,6 +7,7 @@ const ACTION_EDGE_MAP = Object.freeze([
   ['reload', 'KeyR', 'RELOAD'],
   ['interact', 'KeyE', 'INTERACT'],
   ['switchWeapon', 'KeyQ', 'SWITCH_WEAPON'],
+  ['melee', 'KeyV', 'MELEE'],
   ['jump', 'Space', 'JUMP']
 ]);
 
@@ -34,7 +35,8 @@ function captureInputState(frameKeys, player) {
     fire: active(frameKeys, 'MousedownLeft'),
     reload: active(frameKeys, 'KeyR'),
     interact: active(frameKeys, 'KeyE'),
-    switchWeapon: active(frameKeys, 'KeyQ')
+    switchWeapon: active(frameKeys, 'KeyQ'),
+    melee: active(frameKeys, 'KeyV')
   };
 }
 

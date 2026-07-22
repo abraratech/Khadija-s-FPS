@@ -76,14 +76,14 @@ assert.match(replayability, /type === clean\(this\.state\.boss\.enemyType/);
 assert.match(runSummary, /recordRunGameplay4BossEncounter/);
 assert.match(runSummary, /gameplay4BossInterrupts/);
 
-assert.equal(release.releaseId, 'gameplay7-r1-dynamic-campaign-faction-control');
-assert.equal(release.productVersion, '1.8.0-gameplay7-r1');
-assert.equal(release.releaseSequence, 2026072105);
-assert.equal(release.sourceBaselineSha, 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9');
+assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
+assert.equal(release.productVersion, '1.9.0-loadout2-r1');
+assert.equal(release.releaseSequence, 2026072201);
+assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.7 R1 - Dynamic Campaign & Faction Control');
+assert.equal(metadata.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
 assert.equal(metadata.gameplay4?.patch, 'gameplay4-r1-expanded-boss-encounters');
 assert.equal(metadata.gameplay4?.bossPhases, 3);
 assert.deepEqual(metadata.gameplay4?.bossProfiles, ['JUGGERNAUT', 'MATRIARCH', 'DETONATOR']);
@@ -111,8 +111,8 @@ for (const field of [
   assert.equal(metadata.gameplay4?.[field], true, `Missing GAMEPLAY.4 policy: ${field}`);
 }
 assert.equal(metadata.gameplay4?.workerChangeRequired, false);
-assert.match(updateDelivery, /gameplay7-r1-dynamic-campaign-faction-control/);
-assert.match(updateDelivery, /releaseSequence: 2026072105/);
+assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
+assert.match(updateDelivery, /releaseSequence: 2026072201/);
 assert.match(buildProduction, /GAMEPLAY4_RELEASE_SEQUENCE = 2026072102/);
 assert.match(buildProduction, /"gameplay4":/);
 assert.match(verifyProduction, /GAMEPLAY\.4 production manifest patch mismatch/);

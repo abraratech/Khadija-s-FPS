@@ -28,8 +28,8 @@ const avatar = {
 };
 
 assert.equal(LOADOUT_PROFILE_KEY, 'ka_loadout_profile_v1');
-assert.equal(LOADOUT_PROFILE_VERSION, 1);
-assert.equal(LOADOUT_PATCH, 'loadout1-r1-saved-presets-avatar-cosmetic-collections');
+assert.equal(LOADOUT_PROFILE_VERSION, 2);
+assert.equal(LOADOUT_PATCH, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
 
 const defaults = createDefaultLoadoutProfile({ now: NOW, avatarProfile: avatar });
 assert.equal(defaults.presets.length, 2);
@@ -123,8 +123,10 @@ const frozen = createFrozenLoadoutSnapshot({
 assert.equal(frozen.runId, 'run-one');
 assert.equal(frozen.mapId, 'neon_depot');
 assert.equal(frozen.balancePolicy.startingWeapon, 'PISTOL');
-assert.equal(frozen.balancePolicy.grantsCombatPower, false);
-assert.equal(frozen.balancePolicy.preferencesOnly, true);
+assert.equal(frozen.balancePolicy.grantsCombatPower, true);
+assert.equal(frozen.balancePolicy.pveOnlyBonuses, true);
+assert.equal(frozen.balancePolicy.pvpIsolated, true);
+assert.equal(frozen.specializationId, 'FIELD_OPERATIVE');
 assert.equal(frozen.cosmetics.title, 'TITLE_BUNKER_BREAKER');
 assert.equal(frozen.cosmetics.badge, 'BADGE_RECRUIT');
 
@@ -150,6 +152,6 @@ const right = normalizeLoadoutProfile({
 const merged = mergeLoadoutProfiles(left, right, { now: NOW + 100 });
 assert.equal(merged.activeLoadoutId, defaults.presets[1].id);
 assert.equal(merged.presets.find((entry) => entry.id === defaults.presets[0].id).name, 'Right Version');
-assert.equal(getLoadoutMergePolicy().combatPower, 'never granted by saved presets');
+assert.match(getLoadoutMergePolicy().combatPower, /bounded PvE mastery/);
 
-console.log('LOADOUT.1 core tests: PASS');
+console.log('LOADOUT.2 loadout profile core tests: PASS');

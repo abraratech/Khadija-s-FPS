@@ -126,6 +126,7 @@ function addWeaponCylinder(
 
 export function resolveRemoteWeaponFamily(weaponKey) {
   const key = String(weaponKey || '').trim().toLowerCase();
+  if (key.includes('melee') || key.includes('knife')) return 'MELEE';
   if (key.includes('sniper')) return 'SNIPER';
   if (key.includes('shotgun')) return 'SHOTGUN';
   if (key.includes('smg') || key.includes('submachine')) return 'SMG';
@@ -228,6 +229,18 @@ function createSniperModel(THREE, materials) {
   return group;
 }
 
+function createMeleeModel(THREE, materials) {
+  const group = new THREE.Group();
+  group.name = 'remote-weapon-model-melee';
+  const blade = addWeaponBox(THREE, group, 'remote-field-knife-blade', [0.055, 0.035, 0.48], [0, 0, -0.24], materials.metal);
+  blade.rotation.x = -0.08;
+  addWeaponBox(THREE, group, 'remote-field-knife-guard', [0.20, 0.045, 0.055], [0, 0, 0.015], materials.armor);
+  addWeaponBox(THREE, group, 'remote-field-knife-grip', [0.085, 0.095, 0.24], [0, 0, 0.16], materials.dark);
+  group.rotation.z = -0.18;
+  group.userData.muzzleZ = -0.54;
+  return group;
+}
+
 function createRemoteWeaponModels(THREE, weapon, muzzleFlash) {
   [...weapon.children].forEach((child) => {
     if (child !== muzzleFlash) child.visible = false;
@@ -249,6 +262,7 @@ function createRemoteWeaponModels(THREE, weapon, muzzleFlash) {
     ['RIFLE', createRifleModel(THREE, materials)],
     ['SHOTGUN', createShotgunModel(THREE, materials)],
     ['SNIPER', createSniperModel(THREE, materials)],
+    ['MELEE', createMeleeModel(THREE, materials)],
   ]);
   models.forEach((model, family) => {
     model.visible = family === 'PISTOL';
@@ -539,6 +553,8 @@ function createAvatar(THREE, player) {
     muzzleFlash: rig.muzzleFlash,
     muzzleFlashUntil: 0,
     lastWeaponFamily: 'PISTOL',
+    meleeSwingStartedAt: 0,
+    meleeSwingUntil: 0,
     label,
     gait: makeGaitState(THREE),
   };
@@ -611,6 +627,8 @@ export class RemotePlayerManager {
         const envelope = event?.payload?.envelope;
         if (envelope?.payload?.action === 'FIRE') {
           this.flashMuzzle(envelope.playerId);
+        } else if (envelope?.payload?.action === 'MELEE') {
+          this.swingMelee(envelope.playerId);
         }
       }) || (() => {})
     );
@@ -681,6 +699,16 @@ export class RemotePlayerManager {
     this.avatars.delete(playerId);
     this.roomPlayers.delete(playerId);
     this.runtime?.removeRemotePlayer?.(playerId);
+  }
+
+  swingMelee(playerId) {
+    const avatar = this.avatars.get(playerId);
+    const remote = avatar?.userData?.remote;
+    if (!remote) return false;
+    const now = performance.now();
+    remote.meleeSwingStartedAt = now;
+    remote.meleeSwingUntil = now + 360;
+    return true;
   }
 
   flashMuzzle(playerId) {
@@ -759,7 +787,27 @@ export class RemotePlayerManager {
         if (remote.label?.material) {
           remote.label.material.opacity = isAway ? 0.48 : 0.82;
         }
-        updateWeaponShape(avatar, state.weaponKey);
+        if (now < Number(remote.meleeSwingUntil || 0)) {
+          const duration = Math.max(1, Number(remote.meleeSwingUntil || 0) - Number(remote.meleeSwingStartedAt || 0));
+          const progress = Math.max(0, Math.min(1, (now - Number(remote.meleeSwingStartedAt || 0)) / duration));
+          const slash = Math.sin(progress * Math.PI);
+          remote.lastWeaponFamily = 'MELEE';
+          remote.weaponModels?.forEach?.((model, key) => {
+            model.visible = key === 'MELEE';
+          });
+          remote.arms.rotation.x = Number(state.pitch || 0) * 0.72 - slash * 0.62;
+          remote.arms.rotation.z = slash * 0.44;
+          remote.weapon.rotation.x = Number(state.pitch || 0) * 0.72 - slash * 0.78;
+          remote.weapon.rotation.y = -slash * 0.62;
+          remote.weapon.rotation.z = slash * 0.55;
+          remote.weapon.position.x = 0.15 - slash * 0.20;
+          remote.weapon.position.y = 1.25 + remote.body.position.y + slash * 0.12;
+        } else {
+          remote.arms.rotation.z = 0;
+          remote.weapon.rotation.y = 0;
+          remote.weapon.rotation.z = 0;
+          updateWeaponShape(avatar, state.weaponKey);
+        }
       }
     });
   }

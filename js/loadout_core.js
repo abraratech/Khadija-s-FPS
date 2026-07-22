@@ -5,13 +5,14 @@ import {
   normalizeAvatarProfile,
 } from './avatar_customization_core.js';
 import { PROGRESSION_UNLOCK_CATALOG } from './progression_core.js';
+import { LOADOUT2_SPECIALIZATIONS } from './loadout2_mastery_core.js';
 
-export const LOADOUT_PATCH = 'loadout1-r1-saved-presets-avatar-cosmetic-collections';
+export const LOADOUT_PATCH = 'loadout2-r1-weapon-mastery-operator-specialization-melee';
 export const LOADOUT_PROFILE_KEY = 'ka_loadout_profile_v1';
 export const LOADOUT_BACKUP_KEY = 'ka_loadout_backup_v1';
 export const LOADOUT_CORRUPT_KEY = 'ka_loadout_corrupt_v1';
 export const LOADOUT_RUN_SNAPSHOT_KEY = 'ka_loadout_run_snapshot_v1';
-export const LOADOUT_PROFILE_VERSION = 1;
+export const LOADOUT_PROFILE_VERSION = 2;
 export const MAX_LOADOUT_PRESETS = 6;
 export const MAX_AVATAR_PRESETS = 6;
 
@@ -39,6 +40,7 @@ const PRIMARY_IDS = new Set(LOADOUT_WEAPON_CATALOG.filter((entry) => entry.role 
 const SECONDARY_IDS = new Set(LOADOUT_WEAPON_CATALOG.map((entry) => entry.id));
 const DOCTRINE_IDS = new Set(LOADOUT_DOCTRINES.map((entry) => entry.id));
 const MELEE_IDS = new Set(LOADOUT_MELEE_CATALOG.map((entry) => entry.id));
+const SPECIALIZATION_IDS = new Set(LOADOUT2_SPECIALIZATIONS.map((entry) => entry.id));
 const DEFAULT_COSMETICS = Object.freeze({
   title: 'TITLE_SURVIVOR',
   badge: 'BADGE_RECRUIT',
@@ -110,6 +112,11 @@ function normalizeMelee(value) {
   return MELEE_IDS.has(token) ? token : 'FIELD_KNIFE';
 }
 
+function normalizeSpecialization(value) {
+  const token = cleanText(value, 'FIELD_OPERATIVE', 48).toUpperCase();
+  return SPECIALIZATION_IDS.has(token) ? token : 'FIELD_OPERATIVE';
+}
+
 function normalizeAvatarPreset(entry, index, now, usedIds) {
   const source = isObject(entry) ? entry : {};
   const id = uniqueId(source.id, usedIds, 'avatar', index);
@@ -138,6 +145,7 @@ function normalizeLoadoutPreset(entry, index, now, usedIds, avatarIds) {
     primary,
     secondary,
     melee: normalizeMelee(source.melee),
+    specializationId: normalizeSpecialization(source.specializationId),
     doctrine: normalizeDoctrine(source.doctrine),
     avatarPresetId,
     cosmetics: normalizeCosmetics(source.cosmetics),
@@ -164,6 +172,7 @@ function defaultLoadoutPresets(now, avatarPresetId) {
       primary: 'SMG',
       secondary: 'SHOTGUN',
       melee: 'FIELD_KNIFE',
+      specializationId: 'FIELD_OPERATIVE',
       doctrine: 'BALANCED',
       avatarPresetId,
       cosmetics: { ...DEFAULT_COSMETICS },
@@ -176,6 +185,7 @@ function defaultLoadoutPresets(now, avatarPresetId) {
       primary: 'RIFLE',
       secondary: 'SNIPER',
       melee: 'FIELD_KNIFE',
+      specializationId: 'MARKSMAN',
       doctrine: 'PRECISION',
       avatarPresetId,
       cosmetics: { ...DEFAULT_COSMETICS },
@@ -339,7 +349,7 @@ export function createFrozenLoadoutSnapshot(profileValue, progressionProfile = {
   const avatarPreset = profile.avatarPresets.find((entry) => entry.id === preset.avatarPresetId)
     || getActiveAvatarPreset(profile);
   return Object.freeze({
-    version: 1,
+    version: 2,
     patch: LOADOUT_PATCH,
     runId: cleanText(runId, `run-${integer(now, Date.now(), 1).toString(36)}`, 100),
     frozenAt: integer(now, Date.now(), 1),
@@ -351,14 +361,16 @@ export function createFrozenLoadoutSnapshot(profileValue, progressionProfile = {
     primary: preset.primary,
     secondary: preset.secondary,
     melee: preset.melee,
+    specializationId: preset.specializationId,
     doctrine: preset.doctrine,
     avatarPresetId: avatarPreset.id,
     avatar: normalizeAvatarProfile(avatarPreset.avatar),
     cosmetics: sanitizePresetCosmetics(preset, progressionProfile),
     balancePolicy: Object.freeze({
       startingWeapon: 'PISTOL',
-      grantsCombatPower: false,
-      preferencesOnly: true,
+      grantsCombatPower: true,
+      pveOnlyBonuses: true,
+      pvpIsolated: true,
     }),
   });
 }
@@ -427,7 +439,7 @@ export function getLoadoutMergePolicy() {
     avatarPresets: 'union by stable preset id; newest update wins',
     maximumLoadoutPresets: MAX_LOADOUT_PRESETS,
     maximumAvatarPresets: MAX_AVATAR_PRESETS,
-    combatPower: 'never granted by saved presets',
+    combatPower: 'bounded PvE mastery and specialization only; competitively isolated',
   });
 }
 

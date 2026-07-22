@@ -4,7 +4,7 @@ import { renderer, scene, camera, mapMeshes, buildMap, composer, applyScreenShak
 import { player, updatePlayer, damagePlayer, EYE_H, setMouseSensitivityPercent, getMouseSensitivityPercent, setBaseFOV, getBaseFOV, getADSFOV } from './player.js';
 import { initEnemies, endEnemyRun, updateEnemies, getActiveEnemies, getEnemyReliabilitySnapshot, killEnemy, damageEnemyForBot, currentWave, isSpecialRound, applyNetworkWaveState, configureMultiplayerEnemyAuthority, getNetworkEnemyWaveState, restoreNetworkEnemySnapshot, resumeNetworkWaveAfterMigration, clearEnemiesForNetworkProxyMode } from './enemy.js';
 import { updateHealthHUD, updateAmmoHUD, updateKillsHUD, updateUIEffects, updateScoreHUD, updateMinimap, setDamageIndicatorsEnabled, getDamageIndicatorsEnabled, resetCombatStatusHUD, showStatusToast, renderRunSummaryScreen } from './ui.js';
-import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, configureMultiplayerPvp, applyPvpRulesState, clearPvpRulesPresentation, handlePvpPickupRejected, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
+import { buildGun, updateGun, shoot, startReload, processReloadTick, cycleWeapon, checkWorldInteractions, getActiveWeapon, getActiveWeaponFamily, meleeAttack, getCombatReliabilitySnapshot, resetGunState, updateShops, adjustSniperScopeZoom, configureMultiplayerEconomy, configureMultiplayerPvp, applyPvpRulesState, clearPvpRulesPresentation, handlePvpPickupRejected, prepareMultiplayerWorld, getLocalPurchaseState, validateMultiplayerInteraction, commitMultiplayerInteraction, applyLocalEconomyState, applyMultiplayerInteractionResult, buildMultiplayerWorldState, applyMultiplayerWorldState, applyMultiplayerProfile, endMultiplayerEconomy } from './weapons.js';
 import {
   areTeamAlertCaptionsEnabled,
   getMasterVolumePercent,
@@ -53,6 +53,7 @@ import {
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
 import { resetChallengesRun, endChallengesRun, getChallengesSnapshot } from './challenges.js';
 import { resetRunSummary, finalizeRunSummary, getRunSummarySnapshot, markRunBotAssisted, recordRunPointsEarned } from './run_summary.js';
+import { beginLoadout2Run, finalizeLoadout2Run } from './loadout2_runtime.js';
 import { initCloudProfile, syncCloudProfile, syncCloudProfileRemote } from './cloud_profile.js';
 import { initSocialSystems } from './social.js';
 import { initLive1Systems, beginLive1Run, endLive1Run } from './live1.js';
@@ -914,6 +915,9 @@ function pauseGameplay(source = 'input') {
   if (action === CONTROL_ACTIONS.FIRE) {
     pendingShot = true;
     recordTutorialAction('FIRE');
+  } else if (action === CONTROL_ACTIONS.MELEE) {
+    meleeAttack();
+    recordTutorialAction('MELEE');
   } else if (action === CONTROL_ACTIONS.RELOAD) {
     startReload();
     recordTutorialAction('RELOAD');
@@ -1183,6 +1187,7 @@ function finalizeCurrentRun(reason = 'ENDED') {
     || currentMapMeta?.name
     || 'grid_bunker';
 
+  finalizeLoadout2Run({ reason: payload.reason });
   finalizeRunSummary(payload);
   const summary = getRunSummarySnapshot();
   const coopStats = getMultiplayerCoopStatsSnapshot();
@@ -1526,6 +1531,13 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
       gameMode: pvpRun ? 'pvp' : 'survival'
     });
     resetRunSummary({ mapId: chosenMap, difficulty: difficultyMultiplier });
+    beginLoadout2Run({
+      runId: progressionRun?.run?.runId,
+      mapId: chosenMap,
+      gameMode: pvpRun ? 'pvp' : 'survival',
+      difficulty: difficultyMultiplier,
+      loadout: frozenLoadout
+    });
     // PVP.1 already applied the authoritative team spawn during
     // beginMultiplayerRun. Never overwrite it with a random Co-Op spawn.
     if (!pvpRun) placePlayerAtRandomSpawn();
@@ -1777,7 +1789,7 @@ if (sizeSlider) {
     const newSize = e.target.value;
     document.documentElement.style.setProperty('--mobile-btn-size', newSize + 'px');
     localStorage.setItem('mobile_btn_size', newSize);
-    ['joy', 'switch', 'interact', 'reload', 'jump', 'ads', 'shoot'].forEach(key => {
+    ['joy', 'switch', 'melee', 'interact', 'reload', 'jump', 'ads', 'shoot'].forEach(key => {
       document.documentElement.style.removeProperty(`--sz-${key}`);
     });
   });
@@ -1881,6 +1893,7 @@ if (isMultiplayerRefreshGameplayBlocked() || isMultiplayerTabLeaseBlocking()) {
 if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.reloadPressed) triggerGameplayAction(CONTROL_ACTIONS.RELOAD);
 if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.interactPressed) triggerGameplayAction(CONTROL_ACTIONS.INTERACT);
 if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.switchPressed) triggerGameplayAction(CONTROL_ACTIONS.SWITCH_WEAPON);
+if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.meleePressed) triggerGameplayAction(CONTROL_ACTIONS.MELEE);
 if (!coOpMenuOpen && !isGameplayInputBlocked() && gamepadInput.firePressed) {
   pendingShot = true;
   recordTutorialAction('FIRE');
@@ -2242,6 +2255,7 @@ if (isMobile) {
   }
 
   bindTouchBtn('btn-switch', CONTROL_ACTIONS.SWITCH_WEAPON);
+  bindTouchBtn('btn-melee', CONTROL_ACTIONS.MELEE);
   bindTouchBtn('btn-jump', CONTROL_ACTIONS.JUMP);
   bindTouchBtn('btn-reload', CONTROL_ACTIONS.RELOAD);
   bindTouchBtn('btn-interact', CONTROL_ACTIONS.INTERACT);
@@ -2392,3 +2406,6 @@ if (isMobile) {
   const mobileCustomBtn = document.getElementById('mobile-customize-btn');
   if (mobileCustomBtn) mobileCustomBtn.style.display = 'none';
 }
+
+// LOADOUT.2 diagnostic bridge for objective attribution and live verification.
+if (typeof window !== 'undefined') window.KAGetActiveWeaponFamily = getActiveWeaponFamily;

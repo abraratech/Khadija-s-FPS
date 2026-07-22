@@ -56,7 +56,7 @@ for (const marker of [
   assert.ok(content.includes(marker), `Missing GAMEPLAY.7 CONTENT.1 marker: ${marker}`);
 }
 assert.match(content, /gameplay5, gameplay6, gameplay7/);
-assert.match(progressionCore, /PROGRESSION_VERSION = 5/);
+assert.match(progressionCore, /PROGRESSION_VERSION = 6/);
 assert.match(progressionCore, /campaign7: createDefaultGameplay7CampaignProfile/);
 assert.match(progressionCore, /normalizeGameplay7CampaignProfile\(source\.campaign7/);
 assert.match(progression, /recordProgressionGameplay7CampaignContribution/);
@@ -68,15 +68,15 @@ assert.match(summary, /gameplay7CampaignPoints/);
 assert.match(hud, /GAMEPLAY\.7 R1 — dynamic campaign and faction-control readout/);
 assert.match(hud, /\.ka-gameplay7-campaign/);
 
-assert.equal(release.releaseId, 'gameplay7-r1-dynamic-campaign-faction-control');
-assert.equal(release.productVersion, '1.8.0-gameplay7-r1');
-assert.equal(release.releaseSequence, 2026072105);
-assert.equal(release.sourceBaselineSha, 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9');
+assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
+assert.equal(release.productVersion, '1.9.0-loadout2-r1');
+assert.equal(release.releaseSequence, 2026072201);
+assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.7 R1 - Dynamic Campaign & Faction Control');
-assert.equal(metadata.gameplay7?.patch, release.releaseId);
+assert.equal(metadata.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
+assert.equal(metadata.gameplay7?.patch, 'gameplay7-r1-dynamic-campaign-faction-control');
 assert.deepEqual(metadata.gameplay7?.supportedMaps, [
   'grid_bunker',
   'industrial_yard',
@@ -119,8 +119,8 @@ for (const field of [
   assert.equal(metadata.gameplay7?.[field], true, `Missing GAMEPLAY.7 policy: ${field}`);
 }
 assert.equal(metadata.gameplay7?.workerChangeRequired, false);
-assert.match(updateDelivery, /gameplay7-r1-dynamic-campaign-faction-control/);
-assert.match(updateDelivery, /releaseSequence: 2026072105/);
+assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
+assert.match(updateDelivery, /releaseSequence: 2026072201/);
 assert.match(buildProduction, /GAMEPLAY7_RELEASE_SEQUENCE = 2026072105/);
 assert.match(buildProduction, /"gameplay7":/);
 assert.match(verifyProduction, /GAMEPLAY\.7 production manifest patch mismatch/);

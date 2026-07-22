@@ -596,7 +596,7 @@ function toggleShoulder() {
 function onKeyDown(event) {
   if (event.repeat || editableTarget(event.target)) return;
   if (lastContext.gameState !== 'playing' || lastContext.coOpMenuOpen || lastContext.inputBlocked) return;
-  if (event.code === 'KeyV') {
+  if (event.code === 'KeyX') {
     event.preventDefault();
     toggleCameraMode();
   } else if (event.code === 'KeyB' && settings.mode === CAMERA_MODE_THIRD) {

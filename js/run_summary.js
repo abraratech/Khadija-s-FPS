@@ -80,6 +80,13 @@ const state = {
   gameplay7CampaignFaction: 'NONE',
   gameplay7ControlShifts: [],
   lastGameplay7Campaign: null,
+  loadout2MasteryXp: 0,
+  loadout2SpecializationId: 'FIELD_OPERATIVE',
+  loadout2Families: {},
+  loadout2Unlocks: [],
+  loadout2ReceiptId: '',
+  loadout2PvpExcluded: false,
+  lastLoadout2Mastery: null,
   gameplay2Patch: '',
   mutationActiveIds: [],
   mutationActiveLabels: [],
@@ -181,6 +188,13 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     gameplay7CampaignFaction: 'NONE',
     gameplay7ControlShifts: [],
     lastGameplay7Campaign: null,
+    loadout2MasteryXp: 0,
+    loadout2SpecializationId: 'FIELD_OPERATIVE',
+    loadout2Families: {},
+    loadout2Unlocks: [],
+    loadout2ReceiptId: '',
+    loadout2PvpExcluded: false,
+    lastLoadout2Mastery: null,
     gameplay2Patch: '',
     mutationActiveIds: [],
     mutationActiveLabels: [],
@@ -268,6 +282,11 @@ export function recordRunWeaponUpgrade() {
 export function recordRunObjective() {
   if (!state.active) return;
   state.objectivesCompleted++;
+  try {
+    globalThis.KARecordLoadout2Objective?.(globalThis.KAGetActiveWeaponFamily?.() || 'PISTOL', 1);
+  } catch {
+    // LOADOUT.2 is optional during isolated run-summary tests.
+  }
 }
 
 export function recordRunChallenge() {
@@ -600,6 +619,49 @@ export function recordRunGameplay7CampaignContribution({
   state.lastEvent = applied === true
     ? 'CAMPAIGN CONTROL ADVANCED'
     : 'CAMPAIGN CONTROL RESTORED';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunLoadout2Mastery({
+  applied = false,
+  idempotent = false,
+  pvpExcluded = false,
+  receipt = null,
+  result = null,
+  reason = 'ENDED',
+  snapshot = null
+} = {}) {
+  if (!state.active && !state.finalized) return getRunSummarySnapshot();
+  const runtime = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const families = runtime.families && typeof runtime.families === 'object'
+    ? runtime.families
+    : {};
+  state.loadout2MasteryXp = applied === true
+    ? Math.max(0, Math.round(finite(result?.totalXp, runtime.totalXp)))
+    : 0;
+  state.loadout2SpecializationId = String(
+    runtime.selectedSpecializationId
+    || receipt?.specializationId
+    || 'FIELD_OPERATIVE'
+  ).slice(0, 48);
+  state.loadout2Families = JSON.parse(JSON.stringify(families));
+  state.loadout2Unlocks = Array.isArray(result?.unlocked)
+    ? result.unlocked.map((entry) => ({ ...entry }))
+    : [];
+  state.loadout2ReceiptId = String(receipt?.receiptId || runtime.receiptId || '').slice(0, 240);
+  state.loadout2PvpExcluded = pvpExcluded === true;
+  state.lastLoadout2Mastery = {
+    applied: applied === true,
+    idempotent: idempotent === true,
+    pvpExcluded: pvpExcluded === true,
+    totalXp: state.loadout2MasteryXp,
+    specializationId: state.loadout2SpecializationId,
+    receiptId: state.loadout2ReceiptId,
+    reason: String(reason || 'ENDED').slice(0, 80)
+  };
+  state.lastEvent = pvpExcluded
+    ? 'LOADOUT.2 PVP ISOLATED'
+    : (applied ? `WEAPON MASTERY +${state.loadout2MasteryXp}` : state.lastEvent);
   return getRunSummarySnapshot();
 }
 

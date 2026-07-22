@@ -1,5 +1,5 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
-export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'gameplay7-r1-dynamic-campaign-faction-control', releaseSequence: 2026072105, productVersion: '1.8.0-gameplay7-r1' });
+export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'loadout2-r1-weapon-mastery-operator-specialization-melee', releaseSequence: 2026072201, productVersion: '1.9.0-loadout2-r1' });
 
 function cleanText(value, max = 160) {
   return String(value ?? '').trim().slice(0, max);

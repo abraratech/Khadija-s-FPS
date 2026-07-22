@@ -884,12 +884,23 @@ getRemoteAuthorityTargets(now = nowMs()) {
       nowMs()
     )?.state;
 
+    const weaponFamily = String(hit?.weaponFamily || 'UNKNOWN').toUpperCase();
+    const reportedDistance = Number(hit?.distance);
     if (
       remoteState?.position
-      && Number.isFinite(Number(hit?.distance))
-      && Number(hit.distance) > 140
+      && Number.isFinite(reportedDistance)
+      && reportedDistance > 140
     ) {
       return;
+    }
+    if (weaponFamily === 'MELEE') {
+      if (!Number.isFinite(reportedDistance) || reportedDistance > 3.25) return;
+      if (remoteState?.position && enemy?.mesh?.position) {
+        const dx = Number(enemy.mesh.position.x || 0) - Number(remoteState.position.x || 0);
+        const dy = Number(enemy.mesh.position.y || 0) - Number(remoteState.position.y || 0);
+        const dz = Number(enemy.mesh.position.z || 0) - Number(remoteState.position.z || 0);
+        if (Math.hypot(dx, dy, dz) > 4.0) return;
+      }
     }
 
     const baseDamage = Math.max(

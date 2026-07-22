@@ -14,6 +14,7 @@ export const CONTROL_ACTIONS = Object.freeze({
   RELOAD: 'reload',
   INTERACT: 'interact',
   SWITCH_WEAPON: 'switchWeapon',
+  MELEE: 'melee',
   PAUSE: 'pause',
   FIRE: 'fire',
   AIM: 'aim'
@@ -29,6 +30,7 @@ const ACTION_META = Object.freeze({
   [CONTROL_ACTIONS.RELOAD]: { label: 'Reload', defaultCode: 'KeyR', canonicalCode: 'KeyR' },
   [CONTROL_ACTIONS.INTERACT]: { label: 'Interact', defaultCode: 'KeyE', canonicalCode: 'KeyE' },
   [CONTROL_ACTIONS.SWITCH_WEAPON]: { label: 'Switch Weapon', defaultCode: 'KeyQ', canonicalCode: 'KeyQ' },
+  [CONTROL_ACTIONS.MELEE]: { label: 'Field Knife / Melee', defaultCode: 'KeyV', canonicalCode: 'KeyV' },
   [CONTROL_ACTIONS.PAUSE]: { label: 'Pause', defaultCode: 'Escape', canonicalCode: 'Escape' },
   [CONTROL_ACTIONS.FIRE]: { label: 'Fire', defaultCode: 'Mouse0', canonicalCode: 'MousedownLeft' },
   [CONTROL_ACTIONS.AIM]: { label: 'Aim / ADS', defaultCode: 'Mouse2', canonicalCode: 'MousedownRight' }
@@ -71,6 +73,7 @@ const gamepadState = {
   interactHeld: false,
   interactPressed: false,
   switchPressed: false,
+  meleePressed: false,
   pausePressed: false,
   firePressed: false,
   lookX: 0,
@@ -542,6 +545,7 @@ export function pollGamepadInput() {
     interactHeld: false,
     interactPressed: false,
     switchPressed: false,
+    meleePressed: false,
     pausePressed: false,
     firePressed: false,
     lookX: 0,
@@ -580,6 +584,7 @@ export function pollGamepadInput() {
   gamepadState.jumpHeld = buttonValue(gamepad, 0) >= 0.5;
   gamepadState.reloadPressed = buttonPressed(gamepad, 2);
   gamepadState.switchPressed = buttonPressed(gamepad, 3);
+  gamepadState.meleePressed = buttonPressed(gamepad, 11);
   gamepadState.interactHeld = buttonValue(gamepad, 5) >= 0.5 || buttonValue(gamepad, 4) >= 0.5;
   gamepadState.interactPressed = buttonPressed(gamepad, 5) || buttonPressed(gamepad, 4);
   gamepadState.aimHeld = buttonValue(gamepad, 6) >= 0.28;
@@ -612,7 +617,8 @@ export function populateFrameKeys(baseKeys, gamepadInput, outKeys) {
     CONTROL_ACTIONS.SPRINT,
     CONTROL_ACTIONS.FIRE,
     CONTROL_ACTIONS.AIM,
-    CONTROL_ACTIONS.INTERACT
+    CONTROL_ACTIONS.INTERACT,
+    CONTROL_ACTIONS.MELEE
   ];
 
   actions.forEach((action) => {
@@ -631,6 +637,10 @@ export function populateFrameKeys(baseKeys, gamepadInput, outKeys) {
   const interactCode = getCanonicalCode(CONTROL_ACTIONS.INTERACT);
   if (interactCode) {
     out[interactCode] = Boolean(out[interactCode] || gamepadInput?.interactHeld);
+  }
+  const meleeCode = getCanonicalCode(CONTROL_ACTIONS.MELEE);
+  if (meleeCode) {
+    out[meleeCode] = Boolean(out[meleeCode] || gamepadInput?.meleePressed);
   }
 
   return out;

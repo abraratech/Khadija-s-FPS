@@ -505,6 +505,64 @@ def main() -> None:
                     f"GAMEPLAY.7 production runtime file missing: {required_runtime}"
                 )
 
+    loadout2 = manifest.get("loadout2", {})
+    if current_release.get("patch") == "loadout2-r1-weapon-mastery-operator-specialization-melee":
+        if loadout2.get("patch") != current_release.get("patch"):
+            raise SystemExit("LOADOUT.2 production manifest patch mismatch")
+        for field in (
+            "functional_field_knife",
+            "default_melee_access",
+            "keyboard_melee_input",
+            "gamepad_melee_input",
+            "mobile_melee_input",
+            "weapon_mastery",
+            "operator_specialization",
+            "attachment_unlock_tracks",
+            "bounded_pve_combat_tuning",
+            "pvp_progression_bonuses_disabled",
+            "pvp_melee_disabled",
+            "profile_owned_state",
+            "cloud_merge_safe",
+            "idempotent_mastery_receipts",
+            "host_authoritative_melee_damage",
+            "late_join_presentation",
+            "reconnect_restoration",
+            "host_migration_safe",
+            "run_summary_integration",
+            "protocol_unchanged",
+            "frontend_only",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if loadout2.get(field) is not True:
+                raise SystemExit(f"LOADOUT.2 production policy mismatch: {field}")
+        if loadout2.get("worker_change_required") is not False:
+            raise SystemExit("LOADOUT.2 must remain frontend-only")
+        if loadout2.get("weapon_families") != [
+            "PISTOL", "SMG", "RIFLE", "SHOTGUN", "SNIPER", "MELEE"
+        ]:
+            raise SystemExit("LOADOUT.2 weapon-family registry mismatch")
+        for required_runtime in (
+            "js/loadout2_mastery_core.js",
+            "js/loadout2_runtime.js",
+            "js/loadout_core.js",
+            "js/loadout.js",
+            "js/weapons.js",
+            "js/controls.js",
+            "js/multiplayer/command_stream.js",
+            "js/multiplayer/remote_players.js",
+            "js/multiplayer/shared_world.js",
+            "js/progression.js",
+            "js/progression_core.js",
+            "js/cloud_profile.js",
+            "js/run_summary.js",
+            "css/hud.css",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"LOADOUT.2 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -77,6 +77,14 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, '1.8.0-gameplay7-r1');
   assert.equal(release.releaseSequence, 2026072105);
   assert.equal(release.sourceBaselineSha, 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9');
+  assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
+  assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
+  assert.equal(release.workerChangeRequired, false);
+  assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
+} else if (release.releaseId === 'loadout2-r1-weapon-mastery-operator-specialization-melee') {
+  assert.equal(release.productVersion, '1.9.0-loadout2-r1');
+  assert.equal(release.releaseSequence, 2026072201);
+  assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
   assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
   assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
   assert.equal(release.workerChangeRequired, false);

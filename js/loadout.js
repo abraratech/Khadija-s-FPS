@@ -1,4 +1,4 @@
-// LOADOUT.1 R1 — saved loadouts, Avatar Studio presets, and cosmetic collection UI.
+// LOADOUT.2 R1 — saved loadouts, weapon mastery, operator specialization, and functional melee UI.
 import {
   LOADOUT_PATCH,
   LOADOUT_PROFILE_KEY,
@@ -29,6 +29,7 @@ import {
   normalizeAvatarProfile,
   parseAvatarProfile,
 } from './avatar_customization_core.js';
+import { LOADOUT2_SPECIALIZATIONS } from './loadout2_mastery_core.js';
 
 const root = typeof document !== 'undefined' ? document.documentElement : null;
 const DEFAULT_TOAST = () => {};
@@ -267,6 +268,7 @@ export function activateLoadoutPreset(id, { applyPresentation = true } = {}) {
   const saved = persistProfile(next, 'loadout-activated');
   activeEditorId = preset.id;
   if (applyPresentation) applyPresetPresentation(preset);
+  globalThis.window?.KASelectLoadout2Specialization?.(preset.specializationId || 'FIELD_OPERATIVE');
   adapters.showToast?.(`${preset.name.toUpperCase()} ACTIVE`, '#00d4ff', 2200);
   return { ok: saved.ok, preset: JSON.parse(JSON.stringify(preset)) };
 }
@@ -288,6 +290,7 @@ export function saveLoadoutPreset(input = {}, { activate = false } = {}) {
     primary: input.primary || existing?.primary || 'SMG',
     secondary: input.secondary || existing?.secondary || 'SHOTGUN',
     melee: input.melee || existing?.melee || 'FIELD_KNIFE',
+    specializationId: input.specializationId || existing?.specializationId || 'FIELD_OPERATIVE',
     doctrine: input.doctrine || existing?.doctrine || 'BALANCED',
     avatarPresetId: input.avatarPresetId || existing?.avatarPresetId || current.activeAvatarPresetId,
     cosmetics: input.cosmetics || existing?.cosmetics || {},
@@ -422,7 +425,13 @@ export function deleteAvatarPreset(id = selectedAvatarPresetId) {
 
 function parseRunSnapshot(raw) {
   const value = safeJson(raw, null);
-  if (!value || value.patch !== LOADOUT_PATCH || value.balancePolicy?.grantsCombatPower !== false) {
+  if (
+    !value
+    || value.patch !== LOADOUT_PATCH
+    || value.balancePolicy?.grantsCombatPower !== true
+    || value.balancePolicy?.pveOnlyBonuses !== true
+    || value.balancePolicy?.pvpIsolated !== true
+  ) {
     return null;
   }
   return value;
@@ -453,7 +462,7 @@ export function freezeActiveLoadoutForRun({
   applyCosmetics(snapshot.cosmetics);
   if (root) {
     root.dataset.kaRunLoadout = snapshot.loadoutId;
-    root.dataset.kaRunLoadoutPolicy = 'preferences-only';
+    root.dataset.kaRunLoadoutPolicy = 'bounded-pve-pvp-isolated';
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('ka:loadout-run-frozen', { detail: snapshot }));
@@ -503,14 +512,16 @@ function renderLoadoutCommand() {
   const bannerOptions = unlockedCosmeticsByKind('BANNER');
   const collection = getProgressionCosmeticCollection(progressionProfile());
   const unlockedCount = collection.filter((entry) => entry.unlocked).length;
+  const mastery = adapters.getProgressionSnapshot?.()?.loadout2 || null;
+  const masteryFamilies = Array.isArray(mastery?.families) ? mastery.families : [];
 
   container.innerHTML = `
     <section class="ka-loadout-command-card" aria-labelledby="ka-loadout-command-title">
       <header class="ka-loadout-command-head">
         <div>
-          <span class="ka-card-kicker">LOADOUT.1 · ${escapeHtml(LOADOUT_PATCH)}</span>
+          <span class="ka-card-kicker">LOADOUT.2 · ${escapeHtml(LOADOUT_PATCH)}</span>
           <strong id="ka-loadout-command-title">FIELD LOADOUT COMMAND</strong>
-          <small>Save acquisition priorities, Avatar Studio presets, and profile cosmetics. Every deployment still begins with the Starting Pistol.</small>
+          <small>Configure weapon priorities, operator specialization, Field Knife access, mastery unlocks, Avatar Studio presets, and profile cosmetics.</small>
         </div>
         <div class="ka-loadout-active-chip">
           <span>ACTIVE</span>
@@ -535,6 +546,7 @@ function renderLoadoutCommand() {
         <label><span>Secondary priority</span><select id="ka-loadout-secondary">${optionMarkup(LOADOUT_WEAPON_CATALOG, editor.secondary)}</select></label>
         <label><span>Doctrine</span><select id="ka-loadout-doctrine">${optionMarkup(LOADOUT_DOCTRINES, editor.doctrine)}</select></label>
         <label><span>Melee profile</span><select id="ka-loadout-melee">${optionMarkup(LOADOUT_MELEE_CATALOG, editor.melee)}</select></label>
+        <label><span>Operator specialization</span><select id="ka-loadout-specialization">${optionMarkup(LOADOUT2_SPECIALIZATIONS, editor.specializationId || 'FIELD_OPERATIVE')}</select></label>
         <label><span>Avatar preset</span><select id="ka-loadout-avatar">${optionMarkup(current.avatarPresets, editor.avatarPresetId, { labelKey: 'name' })}</select></label>
         <label><span>Profile title</span><select id="ka-loadout-title">${optionMarkup(titleOptions, editor.cosmetics.title)}</select></label>
         <label><span>Badge</span><select id="ka-loadout-badge">${optionMarkup(badgeOptions, editor.cosmetics.badge)}</select></label>
@@ -550,9 +562,22 @@ function renderLoadoutCommand() {
       </div>
 
       <div class="ka-loadout-balance-note">
-        <b>FAIR-PLAY POLICY</b>
-        <span>Saved weapon choices are shop and acquisition priorities only. They never grant weapons, damage, health, perks, points, or hidden combat power.</span>
+        <b>LOADOUT.2 COMBAT POLICY</b>
+        <span>The Field Knife is available by default in solo and co-op with <b>V</b>. Mastery bonuses are bounded PvE tuning and are disabled in PvP.</span>
       </div>
+
+      <details class="ka-loadout-collection" open>
+        <summary>WEAPON MASTERY · ${escapeHtml(mastery?.specialization?.label || 'Field Operative')} · RANK ${Number(mastery?.specializationRank || 1)}</summary>
+        <div class="ka-loadout-collection-grid ka-loadout-mastery-grid">
+          ${masteryFamilies.map((entry) => `
+            <article class="unlocked">
+              <span>${escapeHtml(entry.familyId)}</span>
+              <b>LEVEL ${Number(entry.level || 1)}</b>
+              <small>${Number(entry.xp || 0)} XP · ${(entry.unlockDetails || []).map((unlock) => escapeHtml(unlock.label)).join(' · ') || 'Base handling'}</small>
+            </article>
+          `).join('')}
+        </div>
+      </details>
 
       <details class="ka-loadout-collection">
         <summary>COSMETIC COLLECTION · ${unlockedCount}/${collection.length} UNLOCKED</summary>
@@ -618,6 +643,7 @@ function readLoadoutForm() {
     secondary: document.getElementById('ka-loadout-secondary')?.value || editor.secondary,
     doctrine: document.getElementById('ka-loadout-doctrine')?.value || editor.doctrine,
     melee: document.getElementById('ka-loadout-melee')?.value || editor.melee,
+    specializationId: document.getElementById('ka-loadout-specialization')?.value || editor.specializationId || 'FIELD_OPERATIVE',
     avatarPresetId: document.getElementById('ka-loadout-avatar')?.value || editor.avatarPresetId,
     cosmetics: {
       title: document.getElementById('ka-loadout-title')?.value || editor.cosmetics.title,
@@ -662,6 +688,7 @@ function bindUiEvents() {
           primary: 'SMG',
           secondary: 'SHOTGUN',
           doctrine: 'BALANCED',
+          specializationId: 'FIELD_OPERATIVE',
           avatarPresetId: ensureProfile().activeAvatarPresetId,
         });
         if (!result.ok) actionFailure(result);

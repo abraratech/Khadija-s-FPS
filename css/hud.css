@@ -1263,6 +1263,7 @@ body.ka-mobile-device .mobile-only-setting { display: grid; }
   }
 
   body.ka-mobile-device #btn-switch,
+  body.ka-mobile-device #btn-melee,
   body.ka-mobile-device #btn-interact,
   body.ka-mobile-device #btn-reload,
   body.ka-mobile-device #btn-jump {
@@ -1293,7 +1294,8 @@ body.ka-mobile-device #btn-shoot.is-held,
 body.ka-mobile-device #btn-jump.is-held,
 body.ka-mobile-device #btn-reload.is-held,
 body.ka-mobile-device #btn-interact.is-held,
-body.ka-mobile-device #btn-switch.is-held {
+body.ka-mobile-device #btn-switch.is-held,
+body.ka-mobile-device #btn-melee.is-held {
   transform: scale(.94);
   filter: brightness(1.2);
 }

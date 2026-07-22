@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const release = JSON.parse(read('../release-version.json'));
+const multiplayerRelease = JSON.parse(read('../multiplayer-release.json'));
+const progressionCore = read('./progression_core.js');
+const progression = read('./progression.js');
+const loadoutCore = read('./loadout_core.js');
+const loadout = read('./loadout.js');
+const runtime = read('./loadout2_runtime.js');
+const core = read('./loadout2_mastery_core.js');
+const cloud = read('./cloud_profile.js');
+const summary = read('./run_summary.js');
+const updateDelivery = read('./update_delivery_core.js');
+const build = read('../scripts/build_production.py');
+const verifier = read('../scripts/verify_launch2_build.py');
+
+assert.equal(release.releaseId, 'loadout2-r1-weapon-mastery-operator-specialization-melee');
+assert.equal(release.productVersion, '1.9.0-loadout2-r1');
+assert.equal(release.releaseSequence, 2026072201);
+assert.equal(release.sourceBaselineSha, '94fa816f099dec9ae6a6bc11047a2bf1331ee892');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(multiplayerRelease.releaseLabel, 'LOADOUT.2 R1 - Weapon Mastery, Operator Specialization & Functional Melee');
+assert.equal(multiplayerRelease.loadout2.functionalFieldKnife, true);
+assert.equal(multiplayerRelease.loadout2.pvpMeleeDisabled, true);
+assert.equal(multiplayerRelease.loadout2.protocolUnchanged, true);
+assert.match(progressionCore, /PROGRESSION_VERSION = 6/);
+assert.match(progressionCore, /loadout2:/);
+assert.match(progression, /recordProgressionLoadout2MasteryReceipt/);
+assert.match(loadoutCore, /LOADOUT_PROFILE_VERSION = 2/);
+assert.match(loadoutCore, /specializationId/);
+assert.match(loadout, /LOADOUT2_SPECIALIZATIONS/);
+assert.match(runtime, /beginLoadout2Run/);
+assert.match(runtime, /finalizeLoadout2Run/);
+assert.match(core, /idempotent/);
+assert.match(cloud, /mergedLoadout2/);
+assert.match(summary, /recordRunLoadout2Mastery/);
+assert.match(updateDelivery, /loadout2-r1-weapon-mastery-operator-specialization-melee/);
+assert.match(build, /LOADOUT2_PATCH/);
+assert.match(verifier, /LOADOUT\.2 production manifest patch mismatch/);
+
+console.log('LOADOUT.2 source integration contract passed');

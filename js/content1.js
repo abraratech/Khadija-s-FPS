@@ -57,9 +57,16 @@ import {
   Gameplay6WorldDirector
 } from './gameplay6_world_progression_core.js';
 import {
+  GAMEPLAY7_CONTROL,
+  GAMEPLAY7_PATCH,
+  GAMEPLAY7_STATUS,
+  Gameplay7CampaignDirector
+} from './gameplay7_campaign_core.js';
+import {
   getProgressionSnapshot,
   recordProgressionContentOperation,
-  recordProgressionGameplay6WorldContribution
+  recordProgressionGameplay6WorldContribution,
+  recordProgressionGameplay7CampaignContribution
 } from './progression.js';
 import {
   recordRunDynamicOperation,
@@ -67,6 +74,7 @@ import {
   recordRunGameplay4BossEncounter,
   recordRunGameplay5NarrativeOutcome,
   recordRunGameplay6WorldContribution,
+  recordRunGameplay7CampaignContribution,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -255,6 +263,7 @@ export class Content1Manager {
     this.bossEncounterDirector = new Gameplay4BossDirector();
     this.narrativeDirector = new Gameplay5NarrativeDirector();
     this.worldProgressionDirector = new Gameplay6WorldDirector();
+    this.campaignDirector = new Gameplay7CampaignDirector();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -273,6 +282,7 @@ export class Content1Manager {
     this.bossEncounterRewardedCompletionIds = new Set();
     this.narrativeRewardedCompletionIds = new Set();
     this.worldProgressionRewardedCompletionIds = new Set();
+    this.campaignRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -291,6 +301,7 @@ export class Content1Manager {
     this.hudMissionStages = null;
     this.hudNarrative = null;
     this.hudWorld = null;
+    this.hudCampaign = null;
     this.hudRisk = null;
     this.hudRiskSecure = null;
     this.hudRiskOverdrive = null;
@@ -358,6 +369,12 @@ export class Content1Manager {
       );
       window.KAGetGameplay6WorldSnapshot = () => (
         this.active ? this.worldProgressionDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetGameplay7CampaignSnapshot = () => (
+        this.active ? this.campaignDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetGameplay7EncounterTuning = () => (
+        this.active ? this.campaignDirector.getEncounterTuning() : null
       );
       window.KAGetGameplay4BossDamageScale = ({ enemyId = '', headshot = false } = {}) => (
         getGameplay4BossDamageScale(
@@ -446,6 +463,7 @@ export class Content1Manager {
     this.bossEncounterRewardedCompletionIds.clear();
     this.narrativeRewardedCompletionIds.clear();
     this.worldProgressionRewardedCompletionIds.clear();
+    this.campaignRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -517,6 +535,13 @@ export class Content1Manager {
       mapId: resolvedMapId,
       gameMode: 'survival',
       profile: getProgressionSnapshot()?.profile?.world6 || {},
+      now: Date.now()
+    });
+    this.campaignDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      gameMode: 'survival',
+      profile: getProgressionSnapshot()?.profile?.campaign7 || {},
       now: Date.now()
     });
     this.ensureMissionObjective(Date.now(), { announce: false });
@@ -789,6 +814,10 @@ export class Content1Manager {
       worldSectorId: this.worldProgressionDirector.state.presentation?.sector?.sectorId || '',
       worldSectorTier: finite(this.worldProgressionDirector.state.presentation?.sector?.tier, 1),
       worldTier: finite(this.worldProgressionDirector.state.presentation?.worldTier, 0),
+      gameplay7Patch: GAMEPLAY7_PATCH,
+      campaignControlState: this.campaignDirector.state.presentation?.sector?.controlState || GAMEPLAY7_CONTROL.CONTESTED,
+      campaignFactionId: this.campaignDirector.state.presentation?.sector?.dominantFactionId || '',
+      campaignTuning: this.campaignDirector.getEncounterTuning(),
       humanSquadCommandsOverride: true
     });
   }
@@ -803,6 +832,10 @@ export class Content1Manager {
       weights[type] = Math.max(0.35, finite(weights[type], 1) * finite(multiplier, 1));
     });
     const replay = this.replayDirector.getSnapshot(Date.now());
+    const campaignTuning = this.campaignDirector.getEncounterTuning();
+    for (const type of ['RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']) {
+      weights[type] = Math.max(0.35, finite(weights[type], 1) * finite(campaignTuning.specialWeightScale, 1));
+    }
     return Object.freeze({
       ...(base || {}),
       weightMultipliers: Object.freeze(weights),
@@ -813,7 +846,14 @@ export class Content1Manager {
       modifierIds: Object.freeze((replay.modifiers || []).map((entry) => entry.id)),
       gameplay2Patch: GAMEPLAY2_PATCH,
       mutationIds: Object.freeze(this.mutationDirector.getTuning().activeIds),
-      mutationRewardMultiplier: this.mutationDirector.getTuning().rewardMultiplier
+      mutationRewardMultiplier: this.mutationDirector.getTuning().rewardMultiplier,
+      gameplay7Patch: GAMEPLAY7_PATCH,
+      campaignControlState: campaignTuning.controlState,
+      campaignFactionId: campaignTuning.dominantFactionId,
+      campaignEnemyHealthScale: campaignTuning.enemyHealthScale,
+      campaignEnemyDamageScale: campaignTuning.enemyDamageScale,
+      campaignHazardScale: campaignTuning.hazardScale,
+      campaignRewardMultiplier: campaignTuning.rewardMultiplier
     });
   }
 
@@ -851,7 +891,13 @@ export class Content1Manager {
       gameplay3,
       gameplay4
     });
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6 };
+    const gameplay7 = this.campaignDirector.update(epochNow, {
+      profile: getProgressionSnapshot()?.profile?.campaign7 || {},
+      world: gameplay6,
+      narrative: gameplay5,
+      replay: postFinal8
+    });
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7 };
   }
 
   publishSnapshot(force = false) {
@@ -1086,6 +1132,19 @@ export class Content1Manager {
       1,
       Math.round(finite(enemy.damage, 1) * finite(replayTuning.damageScale, 1))
     );
+    const campaignTuning = this.campaignDirector.getEncounterTuning();
+    enemy.gameplay7Patch = GAMEPLAY7_PATCH;
+    enemy.gameplay7ControlState = campaignTuning.controlState;
+    enemy.gameplay7FactionId = campaignTuning.dominantFactionId;
+    enemy.maxHealth = Math.max(
+      1,
+      Math.round(finite(enemy.maxHealth, enemy.health) * finite(campaignTuning.enemyHealthScale, 1))
+    );
+    enemy.health = enemy.maxHealth;
+    enemy.damage = Math.max(
+      1,
+      Math.round(finite(enemy.damage, 1) * finite(campaignTuning.enemyDamageScale, 1))
+    );
     tintEnemyForFaction(
       enemy,
       replayTuning.emissiveHex,
@@ -1211,6 +1270,7 @@ export class Content1Manager {
       if (snapshot.gameplay4) this.bossEncounterDirector.replaceSnapshot(snapshot.gameplay4, Date.now());
       if (snapshot.gameplay5) this.narrativeDirector.replaceSnapshot(snapshot.gameplay5, Date.now());
       if (snapshot.gameplay6) this.worldProgressionDirector.replaceSnapshot(snapshot.gameplay6, Date.now());
+      if (snapshot.gameplay7) this.campaignDirector.replaceSnapshot(snapshot.gameplay7, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
@@ -1316,6 +1376,9 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay6) {
       this.worldProgressionDirector.replaceSnapshot(payload.snapshot.gameplay6, Date.now());
     }
+    if (payload.snapshot?.gameplay7) {
+      this.campaignDirector.replaceSnapshot(payload.snapshot.gameplay7, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
@@ -1325,7 +1388,8 @@ export class Content1Manager {
       gameplay3: clone(payload.snapshot.gameplay3 || this.mapEvolutionDirector.getSnapshot(Date.now())),
       gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now())),
       gameplay5: clone(payload.snapshot.gameplay5 || this.narrativeDirector.getSnapshot(Date.now())),
-      gameplay6: clone(payload.snapshot.gameplay6 || this.worldProgressionDirector.getSnapshot(Date.now()))
+      gameplay6: clone(payload.snapshot.gameplay6 || this.worldProgressionDirector.getSnapshot(Date.now())),
+      gameplay7: clone(payload.snapshot.gameplay7 || this.campaignDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
@@ -1836,9 +1900,24 @@ export class Content1Manager {
       }
     }
 
+    const gameplay7Events = this.campaignDirector.consumeEvents();
+    for (const event of gameplay7Events) {
+      if (event.type === 'GAMEPLAY7_CAMPAIGN_LINKED') {
+        this.showToast?.(`CAMPAIGN LINK · ${event.sector?.label || 'SECTOR'} · ${event.sector?.controlState || 'CONTESTED'}`);
+      } else if (event.type === 'GAMEPLAY7_CAMPAIGN_CONTRIBUTION_READY') {
+        this.showToast?.(`CAMPAIGN CONTROL READY · +${event.contribution?.campaignPoints || 0} · ${event.contribution?.projectedControlState || 'CONTESTED'}`);
+        playUISound('waveClear', 0.3, true, {
+          cooldownKey: `gameplay7_${event.contribution?.receiptId || 'campaign'}`,
+          cooldownMs: 1200,
+          pitchMin: 0.98,
+          pitchMax: 1.12
+        });
+      }
+    }
+
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events, ...gameplay6Events];
+    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events, ...gameplay6Events, ...gameplay7Events];
   }
 
   applyLocalOperationRewards() {
@@ -2048,6 +2127,29 @@ export class Content1Manager {
         if (unlock) this.showToast?.(`WORLD MILESTONE · ${unlock.label || unlock.id}`);
       }
     }
+    const gameplay7 = snapshot?.gameplay7;
+    if (
+      gameplay7?.status === GAMEPLAY7_STATUS.COMPLETE
+      && gameplay7.completionId
+      && gameplay7.contribution
+      && !this.campaignRewardedCompletionIds.has(gameplay7.completionId)
+    ) {
+      this.campaignRewardedCompletionIds.add(gameplay7.completionId);
+      const result = recordProgressionGameplay7CampaignContribution(gameplay7.contribution);
+      recordRunGameplay7CampaignContribution({
+        campaign: gameplay7,
+        applied: result.applied === true,
+        controlShift: result.controlShift || null
+      });
+      const presentation = result.presentation || gameplay7.presentation;
+      const sector = presentation?.sector || gameplay7.presentation?.sector;
+      if (result.applied) {
+        this.showToast?.(
+          `CAMPAIGN CONTROL · +${gameplay7.contribution.campaignPoints || 0} · ${sector?.label || gameplay7.contribution.sectorLabel || 'SECTOR'} · ${sector?.controlState || gameplay7.contribution.projectedControlState || 'CONTESTED'}`
+        );
+        if (result.controlShift) this.showToast?.(`SECTOR CONTROL SHIFT · ${result.controlShift.label}`);
+      }
+    }
     return true;
   }
 
@@ -2078,7 +2180,10 @@ export class Content1Manager {
       gameplay6Patch: this.latestSnapshot?.gameplay6?.patch || GAMEPLAY6_PATCH,
       worldSectorId: this.latestSnapshot?.gameplay6?.presentation?.sector?.sectorId || '',
       worldSectorTier: finite(this.latestSnapshot?.gameplay6?.presentation?.sector?.tier, 1),
-      worldTier: finite(this.latestSnapshot?.gameplay6?.presentation?.worldTier, 0)
+      worldTier: finite(this.latestSnapshot?.gameplay6?.presentation?.worldTier, 0),
+      gameplay7Patch: this.latestSnapshot?.gameplay7?.patch || GAMEPLAY7_PATCH,
+      campaignControlState: this.latestSnapshot?.gameplay7?.presentation?.sector?.controlState || GAMEPLAY7_CONTROL.CONTESTED,
+      campaignFactionId: this.latestSnapshot?.gameplay7?.presentation?.sector?.dominantFactionId || ''
     });
   }
 
@@ -2246,6 +2351,10 @@ export class Content1Manager {
         <b>WORLD PROGRESSION</b>
         <span>Synchronizing sector state.</span>
       </div>
+      <div class="ka-gameplay7-campaign" data-control="CONTESTED">
+        <b>DYNAMIC CAMPAIGN</b>
+        <span>Synchronizing faction control.</span>
+      </div>
       <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
       <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
       <div class="ka-gameplay2-mutations">ARENA MUTATIONS · STANDBY</div>
@@ -2274,6 +2383,7 @@ export class Content1Manager {
     this.hudMissionStages = hud.querySelector('.ka-postfinal7-stages');
     this.hudNarrative = hud.querySelector('.ka-gameplay5-narrative');
     this.hudWorld = hud.querySelector('.ka-gameplay6-world');
+    this.hudCampaign = hud.querySelector('.ka-gameplay7-campaign');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
     this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
     this.hudMutations = hud.querySelector('.ka-gameplay2-mutations');
@@ -2369,6 +2479,26 @@ export class Content1Manager {
         body.textContent = contribution
           ? `${sector?.label || contribution.sectorLabel} · +${contribution.points} WORLD POINTS · TIER ${sector?.tier || 1}`
           : `${sector?.label || 'SECTOR'} · ${sector?.tierLabel || 'RECON'} · ${finite(sector?.points, 0)} POINTS`;
+      }
+    }
+    if (this.hudCampaign) {
+      const campaign = snapshot.gameplay7;
+      const presentation = campaign?.presentation;
+      const sector = presentation?.sector;
+      const heading = this.hudCampaign.querySelector('b');
+      const body = this.hudCampaign.querySelector('span');
+      this.hudCampaign.hidden = !campaign?.active;
+      this.hudCampaign.dataset.control = sector?.controlState || GAMEPLAY7_CONTROL.CONTESTED;
+      if (heading) {
+        heading.textContent = sector
+          ? `CAMPAIGN CONTROL // ${String(sector.region || 'FRONT').toUpperCase()}`
+          : 'DYNAMIC CAMPAIGN';
+      }
+      if (body) {
+        const contribution = campaign?.contribution;
+        body.textContent = contribution
+          ? `${sector?.label || contribution.sectorLabel} · ${contribution.projectedControlState} · +${contribution.campaignPoints} CAMPAIGN`
+          : `${sector?.label || 'SECTOR'} · ${sector?.controlState || 'CONTESTED'} · ${sector?.dominantFactionId || 'UNKNOWN FACTION'}`;
       }
     }
     if (this.hudFaction) {

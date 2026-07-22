@@ -26,6 +26,11 @@ import {
   applyGameplay6Contribution,
   getGameplay6WorldPresentation
 } from './gameplay6_world_progression_core.js';
+import {
+  GAMEPLAY7_PATCH,
+  applyGameplay7Contribution,
+  getGameplay7CampaignPresentation
+} from './gameplay7_campaign_core.js';
 
 // js/progression.js
 // PROG.1 R1 — unified persistent progression and run perks.
@@ -919,6 +924,32 @@ export function recordProgressionGameplay6WorldContribution(receipt = null) {
   });
 }
 
+export function recordProgressionGameplay7CampaignContribution(receipt = null) {
+  if (!receipt?.receiptId) {
+    return Object.freeze({
+      applied: false,
+      idempotent: false,
+      patch: GAMEPLAY7_PATCH,
+      profile: profile.campaign7,
+      controlShift: null
+    });
+  }
+  const result = applyGameplay7Contribution(profile.campaign7, receipt, Date.now());
+  profile.campaign7 = result.profile;
+  if (result.applied) {
+    run.lastEvent = `CAMPAIGN CONTROL +${Math.max(0, Math.round(Number(receipt.campaignPoints) || 0))}`;
+    saveProfile(true, 'gameplay7-campaign-control');
+  }
+  return Object.freeze({
+    applied: result.applied === true,
+    idempotent: result.idempotent === true,
+    patch: GAMEPLAY7_PATCH,
+    profile: result.profile,
+    presentation: getGameplay7CampaignPresentation(result.profile, receipt.mapId || run.mapId),
+    controlShift: result.controlShift || null
+  });
+}
+
 export function getProgressionSnapshot() {
   profile = normalizeProgressionProfile(profile, Date.now());
   const levelInfo = recalculateLevel();
@@ -947,6 +978,8 @@ export function getProgressionSnapshot() {
     economyPatch: POST_FINAL9_PATCH,
     world6: getGameplay6WorldPresentation(profile.world6, run.mapId),
     world6Patch: GAMEPLAY6_PATCH,
+    campaign7: getGameplay7CampaignPresentation(profile.campaign7, run.mapId),
+    campaign7Patch: GAMEPLAY7_PATCH,
     perkDefinitions: Object.values(PERK_DEFS).map((perk) => ({ ...perk }))
   };
 }

@@ -395,7 +395,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "GAMEPLAY.6 R1 - World Progression",
+  "releaseLabel": "GAMEPLAY.7 R1 - Dynamic Campaign & Faction Control",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -1449,5 +1449,61 @@
     "protocolUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true
+  },
+  "gameplay7": {
+    "schema": 1,
+    "patch": "gameplay7-r1-dynamic-campaign-faction-control",
+    "productVersion": "1.8.0-gameplay7-r1",
+    "releaseSequence": 2026072105,
+    "sourceBaselineSha": "ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9",
+    "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
+    "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
+    "modes": [
+      "solo-survival",
+      "cooperative-survival",
+      "objective-operations"
+    ],
+    "supportedMaps": [
+      "grid_bunker",
+      "industrial_yard",
+      "neon_depot",
+      "parking_garage",
+      "hospital_wing",
+      "reactor_courtyard"
+    ],
+    "dynamicSectorControl": true,
+    "controlStates": [
+      "SECURED",
+      "CONTESTED",
+      "OVERRUN"
+    ],
+    "enemyFactionInfluence": true,
+    "factions": [
+      "VANGUARD_CORPS",
+      "WASTELAND_RAIDERS",
+      "BIOHAZARD_SWARM",
+      "MACHINE_COLLECTIVE"
+    ],
+    "worldProgressionIntegration": true,
+    "narrativeOutcomeInfluence": true,
+    "bossVictoryInfluence": true,
+    "controlBasedEnemyTuning": true,
+    "controlBasedHazardTuning": true,
+    "controlBasedRewardTuning": true,
+    "profileOwnedState": true,
+    "cloudMergeSafe": true,
+    "protectedCampaignRewards": true,
+    "idempotentContributionReceipts": true,
+    "pvpExcluded": true,
+    "hostAuthoritative": true,
+    "lateJoinSnapshot": true,
+    "reconnectRestoration": true,
+    "hostMigrationCheckpoint": true,
+    "runSummaryIntegration": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true,
+    "crazyGamesReadinessOnHold": true,
+    "androidReadinessOnHold": true
   }
 }

@@ -116,6 +116,12 @@ GAMEPLAY6_SOURCE_BASELINE_SHA = 'b3544e114ce02047b3705af14fcc94428c8cdbe8'
 GAMEPLAY6_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 GAMEPLAY6_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 GAMEPLAY6_RELEASE_SEQUENCE = 2026072104
+GAMEPLAY7_PATCH = 'gameplay7-r1-dynamic-campaign-faction-control'
+GAMEPLAY7_PRODUCT_VERSION = '1.8.0-gameplay7-r1'
+GAMEPLAY7_SOURCE_BASELINE_SHA = 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9'
+GAMEPLAY7_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
+GAMEPLAY7_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
+GAMEPLAY7_RELEASE_SEQUENCE = 2026072105
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -896,13 +902,59 @@ def main() -> None:
         "worker_change_required": False,
         "frontend_only": True,
     },
+        "gameplay7": {
+        "schema": 1,
+        "patch": GAMEPLAY7_PATCH,
+        "product_version": GAMEPLAY7_PRODUCT_VERSION,
+        "source_baseline_sha": GAMEPLAY7_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY7_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY7_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY7_RELEASE_SEQUENCE,
+        "modes": [
+            "solo-survival",
+            "cooperative-survival",
+            "objective-operations",
+        ],
+        "supported_maps": [
+            "grid_bunker",
+            "industrial_yard",
+            "neon_depot",
+            "parking_garage",
+            "hospital_wing",
+            "reactor_courtyard",
+        ],
+        "dynamic_sector_control": True,
+        "secured_contested_overrun_states": True,
+        "enemy_faction_influence": True,
+        "world_progression_integration": True,
+        "narrative_outcome_influence": True,
+        "boss_victory_influence": True,
+        "control_based_enemy_tuning": True,
+        "control_based_hazard_tuning": True,
+        "control_based_reward_tuning": True,
+        "profile_owned_state": True,
+        "cloud_merge_safe": True,
+        "protected_campaign_rewards": True,
+        "idempotent_contribution_receipts": True,
+        "pvp_excluded": True,
+        "host_authoritative": True,
+        "late_join_snapshot": True,
+        "reconnect_restoration": True,
+        "host_migration_checkpoint": True,
+        "run_summary_integration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+        "crazygames_readiness_on_hold": True,
+        "android_readiness_on_hold": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": GAMEPLAY6_PATCH,
-        "source_baseline_sha": GAMEPLAY6_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": GAMEPLAY6_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": GAMEPLAY6_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": GAMEPLAY6_RELEASE_SEQUENCE,
+        "patch": GAMEPLAY7_PATCH,
+        "source_baseline_sha": GAMEPLAY7_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": GAMEPLAY7_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": GAMEPLAY7_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": GAMEPLAY7_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
         "worker_change_required": False,

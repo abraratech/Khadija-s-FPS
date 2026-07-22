@@ -28,7 +28,7 @@ assert.ok([
   'gameplay3-r1-interactive-evolving-maps',
   'gameplay4-r1-expanded-boss-encounters',
   'gameplay5-r1-narrative-operations',
-  'gameplay6-r1-world-progression'
+  'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control'
 ].includes(release.releaseId));
 assert.equal(metadata.pvp5?.frontendBaselineSha, '9c57f5ab6516ac8fef0b1e70a0e9e0bf0d53ef87');
 assert.equal(metadata.pvp5?.workerBaselineSha, 'deecf81e933d3d9bcd4e3bc5a33da8dcc8aa00b7');

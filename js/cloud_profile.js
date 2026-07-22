@@ -618,17 +618,26 @@ function applyAuthoritativeRemoteProgression(profile) {
     || currentProfile?.progression?.world6
     || {}
   ));
+  const mergedCampaign7 = JSON.parse(JSON.stringify(
+    merged.progression?.campaign7
+    || currentProfile?.progression?.campaign7
+    || {}
+  ));
   merged.progression = JSON.parse(JSON.stringify(incoming.progression || {}));
+  const progressionStorage = JSON.parse(
+    merged.legacyStorage?.ka_progression_v1
+    || incoming.legacyStorage?.ka_progression_v1
+    || '{}'
+  );
   if (mergedWorld6?.patch === 'gameplay6-r1-world-progression') {
     merged.progression.world6 = mergedWorld6;
-    const progressionStorage = JSON.parse(
-      merged.legacyStorage?.ka_progression_v1
-      || incoming.legacyStorage?.ka_progression_v1
-      || '{}'
-    );
     progressionStorage.world6 = mergedWorld6;
-    merged.legacyStorage.ka_progression_v1 = JSON.stringify(progressionStorage);
   }
+  if (mergedCampaign7?.patch === 'gameplay7-r1-dynamic-campaign-faction-control') {
+    merged.progression.campaign7 = mergedCampaign7;
+    progressionStorage.campaign7 = mergedCampaign7;
+  }
+  merged.legacyStorage.ka_progression_v1 = JSON.stringify(progressionStorage);
   merged.updatedAt = Math.max(Number(merged.updatedAt || 0), nowMs());
   writeProfile(merged);
   applyProfileToLegacy(merged, { forceHydrate: true });

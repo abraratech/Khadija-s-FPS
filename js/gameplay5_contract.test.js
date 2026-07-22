@@ -52,20 +52,20 @@ for (const marker of [
 ]) {
   assert.ok(content.includes(marker), `Missing GAMEPLAY.5 CONTENT.1 marker: ${marker}`);
 }
-assert.match(content, /postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6/);
+assert.match(content, /postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7/);
 assert.match(summary, /recordRunGameplay5NarrativeOutcome/);
 assert.match(summary, /gameplay5NarrativeOutcome/);
 assert.match(hud, /GAMEPLAY\.5 R1 — text-driven narrative operation transmissions/);
 assert.match(hud, /\.ka-gameplay5-narrative/);
 
-assert.equal(release.releaseId, 'gameplay6-r1-world-progression');
-assert.equal(release.productVersion, '1.7.0-gameplay6-r1');
-assert.equal(release.releaseSequence, 2026072104);
-assert.equal(release.sourceBaselineSha, 'b3544e114ce02047b3705af14fcc94428c8cdbe8');
+assert.equal(release.releaseId, 'gameplay7-r1-dynamic-campaign-faction-control');
+assert.equal(release.productVersion, '1.8.0-gameplay7-r1');
+assert.equal(release.releaseSequence, 2026072105);
+assert.equal(release.sourceBaselineSha, 'ce039d5ecd87ad15ada567c9ed6849dcdde5f4b9');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'GAMEPLAY.6 R1 - World Progression');
+assert.equal(metadata.releaseLabel, 'GAMEPLAY.7 R1 - Dynamic Campaign & Faction Control');
 assert.equal(metadata.gameplay5?.patch, 'gameplay5-r1-narrative-operations');
 assert.deepEqual(metadata.gameplay5?.supportedMaps, [
   'grid_bunker',
@@ -101,8 +101,8 @@ for (const field of [
 }
 assert.equal(metadata.gameplay5?.voiceRuntimeReintroduced, false);
 assert.equal(metadata.gameplay5?.workerChangeRequired, false);
-assert.match(updateDelivery, /gameplay6-r1-world-progression/);
-assert.match(updateDelivery, /releaseSequence: 2026072104/);
+assert.match(updateDelivery, /gameplay7-r1-dynamic-campaign-faction-control/);
+assert.match(updateDelivery, /releaseSequence: 2026072105/);
 assert.match(buildProduction, /GAMEPLAY5_RELEASE_SEQUENCE = 2026072103/);
 assert.match(buildProduction, /"gameplay5":/);
 assert.match(verifyProduction, /GAMEPLAY\.5 production manifest patch mismatch/);

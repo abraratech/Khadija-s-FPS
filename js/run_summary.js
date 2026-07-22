@@ -73,6 +73,13 @@ const state = {
   gameplay6WorldTier: 0,
   gameplay6WorldMilestones: [],
   lastGameplay6World: null,
+  gameplay7CampaignContributions: 0,
+  gameplay7CampaignPoints: 0,
+  gameplay7CampaignSector: 'NONE',
+  gameplay7CampaignControl: 'NONE',
+  gameplay7CampaignFaction: 'NONE',
+  gameplay7ControlShifts: [],
+  lastGameplay7Campaign: null,
   gameplay2Patch: '',
   mutationActiveIds: [],
   mutationActiveLabels: [],
@@ -167,6 +174,13 @@ export function resetRunSummary({ mapId = 'unknown', difficulty = 1 } = {}) {
     gameplay6WorldTier: 0,
     gameplay6WorldMilestones: [],
     lastGameplay6World: null,
+    gameplay7CampaignContributions: 0,
+    gameplay7CampaignPoints: 0,
+    gameplay7CampaignSector: 'NONE',
+    gameplay7CampaignControl: 'NONE',
+    gameplay7CampaignFaction: 'NONE',
+    gameplay7ControlShifts: [],
+    lastGameplay7Campaign: null,
     gameplay2Patch: '',
     mutationActiveIds: [],
     mutationActiveLabels: [],
@@ -526,6 +540,66 @@ export function recordRunGameplay6WorldContribution({
   state.lastEvent = applied === true
     ? 'WORLD PROGRESSION ADVANCED'
     : 'WORLD PROGRESSION RESTORED';
+  return getRunSummarySnapshot();
+}
+
+export function recordRunGameplay7CampaignContribution({
+  campaign = null,
+  applied = false,
+  controlShift = null
+} = {}) {
+  const contribution = campaign?.contribution;
+  if (!state.active || !campaign?.completionId || !contribution?.receiptId) {
+    return getRunSummarySnapshot();
+  }
+  if (state.lastGameplay7Campaign?.completionId === campaign.completionId) {
+    return getRunSummarySnapshot();
+  }
+  state.gameplay7CampaignContributions += applied === true ? 1 : 0;
+  state.gameplay7CampaignPoints += applied === true
+    ? Math.max(0, Math.round(finite(contribution.campaignPoints)))
+    : 0;
+  state.gameplay7CampaignSector = String(
+    campaign.presentation?.sector?.label
+    || contribution.sectorLabel
+    || contribution.sectorId
+    || 'UNKNOWN SECTOR'
+  ).slice(0, 120);
+  state.gameplay7CampaignControl = String(
+    controlShift?.nextControlState
+    || contribution.projectedControlState
+    || campaign.presentation?.sector?.controlState
+    || 'CONTESTED'
+  ).slice(0, 24);
+  state.gameplay7CampaignFaction = String(
+    contribution.factionId
+    || campaign.presentation?.sector?.dominantFactionId
+    || 'UNKNOWN'
+  ).slice(0, 80);
+  if (controlShift) {
+    state.gameplay7ControlShifts = Array.from(new Set([
+      ...state.gameplay7ControlShifts,
+      String(controlShift.label || `${controlShift.previousControlState || ''}->${controlShift.nextControlState || ''}`).slice(0, 140)
+    ])).slice(0, 24);
+  }
+  state.lastGameplay7Campaign = {
+    completionId: String(campaign.completionId).slice(0, 260),
+    receiptId: String(contribution.receiptId).slice(0, 260),
+    mapId: String(contribution.mapId || campaign.mapId || '').slice(0, 80),
+    sectorId: String(contribution.sectorId || '').slice(0, 100),
+    sectorLabel: state.gameplay7CampaignSector,
+    factionId: state.gameplay7CampaignFaction,
+    campaignPoints: Math.max(0, Math.round(finite(contribution.campaignPoints))),
+    playerInfluence: Math.max(0, Math.round(finite(contribution.playerInfluence))),
+    enemyInfluence: Math.max(0, Math.round(finite(contribution.enemyInfluence))),
+    previousControlState: String(contribution.previousControlState || 'CONTESTED').slice(0, 24),
+    projectedControlState: String(contribution.projectedControlState || 'CONTESTED').slice(0, 24),
+    applied: applied === true,
+    controlShift: controlShift ? { ...controlShift } : null
+  };
+  state.lastEvent = applied === true
+    ? 'CAMPAIGN CONTROL ADVANCED'
+    : 'CAMPAIGN CONTROL RESTORED';
   return getRunSummarySnapshot();
 }
 

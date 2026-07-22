@@ -41,7 +41,7 @@ globalThis.CustomEvent = class CustomEvent {
 const progression = await import(`./progression.js?prog1-runtime=${Date.now()}`);
 
 let snapshot = progression.getProgressionSnapshot();
-assert.equal(snapshot.version, 4);
+assert.equal(snapshot.version, 5);
 assert.equal(snapshot.profile.totalRuns, 2);
 assert.ok(localStorage.getItem('ka_progression_backup_v1'));
 
@@ -82,6 +82,28 @@ const worldResult = progression.recordProgressionGameplay6WorldContribution({
 assert.equal(worldResult.applied, true);
 assert.equal(worldResult.profile.points, 180);
 assert.equal(progression.getProgressionSnapshot().profile.world6.points, 180);
+
+const campaignResult = progression.recordProgressionGameplay7CampaignContribution({
+  receiptId: 'runtime-campaign-receipt',
+  runId: snapshot.run.runId,
+  mapId: 'grid_bunker',
+  sectorId: 'BLACK-VAULT',
+  sectorLabel: 'Black Vault Sector',
+  region: 'NORTHERN FRONT',
+  factionId: 'MACHINE_COLLECTIVE',
+  playerInfluence: 26,
+  enemyInfluence: 7,
+  campaignPoints: 120,
+  decisive: true,
+  securedBranch: true,
+  bossVictory: true,
+  previousControlState: 'CONTESTED',
+  projectedControlState: 'SECURED',
+  completedAt: Date.now()
+});
+assert.equal(campaignResult.applied, true);
+assert.equal(campaignResult.profile.campaignPoints, 120);
+assert.equal(progression.getProgressionSnapshot().profile.campaign7.campaignPoints, 120);
 
 snapshot = progression.finalizeProgressionRun({
   score: 1800,

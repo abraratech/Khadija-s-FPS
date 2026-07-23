@@ -4,7 +4,10 @@ import {
   normalizePublicRoomEntry,
   normalizeRoomAdmissionAssignment,
   normalizeRoomDirectoryResponse,
-  roomDirectoryStatusPresentation
+  roomDirectoryStatusPresentation,
+  isRoomDirectoryNoOpenRoomError,
+  publicRoomFindEmptyMessage,
+  shouldFallbackRoomDirectoryFind
 } from './room_directory_core.js';
 
 assert.equal(PUBLIC_ROOM_DIRECTORY_PATCH, 'match3-r1-party-quality-room-discovery');
@@ -48,4 +51,25 @@ assert.equal(assignment.admissionToken, 'admission-1');
 assert.equal(assignment.gameMode, 'pvp-team-elimination');
 assert.equal(roomDirectoryStatusPresentation({ status: 'ready', rooms: response.rooms }).tone, 'success');
 assert.equal(roomDirectoryStatusPresentation({ status: 'join-rejected', error: 'Room full' }).tone, 'warning');
-console.log('MATCH.2 R1.1 frontend room directory core tests passed');
+assert.equal(
+  shouldFallbackRoomDirectoryFind({ status: 404, code: 'MATCHMAKING_ENDPOINT_NOT_FOUND' }),
+  true
+);
+assert.equal(
+  shouldFallbackRoomDirectoryFind({ status: 404, code: 'NO_OPEN_ROOM_AVAILABLE' }),
+  false
+);
+assert.equal(
+  isRoomDirectoryNoOpenRoomError({ code: 'NO_OPEN_ROOM_AVAILABLE' }),
+  true
+);
+assert.match(publicRoomFindEmptyMessage('pvp-team-elimination'), /Rated Quick Match/);
+assert.match(
+  roomDirectoryStatusPresentation({
+    status: 'ready',
+    rooms: [],
+    error: publicRoomFindEmptyMessage('pvp-team-elimination')
+  }).detail,
+  /RATED QUICK MATCH/
+);
+console.log('QUALITY.2 R2 frontend room directory core tests passed');

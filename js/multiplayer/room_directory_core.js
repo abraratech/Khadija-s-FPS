@@ -13,6 +13,45 @@ export const PUBLIC_ROOM_DIRECTORY_SCHEMA = MATCH3_SCHEMA;
 export const PUBLIC_ROOM_DIRECTORY_PATCH = MATCH3_PATCH;
 export const PUBLIC_ROOM_DIRECTORY_MAX_RESULTS = 24;
 
+export const QUALITY2_ROOM_FIND_PATCH = 'quality2-r2-open-room-discovery-resilience';
+
+const ROOM_FIND_ENDPOINT_MISSING_CODES = Object.freeze([
+  'MATCHMAKING_ENDPOINT_NOT_FOUND',
+  'NOT_FOUND',
+  'HTTP_404'
+]);
+
+export function normalizeRoomDirectoryError(error = {}) {
+  const code = cleanText(error?.code || error?.error, '', 80).toUpperCase();
+  const status = Math.max(0, Math.trunc(finiteNumber(error?.status, 0)));
+  const message = cleanText(
+    error?.message || error?.detail,
+    'Public room request failed.',
+    240
+  );
+  return Object.freeze({ code, status, message });
+}
+
+export function isRoomDirectoryNoOpenRoomError(error = {}) {
+  const normalized = normalizeRoomDirectoryError(error);
+  return normalized.code === 'NO_OPEN_ROOM_AVAILABLE';
+}
+
+export function shouldFallbackRoomDirectoryFind(error = {}) {
+  const normalized = normalizeRoomDirectoryError(error);
+  if (isRoomDirectoryNoOpenRoomError(normalized)) return false;
+  return (
+    ROOM_FIND_ENDPOINT_MISSING_CODES.includes(normalized.code)
+    || (normalized.status === 404 && !normalized.code)
+  );
+}
+
+export function publicRoomFindEmptyMessage(gameMode = 'pvp-team-elimination') {
+  return String(gameMode || '').trim().toLowerCase() === 'pvp-team-elimination'
+    ? 'No open unranked PvP room is available. Create one or use Rated Quick Match.'
+    : 'No compatible open Co-Op room is available. Create a public room or refresh the browser.';
+}
+
 function cleanText(value, fallback = '', limit = 240) {
   const text = String(value ?? fallback).trim();
   return (text || String(fallback || '')).slice(0, limit);
@@ -127,7 +166,15 @@ export function roomDirectoryStatusPresentation(state = {}) {
     return Object.freeze({ title: 'ROOM BROWSER UNAVAILABLE', detail: cleanText(state.error, 'TRY REFRESHING THE LIST', 180).toUpperCase(), tone: 'danger' });
   }
   if (status === 'ready' && count === 0) {
-    return Object.freeze({ title: 'NO OPEN ROOMS', detail: 'TRY QUICK MATCH OR CREATE A PUBLIC ROOM', tone: 'warning' });
+    return Object.freeze({
+      title: 'NO OPEN ROOMS',
+      detail: cleanText(
+        state.error,
+        'TRY RATED QUICK MATCH OR CREATE A PUBLIC ROOM',
+        180
+      ).toUpperCase(),
+      tone: 'warning'
+    });
   }
   if (status === 'ready') {
     return Object.freeze({ title: `${count} OPEN ROOM${count === 1 ? '' : 'S'}`, detail: 'ONLY HOST-APPROVED, COMPATIBLE ROOMS ARE SHOWN', tone: 'success' });

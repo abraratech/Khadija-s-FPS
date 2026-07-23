@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering', 'endgame1-r1-high-difficulty-operations', 'content2-r1-new-arena-enemy-expansion'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering', 'endgame1-r1-high-difficulty-operations', 'content2-r1-new-arena-enemy-expansion', 'quality2-r2-consolidated-polish-certification'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -104,6 +104,14 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
   assert.equal(release.workerChangeRequired, false);
   assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
+} else if (release.releaseId === 'quality2-r2-consolidated-polish-certification') {
+  assert.equal(release.productVersion, '1.13.0-quality2-r2');
+  assert.equal(release.releaseSequence, 2026072303);
+  assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
+  assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+  assert.equal(release.baselineWorkerVersionId, '9c8c2ec1-0299-4f85-aebf-4835e5791007');
+  assert.equal(release.workerChangeRequired, true);
+  assert.equal(release.certificationStatus, 'LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED');
 } else if (release.releaseId === 'content2-r1-new-arena-enemy-expansion') {
   assert.equal(release.productVersion, '1.12.0-content2-r1');
   assert.equal(release.releaseSequence, 2026072302);

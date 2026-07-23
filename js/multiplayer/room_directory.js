@@ -2,9 +2,12 @@
 // MATCH.2 R1.1 — race-safe browser-side open-room directory lifecycle.
 
 import {
+  isRoomDirectoryNoOpenRoomError,
   normalizeRoomAdmissionAssignment,
   normalizeRoomDirectoryResponse,
-  roomDirectoryEndpoint
+  publicRoomFindEmptyMessage,
+  roomDirectoryEndpoint,
+  shouldFallbackRoomDirectoryFind
 } from './room_directory_core.js';
 
 function cleanMessage(value, fallback = 'Public room request failed.') {
@@ -51,7 +54,9 @@ export class PublicRoomDirectoryClient {
       refreshedAt: 0,
       joiningListingId: null,
       filters: Object.freeze({}),
-      searchPriority: 'balanced'
+      searchPriority: 'balanced',
+      compatibilityFallbackUsed: false,
+      lastFindErrorCode: null
     });
   }
 
@@ -146,7 +151,24 @@ export class PublicRoomDirectoryClient {
     partySize = 1
   } = {}) {
     if (!this.fetchImpl) throw new Error('This browser cannot find public rooms.');
-    this.publish({ status: 'finding', error: null, joiningListingId: null });
+    this.publish({
+      status: 'finding',
+      error: null,
+      joiningListingId: null,
+      compatibilityFallbackUsed: false,
+      lastFindErrorCode: null
+    });
+    const options = {
+      serverUrl,
+      playerId,
+      protocol,
+      build,
+      gameMode,
+      mapId,
+      difficulty,
+      searchPriority,
+      partySize
+    };
     try {
       const response = await this.fetchImpl(roomDirectoryEndpoint(
         serverUrl,
@@ -169,16 +191,169 @@ export class PublicRoomDirectoryClient {
       });
       const payload = await readJsonResponse(response);
       const assignment = normalizeRoomAdmissionAssignment(payload?.assignment || {});
-      this.publish({ status: 'ready', error: null, joiningListingId: null });
+      this.publish({
+        status: 'ready',
+        error: null,
+        joiningListingId: null,
+        compatibilityFallbackUsed: false,
+        lastFindErrorCode: null
+      });
       return assignment;
     } catch (error) {
+      if (isRoomDirectoryNoOpenRoomError(error)) {
+        const message = publicRoomFindEmptyMessage(gameMode);
+        this.publish({
+          status: 'ready',
+          rooms: Object.freeze([]),
+          error: message,
+          joiningListingId: null,
+          compatibilityFallbackUsed: false,
+          lastFindErrorCode: 'NO_OPEN_ROOM_AVAILABLE'
+        });
+        const visible = new Error(message);
+        visible.code = 'NO_OPEN_ROOM_AVAILABLE';
+        visible.status = Number(error?.status) || 404;
+        throw visible;
+      }
+      if (shouldFallbackRoomDirectoryFind(error)) {
+        return this.performFindOpenRoomCompatibilityFallback(options, error);
+      }
       this.publish({
         status: 'join-rejected',
         error: cleanMessage(error?.message || error),
-        joiningListingId: null
+        joiningListingId: null,
+        compatibilityFallbackUsed: false,
+        lastFindErrorCode: String(error?.code || '')
       });
       throw error;
     }
+  }
+
+  async performFindOpenRoomCompatibilityFallback({
+    serverUrl,
+    playerId,
+    protocol,
+    build,
+    gameMode = 'pvp-team-elimination',
+    mapId = '',
+    difficulty = null,
+    searchPriority = 'balanced',
+    partySize = 1
+  } = {}, routeError = null) {
+    const pvp = gameMode === 'pvp-team-elimination';
+    const filters = {
+      gameMode,
+      mapId,
+      difficulty: pvp ? '' : (difficulty ?? ''),
+      status: pvp ? 'waiting' : 'any',
+      regionScope: 'any',
+      bot: pvp ? 'without-bot' : 'any',
+      joinInProgress: !pvp,
+      requiredSlots: Math.max(1, Math.min(2, Number(partySize) || 1))
+    };
+    this.publish({
+      status: 'loading',
+      error: 'ATOMIC ROOM SEARCH UNAVAILABLE — USING COMPATIBILITY BROWSER',
+      joiningListingId: null,
+      filters: Object.freeze({ ...filters }),
+      searchPriority,
+      compatibilityFallbackUsed: true,
+      lastFindErrorCode: String(routeError?.code || 'HTTP_404')
+    });
+
+    const listResponse = await this.fetchImpl(roomDirectoryEndpoint(
+      serverUrl,
+      '/matchmaking/rooms/list',
+      {
+        playerId,
+        protocol,
+        build,
+        gameMode: filters.gameMode,
+        mapId: filters.mapId,
+        difficulty: filters.difficulty,
+        status: filters.status,
+        regionScope: filters.regionScope,
+        bot: filters.bot,
+        joinInProgress: filters.joinInProgress ? '1' : '0',
+        requiredSlots: filters.requiredSlots,
+        searchPriority
+      }
+    ), {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'omit'
+    });
+    const listPayload = await readJsonResponse(listResponse);
+    const directory = normalizeRoomDirectoryResponse(listPayload, {
+      filters,
+      searchPriority
+    });
+    const entry = directory.rooms[0] || null;
+    if (!entry) {
+      const message = publicRoomFindEmptyMessage(gameMode);
+      this.publish({
+        status: 'ready',
+        rooms: directory.rooms,
+        region: directory.region,
+        refreshedAt: directory.refreshedAt,
+        filters: directory.filters,
+        searchPriority: directory.searchPriority,
+        error: message,
+        joiningListingId: null,
+        compatibilityFallbackUsed: true,
+        lastFindErrorCode: 'NO_OPEN_ROOM_AVAILABLE'
+      });
+      const empty = new Error(message);
+      empty.code = 'NO_OPEN_ROOM_AVAILABLE';
+      empty.status = 404;
+      throw empty;
+    }
+
+    this.publish({
+      status: 'joining',
+      rooms: directory.rooms,
+      region: directory.region,
+      refreshedAt: directory.refreshedAt,
+      filters: directory.filters,
+      searchPriority: directory.searchPriority,
+      error: null,
+      joiningListingId: entry.listingId,
+      compatibilityFallbackUsed: true,
+      lastFindErrorCode: String(routeError?.code || 'HTTP_404')
+    });
+
+    const joinResponse = await this.fetchImpl(roomDirectoryEndpoint(
+      serverUrl,
+      '/matchmaking/rooms/join'
+    ), {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        listingId: entry.listingId,
+        joinToken: entry.joinToken,
+        playerId,
+        protocol,
+        build,
+        partySize
+      })
+    });
+    const joinPayload = await readJsonResponse(joinResponse);
+    const assignment = normalizeRoomAdmissionAssignment(joinPayload?.assignment || {});
+    this.publish({
+      status: 'ready',
+      rooms: directory.rooms,
+      region: directory.region,
+      refreshedAt: directory.refreshedAt,
+      filters: directory.filters,
+      searchPriority: directory.searchPriority,
+      error: null,
+      joiningListingId: null,
+      compatibilityFallbackUsed: true,
+      lastFindErrorCode: String(routeError?.code || 'HTTP_404')
+    });
+    return assignment;
   }
 
   async requestJoin(options = {}) {

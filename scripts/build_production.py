@@ -146,6 +146,12 @@ CONTENT2_SOURCE_BASELINE_SHA = '501cc5ef8578569cbb727859188256c7ea81f5d9'
 CONTENT2_WORKER_BASELINE_SHA = 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef'
 CONTENT2_BASELINE_WORKER_VERSION_ID = '879cb83e-cfac-47eb-8b9a-f8d43f39aa97'
 CONTENT2_RELEASE_SEQUENCE = 2026072302
+QUALITY2_R2_PATCH = 'quality2-r2-consolidated-polish-certification'
+QUALITY2_R2_PRODUCT_VERSION = '1.13.0-quality2-r2'
+QUALITY2_R2_SOURCE_BASELINE_SHA = '762320f549f6a26a90b6c63f085b70bc53e0f00f'
+QUALITY2_R2_WORKER_BASELINE_SHA = 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef'
+QUALITY2_R2_BASELINE_WORKER_VERSION_ID = '9c8c2ec1-0299-4f85-aebf-4835e5791007'
+QUALITY2_R2_RELEASE_SEQUENCE = 2026072303
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -1099,16 +1105,42 @@ def main() -> None:
         "crazygames_readiness_on_hold": True,
         "android_readiness_on_hold": True,
     },
+        "quality2_r2": {
+        "schema": 2,
+        "patch": QUALITY2_R2_PATCH,
+        "product_version": QUALITY2_R2_PRODUCT_VERSION,
+        "source_baseline_sha": QUALITY2_R2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": QUALITY2_R2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": QUALITY2_R2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": QUALITY2_R2_RELEASE_SEQUENCE,
+        "public_room_discovery_repair": True,
+        "atomic_find_endpoint": "/matchmaking/rooms/find",
+        "atomic_find_alias": "/matchmaking/rooms/find-open",
+        "route_capabilities_endpoint": "/matchmaking/rooms/capabilities",
+        "list_join_compatibility_fallback": True,
+        "visible_no_open_room_feedback": True,
+        "no_open_room_error_code": "NO_OPEN_ROOM_AVAILABLE",
+        "rated_quick_match_preserved": True,
+        "public_room_browser_preserved": True,
+        "content2_preserved": True,
+        "endgame1_preserved": True,
+        "quality2_r1_low_gpu_preserved": True,
+        "protocol_unchanged": True,
+        "worker_change_required": True,
+        "frontend_and_worker": True,
+        "crazygames_readiness_on_hold": True,
+        "android_readiness_on_hold": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": CONTENT2_PATCH,
-        "source_baseline_sha": CONTENT2_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": CONTENT2_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": CONTENT2_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": CONTENT2_RELEASE_SEQUENCE,
+        "patch": QUALITY2_R2_PATCH,
+        "source_baseline_sha": QUALITY2_R2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": QUALITY2_R2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": QUALITY2_R2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": QUALITY2_R2_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
-        "worker_change_required": False,
+        "worker_change_required": True,
     },
     "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

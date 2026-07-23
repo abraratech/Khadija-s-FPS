@@ -519,6 +519,14 @@ export class MultiplayerLobbyController {
       this.error = String(
         error?.message || 'No compatible open public room is available.'
       ).toUpperCase();
+      if ([
+        'NO_OPEN_ROOM_AVAILABLE',
+        'MATCHMAKING_ENDPOINT_NOT_FOUND',
+        'NOT_FOUND',
+        'HTTP_404'
+      ].includes(String(error?.code || '').toUpperCase())) {
+        this.ui?.switchHubTab?.('rooms');
+      }
       this.render();
       return false;
     }

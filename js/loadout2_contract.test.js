@@ -16,12 +16,12 @@ const updateDelivery = read('./update_delivery_core.js');
 const build = read('../scripts/build_production.py');
 const verifier = read('../scripts/verify_launch2_build.py');
 
-assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
-assert.equal(release.productVersion, '1.12.0-content2-r1');
-assert.equal(release.releaseSequence, 2026072302);
-assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(multiplayerRelease.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
+assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
+assert.equal(release.productVersion, '1.13.0-quality2-r2');
+assert.equal(release.releaseSequence, 2026072303);
+assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
 assert.equal(multiplayerRelease.loadout2.functionalFieldKnife, true);
 assert.equal(multiplayerRelease.loadout2.pvpMeleeDisabled, true);
 assert.equal(multiplayerRelease.loadout2.protocolUnchanged, true);
@@ -36,7 +36,7 @@ assert.match(runtime, /finalizeLoadout2Run/);
 assert.match(core, /idempotent/);
 assert.match(cloud, /mergedLoadout2/);
 assert.match(summary, /recordRunLoadout2Mastery/);
-assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
+assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
 assert.match(build, /LOADOUT2_PATCH/);
 assert.match(verifier, /LOADOUT\.2 production manifest patch mismatch/);
 

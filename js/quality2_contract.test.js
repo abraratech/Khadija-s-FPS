@@ -19,14 +19,14 @@ const updateDelivery = read('js/update_delivery_core.js');
 const release = JSON.parse(read('release-version.json'));
 const multiplayerRelease = JSON.parse(read('multiplayer-release.json'));
 
-assert.equal(multiplayerRelease.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
-assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
-assert.equal(release.productVersion, '1.12.0-content2-r1');
-assert.equal(release.releaseSequence, 2026072302);
-assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
-assert.equal(release.workerChangeRequired, false);
+assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
+assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
+assert.equal(release.productVersion, '1.13.0-quality2-r2');
+assert.equal(release.releaseSequence, 2026072303);
+assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
+assert.equal(release.workerChangeRequired, true);
 assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
-assert.equal(release.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
+assert.equal(release.baselineWorkerVersionId, '9c8c2ec1-0299-4f85-aebf-4835e5791007');
 
 assert.match(map, /antialias:\s*QUALITY2_STARTUP_ANTIALIAS/);
 assert.doesNotMatch(map, /antialias:\s*true,\s*\n\s*powerPreference/);
@@ -77,6 +77,6 @@ assert.equal(multiplayerRelease.quality2.workerChangeRequired, false);
 assert.match(build, /QUALITY2_PATCH = 'quality2-r1-consolidated-low-gpu-rendering'/);
 assert.match(build, /"quality2": \{/);
 assert.match(verifier, /QUALITY\.2 production manifest patch mismatch/);
-assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
+assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
 
 console.log('QUALITY.2 consolidated Low-GPU source integration contract passed');

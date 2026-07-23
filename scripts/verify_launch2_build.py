@@ -717,6 +717,57 @@ def main() -> None:
                     f"CONTENT.2 production runtime file missing: {required_runtime}"
                 )
 
+    quality2_r2 = manifest.get("quality2_r2", {})
+    if current_release.get("patch") == "quality2-r2-consolidated-polish-certification":
+        if quality2_r2.get("patch") != current_release.get("patch"):
+            raise SystemExit("QUALITY.2 R2 production manifest patch mismatch")
+        for field in (
+            "public_room_discovery_repair",
+            "list_join_compatibility_fallback",
+            "visible_no_open_room_feedback",
+            "rated_quick_match_preserved",
+            "public_room_browser_preserved",
+            "content2_preserved",
+            "endgame1_preserved",
+            "quality2_r1_low_gpu_preserved",
+            "protocol_unchanged",
+            "worker_change_required",
+            "frontend_and_worker",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if quality2_r2.get(field) is not True:
+                raise SystemExit(f"QUALITY.2 R2 production policy mismatch: {field}")
+        if quality2_r2.get("atomic_find_endpoint") != "/matchmaking/rooms/find":
+            raise SystemExit("QUALITY.2 R2 canonical open-room endpoint mismatch")
+        if quality2_r2.get("atomic_find_alias") != "/matchmaking/rooms/find-open":
+            raise SystemExit("QUALITY.2 R2 open-room alias mismatch")
+        if quality2_r2.get("route_capabilities_endpoint") != "/matchmaking/rooms/capabilities":
+            raise SystemExit("QUALITY.2 R2 route capability endpoint mismatch")
+        if quality2_r2.get("no_open_room_error_code") != "NO_OPEN_ROOM_AVAILABLE":
+            raise SystemExit("QUALITY.2 R2 empty-room response code mismatch")
+        if release_descriptor.get("productVersion") != quality2_r2.get("product_version"):
+            raise SystemExit("QUALITY.2 R2 product version mismatch")
+        if release_descriptor.get("sourceBaselineSha") != quality2_r2.get("source_baseline_sha"):
+            raise SystemExit("QUALITY.2 R2 source baseline mismatch")
+        if release_descriptor.get("workerBaselineSha") != quality2_r2.get("worker_baseline_sha"):
+            raise SystemExit("QUALITY.2 R2 Worker baseline mismatch")
+        if release_descriptor.get("workerChangeRequired") is not True:
+            raise SystemExit("QUALITY.2 R2 release descriptor must require the Worker repair")
+        for required_runtime in (
+            "js/multiplayer/room_directory.js",
+            "js/multiplayer/room_directory_core.js",
+            "js/multiplayer/lobby.js",
+            "js/multiplayer/lobby_ui.js",
+            "js/quality2_core.js",
+            "js/content2_core.js",
+            "index.html",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"QUALITY.2 R2 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

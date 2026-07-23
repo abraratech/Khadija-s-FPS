@@ -1321,7 +1321,7 @@ bindEvents() {
 
     const roomDirectory = nextState.roomDirectory || { status: 'idle', rooms: [] };
     const roomDirectoryUi = roomDirectoryStatusPresentation(roomDirectory);
-    const directoryActive = ['loading', 'joining'].includes(roomDirectory.status);
+    const directoryActive = ['loading', 'finding', 'joining'].includes(roomDirectory.status);
     this.elements.browseRooms.disabled = disabled || online || matchmakingActive || directoryActive;
     this.elements.createPublic.disabled = disabled || online || matchmakingActive || directoryActive;
     this.elements.createPublicPvp.disabled = disabled || online || matchmakingActive || directoryActive || !pvp2WorkerEnabled || !pvp2CustomRoomsEnabled;
@@ -1343,12 +1343,18 @@ bindEvents() {
     const visibleRoomCount = Array.isArray(roomDirectory.rooms) ? roomDirectory.rooms.length : 0;
     this.elements.roomBrowserCount.textContent = `${visibleRoomCount} ROOM${visibleRoomCount === 1 ? '' : 'S'}`;
     this.elements.roomBrowserHint.textContent = roomDirectory.status === 'loading'
-      ? 'SCANNING LIVE LOBBIES'
-      : roomDirectory.status === 'joining'
-        ? 'RESERVING YOUR SLOT'
-        : visibleRoomCount > 0
-          ? 'LIVE COMPATIBLE LOBBIES'
-          : 'CREATE A ROOM TO LEAD';
+      ? roomDirectory.compatibilityFallbackUsed
+        ? 'USING COMPATIBILITY ROOM BROWSER'
+        : 'SCANNING LIVE LOBBIES'
+      : roomDirectory.status === 'finding'
+        ? 'SEARCHING OPEN UNRANKED ROOMS'
+        : roomDirectory.status === 'joining'
+          ? 'RESERVING YOUR SLOT'
+          : visibleRoomCount > 0
+            ? roomDirectory.compatibilityFallbackUsed
+              ? 'COMPATIBILITY SEARCH FOUND LIVE LOBBIES'
+              : 'LIVE COMPATIBLE LOBBIES'
+            : 'CREATE A ROOM TO LEAD';
     this.elements.roomBrowserList.replaceChildren();
     if (['ready', 'join-rejected'].includes(roomDirectory.status) && roomDirectory.rooms?.length) {
       roomDirectory.rooms.forEach((entry) => {

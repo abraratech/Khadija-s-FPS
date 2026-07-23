@@ -76,14 +76,14 @@ assert.match(replayability, /type === clean\(this\.state\.boss\.enemyType/);
 assert.match(runSummary, /recordRunGameplay4BossEncounter/);
 assert.match(runSummary, /gameplay4BossInterrupts/);
 
-assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
-assert.equal(release.productVersion, '1.12.0-content2-r1');
-assert.equal(release.releaseSequence, 2026072302);
-assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
+assert.equal(release.productVersion, '1.13.0-quality2-r2');
+assert.equal(release.releaseSequence, 2026072303);
+assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
 assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
-assert.equal(release.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
+assert.equal(release.baselineWorkerVersionId, '9c8c2ec1-0299-4f85-aebf-4835e5791007');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(metadata.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
 assert.equal(metadata.gameplay4?.patch, 'gameplay4-r1-expanded-boss-encounters');
 assert.equal(metadata.gameplay4?.bossPhases, 3);
 assert.deepEqual(metadata.gameplay4?.bossProfiles, ['JUGGERNAUT', 'MATRIARCH', 'DETONATOR']);
@@ -111,8 +111,8 @@ for (const field of [
   assert.equal(metadata.gameplay4?.[field], true, `Missing GAMEPLAY.4 policy: ${field}`);
 }
 assert.equal(metadata.gameplay4?.workerChangeRequired, false);
-assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
-assert.match(updateDelivery, /releaseSequence: 2026072302/);
+assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
+assert.match(updateDelivery, /releaseSequence: 2026072303/);
 assert.match(buildProduction, /GAMEPLAY4_RELEASE_SEQUENCE = 2026072102/);
 assert.match(buildProduction, /"gameplay4":/);
 assert.match(verifyProduction, /GAMEPLAY\.4 production manifest patch mismatch/);

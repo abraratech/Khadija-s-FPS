@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.12.0-content2-r1",
-  "releaseId": "content2-r1-new-arena-enemy-expansion",
-  "releaseSequence": 2026072302,
-  "sourceBaselineSha": "501cc5ef8578569cbb727859188256c7ea81f5d9",
+  "productVersion": "1.13.0-quality2-r2",
+  "releaseId": "quality2-r2-consolidated-polish-certification",
+  "releaseSequence": 2026072303,
+  "sourceBaselineSha": "762320f549f6a26a90b6c63f085b70bc53e0f00f",
   "updateDelivery": true,
-  "workerChangeRequired": false,
+  "workerChangeRequired": true,
   "workerBaselineSha": "cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef",
-  "baselineWorkerVersionId": "879cb83e-cfac-47eb-8b9a-f8d43f39aa97",
+  "baselineWorkerVersionId": "9c8c2ec1-0299-4f85-aebf-4835e5791007",
   "certificationStatus": "LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED"
 }

@@ -28,16 +28,16 @@ const release = JSON.parse(read('release-version.json'));
 const metadata = JSON.parse(read('multiplayer-release.json'));
 const workerPackage = JSON.parse(read('multiplayer-server/package.json'));
 
-assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
-assert.equal(release.productVersion, '1.12.0-content2-r1');
-assert.equal(release.releaseSequence, 2026072302);
-assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
+assert.equal(release.productVersion, '1.13.0-quality2-r2');
+assert.equal(release.releaseSequence, 2026072303);
+assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
 assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
-assert.equal(release.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
-assert.equal(release.workerChangeRequired, false);
+assert.equal(release.baselineWorkerVersionId, '9c8c2ec1-0299-4f85-aebf-4835e5791007');
+assert.equal(release.workerChangeRequired, true);
 assert.equal(release.certificationStatus, 'LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED');
-assert.equal(metadata.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
-assert.equal(workerPackage.version, '1.11.0-endgame1-r1');
+assert.equal(metadata.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
+assert.equal(workerPackage.version, '1.13.0-quality2-r2');
 
 for (const marker of [
   "ENDGAME1_PATCH = 'endgame1-r1-high-difficulty-operations'",
@@ -111,8 +111,8 @@ assert.match(workerCore, /applyAuthoritativeEndgame1Receipt/);
 assert.match(workerAuthority, /normalizeEndgame1Receipt/);
 assert.match(workerAuthority, /endgameXp/);
 assert.match(workerAuthority, /profile\.endgame1 = endgameResult\.profile/);
-assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
-assert.match(updateDelivery, /releaseSequence: 2026072302/);
+assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
+assert.match(updateDelivery, /releaseSequence: 2026072303/);
 assert.match(build, /ENDGAME1_PATCH = 'endgame1-r1-high-difficulty-operations'/);
 assert.match(build, /"endgame1": \{/);
 assert.match(verifier, /ENDGAME\.1 production manifest patch mismatch/);

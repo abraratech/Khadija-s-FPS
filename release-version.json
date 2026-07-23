@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.13.0-quality2-r2",
-  "releaseId": "quality2-r2-consolidated-polish-certification",
-  "releaseSequence": 2026072303,
-  "sourceBaselineSha": "762320f549f6a26a90b6c63f085b70bc53e0f00f",
+  "productVersion": "1.13.1-quality3-r1",
+  "releaseId": "quality3-r1-map-evolution-geometry-zero-failure",
+  "releaseSequence": 2026072304,
+  "sourceBaselineSha": "0a1533493e3e3a5d86db698be3972510ef41c5b1",
   "updateDelivery": true,
-  "workerChangeRequired": true,
-  "workerBaselineSha": "cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef",
-  "baselineWorkerVersionId": "9c8c2ec1-0299-4f85-aebf-4835e5791007",
+  "workerChangeRequired": false,
+  "workerBaselineSha": "a37d98313472d9f3706a7af2ce10810404b78607",
+  "baselineWorkerVersionId": "6243d37c-191f-4a06-b6a7-b2e60c2a768a",
   "certificationStatus": "LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED"
 }

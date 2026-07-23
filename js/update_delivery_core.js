@@ -1,5 +1,5 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
-export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'quality2-r2-consolidated-polish-certification', releaseSequence: 2026072303, productVersion: '1.13.0-quality2-r2' });
+export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'quality3-r1-map-evolution-geometry-zero-failure', releaseSequence: 2026072304, productVersion: '1.13.1-quality3-r1' });
 
 function cleanText(value, max = 160) {
   return String(value ?? '').trim().slice(0, max);

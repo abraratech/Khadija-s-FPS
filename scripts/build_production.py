@@ -152,6 +152,12 @@ QUALITY2_R2_SOURCE_BASELINE_SHA = '762320f549f6a26a90b6c63f085b70bc53e0f00f'
 QUALITY2_R2_WORKER_BASELINE_SHA = 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef'
 QUALITY2_R2_BASELINE_WORKER_VERSION_ID = '9c8c2ec1-0299-4f85-aebf-4835e5791007'
 QUALITY2_R2_RELEASE_SEQUENCE = 2026072303
+QUALITY3_R1_PATCH = 'quality3-r1-map-evolution-geometry-zero-failure'
+QUALITY3_R1_PRODUCT_VERSION = '1.13.1-quality3-r1'
+QUALITY3_R1_SOURCE_BASELINE_SHA = '0a1533493e3e3a5d86db698be3972510ef41c5b1'
+QUALITY3_R1_WORKER_BASELINE_SHA = 'a37d98313472d9f3706a7af2ce10810404b78607'
+QUALITY3_R1_BASELINE_WORKER_VERSION_ID = '6243d37c-191f-4a06-b6a7-b2e60c2a768a'
+QUALITY3_R1_RELEASE_SEQUENCE = 2026072304
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -1131,16 +1137,33 @@ def main() -> None:
         "crazygames_readiness_on_hold": True,
         "android_readiness_on_hold": True,
     },
+        "quality3_r1": {
+        "schema": 1,
+        "patch": QUALITY3_R1_PATCH,
+        "product_version": QUALITY3_R1_PRODUCT_VERSION,
+        "source_baseline_sha": QUALITY3_R1_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": QUALITY3_R1_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": QUALITY3_R1_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": QUALITY3_R1_RELEASE_SEQUENCE,
+        "map_evolution_geometry_corrections": True,
+        "stormbreak_canal_preserved": True,
+        "zero_failure_frontend_matrix": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+        "crazygames_readiness_on_hold": True,
+        "android_readiness_on_hold": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": QUALITY2_R2_PATCH,
-        "source_baseline_sha": QUALITY2_R2_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": QUALITY2_R2_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": QUALITY2_R2_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": QUALITY2_R2_RELEASE_SEQUENCE,
+        "patch": QUALITY3_R1_PATCH,
+        "source_baseline_sha": QUALITY3_R1_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": QUALITY3_R1_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": QUALITY3_R1_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": QUALITY3_R1_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
-        "worker_change_required": True,
+        "worker_change_required": False,
     },
     "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

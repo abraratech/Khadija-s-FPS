@@ -408,7 +408,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "QUALITY.2 R2 - Consolidated Polish and Certification",
+  "releaseLabel": "QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -719,7 +719,7 @@
     "workerChangeRequired": true,
     "frontendOnly": false
   },
-  "productVersion": "1.13.0-quality2-r2",
+  "productVersion": "1.13.1-quality3-r1",
   "postFinal10": {
     "schema": 1,
     "patch": "post-final10-r1-version1-stabilization-accessibility-performance",
@@ -1723,6 +1723,27 @@
     "protocolUnchanged": true,
     "workerChangeRequired": true,
     "frontendAndWorker": true,
+    "crazyGamesReadinessOnHold": true,
+    "androidReadinessOnHold": true
+  },
+  "quality3R1": {
+    "schema": 1,
+    "patch": "quality3-r1-map-evolution-geometry-zero-failure",
+    "productVersion": "1.13.1-quality3-r1",
+    "releaseSequence": 2026072304,
+    "sourceBaselineSha": "0a1533493e3e3a5d86db698be3972510ef41c5b1",
+    "workerBaselineSha": "a37d98313472d9f3706a7af2ce10810404b78607",
+    "baselineWorkerVersionId": "6243d37c-191f-4a06-b6a7-b2e60c2a768a",
+    "mapEvolutionGeometryCorrections": true,
+    "gridBunkerShuttersAligned": true,
+    "gridBunkerHazardLaneSafe": true,
+    "industrialYardSpawnHazardSeparated": true,
+    "hospitalControlAndHazardCollisionSafe": true,
+    "stormbreakCanalPreserved": true,
+    "zeroFailureFrontendMatrix": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true,
     "crazyGamesReadinessOnHold": true,
     "androidReadinessOnHold": true
   }

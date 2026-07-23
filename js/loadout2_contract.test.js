@@ -16,12 +16,12 @@ const updateDelivery = read('./update_delivery_core.js');
 const build = read('../scripts/build_production.py');
 const verifier = read('../scripts/verify_launch2_build.py');
 
-assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
-assert.equal(release.productVersion, '1.13.0-quality2-r2');
-assert.equal(release.releaseSequence, 2026072303);
-assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
-assert.equal(release.workerChangeRequired, true);
-assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
+assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
+assert.equal(release.productVersion, '1.13.1-quality3-r1');
+assert.equal(release.releaseSequence, 2026072304);
+assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification');
 assert.equal(multiplayerRelease.loadout2.functionalFieldKnife, true);
 assert.equal(multiplayerRelease.loadout2.pvpMeleeDisabled, true);
 assert.equal(multiplayerRelease.loadout2.protocolUnchanged, true);
@@ -36,7 +36,7 @@ assert.match(runtime, /finalizeLoadout2Run/);
 assert.match(core, /idempotent/);
 assert.match(cloud, /mergedLoadout2/);
 assert.match(summary, /recordRunLoadout2Mastery/);
-assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
+assert.match(updateDelivery, /quality3-r1-map-evolution-geometry-zero-failure/);
 assert.match(build, /LOADOUT2_PATCH/);
 assert.match(verifier, /LOADOUT\.2 production manifest patch mismatch/);
 

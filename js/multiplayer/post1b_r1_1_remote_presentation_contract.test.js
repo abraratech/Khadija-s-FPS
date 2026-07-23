@@ -40,8 +40,15 @@ for (const token of [
   assert.equal(quality.includes(token), true, `Missing relay quality token: ${token}`);
 }
 
-assert.equal(hud.includes('CLOUD RELAY READY'), true);
-assert.equal(hud.includes('not the speed between devices on the same LAN'), true);
+for (const token of [
+  "transport.transportPath || 'CLOUD RELAY'",
+  "path === 'DIRECT'",
+  "path === 'TURN RELAY'",
+  "path === 'NEGOTIATING'",
+  'Cloudflare room relay fallback'
+]) {
+  assert.equal(hud.includes(token), true, `Missing current transport HUD token: ${token}`);
+}
 assert.equal(chat.includes("event.code === 'KeyT'"), true);
 assert.equal(chat.includes("toggleLabel.textContent = 'CHAT [T]'"), true);
 

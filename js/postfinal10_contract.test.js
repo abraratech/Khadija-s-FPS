@@ -58,7 +58,9 @@ assert.match(captionCss, /--ka-caption-scale/);
 assert.match(core, /POST_FINAL10_PRODUCT_VERSION = '1\.0\.0'/);
 
 assert.equal(release.protocol, 6);
-assert.equal(release.productVersion, '1.0.0');
+assert.equal(typeof release.productVersion, 'string');
+assert.ok(release.productVersion.length > 0);
+assert.equal(release.postFinal10.productVersion, '1.0.0');
 assert.equal(
   release.certifiedBaselineSha,
   '5511d393d7249b5487affa3616716ccb64593e99'

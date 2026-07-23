@@ -22,5 +22,11 @@ assert(directory.includes("status: 'join-rejected'"));
 assert(lobby.includes('admissionToken: assignment.admissionToken'));
 assert(lobby.includes('this.pendingDirectoryJoin'));
 assert(transport.includes("url.searchParams.set('admissionToken'"));
-assert(ui.includes('entry.reservedHumans > 0'));
+for (const token of [
+  'const reserved = Math.max(0, Number(entry.reservedHumans || 0))',
+  'index < connected + reserved',
+  "slot.dataset.slot === 'reserved'"
+]) {
+  assert(ui.includes(token), `Missing current reserved-slot presentation token: ${token}`);
+}
 console.log('MATCH.2 R1.1 admission and rejoin contract tests passed');

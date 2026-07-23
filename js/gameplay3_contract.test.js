@@ -66,14 +66,14 @@ const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.inde
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
 
 
-assert.equal(release.releaseId, 'quality2-r2-consolidated-polish-certification');
-assert.equal(release.productVersion, '1.13.0-quality2-r2');
-assert.equal(release.releaseSequence, 2026072303);
-assert.equal(release.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
-assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
-assert.equal(release.baselineWorkerVersionId, '9c8c2ec1-0299-4f85-aebf-4835e5791007');
-assert.equal(release.workerChangeRequired, true);
-assert.equal(metadata.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
+assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
+assert.equal(release.productVersion, '1.13.1-quality3-r1');
+assert.equal(release.releaseSequence, 2026072304);
+assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
+assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(metadata.releaseLabel, 'QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification');
 assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
 assert.deepEqual(metadata.gameplay3?.supportedMaps, [
@@ -84,8 +84,8 @@ assert.deepEqual(metadata.gameplay3?.supportedMaps, [
 ]);
 assert.equal(metadata.gameplay3?.pvpExcluded, true);
 assert.equal(metadata.gameplay3?.workerChangeRequired, false);
-assert.match(updateDeliveryCore, /quality2-r2-consolidated-polish-certification/);
-assert.match(updateDeliveryCore, /releaseSequence: 2026072303/);
+assert.match(updateDeliveryCore, /quality3-r1-map-evolution-geometry-zero-failure/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072304/);
 assert.match(buildProduction, /GAMEPLAY3_PATCH/);
 assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
 assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);

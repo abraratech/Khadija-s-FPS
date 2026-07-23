@@ -45,7 +45,9 @@ assert.equal(economy.patch, POST_FINAL9_PATCH);
 assert.equal(Object.keys(economy.currencies.factionTokens).length, POST_FINAL9_FACTIONS.length);
 assert.ok(POST_FINAL9_COSMETIC_CATALOG.length >= 12);
 
-assert.match(progressionCore, /PROGRESSION_VERSION = 3/);
+const progressionVersionMatch = progressionCore.match(/PROGRESSION_VERSION = (\d+)/);
+assert.ok(progressionVersionMatch, 'Missing progression schema version');
+assert.ok(Number(progressionVersionMatch[1]) >= 3, 'Progression schema regressed below POST-FINAL.9');
 assert.match(progressionCore, /normalizePostFinal9Economy/);
 assert.match(progressionCore, /ECONOMY_COLLECTION/);
 assert.match(progression, /applyPostFinal9EconomyReceipt/);

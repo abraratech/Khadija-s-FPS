@@ -12,7 +12,9 @@ const sniper = fs.readFileSync(new URL('../weapons/sniper.js', import.meta.url),
 assert(lobby.includes('browseOpenRooms') && lobby.includes('joinOpenRoom') && lobby.includes('createPublicRoom'));
 assert(ui.includes('BROWSE PUBLIC ROOMS') && ui.includes('CREATE PUBLIC CO-OP ROOM'));
 assert(ui.includes('CREATE PUBLIC PVP ROOM') && ui.includes('UNRANKED TEAM ELIMINATION ROOMS'));
-assert(ui.includes('FIND PUBLIC PVP 1V1'));
+assert(ui.includes('FIND RATED PVP 1V1'));
+assert(ui.includes('JOIN OPEN UNRANKED ROOM'));
+assert(ui.includes('FIND OPEN PVP ROOM'));
 assert(ui.includes('LIST AS PUBLIC ROOM'));
 assert(css.includes('.ka-room-browser-card'));
 assert(worker.includes("url.pathname === '/directory-admission'"));

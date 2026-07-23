@@ -16,11 +16,11 @@ const stormbreak = fs.readFileSync(new URL('./maps/stormbreak_canal.js', import.
 const pvpRules = fs.readFileSync(new URL('./multiplayer/pvp3_rules_core.js', import.meta.url), 'utf8');
 const pvpCompletion = fs.readFileSync(new URL('./multiplayer/pvp5_core.js', import.meta.url), 'utf8');
 
-assert.equal(version.releaseId, 'quality2-r2-consolidated-polish-certification');
-assert.equal(version.productVersion, '1.13.0-quality2-r2');
-assert.equal(version.workerChangeRequired, true);
-assert.equal(version.sourceBaselineSha, '762320f549f6a26a90b6c63f085b70bc53e0f00f');
-assert.equal(version.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+assert.equal(version.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
+assert.equal(version.productVersion, '1.13.1-quality3-r1');
+assert.equal(version.workerChangeRequired, false);
+assert.equal(version.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(version.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
 assert.equal(release.protocol, 6);
 assert.equal(release.content?.arenaCount, 7);
 assert.equal(release.content2?.protocolUnchanged, true);
@@ -35,8 +35,8 @@ assert.match(enemyRuntime, /name: "WARDEN"/);
 assert.match(enemyRuntime, /name: "STALKER"/);
 assert.match(enemyRuntime, /name: "SAPPER"/);
 assert.match(multiplayerLobby, /'stormbreak_canal'/);
-assert.equal(release.releaseLabel, 'QUALITY.2 R2 - Consolidated Polish and Certification');
-assert.equal(release.productVersion, '1.13.0-quality2-r2');
+assert.equal(release.releaseLabel, 'QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification');
+assert.equal(release.productVersion, '1.13.1-quality3-r1');
 assert.equal(release.content2?.schema, 1);
 assert.equal(release.content2?.productVersion, '1.12.0-content2-r1');
 assert.equal(release.content2?.releaseSequence, 2026072302);
@@ -49,8 +49,8 @@ for (const key of ['gameplay3', 'gameplay5', 'gameplay6', 'gameplay7']) {
   assert.ok(release[key]?.supportedMaps?.includes('stormbreak_canal'), `${key} must include Stormbreak Canal`);
 }
 assert.match(stormbreak, /context\.doors\.push\(block\)/);
-assert.match(updateDelivery, /quality2-r2-consolidated-polish-certification/);
-assert.match(updateDelivery, /releaseSequence: 2026072303/);
+assert.match(updateDelivery, /quality3-r1-map-evolution-geometry-zero-failure/);
+assert.match(updateDelivery, /releaseSequence: 2026072304/);
 assert.match(build, /CONTENT2_PATCH = 'content2-r1-new-arena-enemy-expansion'/);
 assert.match(build, /"content2": \{/);
 assert.match(verifier, /CONTENT\.2 production manifest patch mismatch/);

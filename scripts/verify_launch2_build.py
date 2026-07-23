@@ -717,6 +717,32 @@ def main() -> None:
                     f"CONTENT.2 production runtime file missing: {required_runtime}"
                 )
 
+    quality3_r1 = manifest.get("quality3_r1", {})
+    if current_release.get("patch") == "quality3-r1-map-evolution-geometry-zero-failure":
+        if quality3_r1.get("patch") != current_release.get("patch"):
+            raise SystemExit("QUALITY.3 R1 production manifest patch mismatch")
+        for field in (
+            "map_evolution_geometry_corrections",
+            "stormbreak_canal_preserved",
+            "zero_failure_frontend_matrix",
+            "protocol_unchanged",
+            "frontend_only",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if quality3_r1.get(field) is not True:
+                raise SystemExit(f"QUALITY.3 R1 production policy mismatch: {field}")
+        if quality3_r1.get("worker_change_required") is not False:
+            raise SystemExit("QUALITY.3 R1 must remain frontend-only")
+        if release_descriptor.get("productVersion") != quality3_r1.get("product_version"):
+            raise SystemExit("QUALITY.3 R1 product version mismatch")
+        if release_descriptor.get("sourceBaselineSha") != quality3_r1.get("source_baseline_sha"):
+            raise SystemExit("QUALITY.3 R1 source baseline mismatch")
+        if release_descriptor.get("workerBaselineSha") != quality3_r1.get("worker_baseline_sha"):
+            raise SystemExit("QUALITY.3 R1 Worker baseline mismatch")
+        if release_descriptor.get("workerChangeRequired") is not False:
+            raise SystemExit("QUALITY.3 R1 descriptor must remain frontend-only")
+
     quality2_r2 = manifest.get("quality2_r2", {})
     if current_release.get("patch") == "quality2-r2-consolidated-polish-certification":
         if quality2_r2.get("patch") != current_release.get("patch"):

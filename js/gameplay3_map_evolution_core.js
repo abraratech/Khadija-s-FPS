@@ -30,10 +30,17 @@ const MAP_PROFILES = Object.freeze({
       z: -12,
       radius: 3.2
     }),
-    routeA: Object.freeze({ id: 'grid_shutter_west', x: -9, z: 0, w: 1.25, h: 3.3, d: 8.5 }),
-    routeB: Object.freeze({ id: 'grid_shutter_east', x: 9, z: 0, w: 1.25, h: 3.3, d: 8.5 }),
+    // Aligned to the actual breakable-wall entrance columns (col 2 / col 7 -> x=-15/x=15)
+    // in GRID_BUNKER_LAYOUT, so the shutter visually plugs the doorway instead of
+    // floating one tile inside the room.
+    routeA: Object.freeze({ id: 'grid_shutter_west', x: -15, z: 0, w: 1.25, h: 3.3, d: 8.5 }),
+    routeB: Object.freeze({ id: 'grid_shutter_east', x: 15, z: 0, w: 1.25, h: 3.3, d: 8.5 }),
     cover: Object.freeze({ id: 'grid_cover', x: 0, z: 13.5, w: 8.5, h: 1.7, d: 1.35 }),
-    hazard: Object.freeze({ id: 'grid_arc_floor', x: 0, z: 20, radius: 4.4, damage: 7 }),
+    // Recentered to the row-1 corridor lane (z=21) and radius reduced from 4.4 to 2.6
+    // (diameter 5.2) so it fits inside the 6-unit-wide lane instead of a radius-4.4
+    // circle (8.8 diameter) that clipped the boundary wall on one side and the row-2
+    // interior wall on the other no matter where it was centered.
+    hazard: Object.freeze({ id: 'grid_arc_floor', x: 0, z: 21, radius: 2.6, damage: 7 }),
     phaseLabels: Object.freeze([
       'STANDARD CONTAINMENT',
       'LOCKDOWN SHIFT',
@@ -55,7 +62,12 @@ const MAP_PROFILES = Object.freeze({
     routeA: Object.freeze({ id: 'yard_crane_gate_north', x: 0, z: -12, w: 13, h: 2.8, d: 1.3 }),
     routeB: Object.freeze({ id: 'yard_crane_gate_south', x: 0, z: 12, w: 13, h: 2.8, d: 1.3 }),
     cover: Object.freeze({ id: 'yard_crane_cover', x: 18, z: 0, w: 1.5, h: 2.0, d: 9.5 }),
-    hazard: Object.freeze({ id: 'yard_fuel_spill', x: 0, z: 0, radius: 5.2, damage: 8 }),
+    // Moved from (0,0) — that exact point is one of the three playerSpawnPoints
+    // (confirmed by running buildIndustrialYard() and reading the real spawn
+    // coordinates), so the hazard was dealing damage on top of a respawn location.
+    // Recentered to (0,7) and radius trimmed 5.2->3.5, which clears the spawn point
+    // by a 3.5-unit margin and still sits clean of routeB's gate geometry.
+    hazard: Object.freeze({ id: 'yard_fuel_spill', x: 0, z: 7, radius: 3.5, damage: 8 }),
     phaseLabels: Object.freeze([
       'YARD FLOW STABLE',
       'CRANE SHIFT',
@@ -92,14 +104,23 @@ const MAP_PROFILES = Object.freeze({
       id: 'hospital_power_override',
       kind: 'POWER_OVERRIDE',
       label: 'EMERGENCY POWER CONTROL',
-      x: -30,
+      // Shifted 3 units east (x:-30 -> x:-27). Traced to source: the original
+      // radius overlapped the reception-desk cover block
+      // (spawnBlock(7.0, 1.05, 2.0, -34, 0.52, 0, deskColor, true, false)),
+      // a real solid object, not decoration.
+      x: -27,
       z: 0,
       radius: 3.2
     }),
     routeA: Object.freeze({ id: 'hospital_shutter_north', x: -8, z: 0, w: 1.2, h: 3.2, d: 9.0 }),
     routeB: Object.freeze({ id: 'hospital_shutter_south', x: 8, z: 0, w: 1.2, h: 3.2, d: 9.0 }),
     cover: Object.freeze({ id: 'hospital_triage_cover', x: 0, z: 18, w: 8.0, h: 1.65, d: 1.3 }),
-    hazard: Object.freeze({ id: 'hospital_contamination_zone', x: 0, z: -18, radius: 4.7, damage: 7 }),
+    // Moved from (0,-18) to (-14,-18). Traced to source: x:0 sits exactly on one
+    // of the six "cross-ward room separator" walls (spawnBlock at x:0, z:-22,
+    // w:1.0, d:14 -> spans z:-29 to z:-15, which contains z:-18), so the hazard's
+    // center point was embedded inside a real wall rather than open floor.
+    // (-14,-18) sits inside the ward room between the x:-28 and x:0 separators.
+    hazard: Object.freeze({ id: 'hospital_contamination_zone', x: -14, z: -18, radius: 4.7, damage: 7 }),
     phaseLabels: Object.freeze([
       'QUARANTINE STABLE',
       'WARD LOCKDOWN',

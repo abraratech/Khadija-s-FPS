@@ -8,7 +8,8 @@ export const LOCAL_LEADERBOARD_MAPS = Object.freeze([
   Object.freeze({ id: 'neon_depot', label: 'Neon Depot' }),
   Object.freeze({ id: 'parking_garage', label: 'Parking Garage' }),
   Object.freeze({ id: 'hospital_wing', label: 'Hospital Wing' }),
-  Object.freeze({ id: 'reactor_courtyard', label: 'Reactor Courtyard' })
+  Object.freeze({ id: 'reactor_courtyard', label: 'Reactor Courtyard' }),
+  Object.freeze({ id: 'stormbreak_canal', label: 'Stormbreak Canal' })
 ]);
 
 export const LOCAL_LEADERBOARD_DIFFICULTIES = Object.freeze([
@@ -23,7 +24,8 @@ const MAP_ALIASES = Object.freeze({
   depot: 'neon_depot', neon: 'neon_depot', neondepot: 'neon_depot',
   garage: 'parking_garage', parking: 'parking_garage', parkinggarage: 'parking_garage',
   hospital: 'hospital_wing', hospitalwing: 'hospital_wing',
-  reactor: 'reactor_courtyard', courtyard: 'reactor_courtyard', reactorcourtyard: 'reactor_courtyard'
+  reactor: 'reactor_courtyard', courtyard: 'reactor_courtyard', reactorcourtyard: 'reactor_courtyard',
+  stormbreak: 'stormbreak_canal', canal: 'stormbreak_canal', stormbreakcanal: 'stormbreak_canal'
 });
 
 function cleanToken(value) {

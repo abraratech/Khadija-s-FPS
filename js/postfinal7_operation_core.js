@@ -92,6 +92,18 @@ const MAP_MISSIONS = Object.freeze({
       stage('EXTRACT', 'Secure the Ambulance Bay', POST_FINAL4_OPERATION_KINDS.EXTRACTION_HOLDOUT, 'Hold until evacuation.')
     ])
   }),
+  stormbreak_canal: Object.freeze({
+    missionId: 'STORMBREAK',
+    label: 'Stormbreak Lockout',
+    stages: Object.freeze([
+      stage('INFILTRATE', 'Secure Pump Access', POST_FINAL4_OPERATION_KINDS.DEFEND_ZONE, 'Secure the central pump approach.'),
+      stage('RECOVER', 'Restore Flood Control', POST_FINAL4_OPERATION_KINDS.RESTORE_EQUIPMENT, 'Restore the flood-control relay.'),
+      stage('SECONDARY', 'Recover the Gate Engineer', POST_FINAL4_OPERATION_KINDS.RESCUE_SURVIVOR, 'Optional engineer rescue before lockout.'),
+      stage('DEFEND', 'Hold the Control Island', POST_FINAL4_OPERATION_KINDS.DEFEND_ZONE, 'Hold while gate authority synchronizes.'),
+      stage('HUNT', 'Eliminate the Canal Warden', POST_FINAL4_OPERATION_KINDS.PRIORITY_TARGET, 'Destroy the armored breach anchor.'),
+      stage('EXTRACT', 'Exit through South Floodgate', POST_FINAL4_OPERATION_KINDS.EXTRACTION_HOLDOUT, 'Hold extraction while the canal seals.')
+    ])
+  }),
   reactor_courtyard: Object.freeze({
     missionId: 'RED-CORE',
     label: 'Red Core',

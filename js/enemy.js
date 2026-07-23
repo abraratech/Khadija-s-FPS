@@ -78,6 +78,18 @@ import {
   recordFormationEnemyRemoved
 } from './ai_formation.js';
 import { getCoopScalingProfile } from './multiplayer/coop_scaling_core.js';
+import {
+  applyContent2SpawnMix,
+  getContent2Behavior,
+  getContent2IncomingDamageScale,
+  getContent2MaxActive,
+  getContent2ProjectileProfile
+} from './content2_core.js';
+import {
+  applyContent2EnemySilhouette,
+  clearContent2EnemySilhouette,
+  updateContent2EnemySilhouette
+} from './content2_enemy_visuals.js';
 
 const _trapFxStart = new THREE.Vector3();
 const _trapFxEnd = new THREE.Vector3();
@@ -259,9 +271,9 @@ const HERO_SPECIAL_PROFILES = Object.freeze({
 });
 
 const HERO_SHAMBLER_VARIANTS = Object.freeze(['CIVILIAN', 'WORKER', 'RAVAGED']);
-const HERO_AGILE_TYPES = Object.freeze(['RUNNER', 'CRAWLER']);
-const HERO_HEAVY_TYPES = Object.freeze(['BRUTE', 'EXPLODER']);
-const HERO_SPECIAL_TYPES = Object.freeze(['RANGED', 'GOLIATH']);
+const HERO_AGILE_TYPES = Object.freeze(['RUNNER', 'CRAWLER', 'STALKER']);
+const HERO_HEAVY_TYPES = Object.freeze(['BRUTE', 'EXPLODER', 'WARDEN']);
+const HERO_SPECIAL_TYPES = Object.freeze(['RANGED', 'GOLIATH', 'SAPPER']);
 
 let detailedVisualCount = 0;
 let proceduralVisualCount = 0;
@@ -686,6 +698,27 @@ const ENEMY_TYPES = {
     killScore: 95, headshotScore: 150,
     announce: 'EXPLODER NEARBY'
   },
+  WARDEN: {
+    name: "WARDEN", label: "Warden", role: "armored anchor",
+    speed: 1.72, maxHealth: 360, damage: 28, attackCooldown: 1.95, attackRange: 2.0, colRadius: 0.72,
+    color: 0x315465, radarColor: '#8ae9ff', scale: new THREE.Vector3(1.34, 1.28, 1.28),
+    killScore: 180, headshotScore: 285,
+    announce: 'WARDEN ADVANCING'
+  },
+  STALKER: {
+    name: "STALKER", label: "Stalker", role: "flanking pressure",
+    speed: 5.65, maxHealth: 92, damage: 12, attackCooldown: 1.05, attackRange: 1.45, colRadius: 0.39,
+    color: 0x7c304a, radarColor: '#ff6f9b', scale: new THREE.Vector3(0.78, 1.02, 0.78),
+    killScore: 105, headshotScore: 165,
+    announce: 'STALKER FLANKING'
+  },
+  SAPPER: {
+    name: "SAPPER", label: "Sapper", role: "ranged area denial",
+    speed: 2.05, maxHealth: 105, damage: 22, attackCooldown: 3.05, attackRange: 11.0, colRadius: 0.46,
+    color: 0x87572c, radarColor: '#ff9d2e', scale: new THREE.Vector3(0.92, 1.16, 0.92),
+    killScore: 135, headshotScore: 205,
+    announce: 'SAPPER CHARGE ACTIVE'
+  },
   RANGED:   {
     name: "RANGED", label: "Spitter", role: "ranged pressure",
     speed: 1.85, maxHealth: 80, damage: 18, attackCooldown: 2.7, attackRange: 12.0, colRadius: 0.40,
@@ -731,14 +764,18 @@ function initPools() {
   if (poolsInitialized) return;
 
   for (let i = 0; i < MAX_PROJECTILES; i++) {
-    const pMesh = new THREE.Mesh(projGeo, projMat); pMesh.visible = false; scene.add(pMesh);
+    const pMesh = new THREE.Mesh(projGeo, projMat.clone()); pMesh.visible = false; scene.add(pMesh);
     projectilePool.items.push({
       mesh: pMesh,
       dir: new THREE.Vector3(),
       prevPos: new THREE.Vector3(),
       life: 0,
       trailTimer: 0,
-      elevatedResponse: false
+      elevatedResponse: false,
+      damage: 20,
+      splashDamage: 0,
+      splashRadius: 0,
+      sourceType: 'RANGED'
     });
   }
   for (let i = 0; i < MAX_EXPLOSIONS; i++) {
@@ -896,6 +933,7 @@ function recordEnemyIncident(type, details = {}) {
 }
 
 function resetRegistryEnemyForPool(enemy) {
+  clearContent2EnemySilhouette(enemy);
   if (!enemy || !zombieRegistrySet.has(enemy)) return false;
   cancelEnemyAttack(enemy);
   actorManager.unregister(enemy);
@@ -1578,6 +1616,22 @@ function applyMapSpawnPressure(mix, wave = currentWave) {
   });
 }
 
+function applyContent2SpawnPressure(mix, wave = currentWave) {
+  let endgame = false;
+  try {
+    endgame = Boolean(globalThis.KAGetEndgame1Snapshot?.()?.active);
+  } catch {
+    endgame = false;
+  }
+  return applyContent2SpawnMix(mix, {
+    mapId: currentMapId,
+    wave,
+    isSpecialRound,
+    endgame,
+    enemyTypes: ENEMY_TYPES
+  });
+}
+
 function applyContent1SpawnPressure(mix) {
   let directive = null;
   try {
@@ -1609,7 +1663,10 @@ function getSpawnMixForWave(wave = currentWave) {
   return applyGameplay2SpawnPressure(
     applyContent1SpawnPressure(
       adaptEnemySpawnMix(
-        applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
+        applyContent2SpawnPressure(
+          applyMapSpawnPressure(getBaseSpawnMixForWave(wave), wave),
+          wave
+        ),
         { wave, isSpecialRound }
       )
     )
@@ -1642,6 +1699,8 @@ function getLivingEnemyCounts() {
 }
 
 function getMaxActiveForType(typeName) {
+  const content2Max = getContent2MaxActive(typeName, currentWave, isSpecialRound);
+  if (Number.isFinite(content2Max)) return content2Max;
   if (typeName === "GOLIATH") return 1;
   if (typeName === "BRUTE") return currentWave < 8 ? 1 : 2;
   if (typeName === "RANGED") return currentWave < 9 ? 1 : 2;
@@ -1697,6 +1756,9 @@ function getEnemyVisualMotionSpeed(e) {
   if (e.type === "GOLIATH") return 0.58;
   if (e.type === "EXPLODER") return 1.05;
   if (e.type === "RANGED") return 0.82;
+  if (e.type === "WARDEN") return 0.70;
+  if (e.type === "STALKER") return 1.28;
+  if (e.type === "SAPPER") return 0.86;
 
   return 1.0;
 }
@@ -1851,6 +1913,7 @@ function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
     recycled.targetPlayerId = null;
     recycled.type = config.name;
     prepareEnemyVisualType(recycled, config.name);
+    applyContent2EnemySilhouette(recycled, config.name);
     const coopScaling = getCoopScalingProfile();
     recycled.health = Math.max(1, Math.round(config.maxHealth * coopScaling.enemyHealthScale));
     recycled.maxHealth = recycled.health;
@@ -1887,6 +1950,7 @@ function spawnZombie({ reason = 'timer', allowRepair = true } = {}) {
     recycled.headshotReward = config.headshotScore || 100;
     recycled.bossBounty = config.bossBounty || 0;
     recycled.role = config.role || 'standard';
+    recycled.content2Behavior = getContent2Behavior(config.name);
     recycled.isContent1Elite = false;
     recycled.content1Id = null;
     recycled.gameplay4Patch = null;
@@ -2625,10 +2689,20 @@ export function updateEnemies(dt) {
     if ((pdx * pdx + pdy * pdy + pdz * pdz) < 1.0) {
       damageEnemyTarget(
         projectileTarget,
-        20,
+        Math.max(1, Number(p.damage) || 20),
         p.mesh.position,
-        'RANGED'
+        p.sourceType || 'RANGED'
       );
+      if (Number(p.splashRadius) > 0 && Number(p.splashDamage) > 0) {
+        for (const splashTarget of teamTargets) {
+          if (!splashTarget || splashTarget === projectileTarget || splashTarget.alive === false) continue;
+          const sx = Number(splashTarget.pos?.x || 0) - p.mesh.position.x;
+          const sz = Number(splashTarget.pos?.z || 0) - p.mesh.position.z;
+          if (Math.hypot(sx, sz) <= Number(p.splashRadius)) {
+            damageEnemyTarget(splashTarget, Number(p.splashDamage), p.mesh.position, p.sourceType || 'SAPPER');
+          }
+        }
+      }
       spawnEnemyProjectileImpact(p.mesh.position, true);
       recordAIAttackProjectileResult(true);
 
@@ -2637,6 +2711,10 @@ export function updateEnemies(dt) {
       }
 
       p.elevatedResponse = false;
+      p.damage = 20;
+      p.splashDamage = 0;
+      p.splashRadius = 0;
+      p.sourceType = 'RANGED';
       p.life = 0;
       p.mesh.visible = false;
       return;
@@ -2793,7 +2871,7 @@ for (const candidate of _visualCandidates) {
 
 let agileSlots = agileProfile.budget;
 let agileFullSlots = Math.min(agileProfile.fullDetail || 0, agileSlots);
-const agileTypeSlots = { RUNNER: 0, CRAWLER: 0 };
+const agileTypeSlots = { RUNNER: 0, CRAWLER: 0, STALKER: 0 };
 
 for (const candidate of _agileVisualCandidates) {
   if (
@@ -2822,7 +2900,7 @@ for (const candidate of _agileVisualCandidates) {
 
 let heavySlots = heavyProfile.budget;
 let heavyFullSlots = Math.min(heavyProfile.fullDetail || 0, heavySlots);
-const heavyTypeSlots = { BRUTE: 0, EXPLODER: 0 };
+const heavyTypeSlots = { BRUTE: 0, EXPLODER: 0, WARDEN: 0 };
 
 for (const candidate of _heavyVisualCandidates) {
   if (
@@ -2851,7 +2929,7 @@ for (const candidate of _heavyVisualCandidates) {
 
 let specialSlots = specialProfile.budget;
 let specialFullSlots = Math.min(specialProfile.fullDetail || 0, specialSlots);
-const specialTypeSlots = { RANGED: 0, GOLIATH: 0 };
+const specialTypeSlots = { RANGED: 0, GOLIATH: 0, SAPPER: 0 };
 
 for (const candidate of _specialVisualCandidates) {
   if (
@@ -2993,6 +3071,7 @@ if (!e.alive) continue;
     const trueVerticalDist = Math.abs(_eToP.y);
 
 	setEnemyVisual(e, e._useFullVisual);
+updateContent2EnemySilhouette(e, visualAnimTime);
 
 const visualMotionState = _visualMotionState;
 visualMotionState.hitReactT = e.hitReactT;
@@ -3136,6 +3215,7 @@ if (!e.usingLod && e.fullModel?.userData?.isHeroShambler) {
       e.mesh.lookAt(_archetypeMoveTarget.x, e.mesh.position.y, _archetypeMoveTarget.z);
     }
 
+    const rangedBehavior = e.type === 'RANGED' || e.type === 'SAPPER';
     const rangedCanAttack = canRangedAttackPlayer(
       e,
       horizontalDist,
@@ -3324,7 +3404,7 @@ if (!e.usingLod && e.fullModel?.userData?.isHeroShambler) {
     // ── ATTACK TELEGRAPH, COMMIT, AND COUNTERPLAY ──
     e.atkCD -= dt;
 
-    const canAttackNow = e.type === 'RANGED'
+    const canAttackNow = rangedBehavior
       ? rangedCanAttack
       : (
         horizontalDist <= e.attackRange &&
@@ -3368,6 +3448,12 @@ if (!e.usingLod && e.fullModel?.userData?.isHeroShambler) {
           projectile.life = 2.5;
           projectile.trailTimer = 0;
           projectile.elevatedResponse = trueVerticalDist > 1.8;
+          const content2Projectile = getContent2ProjectileProfile(e.type);
+          projectile.damage = e.type === 'SAPPER' ? content2Projectile.damage : Math.max(1, Number(e.damage) || 20);
+          projectile.splashDamage = e.type === 'SAPPER' ? content2Projectile.splashDamage : 0;
+          projectile.splashRadius = e.type === 'SAPPER' ? content2Projectile.splashRadius : 0;
+          projectile.sourceType = e.type;
+          projectile.mesh.material.color.setHex(content2Projectile.color);
           projectile.mesh.visible = true;
           pool.index = (pool.index + 1) % MAX_PROJECTILES;
 
@@ -3423,9 +3509,9 @@ if (!e.usingLod && e.fullModel?.userData?.isHeroShambler) {
       enemyTarget.alive
     ) {
       if (
-        ['EXPLODER', 'RANGED', 'GOLIATH', 'BRUTE', 'CRAWLER'].includes(e.type)
+        ['EXPLODER', 'RANGED', 'SAPPER', 'GOLIATH', 'BRUTE', 'WARDEN', 'CRAWLER'].includes(e.type)
       ) {
-        const exploitPriority = e.type === 'RANGED'
+        const exploitPriority = rangedBehavior
           ? Math.max(
             0,
             Number(getAIDirectorTuning().rangedElevationResponse) || 0
@@ -3638,7 +3724,7 @@ export function damageEnemyForBot(enemy, damage, {
       headshot: false
     })) || 1
   ));
-  const amount = Math.max(0, Math.round(baseAmount * gameplay4Scale));
+  const amount = Math.max(0, Math.round(baseAmount * gameplay4Scale * getContent2IncomingDamageScale(enemy.type, { headshot: false })));
   if (amount <= 0) {
     return {
       applied: false,

@@ -151,6 +151,7 @@ const MPUI2_MAP_IDS = new Set([
   'parking_garage',
   'hospital_wing',
   'reactor_courtyard',
+  'stormbreak_canal',
   'crossfire_terminal',
   'foundry_ring',
   'skyline_relay'

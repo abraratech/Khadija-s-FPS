@@ -14,7 +14,7 @@ assert.equal(GAMEPLAY3_PATCH, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual([...GAMEPLAY3_STAGE_WAVES], [4, 7, 10]);
 assert.deepEqual(
   [...GAMEPLAY3_SUPPORTED_MAPS],
-  ['grid_bunker', 'industrial_yard', 'hospital_wing']
+  ['grid_bunker', 'industrial_yard', 'hospital_wing', 'stormbreak_canal']
 );
 
 for (const mapId of GAMEPLAY3_SUPPORTED_MAPS) {

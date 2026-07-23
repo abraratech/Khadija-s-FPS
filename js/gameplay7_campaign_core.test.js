@@ -15,7 +15,8 @@ import {
 const now = 1_720_100_000_000;
 const base = createDefaultGameplay7CampaignProfile(now);
 assert.equal(base.patch, GAMEPLAY7_PATCH);
-assert.equal(Object.keys(base.sectors).length, 6);
+assert.equal(Object.keys(base.sectors).length, 7);
+assert.equal(base.sectors.stormbreak_canal.sectorId, 'STORMBREAK');
 assert.equal(base.sectors.grid_bunker.controlState, GAMEPLAY7_CONTROL.CONTESTED);
 assert.equal(base.sectors.grid_bunker.playerInfluence, 50);
 assert.equal(base.sectors.grid_bunker.enemyInfluence, 50);

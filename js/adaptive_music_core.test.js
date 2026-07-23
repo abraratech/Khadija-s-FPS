@@ -16,7 +16,7 @@ assert.equal(normalizeMusicMapId('industrial-yard'), 'industrial_yard');
 assert.equal(normalizeMusicMapId('NeonDepot'), 'neon_depot');
 assert.equal(normalizeMusicMapId('unknown-map'), 'grid_bunker');
 assert.equal(getMusicProfile('hospital').id, 'hospital_wing');
-assert.equal(Object.keys(MAP_MUSIC_PROFILES).length, 6);
+assert.equal(Object.keys(MAP_MUSIC_PROFILES).length, 7);
 
 assert.equal(selectAdaptiveMusicState({ gameState: 'menu' }), ADAPTIVE_MUSIC_STATES.MENU);
 assert.equal(selectAdaptiveMusicState({ gameState: 'loading' }), ADAPTIVE_MUSIC_STATES.SILENCE);

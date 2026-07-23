@@ -14,7 +14,8 @@ const now = 1_720_000_000_000;
 const base = createDefaultGameplay6WorldProfile(now);
 assert.equal(base.patch, GAMEPLAY6_PATCH);
 assert.equal(base.points, 0);
-assert.equal(Object.keys(base.sectors).length, 6);
+assert.equal(Object.keys(base.sectors).length, 7);
+assert.equal(base.sectors.stormbreak_canal.sectorId, 'STORMBREAK');
 assert.equal(base.sectors.grid_bunker.tier, 1);
 
 const contribution = computeGameplay6Contribution({

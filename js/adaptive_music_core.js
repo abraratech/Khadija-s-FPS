@@ -13,7 +13,8 @@ export const MAP_MUSIC_PROFILES = Object.freeze({
   neon_depot: Object.freeze({ id: 'neon_depot', rootHz: 51.91, colorHz: 760, pulseBpm: 96, mode: Object.freeze([1, 1.2599, 1.4983, 1.8877]) }),
   parking_garage: Object.freeze({ id: 'parking_garage', rootHz: 41.20, colorHz: 360, pulseBpm: 78, mode: Object.freeze([1, 1.1892, 1.4142, 1.6818]) }),
   hospital_wing: Object.freeze({ id: 'hospital_wing', rootHz: 48.99, colorHz: 640, pulseBpm: 84, mode: Object.freeze([1, 1.1225, 1.3348, 1.7818]) }),
-  reactor_courtyard: Object.freeze({ id: 'reactor_courtyard', rootHz: 55.00, colorHz: 900, pulseBpm: 102, mode: Object.freeze([1, 1.2599, 1.4983, 2.0000]) })
+  reactor_courtyard: Object.freeze({ id: 'reactor_courtyard', rootHz: 55.00, colorHz: 900, pulseBpm: 102, mode: Object.freeze([1, 1.2599, 1.4983, 2.0000]) }),
+  stormbreak_canal: Object.freeze({ id: 'stormbreak_canal', rootHz: 46.25, colorHz: 720, pulseBpm: 94, mode: Object.freeze([1, 1.1892, 1.4142, 1.7818]) })
 });
 
 const MAP_ALIASES = Object.freeze({
@@ -33,7 +34,10 @@ const MAP_ALIASES = Object.freeze({
   hospitalwing: 'hospital_wing',
   reactor: 'reactor_courtyard',
   courtyard: 'reactor_courtyard',
-  reactorcourtyard: 'reactor_courtyard'
+  reactorcourtyard: 'reactor_courtyard',
+  stormbreak: 'stormbreak_canal',
+  canal: 'stormbreak_canal',
+  stormbreakcanal: 'stormbreak_canal'
 });
 
 function clamp(value, minimum, maximum, fallback) {

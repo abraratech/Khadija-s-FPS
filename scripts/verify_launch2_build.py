@@ -667,6 +667,56 @@ def main() -> None:
                     f"ENDGAME.1 production runtime file missing: {required_runtime}"
                 )
 
+    content2 = manifest.get("content2", {})
+    if current_release.get("patch") == "content2-r1-new-arena-enemy-expansion":
+        if content2.get("patch") != current_release.get("patch"):
+            raise SystemExit("CONTENT.2 production manifest patch mismatch")
+        for field in (
+            "host_authoritative",
+            "late_join_restoration",
+            "protocol_unchanged",
+            "frontend_only",
+            "pvp_isolation",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if content2.get(field) is not True:
+                raise SystemExit(f"CONTENT.2 production policy mismatch: {field}")
+        if content2.get("worker_change_required") is not False:
+            raise SystemExit("CONTENT.2 must remain Worker-neutral")
+        if content2.get("new_enemy_faction_included") is not False:
+            raise SystemExit("CONTENT.2 must not introduce a new enemy faction")
+        if content2.get("enemy_archetypes") != ["WARDEN", "STALKER", "SAPPER"]:
+            raise SystemExit("CONTENT.2 enemy archetype registry mismatch")
+        arena = content2.get("arena", {})
+        if arena.get("id") != "stormbreak_canal" or arena.get("single_level") is not True:
+            raise SystemExit("CONTENT.2 arena registry mismatch")
+        if release_descriptor.get("productVersion") != content2.get("product_version"):
+            raise SystemExit("CONTENT.2 product version mismatch")
+        if release_descriptor.get("sourceBaselineSha") != content2.get("source_baseline_sha"):
+            raise SystemExit("CONTENT.2 source baseline mismatch")
+        if release_descriptor.get("workerBaselineSha") != content2.get("worker_baseline_sha"):
+            raise SystemExit("CONTENT.2 Worker baseline mismatch")
+        if release_descriptor.get("workerChangeRequired") is not False:
+            raise SystemExit("CONTENT.2 release descriptor must remain frontend-only")
+        for required_runtime in (
+            "js/content2_core.js",
+            "js/content2_enemy_visuals.js",
+            "js/maps/stormbreak_canal.js",
+            "js/maps/map_registry.js",
+            "js/map.js",
+            "js/enemy.js",
+            "js/content1.js",
+            "js/content1_core.js",
+            "js/objectives.js",
+            "js/multiplayer/shared_world.js",
+            "index.html",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"CONTENT.2 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

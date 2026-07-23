@@ -57,6 +57,12 @@ const MAP_ROUTE_ANCHORS = Object.freeze({
     [-40, 24], [-18, 24], [0, 24], [18, 24], [40, 24],
     [-14, -12], [14, 12], [-14, 12], [14, -12]
   ]),
+  stormbreak_canal: Object.freeze([
+    Object.freeze({ x: 0, z: -26 }),
+    Object.freeze({ x: 0, z: 26 }),
+    Object.freeze({ x: -30, z: 0 }),
+    Object.freeze({ x: 30, z: 0 })
+  ]),
   reactor_courtyard: Object.freeze([
     [-38, -28], [-20, -30], [0, -30], [20, -30], [38, -28],
     [-38, 0], [-24, 0], [-12, 0], [12, 0], [24, 0], [38, 0],

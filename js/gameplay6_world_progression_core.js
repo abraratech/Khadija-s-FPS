@@ -38,7 +38,8 @@ export const GAMEPLAY6_SECTORS = Object.freeze({
   neon_depot: Object.freeze({ id: 'NEON-RELAY', label: 'Neon Relay Sector', region: 'URBAN CORRIDOR' }),
   parking_garage: Object.freeze({ id: 'CONCRETE-ROUTE', label: 'Concrete Route Sector', region: 'URBAN CORRIDOR' }),
   hospital_wing: Object.freeze({ id: 'WHITE-WING', label: 'White Wing Sector', region: 'CONTAINMENT CORE' }),
-  reactor_courtyard: Object.freeze({ id: 'RED-CORE', label: 'Red Core Sector', region: 'CONTAINMENT CORE' })
+  reactor_courtyard: Object.freeze({ id: 'RED-CORE', label: 'Red Core Sector', region: 'CONTAINMENT CORE' }),
+  stormbreak_canal: Object.freeze({ id: 'STORMBREAK', label: 'Stormbreak Sector', region: 'COASTAL DEFENSE' })
 });
 
 function finite(value, fallback = 0) {

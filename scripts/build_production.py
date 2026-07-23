@@ -140,6 +140,12 @@ ENDGAME1_SOURCE_BASELINE_SHA = 'b99543d4f233d8d5284f48ae0c6df0d4a528a362'
 ENDGAME1_WORKER_BASELINE_SHA = '2a038bef08f3d27a71159ac6ef597139acfc58b1'
 ENDGAME1_BASELINE_WORKER_VERSION_ID = '4f384856-891f-4563-b148-148c2f90cd98'
 ENDGAME1_RELEASE_SEQUENCE = 2026072301
+CONTENT2_PATCH = 'content2-r1-new-arena-enemy-expansion'
+CONTENT2_PRODUCT_VERSION = '1.12.0-content2-r1'
+CONTENT2_SOURCE_BASELINE_SHA = '501cc5ef8578569cbb727859188256c7ea81f5d9'
+CONTENT2_WORKER_BASELINE_SHA = 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef'
+CONTENT2_BASELINE_WORKER_VERSION_ID = '879cb83e-cfac-47eb-8b9a-f8d43f39aa97'
+CONTENT2_RELEASE_SEQUENCE = 2026072302
 LEGACY_FINAL2_PRODUCTION_BUILD = "FINAL2_PRODUCTION_BUILD"  # stable contract marker
 ROOT_FILES = ("index.html", "moderation.html", "favicon.ico", "multiplayer-release.json", "release-version.json", "pvp-production-seal.json", "_headers")
 ROOT_DIRS = ("assets", "css", "js")
@@ -778,6 +784,7 @@ def main() -> None:
             "grid_bunker",
             "industrial_yard",
             "hospital_wing",
+            "stormbreak_canal",
         ],
         "pvp_excluded": True,
         "host_authoritative": True,
@@ -853,6 +860,7 @@ def main() -> None:
             "parking_garage",
             "hospital_wing",
             "reactor_courtyard",
+            "stormbreak_canal",
         ],
         "map_specific_briefings": True,
         "stage_transmissions": True,
@@ -897,6 +905,7 @@ def main() -> None:
             "parking_garage",
             "hospital_wing",
             "reactor_courtyard",
+            "stormbreak_canal",
         ],
         "persistent_world_state": True,
         "sector_progression": True,
@@ -940,6 +949,7 @@ def main() -> None:
             "parking_garage",
             "hospital_wing",
             "reactor_courtyard",
+            "stormbreak_canal",
         ],
         "dynamic_sector_control": True,
         "secured_contested_overrun_states": True,
@@ -1062,16 +1072,43 @@ def main() -> None:
         "crazygames_readiness_on_hold": True,
         "android_readiness_on_hold": True,
     },
+        "content2": {
+        "schema": 1,
+        "patch": CONTENT2_PATCH,
+        "product_version": CONTENT2_PRODUCT_VERSION,
+        "source_baseline_sha": CONTENT2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": CONTENT2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": CONTENT2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": CONTENT2_RELEASE_SEQUENCE,
+        "arena": {
+            "id": "stormbreak_canal",
+            "label": "Stormbreak Canal",
+            "single_level": True,
+            "interactive_floodgates": True,
+            "electrical_lane_traps": True,
+            "low_gpu_compatible": True,
+        },
+        "enemy_archetypes": ["WARDEN", "STALKER", "SAPPER"],
+        "host_authoritative": True,
+        "late_join_restoration": True,
+        "protocol_unchanged": True,
+        "worker_change_required": False,
+        "frontend_only": True,
+        "pvp_isolation": True,
+        "new_enemy_faction_included": False,
+        "crazygames_readiness_on_hold": True,
+        "android_readiness_on_hold": True,
+    },
         "current_release": {
         "schema": 1,
-        "patch": ENDGAME1_PATCH,
-        "source_baseline_sha": ENDGAME1_SOURCE_BASELINE_SHA,
-        "worker_baseline_sha": ENDGAME1_WORKER_BASELINE_SHA,
-        "baseline_worker_version_id": ENDGAME1_BASELINE_WORKER_VERSION_ID,
-        "release_sequence": ENDGAME1_RELEASE_SEQUENCE,
+        "patch": CONTENT2_PATCH,
+        "source_baseline_sha": CONTENT2_SOURCE_BASELINE_SHA,
+        "worker_baseline_sha": CONTENT2_WORKER_BASELINE_SHA,
+        "baseline_worker_version_id": CONTENT2_BASELINE_WORKER_VERSION_ID,
+        "release_sequence": CONTENT2_RELEASE_SEQUENCE,
         "release_descriptor": "release-version.json",
         "paired_seal_descriptor": "pvp-production-seal.json",
-        "worker_change_required": True,
+        "worker_change_required": False,
     },
     "built_at_utc": datetime.now(timezone.utc).isoformat(),
         "file_count": len(copied),

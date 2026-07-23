@@ -7,7 +7,8 @@ export const GAMEPLAY3_STAGE_WAVES = Object.freeze([4, 7, 10]);
 export const GAMEPLAY3_SUPPORTED_MAPS = Object.freeze([
   'grid_bunker',
   'industrial_yard',
-  'hospital_wing'
+  'hospital_wing',
+  'stormbreak_canal'
 ]);
 
 const CONTROL_ACTIVE_MS = 20000;
@@ -60,6 +61,28 @@ const MAP_PROFILES = Object.freeze({
       'CRANE SHIFT',
       'FUEL-LINE PRESSURE',
       'HEAVY LIFT CYCLE'
+    ])
+  }),
+  stormbreak_canal: Object.freeze({
+    mapId: 'stormbreak_canal',
+    label: 'FLOODGATE SHIFT',
+    control: Object.freeze({
+      id: 'stormbreak_flood_override',
+      kind: 'FLOOD_OVERRIDE',
+      label: 'FLOODGATE ROUTE CONTROL',
+      x: 0,
+      z: -17,
+      radius: 3.4
+    }),
+    routeA: Object.freeze({ id: 'stormbreak_gate_west', x: -18, z: -31, w: 9, h: 3.6, d: 1.2 }),
+    routeB: Object.freeze({ id: 'stormbreak_gate_east', x: 18, z: 31, w: 9, h: 3.6, d: 1.2 }),
+    cover: Object.freeze({ id: 'stormbreak_pump_cover', x: 0, z: 17, w: 18, h: 1.7, d: 3.2 }),
+    hazard: Object.freeze({ id: 'stormbreak_arc_channel', x: 0, z: 0, radius: 5.0, damage: 8 }),
+    phaseLabels: Object.freeze([
+      'CANAL FLOW STABLE',
+      'FLOODGATE SHIFT',
+      'PUMP SURGE',
+      'STORMBREAK OVERRIDE'
     ])
   }),
   hospital_wing: Object.freeze({

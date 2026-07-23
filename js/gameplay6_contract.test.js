@@ -66,14 +66,14 @@ assert.match(summary, /gameplay6WorldPoints/);
 assert.match(hud, /GAMEPLAY\.6 R1 — persistent world progression readout/);
 assert.match(hud, /\.ka-gameplay6-world/);
 
-assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
-assert.equal(release.productVersion, '1.11.0-endgame1-r1');
-assert.equal(release.releaseSequence, 2026072301);
-assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
-assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
-assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, true);
-assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
+assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
+assert.equal(release.productVersion, '1.12.0-content2-r1');
+assert.equal(release.releaseSequence, 2026072302);
+assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+assert.equal(release.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(metadata.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
 assert.equal(metadata.gameplay6?.patch, 'gameplay6-r1-world-progression');
 assert.deepEqual(metadata.gameplay6?.supportedMaps, [
   'grid_bunker',
@@ -81,7 +81,8 @@ assert.deepEqual(metadata.gameplay6?.supportedMaps, [
   'neon_depot',
   'parking_garage',
   'hospital_wing',
-  'reactor_courtyard'
+  'reactor_courtyard',
+  'stormbreak_canal'
 ]);
 for (const field of [
   'persistentWorldState',
@@ -108,8 +109,8 @@ for (const field of [
   assert.equal(metadata.gameplay6?.[field], true, `Missing GAMEPLAY.6 policy: ${field}`);
 }
 assert.equal(metadata.gameplay6?.workerChangeRequired, false);
-assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
-assert.match(updateDelivery, /releaseSequence: 2026072301/);
+assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
+assert.match(updateDelivery, /releaseSequence: 2026072302/);
 assert.match(buildProduction, /GAMEPLAY6_RELEASE_SEQUENCE = 2026072104/);
 assert.match(buildProduction, /"gameplay6":/);
 assert.match(verifyProduction, /GAMEPLAY\.6 production manifest patch mismatch/);

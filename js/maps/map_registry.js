@@ -7,6 +7,7 @@ export const MAP_IDS = Object.freeze({
   PARKING_GARAGE: 'parking_garage',
   HOSPITAL_WING: 'hospital_wing',
   REACTOR_COURTYARD: 'reactor_courtyard',
+  STORMBREAK_CANAL: 'stormbreak_canal',
   CROSSFIRE_TERMINAL: 'crossfire_terminal',
   FOUNDRY_RING: 'foundry_ring',
   SKYLINE_RELAY: 'skyline_relay'
@@ -115,6 +116,25 @@ export const MAP_REGISTRY = Object.freeze({
     accentColor: '#19d8ff'
   },
 
+  [MAP_IDS.STORMBREAK_CANAL]: {
+    id: MAP_IDS.STORMBREAK_CANAL,
+    name: 'Stormbreak Canal',
+    subtitle: 'Flood-Control Nexus',
+    description: 'Single-level flood-control arena with twin canal lanes, pump-house flanks, unlockable floodgates, and electrical lane traps.',
+    status: 'stable',
+    playable: true,
+    legacyIndex: 11,
+    rotationRole: 'Cross-lane control',
+    recommendedDifficulty: 'normal',
+    difficultyFeel: 'high',
+    navigation: 'open-medium',
+    spawnProfile: 'outer ring + floodgates',
+    previewSize: 'large single level',
+    accentColor: '#28d7ef',
+    content2Arena: true,
+    pvpFocused: false
+  },
+
   [MAP_IDS.CROSSFIRE_TERMINAL]: {
     id: MAP_IDS.CROSSFIRE_TERMINAL,
     name: 'Crossfire Terminal',
@@ -165,7 +185,8 @@ const LEGACY_INDEX_TO_ID = Object.freeze({
   7: MAP_IDS.REACTOR_COURTYARD,
   8: MAP_IDS.CROSSFIRE_TERMINAL,
   9: MAP_IDS.FOUNDRY_RING,
-  10: MAP_IDS.SKYLINE_RELAY
+  10: MAP_IDS.SKYLINE_RELAY,
+  11: MAP_IDS.STORMBREAK_CANAL
 });
 
 export function normalizeMapId(mapId) {

@@ -53,6 +53,15 @@ const MAP_OPERATIONS = Object.freeze({
     xp: CONTENT1_OPERATION_XP,
     anchor: Object.freeze({ x: 0, z: 0, radius: 10 })
   }),
+  stormbreak_canal: Object.freeze({
+    id: 'STORMBREAK_LOCKOUT',
+    label: 'Stormbreak Lockout',
+    description: 'Eliminate 3 specialist hostiles while flood controls recover.',
+    kind: 'ELITE_KILL',
+    target: 3,
+    xp: CONTENT1_OPERATION_XP,
+    anchor: Object.freeze({ x: 0, z: 0, radius: 14 })
+  }),
   reactor_courtyard: Object.freeze({
     id: 'REACTOR_PURGE',
     label: 'Reactor Purge',
@@ -95,6 +104,14 @@ export const CONTENT1_ENCOUNTERS = Object.freeze([
     minWave: 5,
     announcement: 'ENCOUNTER · TOXIC FRONT',
     weights: Object.freeze({ RANGED: 2.05, CRAWLER: 1.12 }),
+    elite: false
+  }),
+  Object.freeze({
+    id: 'BREACH_SPECIALISTS',
+    label: 'Breach Specialists',
+    minWave: 5,
+    announcement: 'ENCOUNTER · BREACH SPECIALISTS',
+    weights: Object.freeze({ WARDEN: 1.65, STALKER: 1.45, SAPPER: 1.35 }),
     elite: false
   }),
   Object.freeze({

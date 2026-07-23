@@ -97,8 +97,8 @@ const COMMAND_INTERVAL_MS = 45;
 const ZONE_TICK_INTERVAL_MS = 1000;
 const INTERACT_TICK_INTERVAL_MS = 250;
 const SURVIVOR_TICK_INTERVAL_MS = 200;
-const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']);
-const MUTATION_ELITE_TYPES = new Set(['RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED']);
+const PRIORITY_TYPES = new Set(['SHAMBLER', 'RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED', 'WARDEN', 'STALKER', 'SAPPER']);
+const MUTATION_ELITE_TYPES = new Set(['RUNNER', 'BRUTE', 'GOLIATH', 'EXPLODER', 'RANGED', 'WARDEN', 'STALKER', 'SAPPER']);
 const OBJECTIVE_HUD_KEY = 'ka_objective_hud_mode_v1';
 const RUN_CHALLENGES_HUD_KEY = 'ka_run_challenges_visibility_v1';
 const OBJECTIVE_HUD_MODES = Object.freeze(['full', 'compact', 'hidden']);
@@ -140,7 +140,8 @@ function roleColor(mapId) {
     neon_depot: '#ff4fd8',
     parking_garage: '#6ee7ff',
     hospital_wing: '#5df2a5',
-    reactor_courtyard: '#ff6b45'
+    reactor_courtyard: '#ff6b45',
+    stormbreak_canal: '#28d7ef'
   };
   return colors[String(mapId || '')] || '#00d4ff';
 }

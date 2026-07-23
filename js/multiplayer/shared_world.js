@@ -1,5 +1,6 @@
 // js/multiplayer/shared_world.js
 
+import { getContent2IncomingDamageScale } from '../content2_core.js';
 import * as THREE from 'three';
 import { createProceduralZombieVisual } from '../actors/procedural_zombie.js';
 import { MULTIPLAYER_RUNTIME_EVENTS } from './runtime.js';
@@ -913,9 +914,10 @@ getRemoteAuthorityTargets(now = nowMs()) {
         headshot: hit?.headshot === true
       })) || 1
     ));
+    const content2DamageScale = getContent2IncomingDamageScale(enemy.type, { headshot: hit?.headshot === true });
     const damage = Math.max(1, Math.min(
       Math.round(MAX_REMOTE_DAMAGE * 2),
-      Math.round(baseDamage * gameplay4DamageScale)
+      Math.round(baseDamage * gameplay4DamageScale * content2DamageScale)
     ));
     const previousHealth = Math.max(0, Number(enemy.health) || 0);
     const killed = previousHealth > 0 && previousHealth - damage <= 0;

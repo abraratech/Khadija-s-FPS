@@ -7,9 +7,10 @@ export const ORIGINAL_MUSIC_TRACKS = Object.freeze({
   ambient_neon_depot: 'ambient_neon_depot',
   ambient_parking_garage: 'ambient_parking_garage',
   ambient_hospital_wing: 'ambient_hospital_wing',
-  ambient_reactor_courtyard: 'ambient_reactor_courtyard'
+  ambient_reactor_courtyard: 'ambient_reactor_courtyard',
+  ambient_stormbreak_canal: 'ambient_reactor_courtyard'
 });
-const MAPS = Object.freeze(['grid_bunker','industrial_yard','neon_depot','parking_garage','hospital_wing','reactor_courtyard']);
+const MAPS = Object.freeze(['grid_bunker','industrial_yard','neon_depot','parking_garage','hospital_wing','reactor_courtyard','stormbreak_canal']);
 function token(value){return String(value??'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
 export function normalizeOriginalMusicMap(value){const t=token(value);return MAPS.includes(t)?t:'grid_bunker';}
 export function selectOriginalMusicTrack({state='silence',mapId='grid_bunker'}={}){

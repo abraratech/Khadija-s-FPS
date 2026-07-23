@@ -13,7 +13,8 @@ export const LIVE1_ARENAS = Object.freeze([
   Object.freeze({ id: 'neon_depot', label: 'Neon Depot', operationId: 'NEON_BLACKOUT' }),
   Object.freeze({ id: 'parking_garage', label: 'Parking Garage', operationId: 'GARAGE_HOLD' }),
   Object.freeze({ id: 'hospital_wing', label: 'Hospital Wing', operationId: 'TRIAGE_RECOVERY' }),
-  Object.freeze({ id: 'reactor_courtyard', label: 'Reactor Courtyard', operationId: 'REACTOR_PURGE' })
+  Object.freeze({ id: 'reactor_courtyard', label: 'Reactor Courtyard', operationId: 'REACTOR_PURGE' }),
+  Object.freeze({ id: 'stormbreak_canal', label: 'Stormbreak Canal', operationId: 'STORMBREAK_LOCKOUT' })
 ]);
 
 export const LIVE1_ENCOUNTERS = Object.freeze([
@@ -21,7 +22,8 @@ export const LIVE1_ENCOUNTERS = Object.freeze([
   Object.freeze({ id: 'HEAVY_PRESSURE', label: 'Heavy Pressure', description: 'Brute pressure is featured.' }),
   Object.freeze({ id: 'VOLATILE_SURGE', label: 'Volatile Surge', description: 'Exploder pressure is featured.' }),
   Object.freeze({ id: 'TOXIC_FRONT', label: 'Toxic Front', description: 'Spitter pressure is featured.' }),
-  Object.freeze({ id: 'ELITE_HUNT', label: 'Elite Hunt', description: 'Elite targets are featured.' })
+  Object.freeze({ id: 'ELITE_HUNT', label: 'Elite Hunt', description: 'Elite targets are featured.' }),
+  Object.freeze({ id: 'BREACH_SPECIALISTS', label: 'Breach Specialists', description: 'Warden, Stalker, and Sapper pressure is featured.' })
 ]);
 
 export const LIVE1_CONTRACT_STAGES = Object.freeze([

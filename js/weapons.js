@@ -1,5 +1,6 @@
 // js/weapons.js
 import * as THREE from 'three';
+import { getContent2IncomingDamageScale } from './content2_core.js';
 import { camera, muzzleLight, mapMeshes, scene, addScreenShake, doors, openDoor, barricades, traps, walls, spawnPoints, currentMapId, updateBarricadeRepairGhost } from './map.js';
 import { player } from './player.js';
 import { activeEnemies, killEnemy, getEnemyPointReward, currentWave } from './enemy.js';
@@ -3704,9 +3705,10 @@ const gameplay4DamageScale = Math.max(0.5, Math.min(2,
     headshot: hs
   })) || 1
 ));
+const content2DamageScale = getContent2IncomingDamageScale(e.type, { headshot: hs });
 const appliedDamage = isInstaKill
   ? finalDamage
-  : Math.max(1, Math.round(finalDamage * gameplay4DamageScale));
+  : Math.max(1, Math.round(finalDamage * gameplay4DamageScale * content2DamageScale));
 const wasHealth = e.health;
     const killed = wasHealth > 0 && wasHealth - appliedDamage <= 0;
 

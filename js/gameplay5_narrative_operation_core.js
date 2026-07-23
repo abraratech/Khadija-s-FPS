@@ -148,6 +148,24 @@ const MAP_STORIES = Object.freeze({
     complete: 'The hospital corridor is open and the evacuation is complete.',
     failed: 'The hospital evacuation corridor collapsed before transport arrived.'
   }),
+  stormbreak_canal: Object.freeze({
+    operationId: 'STORMBREAK-DIRECTIVE',
+    title: 'Stormbreak Directive',
+    source: 'FLOOD CONTROL',
+    premise: 'Hostile specialists seized the coastal flood-control nexus. Restore pump authority, recover the gate key, and keep the canal from becoming an invasion route.',
+    stages: Object.freeze([
+      stageLine('CANAL APPROACH', 'Secure the pump-house approaches and open a route to flood control.'),
+      stageLine('PUMP AUTHORITY', 'Restore primary pump authority before the canal backs up.'),
+      stageLine('GATE KEY WINDOW', 'Recover the floodgate key before the emergency lockout.'),
+      stageLine('CONTROL ISLAND', 'Hold the control island while the gate sequence synchronizes.'),
+      stageLine('WARDEN CONTACT', 'A Warden is anchoring the breach force. Eliminate it.'),
+      stageLine('STORMBREAK EXIT', 'Hold the canal exit until coastal control confirms containment.')
+    ]),
+    secured: 'The floodgate key was recovered. Pump authority and extraction timing improve.',
+    lost: 'The floodgate key was lost. The final hold proceeds under manual control.',
+    complete: 'Stormbreak Canal is secured and the coastal breach route is closed.',
+    failed: 'The flood-control nexus was lost before containment could be restored.'
+  }),
   reactor_courtyard: Object.freeze({
     operationId: 'RED-CORE-DIRECTIVE',
     title: 'Red Core Directive',

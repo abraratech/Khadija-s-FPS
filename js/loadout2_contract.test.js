@@ -16,12 +16,12 @@ const updateDelivery = read('./update_delivery_core.js');
 const build = read('../scripts/build_production.py');
 const verifier = read('../scripts/verify_launch2_build.py');
 
-assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
-assert.equal(release.productVersion, '1.11.0-endgame1-r1');
-assert.equal(release.releaseSequence, 2026072301);
-assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
-assert.equal(release.workerChangeRequired, true);
-assert.equal(multiplayerRelease.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
+assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
+assert.equal(release.productVersion, '1.12.0-content2-r1');
+assert.equal(release.releaseSequence, 2026072302);
+assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(multiplayerRelease.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
 assert.equal(multiplayerRelease.loadout2.functionalFieldKnife, true);
 assert.equal(multiplayerRelease.loadout2.pvpMeleeDisabled, true);
 assert.equal(multiplayerRelease.loadout2.protocolUnchanged, true);
@@ -36,7 +36,7 @@ assert.match(runtime, /finalizeLoadout2Run/);
 assert.match(core, /idempotent/);
 assert.match(cloud, /mergedLoadout2/);
 assert.match(summary, /recordRunLoadout2Mastery/);
-assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
+assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
 assert.match(build, /LOADOUT2_PATCH/);
 assert.match(verifier, /LOADOUT\.2 production manifest patch mismatch/);
 

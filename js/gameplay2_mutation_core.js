@@ -27,7 +27,8 @@ const MAP_HAZARD_ANCHORS = Object.freeze({
   neon_depot: Object.freeze([{ x: -14, z: -10 }, { x: 14, z: -10 }, { x: -14, z: 10 }, { x: 14, z: 10 }]),
   parking_garage: Object.freeze([{ x: -16, z: -12 }, { x: 16, z: -12 }, { x: -16, z: 12 }, { x: 16, z: 12 }]),
   hospital_wing: Object.freeze([{ x: -12, z: -9 }, { x: 12, z: -9 }, { x: -12, z: 9 }, { x: 12, z: 9 }]),
-  reactor_courtyard: Object.freeze([{ x: -18, z: -12 }, { x: 18, z: -12 }, { x: -18, z: 12 }, { x: 18, z: 12 }])
+  reactor_courtyard: Object.freeze([{ x: -18, z: -12 }, { x: 18, z: -12 }, { x: -18, z: 12 }, { x: 18, z: 12 }]),
+  stormbreak_canal: Object.freeze([{ x: -25, z: -16 }, { x: 25, z: -16 }, { x: -25, z: 16 }, { x: 25, z: 16 }])
 });
 
 const DEFINITIONS = Object.freeze({

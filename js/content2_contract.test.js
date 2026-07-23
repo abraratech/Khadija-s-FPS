@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const release = JSON.parse(fs.readFileSync(new URL('../multiplayer-release.json', import.meta.url), 'utf8'));
+const version = JSON.parse(fs.readFileSync(new URL('../release-version.json', import.meta.url), 'utf8'));
+const index = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const mapRegistry = fs.readFileSync(new URL('./maps/map_registry.js', import.meta.url), 'utf8');
+const mapRuntime = fs.readFileSync(new URL('./map.js', import.meta.url), 'utf8');
+const enemyRuntime = fs.readFileSync(new URL('./enemy.js', import.meta.url), 'utf8');
+const multiplayerLobby = fs.readFileSync(new URL('./multiplayer/lobby_ui.js', import.meta.url), 'utf8');
+const workerPackage = JSON.parse(fs.readFileSync(new URL('../multiplayer-server/package.json', import.meta.url), 'utf8'));
+const updateDelivery = fs.readFileSync(new URL('./update_delivery_core.js', import.meta.url), 'utf8');
+const build = fs.readFileSync(new URL('../scripts/build_production.py', import.meta.url), 'utf8');
+const verifier = fs.readFileSync(new URL('../scripts/verify_launch2_build.py', import.meta.url), 'utf8');
+const stormbreak = fs.readFileSync(new URL('./maps/stormbreak_canal.js', import.meta.url), 'utf8');
+const pvpRules = fs.readFileSync(new URL('./multiplayer/pvp3_rules_core.js', import.meta.url), 'utf8');
+const pvpCompletion = fs.readFileSync(new URL('./multiplayer/pvp5_core.js', import.meta.url), 'utf8');
+
+assert.equal(version.releaseId, 'content2-r1-new-arena-enemy-expansion');
+assert.equal(version.productVersion, '1.12.0-content2-r1');
+assert.equal(version.workerChangeRequired, false);
+assert.equal(version.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(version.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+assert.equal(release.protocol, 6);
+assert.equal(release.content?.arenaCount, 7);
+assert.equal(release.content2?.protocolUnchanged, true);
+assert.equal(release.content2?.workerChangeRequired, false);
+assert.equal(release.content2?.pvpIsolation, true);
+assert.deepEqual(release.content2?.enemyArchetypes.map((entry) => entry.id), ['WARDEN', 'STALKER', 'SAPPER']);
+assert.match(index, /data-map="stormbreak_canal"/);
+assert.match(index, /Stormbreak Canal/);
+assert.match(mapRegistry, /STORMBREAK_CANAL/);
+assert.match(mapRuntime, /buildStormbreakCanal/);
+assert.match(enemyRuntime, /name: "WARDEN"/);
+assert.match(enemyRuntime, /name: "STALKER"/);
+assert.match(enemyRuntime, /name: "SAPPER"/);
+assert.match(multiplayerLobby, /'stormbreak_canal'/);
+assert.equal(release.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
+assert.equal(release.productVersion, '1.12.0-content2-r1');
+assert.equal(release.content2?.schema, 1);
+assert.equal(release.content2?.productVersion, '1.12.0-content2-r1');
+assert.equal(release.content2?.releaseSequence, 2026072302);
+assert.equal(release.content2?.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.content2?.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+assert.equal(release.content2?.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
+assert.equal(release.content2?.frontendOnly, true);
+assert.equal(release.content2?.newEnemyFactionIncluded, false);
+for (const key of ['gameplay3', 'gameplay5', 'gameplay6', 'gameplay7']) {
+  assert.ok(release[key]?.supportedMaps?.includes('stormbreak_canal'), `${key} must include Stormbreak Canal`);
+}
+assert.match(stormbreak, /context\.doors\.push\(block\)/);
+assert.match(updateDelivery, /content2-r1-new-arena-enemy-expansion/);
+assert.match(updateDelivery, /releaseSequence: 2026072302/);
+assert.match(build, /CONTENT2_PATCH = 'content2-r1-new-arena-enemy-expansion'/);
+assert.match(build, /"content2": \{/);
+assert.match(verifier, /CONTENT\.2 production manifest patch mismatch/);
+assert.doesNotMatch(pvpRules, /WARDEN|STALKER|SAPPER|stormbreak_canal/);
+assert.doesNotMatch(pvpCompletion, /WARDEN|STALKER|SAPPER|stormbreak_canal/);
+assert.equal(workerPackage.version, '1.11.0-endgame1-r1');
+
+console.log('CONTENT.2 source integration and unchanged-protocol contract passed');

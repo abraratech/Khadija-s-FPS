@@ -66,20 +66,26 @@ const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.inde
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
 
 
-assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
-assert.equal(release.productVersion, '1.11.0-endgame1-r1');
-assert.equal(release.releaseSequence, 2026072301);
-assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
-assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
-assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, true);
-assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
+assert.equal(release.releaseId, 'content2-r1-new-arena-enemy-expansion');
+assert.equal(release.productVersion, '1.12.0-content2-r1');
+assert.equal(release.releaseSequence, 2026072302);
+assert.equal(release.sourceBaselineSha, '501cc5ef8578569cbb727859188256c7ea81f5d9');
+assert.equal(release.workerBaselineSha, 'cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef');
+assert.equal(release.baselineWorkerVersionId, '879cb83e-cfac-47eb-8b9a-f8d43f39aa97');
+assert.equal(release.workerChangeRequired, false);
+assert.equal(metadata.releaseLabel, 'CONTENT.2 R1 - New Arena and Enemy Expansion');
 assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
+assert.deepEqual(metadata.gameplay3?.supportedMaps, [
+  'grid_bunker',
+  'industrial_yard',
+  'hospital_wing',
+  'stormbreak_canal'
+]);
 assert.equal(metadata.gameplay3?.pvpExcluded, true);
 assert.equal(metadata.gameplay3?.workerChangeRequired, false);
-assert.match(updateDeliveryCore, /endgame1-r1-high-difficulty-operations/);
-assert.match(updateDeliveryCore, /releaseSequence: 2026072301/);
+assert.match(updateDeliveryCore, /content2-r1-new-arena-enemy-expansion/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072302/);
 assert.match(buildProduction, /GAMEPLAY3_PATCH/);
 assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
 assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);

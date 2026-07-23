@@ -20,6 +20,9 @@ const OBJECTIVES = Object.freeze({
   hospital_wing: Object.freeze({
     id: 'TRIAGE_PROTOCOL', label: 'Triage Protocol', description: 'Clear 3 waves with at least 70% health.', kind: 'HEALTHY_WAVES', target: 3, points: 750, xp: 150
   }),
+  stormbreak_canal: Object.freeze({
+    id: 'FLOODGATE_SUPPRESSION', label: 'Floodgate Suppression', description: 'Eliminate 8 specialist enemies.', kind: 'SPECIALIST_KILLS', target: 8, points: 850, xp: 175
+  }),
   reactor_courtyard: Object.freeze({
     id: 'CONTAINMENT_SWEEP', label: 'Containment Sweep', description: 'Eliminate 14 enemies inside the marked containment zone.', kind: 'ZONE_KILLS', target: 14, points: 800, xp: 165
   })
@@ -98,13 +101,15 @@ export function endObjectivesRun() {
 export function recordObjectiveKill({
   headshot = false,
   distance = 0,
-  position = null
+  position = null,
+  enemyType = ''
 } = {}) {
   const kind = state.objective?.kind;
   if (kind === 'KILLS') return advance(1);
   if (kind === 'LONGSHOT_KILLS' && Number(distance) >= 18) return advance(1);
   if (kind === 'HEADSHOT_KILLS' && headshot) return advance(1);
   if (kind === 'CLOSE_KILLS' && Number(distance) <= 6) return advance(1);
+  if (kind === 'SPECIALIST_KILLS' && ['WARDEN', 'STALKER', 'SAPPER'].includes(String(enemyType || '').toUpperCase())) return advance(1);
 
   if (kind === 'ZONE_KILLS') {
     const anchor = state.objective?.worldAnchor;

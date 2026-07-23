@@ -1,5 +1,5 @@
 // POST-LAUNCH.4 R1 — deterministic release comparison and refresh safety policy.
-export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'endgame1-r1-high-difficulty-operations', releaseSequence: 2026072301, productVersion: '1.11.0-endgame1-r1' });
+export const CURRENT_RELEASE = Object.freeze({ schema: 1, releaseId: 'content2-r1-new-arena-enemy-expansion', releaseSequence: 2026072302, productVersion: '1.12.0-content2-r1' });
 
 function cleanText(value, max = 160) {
   return String(value ?? '').trim().slice(0, max);

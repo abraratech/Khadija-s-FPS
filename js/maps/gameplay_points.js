@@ -331,6 +331,17 @@ const REACTOR_COURTYARD_POINTS = {
   ]
 };
 
+
+const STORMBREAK_CANAL_POINTS = {
+  BOX_SPAWNS: [v(-30, -24), v(30, 24), v(-31, 24), v(31, -24), v(0, 30), v(0, -30)],
+  WALL_SPAWNS: [v(-40, -10), v(-40, 12), v(40, -12), v(40, 10), v(-18, 28), v(18, -28)],
+  AMMO_SPAWNS: [v(-25, 0), v(25, 0), v(-15, -22), v(15, 22), v(0, -18), v(0, 18)],
+  HEALTH_SPAWNS: [v(-18, -8), v(18, 8), v(-18, 8), v(18, -8)],
+  UPGRADE_SPAWNS: [v(0, 0), v(-31, 0), v(31, 0), v(0, 27)],
+  PERK_HEALTH_SPAWNS: [v(-34, -24), v(34, 24), v(0, -29)],
+  PERK_RELOAD_SPAWNS: [v(-34, 24), v(34, -24), v(0, 29)]
+};
+
 // C8: deterministic shop spawn order. These slots make shops feel authored instead
 // of randomly scattered. The safe-placement code in weapons.js still validates the
 // final position against walls, doors, barricades, traps, and player distance.
@@ -376,6 +387,16 @@ export const MAP_SHOP_SPAWN_ORDER = Object.freeze({
     WALL_SHOTGUN: ['WALL_SPAWNS', 1, 3, 5]
   },
   [MAP_IDS.HOSPITAL_WING]: {
+    MYSTERY_BOX: ['BOX_SPAWNS', 0, 1, 2, 3, 4, 5],
+    AMMO: ['AMMO_SPAWNS', 0, 1, 2, 3, 4, 5],
+    HEALTH: ['HEALTH_SPAWNS', 0, 1, 2, 3],
+    UPGRADE: ['UPGRADE_SPAWNS', 0, 1, 2, 3],
+    PERK_HEALTH: ['PERK_HEALTH_SPAWNS', 0, 1, 2],
+    PERK_RELOAD: ['PERK_RELOAD_SPAWNS', 0, 1, 2],
+    WALL_SMG: ['WALL_SPAWNS', 0, 2, 4],
+    WALL_SHOTGUN: ['WALL_SPAWNS', 1, 3, 5]
+  },
+  [MAP_IDS.STORMBREAK_CANAL]: {
     MYSTERY_BOX: ['BOX_SPAWNS', 0, 1, 2, 3, 4, 5],
     AMMO: ['AMMO_SPAWNS', 0, 1, 2, 3, 4, 5],
     HEALTH: ['HEALTH_SPAWNS', 0, 1, 2, 3],
@@ -443,7 +464,8 @@ export const MAP_GAMEPLAY_POINTS = {
   [MAP_IDS.NEON_DEPOT]: NEON_DEPOT_POINTS,
   [MAP_IDS.PARKING_GARAGE]: PARKING_GARAGE_POINTS,
   [MAP_IDS.HOSPITAL_WING]: HOSPITAL_WING_POINTS,
-  [MAP_IDS.REACTOR_COURTYARD]: REACTOR_COURTYARD_POINTS
+  [MAP_IDS.REACTOR_COURTYARD]: REACTOR_COURTYARD_POINTS,
+  [MAP_IDS.STORMBREAK_CANAL]: STORMBREAK_CANAL_POINTS
 };
 
 export function getGameplayPointsForMap(mapId) {
@@ -543,6 +565,12 @@ export const MAP_GAMEPLAY_FLOW = Object.freeze({
   [MAP_IDS.HOSPITAL_WING]: {
     role: 'Horror corridors / quarantine pressure',
     shopFlow: 'corridor anchors + ward-room rewards',
+    pressure: 'high',
+    recommendedDifficulty: 'normal'
+  },
+  [MAP_IDS.STORMBREAK_CANAL]: {
+    role: 'Cross-lane control / floodgate pressure',
+    shopFlow: 'pump-house flank loop + exposed central upgrades',
     pressure: 'high',
     recommendedDifficulty: 'normal'
   },

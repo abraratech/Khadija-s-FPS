@@ -329,6 +329,20 @@
         linear-gradient(90deg, rgba(255,138,34,0.24) 0 9px, transparent 9px 38px, rgba(25,216,255,0.24) 38px 47px, transparent 47px),
         #111a20;
     }
+    .ka-map-shot.stormbreak-canal {
+      background:
+        linear-gradient(90deg, transparent 0 42%, rgba(20,205,235,.30) 42% 47%, rgba(2,27,35,.82) 47% 53%, rgba(20,205,235,.30) 53% 58%, transparent 58%),
+        repeating-linear-gradient(0deg, rgba(255,158,42,.11) 0 3px, transparent 3px 54px),
+        radial-gradient(circle at 22% 36%, rgba(40,215,239,.26), transparent 18%),
+        radial-gradient(circle at 78% 64%, rgba(255,158,42,.20), transparent 18%),
+        linear-gradient(135deg, #173039, #061116 64%, #25150b);
+    }
+    .ka-map-thumb.stormbreak-canal {
+      background:
+        linear-gradient(90deg, transparent 0 38%, rgba(40,215,239,.65) 38% 46%, #07171d 46% 54%, rgba(40,215,239,.65) 54% 62%, transparent 62%),
+        repeating-linear-gradient(0deg, rgba(255,158,42,.18) 0 2px, transparent 2px 18px),
+        #10242b;
+    }
     .ka-settings-layout {
       display: grid;
       grid-template-columns: 0.85fr 1.15fr;
@@ -776,6 +790,7 @@
   .ka-map-shot.parking-garage, .ka-map-thumb.parking-garage { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/parking_garage.webp'); }
   .ka-map-shot.hospital-wing, .ka-map-thumb.hospital-wing { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/hospital_wing.webp'); }
   .ka-map-shot.reactor-courtyard, .ka-map-thumb.reactor-courtyard { background-image: linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.30)), url('assets/ui/maps/reactor_courtyard.webp'); }
+  .ka-map-shot.stormbreak-canal, .ka-map-thumb.stormbreak-canal { background-size: cover; background-position: center; }
   .ka-preview-stage::after { background: linear-gradient(90deg, transparent 0 54%, rgba(0,6,11,.40) 72%, rgba(0,6,11,.78) 100%), linear-gradient(0deg, rgba(0,0,0,.28), transparent 48%); }
   .ka-preview-overlay {
     top: 16px;
@@ -1617,6 +1632,7 @@
 <option value="parking_garage">Parking Garage</option>
 <option value="hospital_wing">Hospital Wing</option>
 <option value="reactor_courtyard">Reactor Courtyard</option>
+<option value="stormbreak_canal">Stormbreak Canal</option>
 <option value="crossfire_terminal">Crossfire Terminal · PvP</option>
 <option value="foundry_ring">Foundry Ring · PvP</option>
 <option value="skyline_relay">Skyline Relay · PvP</option>
@@ -1637,7 +1653,7 @@
 <div id="menu-title">KHADIJA'S<br/>ARENA</div>
 <div id="menu-sub">Survive the outbreak. Master every arena. Fight together.</div>
 <div class="ka-home-support-row" aria-label="Game support summary">
-<span>9 UNIQUE ARENAS</span><span>SOLO + 2 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
+<span>10 UNIQUE ARENAS</span><span>SOLO + 2 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
 </div>
 <div class="ka-stats-row">
 <div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
@@ -1651,7 +1667,7 @@
 <button class="ka-mode-card active" data-next-screen="map" type="button">
 <span class="ka-card-kicker">Survival operation</span>
 <strong>Solo Survival</strong>
-<small>Choose one of six arenas, tune the difficulty, and fight through escalating swarm rounds.</small>
+<small>Choose one of seven PvE arenas, tune the difficulty, and fight through escalating swarm rounds.</small>
 <span class="ka-mode-arrow">SELECT ARENA →</span>
 </button>
 <button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" data-next-screen="multiplayer" type="button">
@@ -1687,6 +1703,7 @@
 <div class="ka-map-shot parking-garage" data-preview-shot="parking_garage"></div>
 <div class="ka-map-shot hospital-wing" data-preview-shot="hospital_wing"></div>
 <div class="ka-map-shot reactor-courtyard" data-preview-shot="reactor_courtyard"></div>
+<div class="ka-map-shot stormbreak-canal" data-preview-shot="stormbreak_canal"></div>
 <div class="ka-preview-overlay">
 <div class="ka-preview-title" id="ka-preview-title">The Grid Bunker</div>
 <div class="ka-preview-meta">
@@ -1749,6 +1766,14 @@
 <span class="ka-map-tag stable">New</span>
 <strong>Reactor Courtyard</strong>
 <small>Single-floor coolant yard with randomized contract zones, steam vents, and a purchasable reactor defense.</small>
+</div>
+</button>
+<button class="ka-map-card" data-difficulty="HARD" data-map="stormbreak_canal" type="button"><span class="ka-map-index">07</span>
+<div class="ka-map-thumb stormbreak-canal"></div>
+<div>
+<span class="ka-map-tag stable">CONTENT.2</span>
+<strong>Stormbreak Canal</strong>
+<small>Single-level flood-control nexus with pump-house flanks, unlockable floodgates, electrical traps, and specialist enemy pressure.</small>
 </div>
 </button>
 </div>
@@ -2523,6 +2548,17 @@
             nav: 'Corridor',
             recommend: 'Normal / Hard',
             brief: 'Dark corridor survival with treatment rooms, quarantine gate pressure, and tighter horror pacing.'
+          },
+          stormbreak_canal: {
+            title: 'Stormbreak Canal',
+            status: 'Playable',
+            size: 'Large single level',
+            style: 'Cross-lane control',
+            spawns: 'Outer + floodgates',
+            risk: 'High',
+            nav: 'Open-medium',
+            recommend: 'Normal / Hard',
+            brief: 'Flood-control combat with twin canal lanes, pump-house flanks, unlockable gates, and specialist enemy pressure.'
           },
           reactor_courtyard: {
             title: 'Reactor Courtyard',

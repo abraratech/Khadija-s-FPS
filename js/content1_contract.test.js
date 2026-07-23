@@ -28,7 +28,7 @@ assert.equal(
   'content1-r1-objective-operations-encounter-variety'
 );
 assert.equal(release.content?.schema, 1);
-assert.equal(release.content?.arenaCount, 6);
+assert.equal(release.content?.arenaCount, 7);
 assert.equal(release.content?.survivalModePreserved, true);
 assert.equal(release.content?.crawlerScalePreserved, true);
 

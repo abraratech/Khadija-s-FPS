@@ -277,13 +277,13 @@ export function updateAIArchetypeCoordinator(dt, {
 
     updateHitIdentity(enemy);
 
-    if (enemy.type === 'RUNNER') {
+    if (enemy.type === 'RUNNER' || enemy.type === 'STALKER') {
       if (updateRunner(enemy, safeDt, player, activeRunnerBursts)) {
         activeRunnerBursts++;
       }
-    } else if (enemy.type === 'RANGED' && enemy.spitterRepositionT > 0) {
+    } else if ((enemy.type === 'RANGED' || enemy.type === 'SAPPER') && enemy.spitterRepositionT > 0) {
       state.spitterRepositioning++;
-    } else if (enemy.type === 'BRUTE' && enemy.bruteBraceT > 0) {
+    } else if ((enemy.type === 'BRUTE' || enemy.type === 'WARDEN') && enemy.bruteBraceT > 0) {
       state.bruteBracing++;
     } else if (enemy.type === 'GOLIATH') {
       updateGoliath(enemy, safeDt);
@@ -298,7 +298,7 @@ export function updateAIArchetypeCoordinator(dt, {
 export function recordArchetypeAttackCommitted(enemy, kind = 'NONE') {
   if (!enemy) return;
 
-  if (kind === 'RANGED' && enemy.type === 'RANGED') {
+  if (kind === 'RANGED' && (enemy.type === 'RANGED' || enemy.type === 'SAPPER')) {
     enemy.spitterRepositionDuration = SPITTER_REPOSITION_DURATION;
     enemy.spitterRepositionT = SPITTER_REPOSITION_DURATION;
     enemy.spitterRepositionCount = finite(enemy.spitterRepositionCount) + 1;
@@ -323,15 +323,15 @@ export function getArchetypeMovementScale(enemy) {
 
   let scale = 1;
 
-  if (enemy.type === 'RUNNER' && enemy.runnerBurstT > 0) {
+  if ((enemy.type === 'RUNNER' || enemy.type === 'STALKER') && enemy.runnerBurstT > 0) {
     scale *= 1.32;
   }
 
-  if (enemy.type === 'RANGED' && enemy.spitterRepositionT > 0) {
+  if ((enemy.type === 'RANGED' || enemy.type === 'SAPPER') && enemy.spitterRepositionT > 0) {
     scale *= 1.18;
   }
 
-  if (enemy.type === 'BRUTE' && enemy.bruteBraceT > 0) {
+  if ((enemy.type === 'BRUTE' || enemy.type === 'WARDEN') && enemy.bruteBraceT > 0) {
     scale *= 0.82;
   }
 
@@ -354,15 +354,15 @@ export function getArchetypeHitMoveScale(enemy) {
 
 export function shouldArchetypeForceMove(enemy) {
   return Boolean(
-    (enemy?.type === 'RANGED' && enemy.spitterRepositionT > 0) ||
-    (enemy?.type === 'RUNNER' && enemy.runnerBurstT > 0)
+    ((enemy?.type === 'RANGED' || enemy?.type === 'SAPPER') && enemy.spitterRepositionT > 0) ||
+    ((enemy?.type === 'RUNNER' || enemy?.type === 'STALKER') && enemy.runnerBurstT > 0)
   );
 }
 
 export function canArchetypeRequestAttack(enemy) {
   if (!enemy) return true;
-  if (enemy.type === 'RANGED' && enemy.spitterRepositionT > 0) return false;
-  if (enemy.type === 'BRUTE' && enemy.bruteBraceT > 0.08) return false;
+  if ((enemy.type === 'RANGED' || enemy.type === 'SAPPER') && enemy.spitterRepositionT > 0) return false;
+  if ((enemy.type === 'BRUTE' || enemy.type === 'WARDEN') && enemy.bruteBraceT > 0.08) return false;
   return true;
 }
 
@@ -383,13 +383,13 @@ export function getArchetypePursuitTarget(
 
   if (!enemy) return out;
 
-  if (enemy.type === 'RUNNER' && enemy.runnerBurstT > 0) {
+  if ((enemy.type === 'RUNNER' || enemy.type === 'STALKER') && enemy.runnerBurstT > 0) {
     out.x = playerX + finite(player?.vel?.x) * 0.10;
     out.z = playerZ + finite(player?.vel?.z) * 0.10;
     return out;
   }
 
-  if (enemy.type === 'RANGED' && enemy.spitterRepositionT > 0) {
+  if ((enemy.type === 'RANGED' || enemy.type === 'SAPPER') && enemy.spitterRepositionT > 0) {
     let awayX = enemyX - playerX;
     let awayZ = enemyZ - playerZ;
     const distance = Math.max(0.001, Math.hypot(awayX, awayZ));
@@ -418,6 +418,7 @@ export function getArchetypeAttackProfile(enemy, {
   const pressure = clamp(exploitPriority);
 
   switch (enemy.type) {
+    case 'SAPPER':
     case 'RANGED':
       if (enemy.spitterRepositionT > 0) return null;
       return {
@@ -438,6 +439,7 @@ export function getArchetypeAttackProfile(enemy, {
       };
     }
 
+    case 'WARDEN':
     case 'BRUTE':
       if (enemy.bruteBraceT > 0.08) return null;
       return {
@@ -471,8 +473,8 @@ export function getArchetypeAttackProfile(enemy, {
 
 export function getArchetypeAttackCooldownScale(enemy) {
   if (!enemy) return 1;
-  if (enemy.type === 'RUNNER') return 1.10;
-  if (enemy.type === 'RANGED') return 1.04;
+  if (enemy.type === 'RUNNER' || enemy.type === 'STALKER') return 1.10;
+  if (enemy.type === 'RANGED' || enemy.type === 'SAPPER') return 1.04;
   if (enemy.type === 'GOLIATH') {
     if (enemy.goliathPhase >= 3) return 0.88;
     if (enemy.goliathPhase >= 2) return 0.94;

@@ -310,14 +310,24 @@
     "patch": "content1-r1-objective-operations-encounter-variety",
     "schema": 1,
     "objectiveOperations": true,
-    "arenaCount": 6,
+    "arenaCount": 7,
     "dynamicEncounters": true,
     "eliteTargets": true,
     "hostAuthoritative": true,
     "lateJoinSnapshots": true,
     "protectedProgressionReceipts": true,
     "survivalModePreserved": true,
-    "crawlerScalePreserved": true
+    "crawlerScalePreserved": true,
+    "newArena": "stormbreak_canal",
+    "newEnemyArchetypes": [
+      "WARDEN",
+      "STALKER",
+      "SAPPER"
+    ],
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "pvpIsolation": true,
+    "multiStoryMapsShelved": true
   },
   "live": {
     "schema": 1,
@@ -398,7 +408,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "ENDGAME.1 R1 - High-Difficulty Operations",
+  "releaseLabel": "CONTENT.2 R1 - New Arena and Enemy Expansion",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -709,7 +719,7 @@
     "workerChangeRequired": true,
     "frontendOnly": false
   },
-  "productVersion": "1.11.0-endgame1-r1",
+  "productVersion": "1.12.0-content2-r1",
   "postFinal10": {
     "schema": 1,
     "patch": "post-final10-r1-version1-stabilization-accessibility-performance",
@@ -1306,7 +1316,8 @@
     "supportedMaps": [
       "grid_bunker",
       "industrial_yard",
-      "hospital_wing"
+      "hospital_wing",
+      "stormbreak_canal"
     ],
     "pvpExcluded": true,
     "hostAuthoritative": true,
@@ -1385,7 +1396,8 @@
       "neon_depot",
       "parking_garage",
       "hospital_wing",
-      "reactor_courtyard"
+      "reactor_courtyard",
+      "stormbreak_canal"
     ],
     "mapSpecificBriefings": true,
     "stageTransmissions": true,
@@ -1429,7 +1441,8 @@
       "neon_depot",
       "parking_garage",
       "hospital_wing",
-      "reactor_courtyard"
+      "reactor_courtyard",
+      "stormbreak_canal"
     ],
     "persistentWorldState": true,
     "sectorProgression": true,
@@ -1472,7 +1485,8 @@
       "neon_depot",
       "parking_garage",
       "hospital_wing",
-      "reactor_courtyard"
+      "reactor_courtyard",
+      "stormbreak_canal"
     ],
     "dynamicSectorControl": true,
     "controlStates": [
@@ -1642,6 +1656,46 @@
     "protocolUnchanged": true,
     "workerChangeRequired": true,
     "frontendAndWorker": true,
+    "crazyGamesReadinessOnHold": true,
+    "androidReadinessOnHold": true
+  },
+  "content2": {
+    "patch": "content2-r1-new-arena-enemy-expansion",
+    "arena": {
+      "id": "stormbreak_canal",
+      "label": "Stormbreak Canal",
+      "singleLevel": true,
+      "interactiveFloodgates": true,
+      "electricalLaneTraps": true,
+      "lowGpuCompatible": true
+    },
+    "enemyArchetypes": [
+      {
+        "id": "WARDEN",
+        "role": "armored anchor"
+      },
+      {
+        "id": "STALKER",
+        "role": "flanking pressure"
+      },
+      {
+        "id": "SAPPER",
+        "role": "ranged area denial"
+      }
+    ],
+    "hostAuthoritative": true,
+    "lateJoinRestoration": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "pvpIsolation": true,
+    "schema": 1,
+    "productVersion": "1.12.0-content2-r1",
+    "releaseSequence": 2026072302,
+    "sourceBaselineSha": "501cc5ef8578569cbb727859188256c7ea81f5d9",
+    "workerBaselineSha": "cde81e6cde6b1617b6cc0ecc90f2f532c66fb1ef",
+    "baselineWorkerVersionId": "879cb83e-cfac-47eb-8b9a-f8d43f39aa97",
+    "newEnemyFactionIncluded": false,
+    "frontendOnly": true,
     "crazyGamesReadinessOnHold": true,
     "androidReadinessOnHold": true
   }

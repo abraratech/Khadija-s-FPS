@@ -9,6 +9,7 @@ import { buildNeonDepot } from './maps/neon_depot.js';
 import { buildParkingGarage } from './maps/parking_garage.js';
 import { buildHospitalWing } from './maps/hospital_wing.js';
 import { buildReactorCourtyard } from './maps/reactor_courtyard.js';
+import { buildStormbreakCanal } from './maps/stormbreak_canal.js';
 import { buildCrossfireTerminal, buildFoundryRing, buildSkylineRelay } from './maps/pvp_competitive_arenas.js';
 import { configureMapValidation } from './map_validation.js';
 import { createMapBlock } from './maps/map_helpers.js';
@@ -246,6 +247,21 @@ const MAP_ENVIRONMENTS = {
   bloomStrength: 0.78,
   bloomRadius: 0.34,
   bloomThreshold: 0.81
+  },
+
+  [MAP_IDS.STORMBREAK_CANAL]: {
+  name: "Stormbreak Canal - Flood Warning",
+  fogColor: 0x03141a,
+  fogDensity: 0.018,
+  clearColor: 0x010609,
+  ambientColor: 0x7adff2,
+  ambientIntensity: 0.84,
+  dirColor: 0xffa75a,
+  dirIntensity: 0.86,
+  dirPosition: new THREE.Vector3(-22, 30, 18),
+  bloomStrength: 0.80,
+  bloomRadius: 0.35,
+  bloomThreshold: 0.80
   },
 
   [MAP_IDS.CROSSFIRE_TERMINAL]: {
@@ -953,6 +969,7 @@ const MAP_BUILDERS = {
   [MAP_IDS.PARKING_GARAGE]: buildParkingGarage,
   [MAP_IDS.HOSPITAL_WING]: buildHospitalWing,
   [MAP_IDS.REACTOR_COURTYARD]: buildReactorCourtyard,
+  [MAP_IDS.STORMBREAK_CANAL]: buildStormbreakCanal,
   [MAP_IDS.CROSSFIRE_TERMINAL]: buildCrossfireTerminal,
   [MAP_IDS.FOUNDRY_RING]: buildFoundryRing,
   [MAP_IDS.SKYLINE_RELAY]: buildSkylineRelay

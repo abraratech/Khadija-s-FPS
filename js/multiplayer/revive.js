@@ -170,7 +170,8 @@ export class MultiplayerReviveManager {
     this.spectatorTargetId = null;
     this.core.reset({
       runId: this.session?.run?.runId || null,
-      wave: this.adapter.getWave?.() || 1
+      wave: this.adapter.getWave?.() || 1,
+      endgame1Policy: globalThis.KAGetEndgame1RevivePolicy?.() || null
     });
 
     if (!this.active) {
@@ -414,6 +415,7 @@ export class MultiplayerReviveManager {
     this.updatePlayerPositions(now);
 
     if (this.isAuthority()) {
+      this.core.setEndgamePolicy(globalThis.KAGetEndgame1RevivePolicy?.() || {});
       this.core.update({
         now,
         dtMs: Math.max(0, Number(dt) || 0) * 1000,
@@ -461,6 +463,7 @@ export class MultiplayerReviveManager {
     this.adapter.clearInput?.();
 
     if (this.isAuthority()) {
+      this.core.setEndgamePolicy(globalThis.KAGetEndgame1RevivePolicy?.() || {});
       this.core.downPlayer(localId, {
         now,
         wave: this.adapter.getWave?.() || 1,
@@ -555,6 +558,7 @@ export class MultiplayerReviveManager {
     const now = nowMs();
 
     if (payload.action === REVIVE_ACTIONS.DOWNED) {
+      this.core.setEndgamePolicy(globalThis.KAGetEndgame1RevivePolicy?.() || {});
       const sampled = this.runtime?.sampleRemotePlayer?.(
         actorId,
         now
@@ -666,6 +670,14 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
         if (event.playerId === this.runtime?.localPlayerId) {
           this.adapter.showToast?.('REVIVED', '#55ff88', 1800);
         }
+        return;
+      }
+      if (event.type === 'REVIVE_LIMIT_REACHED') {
+        this.adapter.showToast?.(
+          'ENDGAME REVIVE LIMIT REACHED',
+          '#ff8844',
+          2200
+        );
         return;
       }
       if (event.type === 'RESPAWN') {
@@ -1146,7 +1158,9 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
     } else if (
       local?.lifeState === MULTIPLAYER_LIFE_STATES.SPECTATING
     ) {
-      status = 'SPECTATING · RESPAWN NEXT WAVE';
+      status = this.latestSnapshot.endgame1Policy?.allowWaveRespawn === false
+        ? 'SPECTATING · ENDGAME EXTRACTION-ONLY RECOVERY'
+        : 'SPECTATING · RESPAWN NEXT WAVE';
       border = '#00d4ff';
     } else if (this.currentReviveTarget) {
       const progress = Math.round(
@@ -1174,12 +1188,17 @@ ensureTeamElimination(snapshot = this.latestSnapshot) {
     this.hudStatus.style.display = status ? 'block' : 'none';
     this.hudStatus.style.borderColor = border;
 
+    const endgamePolicy = this.latestSnapshot.endgame1Policy || null;
+    const reviveBudget = (
+      endgamePolicy?.active === true
+      && Number.isFinite(Number(endgamePolicy.maxTeamRevives))
+    ) ? `  ·  REVIVES ${Math.max(0, Number(endgamePolicy.maxTeamRevives) - Number(endgamePolicy.teamRevivesUsed || 0))}/${Number(endgamePolicy.maxTeamRevives)}` : '';
     this.hudTeam.textContent = (this.latestSnapshot.players || [])
       .filter((entry) => entry?.connected !== false)
       .map((entry) => (
         `${entry.displayName}: ${entry.lifeState}`
       ))
-      .join('  ·  ');
+      .join('  ·  ') + reviveBudget;
   }
 
   updateMarkers() {

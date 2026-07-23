@@ -1625,6 +1625,9 @@
 <option value="0.75">Easy</option>
 <option selected="" value="1.0">Normal</option>
 <option value="1.5">Hard</option>
+<option value="1.70">Veteran · Endgame</option>
+<option value="1.85">Nightmare · Endgame</option>
+<option value="2.0">Apex · Endgame</option>
 </select>
 <section class="ka-menu-screen active" data-menu-screen="home">
 <div class="ka-home-stage">
@@ -1794,6 +1797,27 @@
 <strong>Hard</strong>
 <small>More aggressive tuning for high-score runs.</small>
 <div class="ka-diff-line"><span>Enemy pressure</span><b>High</b></div>
+</button>
+<button class="ka-diff-card" data-diff="1.70" type="button">
+<span class="ka-card-kicker">Endgame · Tier I</span>
+<strong>Veteran</strong>
+<small>Two disclosed operation modifiers, stronger elites, and forgiving recovery.</small>
+<div class="ka-diff-line"><span>Recommended level</span><b>18+</b></div>
+<div class="ka-diff-line"><span>Team revives</span><b>8 max</b></div>
+</button>
+<button class="ka-diff-card" data-diff="1.85" type="button">
+<span class="ka-card-kicker">Endgame · Tier II</span>
+<strong>Nightmare</strong>
+<small>Three operation modifiers, compressed objectives, and limited recovery.</small>
+<div class="ka-diff-line"><span>Recommended level</span><b>28+</b></div>
+<div class="ka-diff-line"><span>Team revives</span><b>4 max</b></div>
+</button>
+<button class="ka-diff-card" data-diff="2.0" type="button">
+<span class="ka-card-kicker">Endgame · Tier III</span>
+<strong>Apex</strong>
+<small>Four operation modifiers, maximum boss pressure, and extraction-only recovery.</small>
+<div class="ka-diff-line"><span>Recommended level</span><b>40+</b></div>
+<div class="ka-diff-line"><span>Team revives</span><b>2 max</b></div>
 </button>
 <div class="ka-loading-wrap" id="loading-container">
 <div id="loading-label">LOADING ARENA ASSETS... <span id="loading-pct">0%</span></div>
@@ -2592,7 +2616,7 @@
         }
 
         function applyDifficultySelection(value, options = {}) {
-          const safeValue = ['0.75', '1.0', '1.5'].includes(String(value)) ? String(value) : '1.0';
+          const safeValue = ['0.75', '1.0', '1.5', '1.70', '1.85', '2.0'].includes(String(value)) ? String(value) : '1.0';
 
           document.querySelectorAll('.ka-diff-card').forEach((card) => {
             card.classList.toggle('selected', String(card.dataset.diff) === safeValue);
@@ -2846,6 +2870,9 @@
 <div><span>REPLAY MASTERY</span><b id="final-replay-mastery">UNRANKED</b></div>
 <div><span>FACTION REWARDS</span><b id="final-replay-rewards">+0</b></div>
 <div><span>MISSION MODIFIERS</span><b id="final-replay-modifiers">NONE</b></div>
+<div><span>ENDGAME TIER</span><b id="final-endgame-tier">STANDARD</b></div>
+<div><span>ENDGAME MODIFIERS</span><b id="final-endgame-modifiers">NONE</b></div>
+<div><span>ENDGAME REWARD</span><b id="final-endgame-reward">NONE</b></div>
 <div><span>ARENA MUTATIONS</span><b id="final-arena-mutations">NONE</b></div>
 <div><span>MUTATION EVENTS</span><b id="final-mutation-events">0</b></div>
 <div><span>MUTATION REWARD</span><b id="final-mutation-multiplier">×1.00</b></div>

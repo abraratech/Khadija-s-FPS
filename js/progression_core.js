@@ -12,6 +12,10 @@ import {
   normalizeLoadout2MasteryProfile
 } from './loadout2_mastery_core.js';
 import {
+  createDefaultEndgame1Profile,
+  normalizeEndgame1Profile
+} from './endgame1_core.js';
+import {
   POST_FINAL9_COSMETIC_CATALOG,
   createDefaultPostFinal9Economy,
   normalizePostFinal9Economy
@@ -21,7 +25,7 @@ import {
 // PROG.1 R1 — deterministic unified progression, operations, rewards, and unlocks.
 
 export const PROGRESSION_PATCH = 'prog1-r1-unified-progression-retention';
-export const PROGRESSION_VERSION = 6;
+export const PROGRESSION_VERSION = 7;
 export const PROGRESSION_MAX_LEVEL = 50;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -279,6 +283,7 @@ export function defaultProgressionProfile(now = Date.now()) {
     world6: createDefaultGameplay6WorldProfile(now),
     campaign7: createDefaultGameplay7CampaignProfile(now),
     loadout2: createDefaultLoadout2MasteryProfile(now),
+    endgame1: createDefaultEndgame1Profile(now),
     economy: createDefaultPostFinal9Economy(now, 0)
   };
 }
@@ -319,7 +324,9 @@ function normalizeRecentRuns(value) {
       liveContractsCompleted: integer(entry.liveContractsCompleted, 0),
       xpEarned: integer(entry.xpEarned, 0),
       reason: cleanText(entry.reason, 'ENDED', 80),
-      botAssisted: entry.botAssisted === true
+      botAssisted: entry.botAssisted === true,
+      endgameTierId: cleanText(entry.endgameTierId, 'NONE', 40),
+      endgameMarks: integer(entry.endgameMarks, 0)
     }))
     .filter((entry) => {
       if (seen.has(entry.runId)) return false;
@@ -380,6 +387,7 @@ export function normalizeProgressionProfile(value, now = Date.now()) {
   output.world6 = normalizeGameplay6WorldProfile(source.world6, now);
   output.campaign7 = normalizeGameplay7CampaignProfile(source.campaign7, now);
   output.loadout2 = normalizeLoadout2MasteryProfile(source.loadout2, now);
+  output.endgame1 = normalizeEndgame1Profile(source.endgame1, now);
   output.economy = normalizePostFinal9Economy(source.economy, { now, totalXp: output.xp });
   return output;
 }

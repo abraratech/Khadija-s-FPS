@@ -31,7 +31,7 @@ assert.match(core, /replaceSnapshot\(snapshot, now = Date\.now\(\)\)/);
 assert.match(content, /Gameplay3EvolutionDirector/);
 assert.match(content, /this\.mapEvolutionDirector = new Gameplay3EvolutionDirector\(\)/);
 assert.match(content, /const gameplay3 = this\.mapEvolutionDirector\.update\(epochNow\)/);
-assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7 \}/);
+assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7, endgame1 \}/);
 assert.match(content, /payload\.action === 'GAMEPLAY3_INTERACT'/);
 assert.match(content, /snapshot\.gameplay3/);
 assert.match(content, /this\.mapEvolutionDirector\.replaceSnapshot\(snapshot\.gameplay3/);
@@ -66,20 +66,20 @@ const pvpEnd = foundation.indexOf('content1Manager?.endRun?.()', foundation.inde
 assert.ok(pvpEnd >= 0, 'PvP runs must keep CONTENT.1/GAMEPLAY.3 inactive.');
 
 
-assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
-assert.equal(release.productVersion, '1.10.0-quality2-r1');
-assert.equal(release.releaseSequence, 2026072202);
-assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
+assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
+assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+assert.equal(release.releaseSequence, 2026072301);
+assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
 assert.equal(metadata.gameplay3?.patch, 'gameplay3-r1-interactive-evolving-maps');
 assert.deepEqual(metadata.gameplay3?.stageWaves, [4, 7, 10]);
 assert.equal(metadata.gameplay3?.pvpExcluded, true);
 assert.equal(metadata.gameplay3?.workerChangeRequired, false);
-assert.match(updateDeliveryCore, /quality2-r1-consolidated-low-gpu-rendering/);
-assert.match(updateDeliveryCore, /releaseSequence: 2026072202/);
+assert.match(updateDeliveryCore, /endgame1-r1-high-difficulty-operations/);
+assert.match(updateDeliveryCore, /releaseSequence: 2026072301/);
 assert.match(buildProduction, /GAMEPLAY3_PATCH/);
 assert.match(buildProduction, /GAMEPLAY3_RELEASE_SEQUENCE = 2026072101/);
 assert.match(verifyProduction, /GAMEPLAY\.3 production manifest patch mismatch/);

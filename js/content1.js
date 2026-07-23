@@ -63,8 +63,14 @@ import {
   Gameplay7CampaignDirector
 } from './gameplay7_campaign_core.js';
 import {
+  ENDGAME1_PATCH,
+  ENDGAME1_STATUS,
+  Endgame1Director
+} from './endgame1_core.js';
+import {
   getProgressionSnapshot,
   recordProgressionContentOperation,
+  recordProgressionEndgame1Completion,
   recordProgressionGameplay6WorldContribution,
   recordProgressionGameplay7CampaignContribution
 } from './progression.js';
@@ -75,6 +81,7 @@ import {
   recordRunGameplay5NarrativeOutcome,
   recordRunGameplay6WorldContribution,
   recordRunGameplay7CampaignContribution,
+  recordRunEndgame1,
   recordRunPostFinal7Mission,
   recordRunPostFinal8Replayability
 } from './run_summary.js';
@@ -264,6 +271,7 @@ export class Content1Manager {
     this.narrativeDirector = new Gameplay5NarrativeDirector();
     this.worldProgressionDirector = new Gameplay6WorldDirector();
     this.campaignDirector = new Gameplay7CampaignDirector();
+    this.endgameDirector = new Endgame1Director();
     this.active = false;
     this.latestSnapshot = null;
     this.lastSnapshotSentAt = -Infinity;
@@ -283,6 +291,7 @@ export class Content1Manager {
     this.narrativeRewardedCompletionIds = new Set();
     this.worldProgressionRewardedCompletionIds = new Set();
     this.campaignRewardedCompletionIds = new Set();
+    this.endgameRewardedCompletionIds = new Set();
     this.warnedOperationIds = new Set();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -302,6 +311,7 @@ export class Content1Manager {
     this.hudNarrative = null;
     this.hudWorld = null;
     this.hudCampaign = null;
+    this.hudEndgame = null;
     this.hudRisk = null;
     this.hudRiskSecure = null;
     this.hudRiskOverdrive = null;
@@ -375,6 +385,15 @@ export class Content1Manager {
       );
       window.KAGetGameplay7EncounterTuning = () => (
         this.active ? this.campaignDirector.getEncounterTuning() : null
+      );
+      window.KAGetEndgame1Snapshot = () => (
+        this.active ? this.endgameDirector.getSnapshot(Date.now()) : null
+      );
+      window.KAGetEndgame1Tuning = () => (
+        this.active ? this.endgameDirector.getTuning() : null
+      );
+      window.KAGetEndgame1RevivePolicy = () => (
+        this.active ? this.endgameDirector.getRevivePolicy() : null
       );
       window.KAGetGameplay4BossDamageScale = ({ enemyId = '', headshot = false } = {}) => (
         getGameplay4BossDamageScale(
@@ -464,6 +483,7 @@ export class Content1Manager {
     this.narrativeRewardedCompletionIds.clear();
     this.worldProgressionRewardedCompletionIds.clear();
     this.campaignRewardedCompletionIds.clear();
+    this.endgameRewardedCompletionIds.clear();
     this.warnedOperationIds.clear();
     this.lastBossDamageSnapshotAt = -Infinity;
     this.lastObservedOperationId = null;
@@ -544,6 +564,14 @@ export class Content1Manager {
       profile: getProgressionSnapshot()?.profile?.campaign7 || {},
       now: Date.now()
     });
+    this.endgameDirector.reset({
+      runId: resolvedRunId,
+      mapId: resolvedMapId,
+      difficulty: resolvedDifficulty,
+      gameMode: 'survival',
+      profile: getProgressionSnapshot()?.profile?.endgame1 || {},
+      now: Date.now()
+    });
     this.ensureMissionObjective(Date.now(), { announce: false });
     this.ensureHud();
     this.clearObjectiveVisuals();
@@ -572,6 +600,8 @@ export class Content1Manager {
     this.bossEncounterDirector.reset({ gameMode: 'survival', now: Date.now() });
     this.narrativeDirector.reset({ gameMode: 'pvp', now: Date.now() });
     this.worldProgressionDirector.reset({ gameMode: 'pvp', now: Date.now() });
+    this.campaignDirector.reset({ gameMode: 'pvp', now: Date.now() });
+    this.endgameDirector.reset({ gameMode: 'pvp', now: Date.now() });
   }
 
   nextEventId(kind) {
@@ -698,6 +728,36 @@ export class Content1Manager {
       operation.rewardPoints = Math.max(1, Math.round(finite(operation.rewardPoints, 100) * 1.5));
       operation.xp = Math.max(1, Math.round(finite(operation.xp, CONTENT1_OPERATION_XP) * 1.35));
       operation.description = `${operation.description} OVERDRIVE: LONGER HOLD, 50% MISSION REWARD BONUS.`;
+    }
+
+    const endgame = this.endgameDirector.getSnapshot(Date.now());
+    const endgameTuning = this.endgameDirector.getTuning();
+    if (endgame?.active) {
+      operation.endgame1Patch = ENDGAME1_PATCH;
+      operation.endgame1TierId = endgame.tier?.id || '';
+      operation.endgame1ModifierIds = (endgame.modifiers || []).map((entry) => entry.id);
+      operation.stageTarget = Math.max(1, Math.ceil(
+        finite(operation.stageTarget, 1) * finite(endgameTuning.objectiveTargetScale, 1)
+      ));
+      operation.target = Math.max(finite(operation.target, operation.stageTarget), operation.stageTarget);
+      operation.remainingMs = Math.max(
+        8000,
+        Math.round(finite(operation.remainingMs, 60000) * finite(endgameTuning.objectiveTimeScale, 1))
+      );
+      operation.expiresAt = Date.now() + operation.remainingMs;
+      operation.rewardPoints = Math.max(
+        1,
+        Math.round(finite(operation.rewardPoints, 100) * finite(endgameTuning.rewardMultiplier, 1))
+      );
+      operation.xp = Math.max(
+        1,
+        Math.round(finite(operation.xp, CONTENT1_OPERATION_XP) * Math.min(1.6, finite(endgameTuning.rewardMultiplier, 1)))
+      );
+      operation.description = cleanText(
+        `${operation.description} ENDGAME ${endgame.tier?.label || endgame.tier?.id}: ${endgame.modifiers?.map((entry) => entry.label).join(', ') || 'ESCALATED CONDITIONS'}.`,
+        operation.description,
+        300
+      );
     }
     return operation;
   }
@@ -897,7 +957,16 @@ export class Content1Manager {
       narrative: gameplay5,
       replay: postFinal8
     });
-    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7 };
+    const endgame1 = this.endgameDirector.update(epochNow, {
+      profile: getProgressionSnapshot()?.profile?.endgame1 || {},
+      mission: postFinal7,
+      replay: postFinal8,
+      boss: gameplay4,
+      narrative: gameplay5,
+      world: gameplay6,
+      campaign: gameplay7
+    });
+    return { ...base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7, endgame1 };
   }
 
   publishSnapshot(force = false) {
@@ -1145,6 +1214,54 @@ export class Content1Manager {
       1,
       Math.round(finite(enemy.damage, 1) * finite(campaignTuning.enemyDamageScale, 1))
     );
+    const endgameTuning = this.endgameDirector.getTuning();
+    const endgameSnapshot = this.endgameDirector.getSnapshot(Date.now());
+    if (endgameSnapshot?.active) {
+      enemy.endgame1Patch = ENDGAME1_PATCH;
+      enemy.endgame1TierId = endgameSnapshot.tier?.id || '';
+      enemy.endgame1ModifierIds = (endgameSnapshot.modifiers || []).map((entry) => entry.id);
+      enemy.maxHealth = Math.max(
+        1,
+        Math.round(finite(enemy.maxHealth, enemy.health) * finite(endgameTuning.enemyHealthScale, 1))
+      );
+      enemy.health = enemy.maxHealth;
+      enemy.speed = finite(enemy.speed, 1) * finite(endgameTuning.enemySpeedScale, 1);
+      enemy.damage = Math.max(
+        1,
+        Math.round(finite(enemy.damage, 1) * finite(endgameTuning.enemyDamageScale, 1))
+      );
+      enemy.attackRate = Math.max(
+        0.22,
+        finite(enemy.attackRate, 1) * finite(endgameTuning.enemyAttackRateScale, 1)
+      );
+      if (eliteCandidate || MUTATION_ELITE_TYPES.has(type)) {
+        enemy.maxHealth = Math.max(
+          1,
+          Math.round(finite(enemy.maxHealth, enemy.health) * finite(endgameTuning.eliteHealthScale, 1))
+        );
+        enemy.health = enemy.maxHealth;
+      }
+      if (bossStage || replayTuning.bossProfile) {
+        enemy.maxHealth = Math.max(
+          1,
+          Math.round(finite(enemy.maxHealth, enemy.health) * finite(endgameTuning.bossHealthScale, 1))
+        );
+        enemy.health = enemy.maxHealth;
+        enemy.damage = Math.max(
+          1,
+          Math.round(finite(enemy.damage, 1) * finite(endgameTuning.bossDamageScale, 1))
+        );
+        enemy.speed = finite(enemy.speed, 1) * finite(endgameTuning.bossSpeedScale, 1);
+      }
+      enemy.scoreReward = Math.max(
+        1,
+        Math.round(finite(enemy.scoreReward, 50) * finite(endgameTuning.rewardMultiplier, 1))
+      );
+      enemy.headshotReward = Math.max(
+        1,
+        Math.round(finite(enemy.headshotReward, 100) * finite(endgameTuning.rewardMultiplier, 1))
+      );
+    }
     tintEnemyForFaction(
       enemy,
       replayTuning.emissiveHex,
@@ -1271,6 +1388,7 @@ export class Content1Manager {
       if (snapshot.gameplay5) this.narrativeDirector.replaceSnapshot(snapshot.gameplay5, Date.now());
       if (snapshot.gameplay6) this.worldProgressionDirector.replaceSnapshot(snapshot.gameplay6, Date.now());
       if (snapshot.gameplay7) this.campaignDirector.replaceSnapshot(snapshot.gameplay7, Date.now());
+      if (snapshot.endgame1) this.endgameDirector.replaceSnapshot(snapshot.endgame1, Date.now());
       this.applyGameplay2Snapshot(snapshot.gameplay2, { transitions: false });
       this.applyGameplay3Snapshot(snapshot.gameplay3, { transitions: false });
       const restoredBoss = this.replayDirector.state.boss;
@@ -1379,6 +1497,9 @@ export class Content1Manager {
     if (payload.snapshot?.gameplay7) {
       this.campaignDirector.replaceSnapshot(payload.snapshot.gameplay7, Date.now());
     }
+    if (payload.snapshot?.endgame1) {
+      this.endgameDirector.replaceSnapshot(payload.snapshot.endgame1, Date.now());
+    }
     this.latestSnapshot = clone({
       ...this.core.getSnapshot(nowMs()),
       postFinal4: this.objectiveDirector.getSnapshot(Date.now()),
@@ -1389,7 +1510,8 @@ export class Content1Manager {
       gameplay4: clone(payload.snapshot.gameplay4 || this.bossEncounterDirector.getSnapshot(Date.now())),
       gameplay5: clone(payload.snapshot.gameplay5 || this.narrativeDirector.getSnapshot(Date.now())),
       gameplay6: clone(payload.snapshot.gameplay6 || this.worldProgressionDirector.getSnapshot(Date.now())),
-      gameplay7: clone(payload.snapshot.gameplay7 || this.campaignDirector.getSnapshot(Date.now()))
+      gameplay7: clone(payload.snapshot.gameplay7 || this.campaignDirector.getSnapshot(Date.now())),
+      endgame1: clone(payload.snapshot.endgame1 || this.endgameDirector.getSnapshot(Date.now()))
     });
     this.applyGameplay2Snapshot(this.latestSnapshot.gameplay2, { transitions: hadRemoteSnapshot });
     this.applyGameplay3Snapshot(this.latestSnapshot.gameplay3, { transitions: hadRemoteSnapshot });
@@ -1421,7 +1543,10 @@ export class Content1Manager {
         && !entry.isBot
         && (!entry.alive || entry.lifeState !== 'ACTIVE')
       ));
-      if (downedHuman) this.replayDirector.recordPlayerDowned(downedHuman.playerId, Date.now());
+      if (downedHuman) {
+        this.replayDirector.recordPlayerDowned(downedHuman.playerId, Date.now());
+        this.endgameDirector.recordPlayerDowned(downedHuman.playerId, Date.now());
+      }
     }
 
     if (
@@ -1915,9 +2040,34 @@ export class Content1Manager {
       }
     }
 
+    const endgame1Events = this.endgameDirector.consumeEvents();
+    for (const event of endgame1Events) {
+      if (event.type === 'ENDGAME1_OPERATION_ASSIGNED') {
+        const endgame = this.endgameDirector.getSnapshot(Date.now());
+        this.showToast?.(`ENDGAME ${endgame.tier?.label || endgame.tier?.id || 'OPERATION'} · ${(endgame.modifiers || []).map((entry) => entry.label).join(' · ')}`);
+        playUISound('warning', 0.32, true, {
+          cooldownKey: 'endgame1_assigned',
+          cooldownMs: 1400,
+          pitchMin: 0.78,
+          pitchMax: 0.92
+        });
+      } else if (event.type === 'ENDGAME1_OPERATION_COMPLETED') {
+        const endgame = this.endgameDirector.getSnapshot(Date.now());
+        this.showToast?.(`ENDGAME ${endgame.tier?.label || 'OPERATION'} COMPLETE`);
+        playUISound('waveClear', 0.62, true, {
+          cooldownKey: 'endgame1_complete',
+          cooldownMs: 2000,
+          pitchMin: 1.04,
+          pitchMax: 1.18
+        });
+      } else if (event.type === 'ENDGAME1_RECOVERY_USED') {
+        this.showToast?.('ENDGAME RECOVERY USED · REVIVES ARE LIMITED');
+      }
+    }
+
     this.applyGameplay2Snapshot(this.mutationDirector.getSnapshot(Date.now()), { transitions: false });
     this.applyLocalOperationRewards();
-    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events, ...gameplay6Events, ...gameplay7Events];
+    return [...events, ...missionEvents, ...replayEvents, ...gameplay4Events, ...gameplay5Events, ...gameplay6Events, ...gameplay7Events, ...endgame1Events];
   }
 
   applyLocalOperationRewards() {
@@ -2150,6 +2300,28 @@ export class Content1Manager {
         if (result.controlShift) this.showToast?.(`SECTOR CONTROL SHIFT · ${result.controlShift.label}`);
       }
     }
+
+    const endgame1 = snapshot?.endgame1;
+    if (
+      endgame1?.status === ENDGAME1_STATUS.COMPLETE
+      && endgame1.completionId
+      && endgame1.completionReceipt
+      && !this.endgameRewardedCompletionIds.has(endgame1.completionId)
+    ) {
+      this.endgameRewardedCompletionIds.add(endgame1.completionId);
+      const result = recordProgressionEndgame1Completion(endgame1.completionReceipt);
+      recordRunEndgame1({
+        snapshot: endgame1,
+        receipt: endgame1.completionReceipt,
+        result
+      });
+      if (result.applied) {
+        const award = result.award || {};
+        this.showToast?.(
+          `ENDGAME ${award.tierLabel || endgame1.tier?.label || 'CLEAR'} · +${award.marks || 0} MARKS · +${award.xpBonus || 0} XP`
+        );
+      }
+    }
     return true;
   }
 
@@ -2183,7 +2355,11 @@ export class Content1Manager {
       worldTier: finite(this.latestSnapshot?.gameplay6?.presentation?.worldTier, 0),
       gameplay7Patch: this.latestSnapshot?.gameplay7?.patch || GAMEPLAY7_PATCH,
       campaignControlState: this.latestSnapshot?.gameplay7?.presentation?.sector?.controlState || GAMEPLAY7_CONTROL.CONTESTED,
-      campaignFactionId: this.latestSnapshot?.gameplay7?.presentation?.sector?.dominantFactionId || ''
+      campaignFactionId: this.latestSnapshot?.gameplay7?.presentation?.sector?.dominantFactionId || '',
+      endgame1Patch: this.latestSnapshot?.endgame1?.patch || ENDGAME1_PATCH,
+      endgameTierId: this.latestSnapshot?.endgame1?.tier?.id || 'NONE',
+      endgameModifierIds: Object.freeze((this.latestSnapshot?.endgame1?.modifiers || []).map((entry) => entry.id)),
+      endgameRewardMultiplier: finite(this.latestSnapshot?.endgame1?.tuning?.rewardMultiplier, 1)
     });
   }
 
@@ -2355,6 +2531,10 @@ export class Content1Manager {
         <b>DYNAMIC CAMPAIGN</b>
         <span>Synchronizing faction control.</span>
       </div>
+      <div class="ka-endgame1-operation" data-tier="NONE" hidden>
+        <b>ENDGAME OPERATION</b>
+        <span>Standard operation conditions.</span>
+      </div>
       <div class="ka-postfinal8-faction">FACTION INTELLIGENCE INITIALIZING</div>
       <div class="ka-postfinal8-modifiers">STANDARD CONDITIONS</div>
       <div class="ka-gameplay2-mutations">ARENA MUTATIONS · STANDBY</div>
@@ -2384,6 +2564,7 @@ export class Content1Manager {
     this.hudNarrative = hud.querySelector('.ka-gameplay5-narrative');
     this.hudWorld = hud.querySelector('.ka-gameplay6-world');
     this.hudCampaign = hud.querySelector('.ka-gameplay7-campaign');
+    this.hudEndgame = hud.querySelector('.ka-endgame1-operation');
     this.hudFaction = hud.querySelector('.ka-postfinal8-faction');
     this.hudModifiers = hud.querySelector('.ka-postfinal8-modifiers');
     this.hudMutations = hud.querySelector('.ka-gameplay2-mutations');
@@ -2499,6 +2680,25 @@ export class Content1Manager {
         body.textContent = contribution
           ? `${sector?.label || contribution.sectorLabel} · ${contribution.projectedControlState} · +${contribution.campaignPoints} CAMPAIGN`
           : `${sector?.label || 'SECTOR'} · ${sector?.controlState || 'CONTESTED'} · ${sector?.dominantFactionId || 'UNKNOWN FACTION'}`;
+      }
+    }
+    if (this.hudEndgame) {
+      const endgame = snapshot.endgame1;
+      const heading = this.hudEndgame.querySelector('b');
+      const body = this.hudEndgame.querySelector('span');
+      this.hudEndgame.hidden = !endgame?.active;
+      this.hudEndgame.dataset.tier = endgame?.tier?.id || 'NONE';
+      if (heading) {
+        heading.textContent = endgame?.active
+          ? `ENDGAME ${String(endgame.tier?.label || endgame.tier?.id || '').toUpperCase()}`
+          : 'ENDGAME OPERATION';
+      }
+      if (body) {
+        const labels = (endgame?.modifiers || []).map((entry) => entry.label);
+        const revives = endgame?.tuning?.maxTeamRevives;
+        body.textContent = endgame?.active
+          ? `${labels.join(' · ') || 'ESCALATED CONDITIONS'} · ${Number.isFinite(Number(revives)) ? `${revives} TEAM REVIVES` : 'STANDARD RECOVERY'}`
+          : 'Standard operation conditions.';
       }
     }
     if (this.hudFaction) {

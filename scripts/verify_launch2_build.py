@@ -605,6 +605,68 @@ def main() -> None:
                     f"QUALITY.2 production runtime file missing: {required_runtime}"
                 )
 
+    endgame1 = manifest.get("endgame1", {})
+    if current_release.get("patch") == "endgame1-r1-high-difficulty-operations":
+        if endgame1.get("patch") != current_release.get("patch"):
+            raise SystemExit("ENDGAME.1 production manifest patch mismatch")
+        for field in (
+            "deterministic_modifiers",
+            "host_authoritative",
+            "late_join_snapshot",
+            "reconnect_restoration",
+            "host_migration_checkpoint",
+            "limited_team_revives",
+            "apex_wave_respawn_disabled",
+            "profile_owned_state",
+            "cloud_merge_safe",
+            "protected_completion_receipts",
+            "worker_authoritative_rewards",
+            "duplicate_safe_receipts",
+            "weapon_mastery_acceleration",
+            "run_summary_integration",
+            "pvp_excluded",
+            "pvp_progression_bonuses_disabled",
+            "enemy_population_unchanged",
+            "protocol_unchanged",
+            "worker_change_required",
+            "frontend_and_worker",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if endgame1.get(field) is not True:
+                raise SystemExit(f"ENDGAME.1 production policy mismatch: {field}")
+        if endgame1.get("new_maps_included") is not False:
+            raise SystemExit("ENDGAME.1 must not add new maps")
+        if endgame1.get("new_enemy_factions_included") is not False:
+            raise SystemExit("ENDGAME.1 must not add new enemy factions")
+        if endgame1.get("tiers") != ["VETERAN", "NIGHTMARE", "APEX"]:
+            raise SystemExit("ENDGAME.1 tier registry mismatch")
+        if release_descriptor.get("productVersion") != endgame1.get("product_version"):
+            raise SystemExit("ENDGAME.1 product version mismatch")
+        if release_descriptor.get("sourceBaselineSha") != endgame1.get("source_baseline_sha"):
+            raise SystemExit("ENDGAME.1 source baseline mismatch")
+        if release_descriptor.get("workerBaselineSha") != endgame1.get("worker_baseline_sha"):
+            raise SystemExit("ENDGAME.1 Worker baseline mismatch")
+        if release_descriptor.get("workerChangeRequired") is not True:
+            raise SystemExit("ENDGAME.1 release descriptor must require Worker publication")
+        for required_runtime in (
+            "js/endgame1_core.js",
+            "js/content1.js",
+            "js/progression.js",
+            "js/progression_core.js",
+            "js/cloud_profile.js",
+            "js/run_summary.js",
+            "js/loadout2_runtime.js",
+            "js/multiplayer/revive.js",
+            "js/multiplayer/revive_core.js",
+            "js/ui.js",
+            "index.html",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"ENDGAME.1 production runtime file missing: {required_runtime}"
+                )
+
     pvp6 = manifest.get("pvp6", {})
     if current_release.get("patch") == "pvp6-r1-final-pvp-certification-candidate":
         if pvp6.get("patch") != current_release.get("patch"):

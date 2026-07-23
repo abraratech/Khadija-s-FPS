@@ -1,4 +1,5 @@
 // js/multiplayer/revive_core.js
+import { ENDGAME1_PATCH } from '../endgame1_core.js';
 export const MULTIPLAYER_LIFE_STATES = Object.freeze({
   ACTIVE: 'ACTIVE',
   DOWNED: 'DOWNED',
@@ -10,6 +11,45 @@ const DEFAULT_REVIVE_HOLD_MS = 3_000;
 const DEFAULT_REVIVE_RANGE = 3.2;
 const DEFAULT_HOLD_STALE_MS = 420;
 const DEFAULT_REVIVE_PROGRESS_GRACE_MS = 650;
+
+
+export const DEFAULT_ENDGAME1_REVIVE_POLICY = Object.freeze({
+  patch: ENDGAME1_PATCH,
+  active: false,
+  tierId: 'NONE',
+  maxTeamRevives: null,
+  teamRevivesUsed: 0,
+  bleedoutScale: 1,
+  reviveHoldScale: 1,
+  allowWaveRespawn: true,
+  checkpointPolicy: 'STANDARD'
+});
+
+function normalizeOptionalLimit(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(99, Math.floor(number))) : null;
+}
+
+export function normalizeEndgame1RevivePolicy(value = {}, previous = DEFAULT_ENDGAME1_REVIVE_POLICY) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const prior = previous && typeof previous === 'object' ? previous : DEFAULT_ENDGAME1_REVIVE_POLICY;
+  const active = source.active === true && source.patch === ENDGAME1_PATCH;
+  const maxTeamRevives = active ? normalizeOptionalLimit(source.maxTeamRevives) : null;
+  return Object.freeze({
+    patch: ENDGAME1_PATCH,
+    active,
+    tierId: active ? String(source.tierId || prior.tierId || 'NONE').slice(0, 40) : 'NONE',
+    maxTeamRevives,
+    teamRevivesUsed: active
+      ? Math.max(0, Math.min(99, Math.floor(Number(source.teamRevivesUsed ?? prior.teamRevivesUsed) || 0)))
+      : 0,
+    bleedoutScale: active ? Math.max(0.35, Math.min(2, Number(source.bleedoutScale) || 1)) : 1,
+    reviveHoldScale: active ? Math.max(0.5, Math.min(2.5, Number(source.reviveHoldScale) || 1)) : 1,
+    allowWaveRespawn: active ? source.allowWaveRespawn !== false : true,
+    checkpointPolicy: active ? String(source.checkpointPolicy || 'STANDARD').slice(0, 40) : 'STANDARD'
+  });
+}
 
 function finite(value, fallback = 0) {
   const number = Number(value);
@@ -96,6 +136,39 @@ export class ReviveAuthority {
     this.runId = null;
     this.wave = 1;
     this.teamEliminated = false;
+    this.endgame1Policy = normalizeEndgame1RevivePolicy();
+    this.reviveLimitNotifiedTargets = new Set();
+  }
+
+
+  setEndgamePolicy(value = {}) {
+    const previous = this.endgame1Policy || DEFAULT_ENDGAME1_REVIVE_POLICY;
+    const preserveUsed = (
+      value?.teamRevivesUsed === undefined
+      && value?.patch === ENDGAME1_PATCH
+      && value?.active === true
+      && previous.active === true
+      && String(value?.tierId || previous.tierId) === String(previous.tierId)
+    );
+    this.endgame1Policy = normalizeEndgame1RevivePolicy({
+      ...value,
+      ...(preserveUsed ? { teamRevivesUsed: previous.teamRevivesUsed } : {})
+    }, previous);
+    if (!this.endgame1Policy.active) this.reviveLimitNotifiedTargets.clear();
+    return this.getEndgamePolicy();
+  }
+
+  getEndgamePolicy() {
+    return Object.freeze({ ...(this.endgame1Policy || DEFAULT_ENDGAME1_REVIVE_POLICY) });
+  }
+
+  hasReviveCapacity() {
+    const policy = this.endgame1Policy || DEFAULT_ENDGAME1_REVIVE_POLICY;
+    return (
+      !policy.active
+      || policy.maxTeamRevives === null
+      || policy.teamRevivesUsed < policy.maxTeamRevives
+    );
   }
 
 
@@ -104,13 +177,18 @@ export class ReviveAuthority {
     return this.coop2Cohesion;
   }
 
-  reset({ runId = null, wave = 1 } = {}) {
+  reset({ runId = null, wave = 1, endgame1Policy = null } = {}) {
     this.players.clear();
     this.holds.clear();
     this.events.length = 0;
     this.runId = runId || null;
     this.wave = Math.max(1, Math.floor(finite(wave, 1)));
     this.teamEliminated = false;
+    this.reviveLimitNotifiedTargets.clear();
+    this.endgame1Policy = normalizeEndgame1RevivePolicy(
+      endgame1Policy || DEFAULT_ENDGAME1_REVIVE_POLICY,
+      DEFAULT_ENDGAME1_REVIVE_POLICY
+    );
   }
 
   ensurePlayer(playerId, details = {}) {
@@ -129,7 +207,7 @@ export class ReviveAuthority {
         downedAt: 0,
         bleedoutEndsAt: 0,
         reviveProgressMs: 0,
-        reviveRequiredMs: this.reviveHoldMs,
+        reviveRequiredMs: Math.max(500, Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale)),
         lastReviveActiveAt: 0,
         reviveProtectionEndsAt: 0,
         eliminatedWave: 0,
@@ -197,9 +275,12 @@ export class ReviveAuthority {
     player.lifeState = MULTIPLAYER_LIFE_STATES.DOWNED;
     player.health = 0;
     player.downedAt = finite(now);
-    player.bleedoutEndsAt = finite(now) + this.bleedoutMs;
+    const policy = this.endgame1Policy || DEFAULT_ENDGAME1_REVIVE_POLICY;
+    const effectiveBleedoutMs = Math.max(5_000, Math.round(this.bleedoutMs * policy.bleedoutScale));
+    const effectiveReviveHoldMs = Math.max(500, Math.round(this.reviveHoldMs * policy.reviveHoldScale));
+    player.bleedoutEndsAt = finite(now) + effectiveBleedoutMs;
     player.reviveProgressMs = 0;
-    player.reviveRequiredMs = this.reviveHoldMs;
+    player.reviveRequiredMs = effectiveReviveHoldMs;
     player.lastReviveActiveAt = 0;
     player.reviveProtectionEndsAt = 0;
     player.eliminatedWave = Math.max(1, Math.floor(finite(wave, this.wave)));
@@ -234,6 +315,11 @@ export class ReviveAuthority {
     this.wave = Math.max(1, Math.floor(finite(snapshot.wave, this.wave)));
     this.teamEliminated = snapshot.teamEliminated === true;
     this.setCoop2Cohesion(snapshot.coop2Cohesion);
+    this.endgame1Policy = normalizeEndgame1RevivePolicy(
+      snapshot.endgame1Policy || snapshot.endgamePolicy || {},
+      this.endgame1Policy
+    );
+    this.reviveLimitNotifiedTargets.clear();
     const next = new Map();
     snapshot.players.forEach((entry) => {
       if (!entry?.playerId) return;
@@ -295,7 +381,7 @@ export class ReviveAuthority {
         && player.lifeState === MULTIPLAYER_LIFE_STATES.ACTIVE
       ));
 
-    if (waveAdvanced && activeConnectedBeforeRespawn) {
+    if (waveAdvanced && activeConnectedBeforeRespawn && this.endgame1Policy.allowWaveRespawn !== false) {
       this.players.forEach((player) => {
         if (
           player.connected
@@ -305,7 +391,7 @@ export class ReviveAuthority {
           player.lifeState = MULTIPLAYER_LIFE_STATES.ACTIVE;
           player.health = player.maxHealth;
           player.reviveProgressMs = 0;
-          player.reviveRequiredMs = this.reviveHoldMs;
+          player.reviveRequiredMs = Math.max(500, Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale));
           player.lastReviveActiveAt = 0;
           player.reviveProtectionEndsAt = currentNow + 1500;
           player.downedAt = 0;
@@ -334,6 +420,19 @@ export class ReviveAuthority {
         this.holds.delete(reviverId);
         continue;
       }
+      if (!this.hasReviveCapacity()) {
+        this.holds.delete(reviverId);
+        if (!this.reviveLimitNotifiedTargets.has(target.playerId)) {
+          this.reviveLimitNotifiedTargets.add(target.playerId);
+          this.events.push({
+            type: 'REVIVE_LIMIT_REACHED',
+            playerId: target.playerId,
+            maxTeamRevives: this.endgame1Policy.maxTeamRevives,
+            teamRevivesUsed: this.endgame1Policy.teamRevivesUsed
+          });
+        }
+        continue;
+      }
       if (
         distanceSquared(reviver.position, target.position)
         > this.reviveRange * this.reviveRange
@@ -355,7 +454,7 @@ export class ReviveAuthority {
         const revival = validTargets.get(target.playerId);
         const requiredMs = Math.max(
           500,
-          Math.round(this.reviveHoldMs * revival.policy.holdMultiplier)
+          Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale * revival.policy.holdMultiplier)
         );
         target.reviveRequiredMs = requiredMs;
         target.lastReviveActiveAt = currentNow;
@@ -370,8 +469,15 @@ export class ReviveAuthority {
             Math.round(target.maxHealth * revival.policy.healthRatio)
           );
           target.reviveProgressMs = 0;
-          target.reviveRequiredMs = this.reviveHoldMs;
+          target.reviveRequiredMs = Math.max(500, Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale));
           target.lastReviveActiveAt = 0;
+          if (this.endgame1Policy.active && this.endgame1Policy.maxTeamRevives !== null) {
+            this.endgame1Policy = normalizeEndgame1RevivePolicy({
+              ...this.endgame1Policy,
+              teamRevivesUsed: this.endgame1Policy.teamRevivesUsed + 1
+            }, this.endgame1Policy);
+          }
+          this.reviveLimitNotifiedTargets.delete(target.playerId);
           target.reviveProtectionEndsAt = (
             currentNow
             + revival.policy.protectionMs
@@ -401,7 +507,7 @@ export class ReviveAuthority {
         )
       ) {
         target.reviveProgressMs = 0;
-        target.reviveRequiredMs = this.reviveHoldMs;
+        target.reviveRequiredMs = Math.max(500, Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale));
         target.lastReviveActiveAt = 0;
       }
     });
@@ -433,9 +539,12 @@ export class ReviveAuthority {
       runId: this.runId,
       wave: this.wave,
       serverTime: finite(now),
-      bleedoutMs: this.bleedoutMs,
-      reviveHoldMs: this.reviveHoldMs,
+      bleedoutMs: Math.max(5_000, Math.round(this.bleedoutMs * this.endgame1Policy.bleedoutScale)),
+      baseBleedoutMs: this.bleedoutMs,
+      reviveHoldMs: Math.max(500, Math.round(this.reviveHoldMs * this.endgame1Policy.reviveHoldScale)),
+      baseReviveHoldMs: this.reviveHoldMs,
       reviveRange: this.reviveRange,
+      endgame1Policy: this.getEndgamePolicy(),
       reviveProgressGraceMs: (
         this.reviveProgressGraceMs
         + cohesionPolicy(this.coop2Cohesion).graceBonusMs

@@ -56,7 +56,7 @@ for (const marker of [
   assert.ok(content.includes(marker), `Missing GAMEPLAY.7 CONTENT.1 marker: ${marker}`);
 }
 assert.match(content, /gameplay5, gameplay6, gameplay7/);
-assert.match(progressionCore, /PROGRESSION_VERSION = 6/);
+assert.match(progressionCore, /PROGRESSION_VERSION = 7/);
 assert.match(progressionCore, /campaign7: createDefaultGameplay7CampaignProfile/);
 assert.match(progressionCore, /normalizeGameplay7CampaignProfile\(source\.campaign7/);
 assert.match(progression, /recordProgressionGameplay7CampaignContribution/);
@@ -68,14 +68,14 @@ assert.match(summary, /gameplay7CampaignPoints/);
 assert.match(hud, /GAMEPLAY\.7 R1 — dynamic campaign and faction-control readout/);
 assert.match(hud, /\.ka-gameplay7-campaign/);
 
-assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
-assert.equal(release.productVersion, '1.10.0-quality2-r1');
-assert.equal(release.releaseSequence, 2026072202);
-assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
+assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
+assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+assert.equal(release.releaseSequence, 2026072301);
+assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
 assert.equal(metadata.gameplay7?.patch, 'gameplay7-r1-dynamic-campaign-faction-control');
 assert.deepEqual(metadata.gameplay7?.supportedMaps, [
   'grid_bunker',
@@ -119,8 +119,8 @@ for (const field of [
   assert.equal(metadata.gameplay7?.[field], true, `Missing GAMEPLAY.7 policy: ${field}`);
 }
 assert.equal(metadata.gameplay7?.workerChangeRequired, false);
-assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
-assert.match(updateDelivery, /releaseSequence: 2026072202/);
+assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
+assert.match(updateDelivery, /releaseSequence: 2026072301/);
 assert.match(buildProduction, /GAMEPLAY7_RELEASE_SEQUENCE = 2026072105/);
 assert.match(buildProduction, /"gameplay7":/);
 assert.match(verifyProduction, /GAMEPLAY\.7 production manifest patch mismatch/);

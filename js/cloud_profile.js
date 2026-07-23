@@ -12,6 +12,7 @@ import {
   sanitizeLegacyStorage,
   validateCloudProfile
 } from './cloud_profile_core.js';
+import { mergeEndgame1Profiles } from './endgame1_core.js';
 import { ONLINE_LEADERBOARD_WORKER_URL } from './online_leaderboards_core.js';
 import {
   CLOUD_SESSION_EXPIRED_MESSAGE,
@@ -628,6 +629,11 @@ function applyAuthoritativeRemoteProgression(profile) {
     || currentProfile?.progression?.loadout2
     || {}
   ));
+  const mergedEndgame1 = mergeEndgame1Profiles(
+    merged.progression?.endgame1 || currentProfile?.progression?.endgame1 || {},
+    incoming.progression?.endgame1 || {},
+    nowMs()
+  );
   merged.progression = JSON.parse(JSON.stringify(incoming.progression || {}));
   const progressionStorage = JSON.parse(
     merged.legacyStorage?.ka_progression_v1
@@ -645,6 +651,10 @@ function applyAuthoritativeRemoteProgression(profile) {
   if (mergedLoadout2?.patch === 'loadout2-r1-weapon-mastery-operator-specialization-melee') {
     merged.progression.loadout2 = mergedLoadout2;
     progressionStorage.loadout2 = mergedLoadout2;
+  }
+  if (mergedEndgame1?.patch === 'endgame1-r1-high-difficulty-operations') {
+    merged.progression.endgame1 = mergedEndgame1;
+    progressionStorage.endgame1 = mergedEndgame1;
   }
   merged.legacyStorage.ka_progression_v1 = JSON.stringify(progressionStorage);
   merged.updatedAt = Math.max(Number(merged.updatedAt || 0), nowMs());

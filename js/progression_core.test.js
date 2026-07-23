@@ -14,7 +14,7 @@ import {
 } from './progression_core.js';
 
 assert.equal(PROGRESSION_PATCH, 'prog1-r1-unified-progression-retention');
-assert.equal(PROGRESSION_VERSION, 6);
+assert.equal(PROGRESSION_VERSION, 7);
 assert.equal(PROGRESSION_MAX_LEVEL, 50);
 
 const migrated = normalizeProgressionProfile({
@@ -26,7 +26,7 @@ const migrated = normalizeProgressionProfile({
   bestScore: 4500,
   bestWave: 8
 }, Date.UTC(2026, 6, 15));
-assert.equal(migrated.version, 6);
+assert.equal(migrated.version, 7);
 assert.equal(migrated.totalRuns, 7);
 assert.equal(migrated.totalKills, 123);
 assert.ok(migrated.level >= 2);

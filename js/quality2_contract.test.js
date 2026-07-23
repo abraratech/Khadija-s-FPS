@@ -19,12 +19,12 @@ const updateDelivery = read('js/update_delivery_core.js');
 const release = JSON.parse(read('release-version.json'));
 const multiplayerRelease = JSON.parse(read('multiplayer-release.json'));
 
-assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
-assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
-assert.equal(release.productVersion, '1.10.0-quality2-r1');
-assert.equal(release.releaseSequence, 2026072202);
-assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
-assert.equal(release.workerChangeRequired, false);
+assert.equal(multiplayerRelease.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
+assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
+assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+assert.equal(release.releaseSequence, 2026072301);
+assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
+assert.equal(release.workerChangeRequired, true);
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
 
@@ -77,6 +77,6 @@ assert.equal(multiplayerRelease.quality2.workerChangeRequired, false);
 assert.match(build, /QUALITY2_PATCH = 'quality2-r1-consolidated-low-gpu-rendering'/);
 assert.match(build, /"quality2": \{/);
 assert.match(verifier, /QUALITY\.2 production manifest patch mismatch/);
-assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
+assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
 
 console.log('QUALITY.2 consolidated Low-GPU source integration contract passed');

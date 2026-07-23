@@ -52,7 +52,7 @@ for (const marker of [
 ]) {
   assert.ok(content.includes(marker), `Missing GAMEPLAY.4 CONTENT.1 marker: ${marker}`);
 }
-assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7 \}/);
+assert.match(content, /return \{ \.\.\.base, postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7, endgame1 \}/);
 assert.match(content, /this\.bossEncounterDirector\.replaceSnapshot\(snapshot\.gameplay4/);
 
 for (const marker of [
@@ -76,14 +76,14 @@ assert.match(replayability, /type === clean\(this\.state\.boss\.enemyType/);
 assert.match(runSummary, /recordRunGameplay4BossEncounter/);
 assert.match(runSummary, /gameplay4BossInterrupts/);
 
-assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
-assert.equal(release.productVersion, '1.10.0-quality2-r1');
-assert.equal(release.releaseSequence, 2026072202);
-assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
+assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
+assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+assert.equal(release.releaseSequence, 2026072301);
+assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
 assert.equal(metadata.gameplay4?.patch, 'gameplay4-r1-expanded-boss-encounters');
 assert.equal(metadata.gameplay4?.bossPhases, 3);
 assert.deepEqual(metadata.gameplay4?.bossProfiles, ['JUGGERNAUT', 'MATRIARCH', 'DETONATOR']);
@@ -111,8 +111,8 @@ for (const field of [
   assert.equal(metadata.gameplay4?.[field], true, `Missing GAMEPLAY.4 policy: ${field}`);
 }
 assert.equal(metadata.gameplay4?.workerChangeRequired, false);
-assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
-assert.match(updateDelivery, /releaseSequence: 2026072202/);
+assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
+assert.match(updateDelivery, /releaseSequence: 2026072301/);
 assert.match(buildProduction, /GAMEPLAY4_RELEASE_SEQUENCE = 2026072102/);
 assert.match(buildProduction, /"gameplay4":/);
 assert.match(verifyProduction, /GAMEPLAY\.4 production manifest patch mismatch/);

@@ -195,6 +195,11 @@ export function recordLoadout2Objective(family = 'PISTOL', amount = 1) {
 }
 
 function buildReceipt() {
+  const endgameSnapshot = globalThis.KAGetEndgame1Snapshot?.() || null;
+  const endgameMasteryScale = (
+    endgameSnapshot?.active === true
+    && endgameSnapshot?.pvpExcluded !== true
+  ) ? Math.max(1, Math.min(2, Number(endgameSnapshot?.tuning?.masteryScale) || 1)) : 1;
   const families = {};
   LOADOUT2_WEAPON_FAMILIES.forEach((family) => {
     const entry = run.families[family];
@@ -209,7 +214,7 @@ function buildReceipt() {
       || entry.strikes > 0
     ) {
       families[family] = {
-        xp: entry.xp,
+        xp: integer(entry.xp * endgameMasteryScale, entry.xp, 0, 100000),
         shots: entry.shots,
         hits: entry.hits,
         kills: entry.kills,
@@ -220,8 +225,9 @@ function buildReceipt() {
       };
     }
   });
+  const scaledTotalXp = Object.values(families).reduce((sum, entry) => sum + integer(entry.xp, 0), 0);
   const specializationPoints = integer(
-    run.totalXp * 0.28
+    scaledTotalXp * 0.28
       + Object.values(run.families).reduce((sum, entry) => sum + entry.objectives * 8 + entry.bossKills * 18, 0),
     0,
     0,
@@ -234,6 +240,8 @@ function buildReceipt() {
     specializationId: activeSpecializationId(),
     specializationPoints,
     families,
+    endgameTierId: String(endgameSnapshot?.tier?.id || 'NONE').slice(0, 40),
+    endgameMasteryScale,
     createdAt: Date.now()
   };
 }

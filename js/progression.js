@@ -37,6 +37,11 @@ import {
   getLoadout2MasteryPresentation,
   setLoadout2Specialization
 } from './loadout2_mastery_core.js';
+import {
+  ENDGAME1_PATCH,
+  applyEndgame1CompletionReceipt,
+  getEndgame1Presentation
+} from './endgame1_core.js';
 
 // js/progression.js
 // PROG.1 R1 — unified persistent progression and run perks.
@@ -178,7 +183,9 @@ const run = {
   botAssisted: false,
   economyAward: null,
   economyNewlyOwned: [],
-  economyReceiptFields: {}
+  economyReceiptFields: {},
+  endgame1Award: null,
+  endgame1ReceiptFields: {}
 };
 
 function dispatchCoop2Action(kind, details = {}) {
@@ -367,7 +374,9 @@ export function resetProgressionRun({
     botAssisted: false,
     economyAward: null,
     economyNewlyOwned: [],
-    economyReceiptFields: {}
+    economyReceiptFields: {},
+    endgame1Award: null,
+    endgame1ReceiptFields: {}
   });
   recalculateLevel();
   saveProfile(false, 'run-start');
@@ -602,7 +611,9 @@ export function finalizeProgressionRun({
       liveContractsCompleted: run.liveContractsCompleted,
       xpEarned: run.xpEarned,
       reason: run.endReason,
-      botAssisted: run.botAssisted
+      botAssisted: run.botAssisted,
+      endgameTierId: String(run.endgame1Award?.tierId || details.endgame1TierId || 'NONE').slice(0, 40),
+      endgameMarks: integer(run.endgame1Award?.marks || details.endgame1Marks, 0)
     },
     ...(Array.isArray(profile.recentRuns) ? profile.recentRuns : [])
   ].filter((entry, index, values) => (
@@ -648,7 +659,8 @@ export function finalizeProgressionRun({
     perksPurchased: run.perksPurchased,
     accuracy: clamp(details.accuracy, 0, 100),
     botAssisted: run.botAssisted,
-    ...run.economyReceiptFields
+    ...run.economyReceiptFields,
+    ...run.endgame1ReceiptFields
   });
   return getProgressionSnapshot();
 }
@@ -903,6 +915,57 @@ export function equipProgressionCosmetic(unlockId) {
   saveProfile(true, 'cosmetic-equipped');
   return { ok: true, unlock: entry, snapshot: getProgressionSnapshot() };
 }
+
+
+export function recordProgressionEndgame1Completion(receipt = null) {
+  if (!receipt?.receiptId) {
+    return Object.freeze({
+      valid: false,
+      applied: false,
+      idempotent: false,
+      patch: ENDGAME1_PATCH,
+      profile: profile.endgame1,
+      award: null,
+      firstClear: false
+    });
+  }
+  const result = applyEndgame1CompletionReceipt(profile.endgame1, receipt, Date.now());
+  profile.endgame1 = result.profile;
+  if (result.applied) {
+    run.endgame1Award = result.award ? { ...result.award } : null;
+    run.endgame1ReceiptFields = {
+      endgame1: {
+        receiptId: String(receipt.receiptId || '').slice(0, 240),
+        runId: String(receipt.runId || run.runId || '').slice(0, 120),
+        mapId: String(receipt.mapId || run.mapId || 'grid_bunker').slice(0, 80),
+        tierId: String(receipt.tierId || '').slice(0, 40),
+        tierRank: integer(receipt.tierRank, 0, 0),
+        modifierIds: Array.isArray(receipt.modifierIds)
+          ? receipt.modifierIds.map((entry) => String(entry || '').slice(0, 60)).slice(0, 8)
+          : [],
+        flawless: receipt.flawless === true,
+        completedAt: integer(receipt.completedAt, Date.now(), 1)
+      }
+    };
+    if (result.award?.xpBonus) {
+      grantXP(result.award.xpBonus, `${result.award.tierLabel || 'ENDGAME'} CLEAR`, 'ENDGAME');
+    }
+    run.lastEvent = `ENDGAME ${result.award?.tierLabel || receipt.tierId || 'CLEAR'} +${result.award?.marks || 0} MARKS`;
+    saveProfile(true, 'endgame1-completion');
+  }
+  return Object.freeze({
+    valid: result.valid === true,
+    applied: result.applied === true,
+    idempotent: result.idempotent === true,
+    firstClear: result.firstClear === true,
+    patch: ENDGAME1_PATCH,
+    profile: result.profile,
+    presentation: getEndgame1Presentation(result.profile),
+    award: result.award || null,
+    errors: result.errors || []
+  });
+}
+
 
 export function recordProgressionGameplay6WorldContribution(receipt = null) {
   if (!receipt?.receiptId) {

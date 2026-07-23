@@ -75,7 +75,10 @@
       "serverAuthoritativeCurrencies": true,
       "idempotentEconomyLedger": true,
       "duplicateRewardConversion": "salvage",
-      "offlineReceiptReconciliation": true
+      "offlineReceiptReconciliation": true,
+      "endgameAuthorityPatch": "endgame1-r1-high-difficulty-operations",
+      "endgameProtectedReceipts": true,
+      "endgameRewardsServerRecomputed": true
     }
   },
   "playerFacingPolish": {
@@ -395,7 +398,7 @@
     "optionalWebhookAlerts": true,
     "secretValuesExposed": false
   },
-  "releaseLabel": "QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization",
+  "releaseLabel": "ENDGAME.1 R1 - High-Difficulty Operations",
   "certifiedSourceSeal": "dbc459802c5b38e71870ea70016f6200a523bb96148a74f29b1b594f1257b26e",
   "fullProductCertification": {
     "schema": 1,
@@ -706,7 +709,7 @@
     "workerChangeRequired": true,
     "frontendOnly": false
   },
-  "productVersion": "1.2.0-net1-r1",
+  "productVersion": "1.11.0-endgame1-r1",
   "postFinal10": {
     "schema": 1,
     "patch": "post-final10-r1-version1-stabilization-accessibility-performance",
@@ -1586,6 +1589,59 @@
     "protocolUnchanged": true,
     "workerChangeRequired": false,
     "frontendOnly": true,
+    "crazyGamesReadinessOnHold": true,
+    "androidReadinessOnHold": true
+  },
+  "endgame1": {
+    "schema": 1,
+    "patch": "endgame1-r1-high-difficulty-operations",
+    "productVersion": "1.11.0-endgame1-r1",
+    "releaseSequence": 2026072301,
+    "sourceBaselineSha": "b99543d4f233d8d5284f48ae0c6df0d4a528a362",
+    "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
+    "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
+    "tiers": [
+      "VETERAN",
+      "NIGHTMARE",
+      "APEX"
+    ],
+    "difficultyValues": [
+      1.7,
+      1.85,
+      2.0
+    ],
+    "deterministicModifiers": true,
+    "modifierPool": [
+      "ARMORED_HORDE",
+      "ELITE_SURGE",
+      "LOW_SUPPLIES",
+      "RECOVERY_RATIONING",
+      "ACCELERATED_MUTATIONS",
+      "BOSS_REINFORCEMENTS",
+      "HAZARD_SATURATION",
+      "LIMITED_REVIVES"
+    ],
+    "hostAuthoritative": true,
+    "lateJoinSnapshot": true,
+    "reconnectRestoration": true,
+    "hostMigrationCheckpoint": true,
+    "limitedTeamRevives": true,
+    "apexWaveRespawnDisabled": true,
+    "profileOwnedState": true,
+    "cloudMergeSafe": true,
+    "protectedCompletionReceipts": true,
+    "workerAuthoritativeRewards": true,
+    "duplicateSafeReceipts": true,
+    "weaponMasteryAcceleration": true,
+    "runSummaryIntegration": true,
+    "pvpExcluded": true,
+    "pvpProgressionBonusesDisabled": true,
+    "enemyPopulationUnchanged": true,
+    "newMapsIncluded": false,
+    "newEnemyFactionsIncluded": false,
+    "protocolUnchanged": true,
+    "workerChangeRequired": true,
+    "frontendAndWorker": true,
     "crazyGamesReadinessOnHold": true,
     "androidReadinessOnHold": true
   }

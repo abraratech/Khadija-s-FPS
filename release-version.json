@@ -1,13 +1,13 @@
 {
   "schema": 1,
   "product": "Khadija's Arena",
-  "productVersion": "1.10.0-quality2-r1",
-  "releaseId": "quality2-r1-consolidated-low-gpu-rendering",
-  "releaseSequence": 2026072202,
-  "sourceBaselineSha": "d56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7",
+  "productVersion": "1.11.0-endgame1-r1",
+  "releaseId": "endgame1-r1-high-difficulty-operations",
+  "releaseSequence": 2026072301,
+  "sourceBaselineSha": "b99543d4f233d8d5284f48ae0c6df0d4a528a362",
   "updateDelivery": true,
-  "workerChangeRequired": false,
+  "workerChangeRequired": true,
   "workerBaselineSha": "2a038bef08f3d27a71159ac6ef597139acfc58b1",
   "baselineWorkerVersionId": "4f384856-891f-4563-b148-148c2f90cd98",
-  "certificationStatus": "STATIC_CERTIFIED_DEPLOYMENT_PENDING"
+  "certificationStatus": "LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED"
 }

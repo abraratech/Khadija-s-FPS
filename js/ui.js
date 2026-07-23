@@ -603,6 +603,24 @@ export function renderRunSummaryScreen() {
       ? summary.replayMedals.map((entry) => entry.label || entry.id || 'MEDAL').join(' · ')
       : 'NONE'
   );
+  setText(
+    'final-endgame-tier',
+    summary.endgame1TierId && summary.endgame1TierId !== 'NONE'
+      ? `${summary.endgame1TierLabel || summary.endgame1TierId}${summary.endgame1Flawless ? ' · FLAWLESS' : ''}`
+      : 'STANDARD'
+  );
+  setText(
+    'final-endgame-modifiers',
+    Array.isArray(summary.endgame1ModifierLabels) && summary.endgame1ModifierLabels.length
+      ? summary.endgame1ModifierLabels.join(' · ')
+      : 'NONE'
+  );
+  setText(
+    'final-endgame-reward',
+    summary.endgame1TierId && summary.endgame1TierId !== 'NONE'
+      ? `+${Math.max(0, Math.round(Number(summary.endgame1Marks) || 0))} MARKS · +${Math.max(0, Math.round(Number(summary.endgame1XpBonus) || 0))} XP · MASTERY ×${Math.max(1, Number(summary.endgame1MasteryScale) || 1).toFixed(2)}${summary.endgame1FirstClear ? ' · FIRST CLEAR' : ''}`
+      : 'NONE'
+  );
 
   const level = progression.profile.level;
   const capped = level >= progression.maxLevel || progression.profile.xpToNext <= 0;

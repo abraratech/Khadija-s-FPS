@@ -80,6 +80,18 @@ const state = {
   gameplay7CampaignFaction: 'NONE',
   gameplay7ControlShifts: [],
   lastGameplay7Campaign: null,
+  endgame1TierId: 'NONE',
+  endgame1TierLabel: 'Standard',
+  endgame1TierRank: 0,
+  endgame1ModifierIds: [],
+  endgame1ModifierLabels: [],
+  endgame1Marks: 0,
+  endgame1XpBonus: 0,
+  endgame1MasteryScale: 1,
+  endgame1FirstClear: false,
+  endgame1Flawless: false,
+  endgame1ReceiptId: '',
+  lastEndgame1: null,
   loadout2MasteryXp: 0,
   loadout2SpecializationId: 'FIELD_OPERATIVE',
   loadout2Families: {},
@@ -621,6 +633,52 @@ export function recordRunGameplay7CampaignContribution({
     : 'CAMPAIGN CONTROL RESTORED';
   return getRunSummarySnapshot();
 }
+
+
+export function recordRunEndgame1({
+  snapshot = null,
+  receipt = null,
+  result = null
+} = {}) {
+  if (!state.active && !state.finalized) return getRunSummarySnapshot();
+  const source = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const tier = source.tier || {};
+  const award = result?.award || {};
+  state.endgame1TierId = String(tier.id || receipt?.tierId || 'NONE').slice(0, 40);
+  state.endgame1TierLabel = String(tier.label || award.tierLabel || state.endgame1TierId || 'Standard').slice(0, 60);
+  state.endgame1TierRank = Math.max(0, Math.round(finite(tier.rank ?? receipt?.tierRank, 0)));
+  state.endgame1ModifierIds = (Array.isArray(source.modifiers) ? source.modifiers : [])
+    .map((entry) => String(entry?.id || entry || '').slice(0, 60))
+    .filter(Boolean)
+    .slice(0, 8);
+  state.endgame1ModifierLabels = (Array.isArray(source.modifiers) ? source.modifiers : [])
+    .map((entry) => String(entry?.label || entry?.id || entry || '').slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 8);
+  state.endgame1Marks = Math.max(0, Math.round(finite(award.marks, 0)));
+  state.endgame1XpBonus = Math.max(0, Math.round(finite(award.xpBonus, 0)));
+  state.endgame1MasteryScale = Math.max(1, finite(award.masteryScale ?? source.tuning?.masteryScale, 1));
+  state.endgame1FirstClear = result?.firstClear === true;
+  state.endgame1Flawless = receipt?.flawless === true || source.noDowned === true;
+  state.endgame1ReceiptId = String(receipt?.receiptId || source.completionId || '').slice(0, 240);
+  state.lastEndgame1 = {
+    patch: String(source.patch || '').slice(0, 100),
+    tierId: state.endgame1TierId,
+    tierLabel: state.endgame1TierLabel,
+    tierRank: state.endgame1TierRank,
+    modifierIds: [...state.endgame1ModifierIds],
+    modifierLabels: [...state.endgame1ModifierLabels],
+    marks: state.endgame1Marks,
+    xpBonus: state.endgame1XpBonus,
+    masteryScale: state.endgame1MasteryScale,
+    firstClear: state.endgame1FirstClear,
+    flawless: state.endgame1Flawless,
+    receiptId: state.endgame1ReceiptId
+  };
+  state.lastEvent = `ENDGAME ${state.endgame1TierLabel.toUpperCase()} +${state.endgame1Marks} MARKS`;
+  return getRunSummarySnapshot();
+}
+
 
 export function recordRunLoadout2Mastery({
   applied = false,

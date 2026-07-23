@@ -54,7 +54,7 @@ for (const marker of [
   assert.ok(content.includes(marker), `Missing GAMEPLAY.6 CONTENT.1 marker: ${marker}`);
 }
 assert.match(content, /postFinal4, postFinal7, postFinal8, gameplay2, gameplay3, gameplay4, gameplay5, gameplay6, gameplay7/);
-assert.match(progressionCore, /PROGRESSION_VERSION = 6/);
+assert.match(progressionCore, /PROGRESSION_VERSION = 7/);
 assert.match(progressionCore, /world6: createDefaultGameplay6WorldProfile/);
 assert.match(progressionCore, /normalizeGameplay6WorldProfile\(source\.world6/);
 assert.match(progression, /recordProgressionGameplay6WorldContribution/);
@@ -66,14 +66,14 @@ assert.match(summary, /gameplay6WorldPoints/);
 assert.match(hud, /GAMEPLAY\.6 R1 — persistent world progression readout/);
 assert.match(hud, /\.ka-gameplay6-world/);
 
-assert.equal(release.releaseId, 'quality2-r1-consolidated-low-gpu-rendering');
-assert.equal(release.productVersion, '1.10.0-quality2-r1');
-assert.equal(release.releaseSequence, 2026072202);
-assert.equal(release.sourceBaselineSha, 'd56ffa34d890f1cc2ac0ae8c98164e7c71edf9c7');
+assert.equal(release.releaseId, 'endgame1-r1-high-difficulty-operations');
+assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+assert.equal(release.releaseSequence, 2026072301);
+assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
 assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
 assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
-assert.equal(release.workerChangeRequired, false);
-assert.equal(metadata.releaseLabel, 'QUALITY.2 R1 - Consolidated Low-GPU Rendering Optimization');
+assert.equal(release.workerChangeRequired, true);
+assert.equal(metadata.releaseLabel, 'ENDGAME.1 R1 - High-Difficulty Operations');
 assert.equal(metadata.gameplay6?.patch, 'gameplay6-r1-world-progression');
 assert.deepEqual(metadata.gameplay6?.supportedMaps, [
   'grid_bunker',
@@ -108,8 +108,8 @@ for (const field of [
   assert.equal(metadata.gameplay6?.[field], true, `Missing GAMEPLAY.6 policy: ${field}`);
 }
 assert.equal(metadata.gameplay6?.workerChangeRequired, false);
-assert.match(updateDelivery, /quality2-r1-consolidated-low-gpu-rendering/);
-assert.match(updateDelivery, /releaseSequence: 2026072202/);
+assert.match(updateDelivery, /endgame1-r1-high-difficulty-operations/);
+assert.match(updateDelivery, /releaseSequence: 2026072301/);
 assert.match(buildProduction, /GAMEPLAY6_RELEASE_SEQUENCE = 2026072104/);
 assert.match(buildProduction, /"gameplay6":/);
 assert.match(verifyProduction, /GAMEPLAY\.6 production manifest patch mismatch/);

@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering', 'endgame1-r1-high-difficulty-operations'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -88,6 +88,14 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
   assert.equal(release.workerChangeRequired, false);
   assert.equal(release.certificationStatus, 'STATIC_CERTIFIED_DEPLOYMENT_PENDING');
+} else if (release.releaseId === 'endgame1-r1-high-difficulty-operations') {
+  assert.equal(release.productVersion, '1.11.0-endgame1-r1');
+  assert.equal(release.releaseSequence, 2026072301);
+  assert.equal(release.sourceBaselineSha, 'b99543d4f233d8d5284f48ae0c6df0d4a528a362');
+  assert.equal(release.workerBaselineSha, '2a038bef08f3d27a71159ac6ef597139acfc58b1');
+  assert.equal(release.baselineWorkerVersionId, '4f384856-891f-4563-b148-148c2f90cd98');
+  assert.equal(release.workerChangeRequired, true);
+  assert.equal(release.certificationStatus, 'LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED');
 } else if (release.releaseId === 'loadout2-r1-weapon-mastery-operator-specialization-melee') {
   assert.equal(release.productVersion, '1.9.0-loadout2-r1');
   assert.equal(release.releaseSequence, 2026072201);

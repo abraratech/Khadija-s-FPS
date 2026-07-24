@@ -48,6 +48,7 @@ import {
 import {
   initializeLoadoutSystems,
   freezeActiveLoadoutForRun,
+  freezeDefaultBalancedLoadoutForRun,
   clearFrozenLoadoutForRun,
 } from './loadout.js';
 import { resetObjectivesRun, endObjectivesRun } from './objectives.js';
@@ -84,6 +85,10 @@ import { initLocalLeaderboards, beginLocalLeaderboardRun, submitLocalLeaderboard
 import { initOnlineLeaderboards, beginOnlineLeaderboardRun, submitOnlineLeaderboardRun } from './online_leaderboards.js';
 import { initCareerAchievements } from './career_achievements.js';
 import { initLaunch1Experience } from './launch1.js';
+import {
+  completeOnboarding1QuickPlayRun,
+  initOnboarding1Experience,
+} from './onboarding1.js';
 import { initCameraPresentation, resetCameraPresentation, updateCameraPresentation, enforceCameraPresentationVisibility, endCameraPresentation } from './camera_presentation.js';
 import {
   initGameplayReliability,
@@ -303,6 +308,68 @@ function setNumericSelectValue(select, value, fallback = 1) {
     || fallbackMatch?.value
     || select.options[0]?.value
     || '';
+}
+
+function waitForArenaAssets(timeoutMs = 10000) {
+  if (arenaAssetsReady) return Promise.resolve(true);
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      window.removeEventListener('ka:arena-assets-ready', onReady);
+      reject(new Error('ARENA_ASSET_TIMEOUT'));
+    }, timeoutMs);
+    function onReady() {
+      window.clearTimeout(timeout);
+      resolve(true);
+    }
+    window.addEventListener('ka:arena-assets-ready', onReady, { once: true });
+  });
+}
+
+function restoreOnboardingMenuSelections() {
+  if (!onboardingMenuSelectionRestore) return false;
+  const mapSelect = document.getElementById('map-select');
+  const difficultySelect = document.getElementById('diff-select');
+  if (mapSelect) mapSelect.value = onboardingMenuSelectionRestore.mapId;
+  if (difficultySelect) difficultySelect.value = onboardingMenuSelectionRestore.difficulty;
+  onboardingMenuSelectionRestore = null;
+  return true;
+}
+
+async function launchOnboardingQuickPlay(plan = {}) {
+  await waitForArenaAssets();
+  if (isOnlineMultiplayerRun()) {
+    throw new Error('MULTIPLAYER_SESSION_ACTIVE');
+  }
+
+  const mapSelect = document.getElementById('map-select');
+  const difficultySelect = document.getElementById('diff-select');
+  onboardingMenuSelectionRestore = {
+    mapId: mapSelect?.value || 'grid_bunker',
+    difficulty: difficultySelect?.value || '1.0',
+  };
+  if (mapSelect) mapSelect.value = 'grid_bunker';
+  setNumericSelectValue(difficultySelect, 1, 1);
+
+  try {
+    await beginRun({
+      deferPointerLock: false,
+      loadoutPolicy: 'default-balanced',
+      onboardingQuickPlay: true,
+    });
+    if (gs !== 'playing') throw new Error('QUICK_PLAY_NOT_RUNNING');
+    return Object.freeze({ ok: true, mapId: 'grid_bunker', difficulty: 1 });
+  } catch (error) {
+    clearFrozenLoadoutForRun();
+    endMapGameplay();
+    endEnemyRun('onboarding-start-failed');
+    removeActiveWeaponMesh();
+    gs = 'menu';
+    player.alive = false;
+    setGameChromeVisible(false);
+    showMenuScreen('home');
+    restoreOnboardingMenuSelections();
+    throw error;
+  }
 }
 
 registerMultiplayerRunLauncher(({ mapId, difficulty }) => {
@@ -759,6 +826,17 @@ initializeLoadoutSystems({
   getProgressionSnapshot,
   equipProgressionCosmetic
 });
+initOnboarding1Experience({
+  launchQuickPlay: launchOnboardingQuickPlay,
+  openDiscovery: (screen) => {
+    if (gs !== 'menu') returnToMenu('onboarding-discovery');
+    window.dispatchEvent(new CustomEvent('ka:menu-screen', {
+      detail: { screen, source: 'onboarding1-post-run' },
+    }));
+    return true;
+  },
+  showToast: showStatusToast,
+});
 initCloudProfile({ showToast: showStatusToast });
 initSocialSystems({ showToast: showStatusToast });
 initLive1Systems({
@@ -1089,6 +1167,8 @@ export const ASSETS = {
 
 const loadingManager = new THREE.LoadingManager();
 const gltfLoader = new THREE.GLTFLoader(loadingManager);
+let arenaAssetsReady = false;
+let onboardingMenuSelectionRestore = null;
 
 loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
   const pct = Math.floor((itemsLoaded / itemsTotal) * 100);
@@ -1106,6 +1186,8 @@ function finishLoadingUI() {
   if (loadingPct) loadingPct.textContent = '100%';
   if (loadingContainer) loadingContainer.style.display = 'none';
   if (startBtn) startBtn.style.display = 'inline-block';
+  arenaAssetsReady = true;
+  window.dispatchEvent(new CustomEvent('ka:arena-assets-ready'));
 
   console.log("Arena assets ready.");
 }
@@ -1283,7 +1365,14 @@ function finalizeCurrentRun(reason = 'ENDED') {
     });
   }
 
-  return Object.freeze({ payload, summary, localResult, onlineResult });
+  const onboarding = completeOnboarding1QuickPlayRun({
+    reason: payload.reason,
+    mapId,
+    mode,
+    summary,
+  });
+
+  return Object.freeze({ payload, summary, localResult, onlineResult, onboarding });
 }
 
 function saveRunRecords() {
@@ -1412,10 +1501,14 @@ function setGameChromeVisible(isPlaying) {
 }
 
 function showMenuScreen(name = 'home') {
-  const screenNames = ['home', 'map', 'difficulty', 'settings'];
+  if (typeof window.KHADIJA_MENU_SHOW_SCREEN === 'function') {
+    window.KHADIJA_MENU_SHOW_SCREEN(name);
+    return;
+  }
+  const screenNames = ['map', 'difficulty'];
   const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
   const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
-  const activeIndex = Math.max(0, screenNames.indexOf(name));
+  const activeIndex = screenNames.indexOf(name);
 
   screens.forEach((screen) => {
     screen.classList.toggle('active', screen.dataset.menuScreen === name);
@@ -1423,7 +1516,7 @@ function showMenuScreen(name = 'home') {
 
   steps.forEach((step, index) => {
     step.classList.toggle('active', step.dataset.stepDot === name);
-    step.classList.toggle('done', index < activeIndex);
+    step.classList.toggle('done', activeIndex >= 0 && index < activeIndex);
   });
 }
 
@@ -1459,7 +1552,12 @@ async function enterGameplayPresentation({ requestPointerLock = true } = {}) {
   }
 }
 
-async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) {
+async function beginRun({
+  fromRespawn = false,
+  deferPointerLock = false,
+  loadoutPolicy = 'active',
+  onboardingQuickPlay = false,
+} = {}) {
   onlineRunEndHandled = false;
   if (runTransitionInProgress) return;
 
@@ -1500,14 +1598,17 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
           : 'single'
     });
 
-    const frozenLoadout = freezeActiveLoadoutForRun({
+    const loadoutOptions = {
       reuseExisting: fromRespawn || isOnlineMultiplayerRun(),
       runId: `run-${Date.now().toString(36)}`,
       mapId: chosenMap,
       difficulty: difficultyMultiplier,
       mode: isOnlineMultiplayerRun() ? 'multiplayer' : 'single',
       gameMode: pvpRun ? 'pvp' : 'survival'
-    });
+    };
+    const frozenLoadout = loadoutPolicy === 'default-balanced' && !pvpRun
+      ? freezeDefaultBalancedLoadoutForRun(loadoutOptions)
+      : freezeActiveLoadoutForRun(loadoutOptions);
     player.loadoutPreferences = frozenLoadout;
 
     beginMultiplayerRun({
@@ -1600,9 +1701,19 @@ async function beginRun({ fromRespawn = false, deferPointerLock = false } = {}) 
     await enterGameplayPresentation({ requestPointerLock: !deferPointerLock });
     ensureGameLoopStarted();
 
+    if (onboardingQuickPlay) {
+      console.info('[ONBOARDING.1] One-click Grid Bunker deployment started.');
+    }
     if (fromRespawn) {
       console.log("Arena restarted.");
     }
+    return Object.freeze({
+      ok: true,
+      mapId: chosenMap,
+      difficulty: difficultyMultiplier,
+      loadoutId: frozenLoadout.loadoutId,
+      onboardingQuickPlay: onboardingQuickPlay === true,
+    });
   } finally {
     runTransitionInProgress = false;
   }
@@ -1794,6 +1905,7 @@ function returnToMenu(source = 'pause') {
   setLockHintVisible(false);
   setGameChromeVisible(false);
   showMenuScreen('home');
+  restoreOnboardingMenuSelections();
 
   console.log(`Returned to menu from ${source}.`);
 }

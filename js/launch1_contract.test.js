@@ -23,13 +23,15 @@ for (const id of [
 
 assert.match(index, /role="dialog"/);
 assert.match(index, /aria-modal="true"/);
-assert.match(index, /data-launch1-action="solo"/);
+assert.match(index, /data-onboarding1-quick-play="welcome"/);
 assert.match(index, /data-launch1-action="multiplayer"/);
 assert.match(index, /Replay this guide anytime from Settings/);
 assert.match(main, /from '\.\/launch1\.js'/);
 assert.match(main, /initLaunch1Experience\(\)/);
 assert.match(runtime, /ka_launch1_welcome_seen_v1/);
 assert.match(runtime, /ka:menu-screen/);
+assert.match(runtime, /disabled-by-onboarding1/);
+assert.doesNotMatch(runtime, /window\.setTimeout\(\(\) => \{\s*if \(!readSeen\(\)\) openLaunch1Welcome\(\)/);
 assert.match(runtime, /event\.key !== 'Tab'/);
 assert.match(runtime, /event\.key === 'Escape'/);
 assert.match(menuCss, /#launch1-welcome/);

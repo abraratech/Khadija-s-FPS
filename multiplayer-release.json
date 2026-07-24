@@ -719,7 +719,7 @@
     "workerChangeRequired": true,
     "frontendOnly": false
   },
-  "productVersion": "1.13.1-quality3-r1",
+  "productVersion": "1.14.0-onboarding1-r1",
   "postFinal10": {
     "schema": 1,
     "patch": "post-final10-r1-version1-stabilization-accessibility-performance",
@@ -1746,5 +1746,59 @@
     "frontendOnly": true,
     "crazyGamesReadinessOnHold": true,
     "androidReadinessOnHold": true
+  },
+  "onboarding1R1": {
+    "schema": 1,
+    "patch": "onboarding1-r1-instant-quick-play-funnel",
+    "productVersion": "1.14.0-onboarding1-r1",
+    "releaseSequence": 2026072401,
+    "sourceBaselineSha": "fea265003ac0625c8f4268f237746abc6a2043fd",
+    "workerBaselineSha": "a37d98313472d9f3706a7af2ce10810404b78607",
+    "baselineWorkerVersionId": "6243d37c-191f-4a06-b6a7-b2e60c2a768a",
+    "oneClickQuickPlay": true,
+    "firstTimeDirectDeployment": true,
+    "mode": "single",
+    "gameMode": "survival",
+    "mapId": "grid_bunker",
+    "difficulty": 1,
+    "difficultyLabel": "Normal",
+    "defaultBalancedLoadout": true,
+    "loadoutId": "loadout-field-standard",
+    "advancedSelectionsPreserved": true,
+    "persistentLoadoutSelectionUnchanged": true,
+    "firstRunFieldTraining": true,
+    "launchModalAutoOpenRemoved": true,
+    "postRunDiscoveryGuidance": true,
+    "deploymentFailureRecovery": true,
+    "localFunnelState": true,
+    "protocolUnchanged": true,
+    "workerChangeRequired": false,
+    "frontendOnly": true,
+    "crazyGamesReadinessOnHold": true,
+    "androidReadinessOnHold": true,
+    "loadoutRailRemoved": true,
+    "loadoutFlowPreserved": true,
+    "simplifiedPrimaryRail": true,
+    "brandReturnsHome": true,
+    "quickPlayPrimaryAction": true,
+    "soloOperationsRail": true,
+    "unifiedLeaderboardsSection": true,
+    "leaderboardTabs": [
+      "LOCAL",
+      "ONLINE"
+    ],
+    "careerRewardsFullSection": true,
+    "careerTabs": [
+      "OVERVIEW",
+      "OPERATIONS",
+      "REWARDS",
+      "ACHIEVEMENTS",
+      "HISTORY"
+    ],
+    "liveCommandFoldedIntoOperations": true,
+    "primarySectionsModalFree": true,
+    "decorativeModeRailRemoved": true,
+    "homeDashboardCleaned": true,
+    "deploymentStepperContextual": true
   }
 }

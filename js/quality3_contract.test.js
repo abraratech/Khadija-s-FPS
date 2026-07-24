@@ -6,13 +6,13 @@ const read = (relative) => fs.readFileSync(new URL(relative, import.meta.url), '
 const release = JSON.parse(read('../release-version.json'));
 const multiplayer = JSON.parse(read('../multiplayer-release.json'));
 
-assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
-assert.equal(release.productVersion, '1.13.1-quality3-r1');
-assert.equal(release.releaseSequence, 2026072304);
+assert.equal(release.releaseId, 'onboarding1-r1-instant-quick-play-funnel');
+assert.equal(release.productVersion, '1.14.0-onboarding1-r1');
+assert.equal(release.releaseSequence, 2026072401);
 assert.equal(release.workerChangeRequired, false);
 assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
 assert.equal(multiplayer.protocol, 6);
-assert.equal(multiplayer.productVersion, '1.13.1-quality3-r1');
+assert.equal(multiplayer.productVersion, '1.14.0-onboarding1-r1');
 assert.equal(multiplayer.quality3R1.patch, 'quality3-r1-map-evolution-geometry-zero-failure');
 assert.equal(multiplayer.quality3R1.stormbreakCanalPreserved, true);
 

@@ -20,10 +20,10 @@ const release = JSON.parse(read('release-version.json'));
 const multiplayerRelease = JSON.parse(read('multiplayer-release.json'));
 
 assert.equal(multiplayerRelease.releaseLabel, 'QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification');
-assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
-assert.equal(release.productVersion, '1.13.1-quality3-r1');
-assert.equal(release.releaseSequence, 2026072304);
-assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(release.releaseId, 'onboarding1-r1-instant-quick-play-funnel');
+assert.equal(release.productVersion, '1.14.0-onboarding1-r1');
+assert.equal(release.releaseSequence, 2026072401);
+assert.equal(release.sourceBaselineSha, 'fea265003ac0625c8f4268f237746abc6a2043fd');
 assert.equal(release.workerChangeRequired, false);
 assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
 assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
@@ -77,6 +77,6 @@ assert.equal(multiplayerRelease.quality2.workerChangeRequired, false);
 assert.match(build, /QUALITY2_PATCH = 'quality2-r1-consolidated-low-gpu-rendering'/);
 assert.match(build, /"quality2": \{/);
 assert.match(verifier, /QUALITY\.2 production manifest patch mismatch/);
-assert.match(updateDelivery, /quality3-r1-map-evolution-geometry-zero-failure/);
+assert.match(updateDelivery, /onboarding1-r1-instant-quick-play-funnel/);
 
 console.log('QUALITY.2 consolidated Low-GPU source integration contract passed');

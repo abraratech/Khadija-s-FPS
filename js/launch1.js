@@ -1,4 +1,4 @@
-// LAUNCH.1 R1 — first-run welcome guide and launch-safe player experience.
+// LAUNCH.1 R1 + ONBOARDING.1 — replayable guide without a first-load modal gate.
 
 export const LAUNCH1_PATCH = 'launch1-r1-first-run-welcome-production-language';
 export const LAUNCH1_WELCOME_KEY = 'ka_launch1_welcome_seen_v1';
@@ -64,7 +64,7 @@ export function openLaunch1Welcome({ force = false } = {}) {
   root.hidden = false;
   root.setAttribute('aria-hidden', 'false');
   document.body.classList.add('ka-launch1-welcome-open');
-  const primary = root.querySelector('[data-launch1-action="solo"]');
+  const primary = root.querySelector('[data-onboarding1-quick-play], [data-launch1-action="solo"]');
   requestAnimationFrame(() => primary?.focus?.({ preventScroll: true }));
   return true;
 }
@@ -112,8 +112,9 @@ export function initLaunch1Experience() {
   });
   window.addEventListener('ka:launch-guide-open', () => openLaunch1Welcome({ force: true }));
 
-  window.setTimeout(() => {
-    if (!readSeen()) openLaunch1Welcome();
-  }, 450);
+  // ONBOARDING.1 removes the automatic first-load modal. New players can
+  // fire the one-click Quick Play action immediately; this guide remains
+  // replayable from Settings and through ka:launch-guide-open.
+  document.documentElement.dataset.kaLaunch1AutoOpen = 'disabled-by-onboarding1';
   return true;
 }

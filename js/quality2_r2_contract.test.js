@@ -17,10 +17,10 @@ const updateDelivery = read('js/update_delivery_core.js');
 const build = read('scripts/build_production.py');
 const verifier = read('scripts/verify_launch2_build.py');
 
-assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
-assert.equal(release.productVersion, '1.13.1-quality3-r1');
-assert.equal(release.releaseSequence, 2026072304);
-assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(release.releaseId, 'onboarding1-r1-instant-quick-play-funnel');
+assert.equal(release.productVersion, '1.14.0-onboarding1-r1');
+assert.equal(release.releaseSequence, 2026072401);
+assert.equal(release.sourceBaselineSha, 'fea265003ac0625c8f4268f237746abc6a2043fd');
 assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
 assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
 assert.equal(release.workerChangeRequired, false);
@@ -29,7 +29,7 @@ assert.equal(
   multiplayerRelease.releaseLabel,
   'QUALITY.3 R1 - Map Evolution Geometry and Zero-Failure Certification'
 );
-assert.equal(multiplayerRelease.productVersion, '1.13.1-quality3-r1');
+assert.equal(multiplayerRelease.productVersion, '1.14.0-onboarding1-r1');
 assert.equal(multiplayerRelease.protocol, 6);
 assert.equal(multiplayerRelease.quality2R2?.publicRoomDiscoveryRepair, true);
 assert.equal(multiplayerRelease.quality2R2?.listJoinCompatibilityFallback, true);
@@ -58,9 +58,9 @@ assert.match(lobbyUi, /\['loading', 'finding', 'joining'\]/);
 assert.match(lobbyUi, /USING COMPATIBILITY ROOM BROWSER/);
 assert.match(lobbyUi, /SEARCHING OPEN UNRANKED ROOMS/);
 
-assert.match(updateDelivery, /quality3-r1-map-evolution-geometry-zero-failure/);
-assert.match(updateDelivery, /releaseSequence: 2026072304/);
-assert.match(updateDelivery, /1\.13\.1-quality3-r1/);
+assert.match(updateDelivery, /onboarding1-r1-instant-quick-play-funnel/);
+assert.match(updateDelivery, /releaseSequence: 2026072401/);
+assert.match(updateDelivery, /1\.14\.0-onboarding1-r1/);
 assert.match(build, /QUALITY2_R2_PATCH = 'quality2-r2-consolidated-polish-certification'/);
 assert.match(build, /"quality2_r2": \{/);
 assert.match(verifier, /QUALITY\.2 R2 production manifest patch mismatch/);

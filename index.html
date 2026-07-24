@@ -606,7 +606,18 @@
   .ka-rail-mode.coop > span { color: var(--ka-green); }
   .ka-rail-mode b { color: #fff; font-size: 11px; letter-spacing: .8px; }
   .ka-rail-mode small { color: #8ea3b1; font-size: 8px; white-space: nowrap; }
-  .ka-rail-nav { display: grid; gap: 8px; }
+  .ka-rail-nav {
+    min-height: 0;
+    flex: 1 1 auto;
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(16,216,255,.45) transparent;
+    padding-right: 3px;
+  }
   .ka-rail-nav-btn {
     min-height: 48px;
     display: flex;
@@ -918,7 +929,7 @@
     .ka-rail-mode-row,
     .ka-rail-footer { display: none; }
     .ka-rail-title { font-size: 20px; line-height: .92; letter-spacing: 0; }
-    .ka-rail-nav { display: flex; justify-content: center; gap: 6px; overflow-x: auto; }
+    .ka-rail-nav { min-height:auto; flex:0 1 auto; display:flex; justify-content:center; gap:6px; overflow-x:auto; overflow-y:hidden; padding-right:0; }
     .ka-rail-nav-btn { width: auto; min-height: 38px; padding: 0 10px; font-size: 9px; white-space: nowrap; }
     .ka-rail-nav-btn span { display: none; }
     .ka-menu-main { padding: 0 max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
@@ -955,7 +966,9 @@
     .ka-rail-nav-btn::after { font-size: 10px; }
     .ka-rail-nav-btn[data-rail-screen="home"]::after { content: "PLAY"; }
     .ka-rail-nav-btn[data-rail-screen="map"]::after { content: "ARENA"; }
-    .ka-rail-nav-btn[data-rail-screen="difficulty"]::after { content: "LOADOUT"; }
+    .ka-rail-nav-btn[data-rail-action="local-leaderboard"]::after { content: "LOCAL"; }
+    .ka-rail-nav-btn[data-rail-action="online-leaderboard"]::after { content: "ONLINE"; }
+    .ka-rail-nav-btn[data-rail-action="career-rewards"]::after { content: "CAREER"; }
     .ka-rail-nav-btn[data-rail-screen="avatar"]::after { content: "AVATAR"; }
     .ka-rail-nav-btn[data-rail-screen="live"]::after { content: "LIVE"; }
     .ka-rail-nav-btn[data-rail-screen="settings"]::after { content: "SETTINGS"; }
@@ -1428,6 +1441,53 @@
 
 <link href="css/postfinal1.css" rel="stylesheet"/>
 <link href="css/postfinal2.css" rel="stylesheet"/>
+
+<style id="onboarding1-clean-navigation-style">
+  /* ONBOARDING.1 locked information architecture */
+  .ka-menu-panel{grid-template-columns:244px minmax(0,1fr)}
+  .ka-game-rail{padding:22px 16px 16px;overflow:hidden}
+  .ka-rail-home-button{display:block;width:100%;padding:0 7px 16px;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+  .ka-rail-home-button:hover .ka-rail-title{color:#fff;text-shadow:0 0 24px rgba(16,216,255,.34)}
+  .ka-rail-tagline{margin-top:10px;color:#607986;font-size:9px;font-weight:900;letter-spacing:1.35px;text-transform:uppercase}
+  .ka-rail-quick-play{width:100%;min-height:52px;margin:0 0 13px;border:1px solid var(--ka-cyan);border-radius:13px;background:linear-gradient(135deg,var(--ka-cyan),#79ecff);color:#001018;font-weight:1000;letter-spacing:1.15px;cursor:pointer;box-shadow:0 0 24px rgba(16,216,255,.18)}
+  .ka-rail-quick-play:hover{filter:brightness(1.07);transform:translateY(-1px)}
+  .ka-rail-nav{overflow-y:auto;min-height:0;padding-right:2px}
+  .ka-rail-nav-btn{min-height:43px}
+  .ka-topline{min-height:66px;padding:0 2px 12px;border-bottom:1px solid rgba(16,216,255,.12)}
+  .ka-section-context .ka-eyebrow{font-size:9px}.ka-section-context strong{display:block;margin-top:4px;color:#fff;font-size:21px;letter-spacing:-.35px}
+  .ka-top-actions{display:flex;align-items:center;gap:16px}.ka-top-profile{text-align:right}.ka-top-profile b{display:block;font-size:11px}.ka-top-profile small{display:block;margin-top:3px;color:#718896;font-size:9px}
+  .ka-stepper{display:none}.ka-stepper.visible{display:flex}
+  .ka-clean-home{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(280px,.72fr);gap:14px}
+  .ka-clean-hero{position:relative;min-height:390px;overflow:hidden;border:1px solid rgba(16,216,255,.18);border-radius:18px;background:#07111a url('assets/ui/maps/grid_bunker.webp') center/cover no-repeat}
+  .ka-clean-hero::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,8,14,.97),rgba(2,8,14,.84) 47%,rgba(2,8,14,.14) 82%),linear-gradient(0deg,rgba(2,8,14,.72),transparent 60%)}
+  .ka-clean-hero-copy{position:relative;z-index:1;width:59%;padding:38px 32px}
+  .ka-clean-hero #menu-title{font-size:clamp(44px,5.7vw,76px)}
+  .ka-clean-hero #menu-sub{margin:12px 0 18px;color:#a9bfca;font-size:13px;line-height:1.5;letter-spacing:.4px;text-transform:none}
+  .ka-clean-actions{display:flex;gap:9px;flex-wrap:wrap}.ka-clean-actions .ka-nav-btn,.ka-clean-actions .ka-link-btn{min-height:46px;margin:0;padding:0 16px;text-align:center}
+  .ka-clean-preset{display:flex;gap:7px;flex-wrap:wrap;margin-top:17px}.ka-clean-preset span{padding:6px 8px;border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(2,10,17,.7);color:#93aab6;font-size:9px;font-weight:900;letter-spacing:.7px}.ka-clean-preset b{color:#fff}
+  .ka-clean-side{display:grid;gap:14px}.ka-clean-card{padding:19px;border:1px solid rgba(16,216,255,.14);border-radius:17px;background:linear-gradient(145deg,rgba(13,29,42,.88),rgba(7,17,26,.88))}.ka-clean-card h3{margin:9px 0 8px;font-size:23px}.ka-clean-card p{margin:0;color:#91a7b3;font-size:11px;line-height:1.5}.ka-clean-card .ka-clean-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}.ka-clean-card .ka-pill{font-size:8px}
+  .ka-clean-objectives{margin-top:11px}.ka-clean-objective{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.06);color:#78919e;font-size:10px}.ka-clean-objective b{color:#eaf9ff}
+  .ka-clean-profile-strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:14px 18px;border:1px solid rgba(16,216,255,.14);border-radius:16px;background:rgba(7,18,28,.82);cursor:pointer}.ka-clean-profile-strip>div{padding-right:12px;border-right:1px solid rgba(255,255,255,.07)}.ka-clean-profile-strip>div:last-child{border-right:0}.ka-clean-profile-strip small{display:block;color:#66808d;font-size:8px;text-transform:uppercase;letter-spacing:1.1px}.ka-clean-profile-strip b{display:block;margin-top:4px;font-size:16px}
+  .ka-section-tabs{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 14px;padding:4px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(4,12,19,.66);width:max-content;max-width:100%}.ka-section-tabs button{padding:8px 12px;border:0;border-radius:9px;background:transparent;color:#78909d;font-size:9px;font-weight:950;letter-spacing:.75px;text-transform:uppercase;cursor:pointer}.ka-section-tabs button.active{background:rgba(16,216,255,.16);color:#effdff;box-shadow:inset 0 0 0 1px rgba(16,216,255,.24)}
+  [data-leaderboards-panel][hidden],[data-career-panel][hidden]{display:none!important}
+  .ka-leaderboards-mount,.ka-career-mount{min-height:0}
+  #ka-local-leaderboards-page,#ka-online-leaderboards-page,#ka-career-page{width:100%;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;color:#f4fbff;padding:0!important;max-height:none!important}
+  #ka-local-leaderboards-page .ka-lb-shell,#ka-online-leaderboards-page .ka-online-lb-shell,#ka-career-page .ka-career-shell{padding:0;max-height:none;overflow:visible}
+  #ka-career-page .ka-career-head{position:static;padding:0 0 12px;background:transparent}
+  .ka-career-panel{display:none}.ka-career-panel.active{display:block}
+  #ka-career-live-panel{min-width:0}
+  .ka-career-live-embedded{position:static!important;display:block!important;margin:0!important;padding:22px 0 0!important;border-top:1px solid rgba(16,216,255,.16);isolation:isolate}
+  .ka-career-live-embedded>.ka-section-heading{margin-bottom:12px}
+  .ka-career-live-embedded .ka-nav-row{margin-top:18px}
+  .ka-settings-category-tabs{margin-bottom:14px}
+  @media(max-width:920px), (max-height:660px){
+    .ka-menu-panel{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.ka-game-rail{grid-template-columns:auto auto 1fr;gap:8px}.ka-rail-home-button{width:auto;padding:0}.ka-rail-home-button .ka-eyebrow,.ka-rail-home-button .ka-rail-tagline{display:none}.ka-rail-quick-play{width:auto;min-height:38px;margin:0;padding:0 12px}.ka-rail-nav{justify-content:flex-start}.ka-clean-home{grid-template-columns:1fr}.ka-clean-hero{min-height:330px}.ka-clean-hero-copy{width:70%;padding:22px}.ka-clean-profile-strip{grid-template-columns:repeat(2,1fr)}.ka-clean-profile-strip>div:nth-child(2){border-right:0}
+  }
+  @media(max-width:720px) and (orientation:landscape){
+    .ka-game-rail{grid-template-columns:auto auto 1fr}.ka-rail-quick-play{font-size:0;min-width:40px}.ka-rail-quick-play::after{content:"PLAY";font-size:9px}.ka-rail-nav-btn[data-rail-screen="map"]::after{content:"SOLO"}.ka-rail-nav-btn[data-rail-screen="multiplayer"]::after{content:"MULTI"}.ka-rail-nav-btn[data-rail-screen="leaderboards"]::after{content:"RANKS"}.ka-rail-nav-btn[data-rail-screen="career"]::after{content:"CAREER"}.ka-rail-nav-btn[data-rail-screen="social"]::after{content:"SOCIAL"}.ka-rail-nav-btn[data-rail-screen="avatar"]::after{content:"AVATAR"}.ka-rail-nav-btn[data-rail-screen="settings"]::after{content:"SETTINGS"}.ka-clean-hero-copy{width:68%;padding:15px}.ka-clean-side{grid-template-columns:1fr 1fr}.ka-clean-profile-strip{display:none}
+  }
+</style>
+
 </head>
 <body>
 <div id="portrait-warning">
@@ -1582,24 +1642,19 @@
 <div class="ka-menu-bg-orb ka-orb-b"></div>
 <div class="ka-menu-panel">
 <aside aria-label="Primary game navigation" class="ka-game-rail">
-<div class="ka-rail-brand">
+<button class="ka-rail-brand ka-rail-home-button" data-next-screen="home" data-rail-screen="home" type="button" aria-label="Open command dashboard">
 <div class="ka-eyebrow">Cross-platform survival</div>
 <div class="ka-rail-title">KHADIJA'S<br/>ARENA</div>
-<div class="ka-rail-tagline">Survive the outbreak.<br/>Master every arena.<br/>Fight together.</div>
-</div>
-<div aria-label="Available modes" class="ka-rail-mode-row">
-<div class="ka-rail-mode solo"><span>◉</span><b>SOLO</b><small>Survival</small></div>
-<div class="ka-rail-mode coop"><span>●●</span><b>CO-OP</b><small>Operations</small></div>
-<div class="ka-rail-mode pvp"><span>⚔</span><b>PVP</b><small>Team elimination</small></div>
-</div>
+<div class="ka-rail-tagline">Cross-platform survival</div>
+</button>
+<button class="ka-rail-quick-play" data-onboarding1-quick-play="rail" type="button">▶ QUICK PLAY</button>
 <nav class="ka-rail-nav">
-<button class="ka-rail-nav-btn active" data-next-screen="home" data-rail-screen="home" type="button"><span>▶</span> Quick Play</button>
+<button class="ka-rail-nav-btn" data-next-screen="map" data-rail-screen="map" type="button"><span>▰</span> Solo Operations</button>
 <button class="ka-rail-nav-btn" data-next-screen="multiplayer" data-rail-screen="multiplayer" type="button"><span>◫</span> Multiplayer</button>
-<button class="ka-rail-nav-btn" data-next-screen="map" data-rail-screen="map" type="button"><span>▰</span> Select Arena</button>
-<button class="ka-rail-nav-btn" data-next-screen="difficulty" data-rail-screen="difficulty" type="button"><span>⌁</span> Loadout</button>
-<button class="ka-rail-nav-btn" data-next-screen="avatar" data-rail-screen="avatar" type="button"><span>◈</span> Avatar Studio</button>
+<button class="ka-rail-nav-btn" data-next-screen="leaderboards" data-rail-screen="leaderboards" type="button"><span>▥</span> Leaderboards</button>
+<button class="ka-rail-nav-btn" data-next-screen="career" data-rail-screen="career" type="button"><span>✦</span> Career &amp; Rewards</button>
 <button class="ka-rail-nav-btn" data-next-screen="social" data-rail-screen="social" type="button"><span>◎</span> Social</button>
-<button class="ka-rail-nav-btn" data-next-screen="live" data-rail-screen="live" type="button"><span>✦</span> Live</button>
+<button class="ka-rail-nav-btn" data-next-screen="avatar" data-rail-screen="avatar" type="button"><span>◈</span> Avatar Studio</button>
 <button class="ka-rail-nav-btn" data-next-screen="settings" data-rail-screen="settings" type="button"><span>⚙</span> Settings</button>
 </nav>
 <div class="ka-rail-footer">
@@ -1609,20 +1664,16 @@
 </aside>
 <main class="ka-menu-main">
 <div class="ka-topline">
-<div class="ka-player-strip">
-<div class="ka-brand-chip">KA</div>
-<div>
-<div class="ka-eyebrow">Khadija's Arena · Version 1.0</div>
-<div class="ka-status-dot"><span></span> Procedural survival systems ready</div>
+<div class="ka-section-context">
+<div class="ka-eyebrow" id="ka-section-kicker">Command dashboard</div>
+<strong id="ka-section-title">Welcome Back, Survivor</strong>
 </div>
-</div>
-<div class="ka-platform-strip" aria-label="Supported input types">
-<span>▣ <b>PC</b></span><span>◉ <b>CONTROLLER</b></span><span>▯ <b>MOBILE</b></span>
-</div>
-<div aria-label="Menu progress" class="ka-stepper">
-<div class="ka-step active" data-step-dot="home">Mode</div>
-<div class="ka-step" data-step-dot="map">Arena</div>
+<div class="ka-top-actions">
+<div class="ka-top-profile"><b>FIELD SURVIVOR</b><small>Profile and online services ready</small></div>
+<div aria-label="Deployment setup progress" class="ka-stepper" id="ka-deployment-stepper">
+<div class="ka-step active" data-step-dot="map">Arena</div>
 <div class="ka-step" data-step-dot="difficulty">Loadout</div>
+</div>
 </div>
 </div>
 <select aria-label="Map Select" id="map-select" style="display:none;">
@@ -1646,42 +1697,49 @@
 <option value="2.0">Apex · Endgame</option>
 </select>
 <section class="ka-menu-screen active" data-menu-screen="home">
-<div class="ka-home-stage">
-<div class="ka-home-hero">
-<div class="ka-home-copy">
-<div class="ka-card-kicker">Low-poly survival action</div>
+<div class="ka-clean-home">
+<article class="ka-clean-hero">
+<div class="ka-clean-hero-copy">
+<div class="ka-card-kicker">Immediate field deployment</div>
 <div id="menu-title">KHADIJA'S<br/>ARENA</div>
-<div id="menu-sub">Survive the outbreak. Master every arena. Fight together.</div>
-<div class="ka-home-support-row" aria-label="Game support summary">
-<span>10 UNIQUE ARENAS</span><span>SOLO + 2 PLAYER CO-OP</span><span>CROSS-PLATFORM UI</span>
+<div id="menu-sub">Enter the fight immediately, or prepare a custom solo or multiplayer operation.</div>
+<div class="ka-clean-actions">
+<button id="onboarding1-quick-play-primary" class="ka-nav-btn ka-onboarding1-quick-play" data-onboarding1-quick-play="home-primary" type="button">▶ QUICK PLAY</button>
+<button class="ka-link-btn" data-next-screen="map" type="button">SOLO OPERATIONS</button>
+<button class="ka-link-btn" data-next-screen="multiplayer" id="ka-coop-menu-card" type="button">MULTIPLAYER</button>
 </div>
-<div class="ka-stats-row">
-<div class="ka-stat-card"><span>High score</span><b id="hi-score">0</b></div>
-<div class="ka-stat-card"><span>Max wave</span><b id="hi-wave">1</b></div>
-<div class="ka-stat-card"><span>Profile level</span><b id="profile-level">1</b><small><span id="profile-title">Survivor</span> · <span id="profile-achievements">0</span> achievements</small></div>
-<div class="ka-stat-card ka-stat-muted"><span>Status</span><b>READY TO PLAY</b></div>
+<div class="ka-clean-preset"><span>ARENA <b>GRID BUNKER</b></span><span>DIFFICULTY <b>NORMAL</b></span><span>LOADOUT <b>FIELD STANDARD</b></span></div>
 </div>
+</article>
+<div class="ka-clean-side">
+<article class="ka-clean-card">
+<span class="ka-card-kicker">Featured operation</span><h3>Broken Signal</h3><p>Restore the Grid Bunker command relay while faction pressure increases across the arena.</p>
+<div class="ka-clean-meta"><span class="ka-pill good">ACTIVE</span><span class="ka-pill">SOLO / CO-OP</span><span class="ka-pill">750 XP</span></div>
+</article>
+<article class="ka-clean-card">
+<span class="ka-card-kicker">Current priorities</span><div class="ka-clean-objectives">
+<div class="ka-clean-objective"><span>Complete an evolving-map event</span><b>1 / 3</b></div>
+<div class="ka-clean-objective"><span>Defeat an expanded boss</span><b>0 / 1</b></div>
+<div class="ka-clean-objective"><span>Secure a faction operation</span><b>2 / 4</b></div>
 </div>
+</article>
 </div>
-<div class="ka-mode-stack">
-<button class="ka-mode-card active" data-next-screen="map" type="button">
-<span class="ka-card-kicker">Survival operation</span>
-<strong>Solo Survival</strong>
-<small>Choose one of seven PvE arenas, tune the difficulty, and fight through escalating swarm rounds.</small>
-<span class="ka-mode-arrow">SELECT ARENA →</span>
+<button class="ka-clean-profile-strip" data-next-screen="career" type="button" aria-label="Open Career and Rewards">
+<div><small>Profile level</small><b>LV <span id="profile-level">1</span> · <span id="profile-title">Survivor</span></b></div>
+<div><small>Best deployment</small><b><span id="hi-score">0</span> · Wave <span id="hi-wave">1</span></b></div>
+<div><small>Achievements</small><b><span id="profile-achievements">0</span> unlocked</b></div>
+<div><small>Career command</small><b>VIEW PROGRESS →</b></div>
 </button>
-<button id="ka-coop-menu-card" class="ka-mode-card active ka-coop-mode-card" data-next-screen="multiplayer" type="button">
-<span class="ka-card-kicker">Online multiplayer hub</span>
-<strong>Co-Op + Competitive PvP</strong>
-<small>Quick Match, public rooms, private squads, competitive records, and visual room management in one dedicated section.</small>
-<span class="ka-mode-arrow">ENTER MULTIPLAYER →</span>
-</button>
-<div class="ka-home-actions">
-<button class="ka-nav-btn" data-next-screen="map" type="button">SELECT ARENA</button>
-<button class="ka-link-btn" data-next-screen="avatar" type="button">CUSTOMIZE AVATAR</button>
-<button class="ka-link-btn" data-next-screen="settings" type="button">GAME SETTINGS</button>
-</div>
-</div>
+<section class="ka-onboarding1-discovery" data-onboarding1-discovery-panel hidden aria-hidden="true" aria-label="Explore more of Khadija's Arena">
+  <div><span class="ka-card-kicker">FIRST DEPLOYMENT COMPLETE</span><strong>CHOOSE YOUR NEXT OPERATION</strong><small>Your advanced choices are still available. Explore at your own pace.</small></div>
+  <div class="ka-onboarding1-discovery-actions">
+    <button type="button" data-onboarding1-discover="difficulty">BUILD A LOADOUT</button>
+    <button type="button" data-onboarding1-discover="map">SELECT AN ARENA</button>
+    <button type="button" data-onboarding1-discover="multiplayer">TRY CO-OP / PVP</button>
+    <button type="button" data-onboarding1-discover="avatar">OPEN AVATAR STUDIO</button>
+    <button type="button" data-onboarding1-dismiss>NOT NOW</button>
+  </div>
+</section>
 </div>
 </section>
 <section class="ka-menu-screen ka-multiplayer-screen" data-menu-screen="multiplayer" id="multiplayer-screen">
@@ -1692,6 +1750,15 @@
 <div id="ka-multiplayer-hub-mount" class="ka-multiplayer-hub-mount" aria-live="polite">
   <div class="ka-multiplayer-hub-loading"><span>◫</span><strong>INITIALIZING ONLINE SERVICES</strong><small>Preparing multiplayer controls…</small></div>
 </div>
+</section>
+<section class="ka-menu-screen" data-menu-screen="leaderboards" id="ka-leaderboards-screen">
+<div class="ka-section-heading"><div><span>Competitive records</span><strong>LEADERBOARDS</strong></div><small>Local browser records and verified online rankings in one section.</small></div>
+<div class="ka-section-tabs" data-leaderboards-tabs aria-label="Leaderboard scope">
+<button class="active" data-leaderboards-tab="local" type="button">Local</button>
+<button data-leaderboards-tab="online" type="button">Online</button>
+</div>
+<div class="ka-leaderboards-mount" data-leaderboards-panel="local" id="ka-local-leaderboards-mount"></div>
+<div class="ka-leaderboards-mount" data-leaderboards-panel="online" id="ka-online-leaderboards-mount" hidden></div>
 </section>
 <section class="ka-menu-screen" data-menu-screen="map">
 <div class="ka-section-heading"><div><span>Operation selection</span><strong>SELECT ARENA</strong></div><small>Choose visually. Details update automatically.</small></div>
@@ -1905,6 +1972,51 @@
 <div class="ka-nav-row"><button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button><button class="ka-nav-btn" data-next-screen="map" type="button">Select Arena →</button></div>
 </section>
 
+<section class="ka-menu-screen" data-menu-screen="career" id="ka-career-screen">
+<div class="ka-section-heading"><div><span>Progression command</span><strong>CAREER &amp; REWARDS</strong></div><small>Profile progression, operations, cosmetic rewards, achievements, and deployment history.</small></div>
+<div class="ka-section-tabs" data-career-tabs aria-label="Career sections">
+<button class="active" data-career-tab="overview" type="button">Overview</button>
+<button data-career-tab="operations" type="button">Operations</button>
+<button data-career-tab="rewards" type="button">Rewards</button>
+<button data-career-tab="achievements" type="button">Achievements</button>
+<button data-career-tab="history" type="button">History</button>
+</div>
+<div class="ka-career-mount" id="ka-career-page-mount"></div>
+<div id="ka-career-live-panel" class="ka-career-live-block" data-career-live-panel hidden>
+
+<div class="ka-section-heading">
+  <div><span>Online seasonal operations</span><strong>LIVE COMMAND</strong></div>
+  <small>ROTATIONS FOLLOW SECURE ONLINE TIME. DEVICE CLOCKS DO NOT CONTROL AVAILABILITY OR REWARDS.</small>
+</div>
+<div id="live1-status" class="ka-live1-status" data-tone="neutral">CONNECTING TO LIVE SERVICE</div>
+<div class="ka-live1-hero">
+  <div>
+    <span>ACTIVE SEASON</span>
+    <strong id="live1-season-label">OUTBREAK CYCLE</strong>
+    <small id="live1-season-time">SCHEDULE VERIFYING</small>
+  </div>
+  <div class="ka-live1-points">
+    <span>SEASON POINTS</span>
+    <strong id="live1-season-points">0 SP</strong>
+  </div>
+</div>
+<div class="ka-live1-feature-grid">
+  <article><span>DAILY ARENA</span><strong id="live1-featured-arena">VERIFYING</strong><small>Complete a deployment here for bonus seasonal points.</small></article>
+  <article><span>WEEKLY OPERATION</span><strong id="live1-featured-operation">VERIFYING</strong><small>Complete the featured arena operation for an additional bonus.</small></article>
+  <article><span>ROTATING ENCOUNTER</span><strong id="live1-featured-encounter">VERIFYING</strong><small>Appears as a featured pressure wave during live deployments.</small></article>
+  <article><span>NEXT ROTATION</span><strong id="live1-next-rotation">—</strong><small>Daily content rotates at 00:00 UTC.</small></article>
+</div>
+<div class="ka-live1-section-title"><span>SEASON CONTRACT</span><strong>LONG-FORM STAGES</strong></div>
+<div id="live1-contract-list" class="ka-live1-contract-grid"></div>
+<div class="ka-live1-section-title"><span>COSMETIC TRACK</span><strong>AUTOMATIC PROTECTED CLAIMS</strong></div>
+<div id="live1-reward-list" class="ka-live1-reward-grid"></div>
+<div class="ka-nav-row">
+  <button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
+  <button class="ka-nav-btn" data-next-screen="map" type="button">Deploy →</button>
+</div>
+
+</div>
+</section>
 <section class="ka-menu-screen" data-menu-screen="social" id="social-screen">
 <div class="ka-section-heading">
   <div><span>Find players. Build your squad.</span><strong>SOCIAL HUB</strong></div>
@@ -2034,39 +2146,6 @@
   </div>
 </div>
 <div class="ka-nav-row"><button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button><button class="ka-nav-btn" data-next-screen="multiplayer" type="button">Open Multiplayer →</button></div>
-</section>
-
-<section class="ka-menu-screen" data-menu-screen="live" id="live1-screen">
-<div class="ka-section-heading">
-  <div><span>Online seasonal operations</span><strong>LIVE COMMAND</strong></div>
-  <small>ROTATIONS FOLLOW SECURE ONLINE TIME. DEVICE CLOCKS DO NOT CONTROL AVAILABILITY OR REWARDS.</small>
-</div>
-<div id="live1-status" class="ka-live1-status" data-tone="neutral">CONNECTING TO LIVE SERVICE</div>
-<div class="ka-live1-hero">
-  <div>
-    <span>ACTIVE SEASON</span>
-    <strong id="live1-season-label">OUTBREAK CYCLE</strong>
-    <small id="live1-season-time">SCHEDULE VERIFYING</small>
-  </div>
-  <div class="ka-live1-points">
-    <span>SEASON POINTS</span>
-    <strong id="live1-season-points">0 SP</strong>
-  </div>
-</div>
-<div class="ka-live1-feature-grid">
-  <article><span>DAILY ARENA</span><strong id="live1-featured-arena">VERIFYING</strong><small>Complete a deployment here for bonus seasonal points.</small></article>
-  <article><span>WEEKLY OPERATION</span><strong id="live1-featured-operation">VERIFYING</strong><small>Complete the featured arena operation for an additional bonus.</small></article>
-  <article><span>ROTATING ENCOUNTER</span><strong id="live1-featured-encounter">VERIFYING</strong><small>Appears as a featured pressure wave during live deployments.</small></article>
-  <article><span>NEXT ROTATION</span><strong id="live1-next-rotation">—</strong><small>Daily content rotates at 00:00 UTC.</small></article>
-</div>
-<div class="ka-live1-section-title"><span>SEASON CONTRACT</span><strong>LONG-FORM STAGES</strong></div>
-<div id="live1-contract-list" class="ka-live1-contract-grid"></div>
-<div class="ka-live1-section-title"><span>COSMETIC TRACK</span><strong>AUTOMATIC PROTECTED CLAIMS</strong></div>
-<div id="live1-reward-list" class="ka-live1-reward-grid"></div>
-<div class="ka-nav-row">
-  <button class="ka-link-btn" data-next-screen="home" type="button">← Back to Main</button>
-  <button class="ka-nav-btn" data-next-screen="map" type="button">Deploy →</button>
-</div>
 </section>
 
 <section class="ka-menu-screen" data-menu-screen="settings">
@@ -2481,8 +2560,8 @@
 </section>
 <script>
       (() => {
-        const screenNames = ['home', 'multiplayer', 'map', 'difficulty', 'avatar', 'social', 'live', 'settings'];
-        const stepFlow = ['home', 'map', 'difficulty'];
+        const screenNames = ['home', 'map', 'multiplayer', 'leaderboards', 'career', 'social', 'avatar', 'settings'];
+        const stepFlow = ['map', 'difficulty'];
         const screens = Array.from(document.querySelectorAll('[data-menu-screen]'));
         const steps = Array.from(document.querySelectorAll('[data-step-dot]'));
         const mapSelect = document.getElementById('map-select');
@@ -2577,6 +2656,57 @@
           return Boolean(previewData[id]);
         }
 
+        const screenMeta = {
+          home: ['Command dashboard', 'Welcome Back, Survivor'],
+          map: ['Deployment', 'Solo Operations'],
+          difficulty: ['Deployment setup', 'Loadout & Difficulty'],
+          multiplayer: ['Squad network', 'Multiplayer'],
+          leaderboards: ['Competitive records', 'Leaderboards'],
+          career: ['Progression command', 'Career & Rewards'],
+          social: ['Arena network', 'Social'],
+          avatar: ['Identity studio', 'Avatar Studio'],
+          settings: ['System configuration', 'Settings']
+        };
+        let activeLeaderboardTab = 'local';
+        let activeCareerTab = 'overview';
+
+        function setLeaderboardTab(tab = 'local') {
+          activeLeaderboardTab = tab === 'online' ? 'online' : 'local';
+          document.querySelectorAll('[data-leaderboards-tab]').forEach((button) => {
+            const active = button.dataset.leaderboardsTab === activeLeaderboardTab;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          document.querySelectorAll('[data-leaderboards-panel]').forEach((panel) => {
+            panel.hidden = panel.dataset.leaderboardsPanel !== activeLeaderboardTab;
+          });
+          if (activeLeaderboardTab === 'online') {
+            document.getElementById('ka-online-lb-refresh')?.click();
+          }
+        }
+
+        function setCareerTab(tab = 'overview') {
+          const allowed = ['overview', 'operations', 'rewards', 'achievements', 'history'];
+          activeCareerTab = allowed.includes(tab) ? tab : 'overview';
+          document.querySelectorAll('[data-career-tab]').forEach((button) => {
+            const active = button.dataset.careerTab === activeCareerTab;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          document.querySelectorAll('[data-career-panel]').forEach((panel) => {
+            const active = panel.dataset.careerPanel === activeCareerTab;
+            panel.hidden = !active;
+            panel.classList.toggle('active', active);
+          });
+        }
+
+        document.querySelectorAll('[data-leaderboards-tab]').forEach((button) => {
+          button.addEventListener('click', () => setLeaderboardTab(button.dataset.leaderboardsTab));
+        });
+        document.querySelectorAll('[data-career-tab]').forEach((button) => {
+          button.addEventListener('click', () => setCareerTab(button.dataset.careerTab));
+        });
+
         function showScreen(name) {
           screens.forEach(screen => screen.classList.toggle('active', screen.dataset.menuScreen === name));
           const activeIndex = stepFlow.indexOf(name);
@@ -2586,6 +2716,15 @@
           });
           const menuRoot = document.getElementById('menu');
           if (menuRoot) menuRoot.dataset.screen = name;
+          const [kicker, title] = screenMeta[name] || screenMeta.home;
+          const kickerNode = document.getElementById('ka-section-kicker');
+          const titleNode = document.getElementById('ka-section-title');
+          const stepper = document.getElementById('ka-deployment-stepper');
+          if (kickerNode) kickerNode.textContent = kicker;
+          if (titleNode) titleNode.textContent = title;
+          if (stepper) stepper.classList.toggle('visible', name === 'map' || name === 'difficulty');
+          if (name === 'leaderboards') setLeaderboardTab(activeLeaderboardTab);
+          if (name === 'career') setCareerTab(activeCareerTab);
           let activeRailButton = null;
           document.querySelectorAll('[data-rail-screen]').forEach((button) => {
             const active = button.dataset.railScreen === name;
@@ -2687,6 +2826,9 @@
 
         applyMapSelection(savedMap || mapSelect?.value || 'grid_bunker', { save: false });
         applyDifficultySelection(savedDifficulty || diffSelect?.value || '1.0', { save: false });
+        setLeaderboardTab('local');
+        setCareerTab('overview');
+        showScreen('home');
       })();
     </script>
 </main>
@@ -2708,7 +2850,7 @@
       <div>
         <span class="ka-launch1-kicker">WELCOME, SURVIVOR</span>
         <h2 id="launch1-welcome-title">CHOOSE YOUR FIGHT</h2>
-        <p id="launch1-welcome-description">Khadija's Arena supports fast Solo deployments, online Co-Op, competitive PvP, and optional first-run field training.</p>
+        <p id="launch1-welcome-description">Quick Play deploys instantly to Grid Bunker on Normal with the balanced Field Standard loadout. Advanced modes remain available from the menu.</p>
       </div>
       <button class="ka-launch1-close" data-launch1-action="close" type="button" aria-label="Close welcome guide">×</button>
     </div>
@@ -2716,7 +2858,7 @@
       <article class="ka-launch1-card" data-tone="cyan">
         <span class="ka-launch1-icon" aria-hidden="true">▶</span>
         <strong>SOLO SURVIVAL</strong>
-        <p>Select an arena, choose your loadout and difficulty, then survive escalating operations at your own pace.</p>
+        <p>Deploy immediately through Quick Play, or use Select Arena and Loadout for full control.</p>
       </article>
       <article class="ka-launch1-card" data-tone="amber">
         <span class="ka-launch1-icon" aria-hidden="true">◫</span>
@@ -2730,7 +2872,7 @@
       </article>
     </div>
     <div class="ka-launch1-actions">
-      <button class="ka-launch1-primary" data-launch1-action="solo" type="button">START SOLO</button>
+      <button class="ka-launch1-primary" data-onboarding1-quick-play="welcome" type="button">▶ QUICK PLAY NOW</button>
       <button class="ka-launch1-secondary" data-launch1-action="multiplayer" type="button">OPEN MULTIPLAYER</button>
       <button class="ka-launch1-tertiary" data-launch1-action="close" type="button">EXPLORE MENU</button>
       <small>Replay this guide anytime from Settings.</small>
@@ -2934,6 +3076,18 @@
   </div>
 </div>
 </div>
+<section class="ka-onboarding1-postrun" data-onboarding1-discovery-panel hidden aria-hidden="true" aria-label="First deployment follow-up">
+  <span>FIRST DEPLOYMENT COMPLETE</span>
+  <strong>THE FULL ARENA IS NOW OPEN</strong>
+  <small>Keep fighting, or explore custom loadouts, new arenas, Co-Op, PvP, and Avatar Studio.</small>
+  <div class="ka-onboarding1-postrun-actions">
+    <button type="button" data-onboarding1-discover="difficulty">LOADOUT</button>
+    <button type="button" data-onboarding1-discover="map">ARENAS</button>
+    <button type="button" data-onboarding1-discover="multiplayer">MULTIPLAYER</button>
+    <button type="button" data-onboarding1-discover="avatar">AVATAR</button>
+    <button type="button" data-onboarding1-dismiss>KEEP PLAYING</button>
+  </div>
+</section>
 <div id="death-flow-note">Restart keeps your selected arena and difficulty. Quit returns to the main menu without a page reload.</div>
 <div style="display: flex; gap: 20px; justify-content: center; margin-top: 26px; flex-wrap: wrap;">
 <button id="respawn-btn">↺ RESTART ARENA</button>

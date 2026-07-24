@@ -66,10 +66,10 @@ assert.match(summary, /gameplay6WorldPoints/);
 assert.match(hud, /GAMEPLAY\.6 R1 — persistent world progression readout/);
 assert.match(hud, /\.ka-gameplay6-world/);
 
-assert.equal(release.releaseId, 'quality3-r1-map-evolution-geometry-zero-failure');
-assert.equal(release.productVersion, '1.13.1-quality3-r1');
-assert.equal(release.releaseSequence, 2026072304);
-assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+assert.equal(release.releaseId, 'onboarding1-r1-instant-quick-play-funnel');
+assert.equal(release.productVersion, '1.14.0-onboarding1-r1');
+assert.equal(release.releaseSequence, 2026072401);
+assert.equal(release.sourceBaselineSha, 'fea265003ac0625c8f4268f237746abc6a2043fd');
 assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
 assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
 assert.equal(release.workerChangeRequired, false);
@@ -109,8 +109,8 @@ for (const field of [
   assert.equal(metadata.gameplay6?.[field], true, `Missing GAMEPLAY.6 policy: ${field}`);
 }
 assert.equal(metadata.gameplay6?.workerChangeRequired, false);
-assert.match(updateDelivery, /quality3-r1-map-evolution-geometry-zero-failure/);
-assert.match(updateDelivery, /releaseSequence: 2026072304/);
+assert.match(updateDelivery, /onboarding1-r1-instant-quick-play-funnel/);
+assert.match(updateDelivery, /releaseSequence: 2026072401/);
 assert.match(buildProduction, /GAMEPLAY6_RELEASE_SEQUENCE = 2026072104/);
 assert.match(buildProduction, /"gameplay6":/);
 assert.match(verifyProduction, /GAMEPLAY\.6 production manifest patch mismatch/);

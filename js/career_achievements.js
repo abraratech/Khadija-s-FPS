@@ -75,12 +75,10 @@ function installStyle() {
   if (document.getElementById('ka-career-style')) return;
   const style = make('style', { id: 'ka-career-style' });
   style.textContent = `
-    #ka-career-open{margin-top:10px;min-width:220px}
-    #ka-career-dialog{border:1px solid rgba(34,255,136,.52);border-radius:18px;background:rgba(5,10,16,.99);color:#f4fbff;width:min(1060px,calc(100vw - 22px));max-height:min(880px,calc(100vh - 22px));padding:0;box-shadow:0 24px 84px rgba(0,0,0,.82)}
-    #ka-career-dialog::backdrop{background:rgba(0,0,0,.82);backdrop-filter:blur(5px)}
+    #ka-career-page{border:1px solid rgba(34,255,136,.52);border-radius:18px;background:rgba(5,10,16,.99);color:#f4fbff;width:min(1060px,calc(100vw - 22px));max-height:min(880px,calc(100vh - 22px));padding:0;box-shadow:0 24px 84px rgba(0,0,0,.82)}
     .ka-career-shell{padding:20px;overflow:auto;max-height:calc(100vh - 44px)}
     .ka-career-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;position:sticky;top:-20px;z-index:3;background:linear-gradient(#050a10 75%,transparent);padding:20px 0 14px}
-    .ka-career-head h2{margin:0;color:#80ffc1;letter-spacing:.08em}.ka-career-close{font-size:24px;min-width:44px}
+    .ka-career-head h2{margin:0;color:#80ffc1;letter-spacing:.08em}
     .ka-career-identity{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding:16px;border:1px solid color-mix(in srgb,var(--prog-banner,#00d4ff) 45%,transparent);border-radius:16px;background:linear-gradient(120deg,color-mix(in srgb,var(--prog-banner,#00d4ff) 15%,transparent),rgba(255,255,255,.025))}
     .ka-career-badge{width:78px;height:78px;border-radius:20px;display:grid;place-items:center;background:var(--prog-banner,#22ff88);color:#00180c;font-size:26px;font-weight:1000;box-shadow:0 0 24px color-mix(in srgb,var(--prog-banner,#22ff88) 30%,transparent)}
     .ka-career-title{font-size:12px;letter-spacing:.16em;color:#9fb4c5}.ka-career-name{font-size:26px;font-weight:1000;margin-top:2px}.ka-career-banner-name{font-size:11px;color:#8096a8;margin-top:5px}
@@ -90,6 +88,7 @@ function installStyle() {
     .ka-career-section{margin-top:18px}.ka-career-section-head{display:flex;justify-content:space-between;gap:12px;align-items:end;margin-bottom:10px}.ka-career-section-head h3{margin:0;color:#f5fbff;letter-spacing:.08em}.ka-career-section-head small{color:#7890a1}
     .ka-career-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}.ka-career-stat{padding:10px;border:1px solid rgba(255,255,255,.1);border-radius:11px;background:rgba(255,255,255,.045)}.ka-career-stat span{display:block;color:#8599a8;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.ka-career-stat b{display:block;margin-top:4px;font-size:19px}
     .ka-operation-groups{display:grid;grid-template-columns:1fr 1fr;gap:12px}.ka-operation-group{padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.035)}.ka-operation-group>strong{color:#00d4ff;letter-spacing:.1em}.ka-operation-group.weekly>strong{color:#ffaa00}
+    .ka-career-operations-stack{display:grid;gap:24px;min-width:0}.ka-career-operations-stack>.ka-career-section{margin-top:0}
     .ka-operation-card{margin-top:9px;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(0,0,0,.18)}.ka-operation-card.complete{border-color:rgba(34,255,136,.36);background:rgba(34,255,136,.055)}.ka-operation-line{display:flex;justify-content:space-between;gap:10px}.ka-operation-card small{display:block;color:#93a8b7;margin:4px 0 8px;line-height:1.35}.ka-operation-meter{height:7px;background:rgba(255,255,255,.1);border-radius:99px;overflow:hidden}.ka-operation-meter div{height:100%;background:#00d4ff}.ka-operation-card.complete .ka-operation-meter div{background:#22ff88}
     .ka-reward-list,.ka-achievement-list{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.ka-reward-card,.ka-achievement-card{padding:12px;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.04)}.ka-reward-card.unlocked,.ka-achievement-card.unlocked{border-color:rgba(34,255,136,.34);background:rgba(34,255,136,.05)}.ka-reward-card.locked,.ka-achievement-card.locked{opacity:.58}.ka-reward-kind,.ka-achievement-state{font-size:9px;font-weight:1000;letter-spacing:.1em;color:#ffaa00}.ka-reward-card.unlocked .ka-reward-kind,.ka-achievement-card.unlocked .ka-achievement-state{color:#22ff88}.ka-reward-card strong,.ka-achievement-card strong{display:block;margin:4px 0}.ka-reward-card small,.ka-achievement-card small{display:block;color:#9fb4c5;line-height:1.4}.ka-reward-card button{margin-top:9px;width:100%;font-size:11px}.ka-reward-card.equipped{box-shadow:inset 0 0 0 1px #00d4ff}
     .ka-recent-list{display:grid;gap:7px}.ka-recent-row{display:grid;grid-template-columns:1.2fr .7fr repeat(4,.55fr);gap:8px;align-items:center;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:9px;background:rgba(255,255,255,.025);font-size:12px}.ka-recent-row span{color:#8fa5b4}.ka-recent-row b{font-size:12px}
@@ -292,8 +291,8 @@ function renderRecentRuns(value) {
 
 function render() {
   const value = snapshot();
-  const dialog = document.getElementById('ka-career-dialog');
-  if (dialog) dialog.style.setProperty('--prog-banner', value.identity.bannerTone || '#00d4ff');
+  const page = document.getElementById('ka-career-page');
+  if (page) page.style.setProperty('--prog-banner', value.identity.bannerTone || '#00d4ff');
 
   const identityTitle = document.getElementById('ka-career-identity-title');
   const identityBadge = document.getElementById('ka-career-identity-badge');
@@ -358,37 +357,28 @@ function section(title, subtitle = '') {
 }
 
 function buildUi() {
-  if (document.getElementById('ka-career-dialog')) return;
+  if (document.getElementById('ka-career-page')) return;
   installStyle();
-  const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
-  const button = make('button', {
-    type: 'button',
-    id: 'ka-career-open',
-    class: 'ka-link-btn ka-player-data-open',
-    style: 'width:100%;text-align:center;'
-  }, 'CAREER · OPERATIONS · REWARDS');
-  home.append(button);
-
-  const dialog = make('dialog', { id: 'ka-career-dialog', 'aria-labelledby': 'ka-career-title' });
+  const mount = document.getElementById('ka-career-page-mount') || document.getElementById('menu') || document.body;
+  const page = make('section', { id: 'ka-career-page', 'aria-labelledby': 'ka-career-title' });
   const shell = make('div', { class: 'ka-career-shell' });
   const head = make('div', { class: 'ka-career-head' });
   const title = make('div');
-  title.append(
-    make('h2', { id: 'ka-career-title' }, 'CAREER COMMAND'),
-    make('div', { id: 'ka-career-count' }, '0/0 REWARDS · 0/0 ACHIEVEMENTS')
-  );
-  head.append(title, make('button', { type: 'button', id: 'ka-career-close', class: 'ka-career-close', 'aria-label': 'Close Career Command' }, '×'));
+  title.append(make('h2', { id: 'ka-career-title' }, 'CAREER COMMAND'), make('div', { id: 'ka-career-count' }, '0/0 REWARDS · 0/0 ACHIEVEMENTS'));
+  head.append(title);
+
+  const overviewPanel = make('div', { class: 'ka-career-panel active', 'data-career-panel': 'overview' });
+  const operationsPanel = make('div', { class: 'ka-career-panel', 'data-career-panel': 'operations', hidden: 'hidden' });
+  const rewardsPanel = make('div', { class: 'ka-career-panel', 'data-career-panel': 'rewards', hidden: 'hidden' });
+  const achievementsPanel = make('div', { class: 'ka-career-panel', 'data-career-panel': 'achievements', hidden: 'hidden' });
+  const historyPanel = make('div', { class: 'ka-career-panel', 'data-career-panel': 'history', hidden: 'hidden' });
 
   const identity = make('section', { class: 'ka-career-identity' });
   identity.append(
     make('div', { class: 'ka-career-badge', id: 'ka-career-identity-badge' }, '1'),
     (() => {
       const group = make('div');
-      group.append(
-        make('div', { class: 'ka-career-title' }, 'ACTIVE PROFILE TITLE'),
-        make('div', { class: 'ka-career-name', id: 'ka-career-identity-title' }, 'Survivor'),
-        make('div', { class: 'ka-career-banner-name', id: 'ka-career-identity-banner' }, 'Recruit Shield · Bunker Standard')
-      );
+      group.append(make('div', { class: 'ka-career-title' }, 'ACTIVE PROFILE TITLE'), make('div', { class: 'ka-career-name', id: 'ka-career-identity-title' }, 'Survivor'), make('div', { class: 'ka-career-banner-name', id: 'ka-career-identity-banner' }, 'Recruit Shield · Bunker Standard'));
       const meter = make('div', { class: 'ka-career-meter' });
       meter.append(make('div', { id: 'ka-career-meter-fill', style: 'width:0%' }));
       group.append(meter);
@@ -441,30 +431,35 @@ function buildUi() {
   [
     ['all', 'ALL'], ['unlocked', 'UNLOCKED'], ['combat', 'COMBAT'], ['survival', 'SURVIVAL'],
     ['operations', 'OPERATIONS'], ['arsenal', 'ARSENAL'], ['mastery', 'MASTERY'], ['hunter', 'HUNTER']
-  ].forEach(([filter, label]) => achievementToolbar.append(make('button', {
-    type: 'button', class: `ka-achievement-filter${filter === 'all' ? ' active' : ''}`,
-    'data-achievement-filter': filter, 'aria-pressed': filter === 'all' ? 'true' : 'false'
-  }, label)));
+  ].forEach(([filter, label]) => achievementToolbar.append(make('button', { type: 'button', class: `ka-achievement-filter${filter === 'all' ? ' active' : ''}`, 'data-achievement-filter': filter, 'aria-pressed': filter === 'all' ? 'true' : 'false' }, label)));
   achievementSection.append(achievementToolbar, make('div', { id: 'ka-achievement-list', class: 'ka-achievement-list' }));
 
   const recentSection = section('RECENT DEPLOYMENTS', 'Your latest completed runs');
   recentSection.append(make('div', { id: 'ka-recent-list', class: 'ka-recent-list' }));
 
   const actions = make('div', { class: 'ka-career-actions' });
-  actions.append(
-    make('button', { type: 'button', id: 'ka-career-export', class: 'ka-link-btn' }, 'EXPORT PROFILE BACKUP'),
-    make('button', { type: 'button', id: 'ka-career-import', class: 'ka-link-btn' }, 'IMPORT PROFILE BACKUP')
-  );
+  actions.append(make('button', { type: 'button', id: 'ka-career-export', class: 'ka-link-btn' }, 'EXPORT PROFILE BACKUP'), make('button', { type: 'button', id: 'ka-career-import', class: 'ka-link-btn' }, 'IMPORT PROFILE BACKUP'));
 
-  shell.append(head, identity, intro, showcase, statsSection, operationSection, rewardSection, achievementSection, recentSection, actions);
-  dialog.append(shell);
-  document.body.append(dialog);
+  overviewPanel.append(identity, intro, showcase, statsSection, actions);
+  const operationsStack = make('div', { class: 'ka-career-operations-stack' });
+  operationsStack.append(operationSection);
+  const liveOperationsPanel = document.getElementById('ka-career-live-panel');
+  if (liveOperationsPanel) {
+    liveOperationsPanel.removeAttribute('data-career-panel');
+    liveOperationsPanel.classList.remove('ka-career-panel', 'active');
+    liveOperationsPanel.classList.add('ka-career-live-embedded');
+    liveOperationsPanel.hidden = false;
+    operationsStack.append(liveOperationsPanel);
+  }
+  operationsPanel.append(operationsStack);
+  rewardsPanel.append(rewardSection);
+  achievementsPanel.append(achievementSection);
+  historyPanel.append(recentSection);
+  shell.append(head, overviewPanel, operationsPanel, rewardsPanel, achievementsPanel, historyPanel);
+  page.append(shell);
+  mount.append(page);
 
-  button.addEventListener('click', openDialog);
-  document.getElementById('ka-career-close')?.addEventListener('click', closeDialog);
-  dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeDialog(); });
-  dialog.addEventListener('click', (event) => { if (event.target === dialog) closeDialog(); });
-  dialog.addEventListener('click', (event) => {
+  page.addEventListener('click', (event) => {
     const filter = event.target?.closest?.('[data-achievement-filter]');
     if (filter) {
       achievementFilter = filter.dataset.achievementFilter || 'all';
@@ -487,7 +482,6 @@ function buildUi() {
     else fileControl?.click();
   });
 }
-
 export function initCareerAchievements({
   getProgressionSnapshot = getProgression,
   getChallengesSnapshot = getChallenges,

@@ -33,7 +33,7 @@ assert.ok(html.includes('@media (max-width: 920px)'), 'Laptop/tablet breakpoint 
 assert.ok(html.includes('@media (max-width: 720px) and (orientation: landscape)'), 'Mobile landscape breakpoint missing');
 assert.ok(html.includes(':focus-visible'), 'Controller/keyboard focus treatment missing');
 assert.ok(
-  html.includes('Quick Match, public rooms, private squads, competitive records, and visual room management'),
+  html.includes('Quick Match · Public Rooms · Private Squads · Competitive Record'),
   'Current multiplayer hub copy is missing'
 );
 assert.ok(html.includes('<script src="js/main.js" type="module"></script>'), 'Main gameplay module script was not preserved');

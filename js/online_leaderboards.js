@@ -453,37 +453,29 @@ function open() {
 }
 
 function buildUi() {
-  if (document.getElementById('ka-online-leaderboards-dialog')) return;
+  if (document.getElementById('ka-online-leaderboards-page')) return;
   const style = make('style', { id: 'ka-online-leaderboards-style' });
   style.textContent = `
-    #ka-online-leaderboards-open{margin-top:10px;min-width:220px}
     #ka-online-lb-home-status{margin-top:5px;max-width:620px;color:#9fb4c5;font-size:11px;font-weight:800;letter-spacing:.04em}
     #ka-online-lb-home-status[data-tone=pass]{color:#7dffb2}#ka-online-lb-home-status[data-tone=offline]{color:#ffbb6a}
-    #ka-online-leaderboards-dialog{border:1px solid rgba(255,180,52,.62);border-radius:14px;background:rgba(7,10,16,.98);color:#f7fbff;width:min(880px,calc(100vw - 24px));max-height:min(720px,calc(100vh - 24px));padding:0;box-shadow:0 24px 80px rgba(0,0,0,.75)}
-    #ka-online-leaderboards-dialog::backdrop{background:rgba(0,0,0,.78);backdrop-filter:blur(4px)}
-    .ka-online-lb-shell{padding:20px}.ka-online-lb-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.ka-online-lb-head h2{margin:0;color:#ffc66b;letter-spacing:.08em}.ka-online-lb-close{font-size:24px;min-width:44px}
+    #ka-online-leaderboards-page{color:#f7fbff;width:100%}
+    .ka-online-lb-shell{padding:0}.ka-online-lb-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.ka-online-lb-head h2{margin:0;color:#ffc66b;letter-spacing:.08em}
     .ka-online-lb-profile,.ka-online-lb-filters{display:grid;grid-template-columns:1fr auto auto;gap:10px;margin:14px 0}.ka-online-lb-filters{grid-template-columns:1fr 1fr 1fr auto}.ka-online-lb-profile input,.ka-online-lb-filters select,.ka-online-lb-profile button,.ka-online-lb-filters button{min-height:42px}
     .ka-online-lb-status{min-height:24px;color:#9fb4c5;font-size:12px}.ka-online-lb-status[data-tone=pass]{color:#7dffb2}.ka-online-lb-status[data-tone=offline]{color:#ffbb6a}
     .ka-online-lb-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.12);border-radius:10px}.ka-online-lb-table{width:100%;border-collapse:collapse;min-width:790px}.ka-online-lb-table th,.ka-online-lb-table td{padding:9px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}.ka-online-lb-table th{position:sticky;top:0;background:#181b22;color:#ffc66b}.ka-online-lb-empty{text-align:center;padding:28px;color:#9fb4c5}.ka-online-lb-note{font-size:12px;color:#9fb4c5}
-    @media(max-width:700px){.ka-online-lb-profile,.ka-online-lb-filters{grid-template-columns:1fr}.ka-online-lb-shell{padding:14px}}
+    @media(max-width:700px){.ka-online-lb-profile,.ka-online-lb-filters{grid-template-columns:1fr}}
   `;
   document.head.append(style);
 
-  const home = document.querySelector('[data-menu-screen="home"]') || document.getElementById('menu') || document.body;
-  const button = make('button', { type: 'button', id: 'ka-online-leaderboards-open', class: 'ka-link-btn ka-player-data-open', style: 'width:100%;text-align:center;' }, 'ONLINE LEADERBOARDS');
-  const homeStatus = make('div', { id: 'ka-online-lb-home-status' }, pending().length
-    ? `${pending().length} online score submission${pending().length === 1 ? '' : 's'} queued.`
-    : 'Complete a single-player run to submit an online score.');
-  home.append(button, homeStatus);
-  restoreHomeStatus();
-
-  const dialog = make('dialog', { id: 'ka-online-leaderboards-dialog', 'aria-labelledby': 'ka-online-lb-title' });
+  const mount = document.getElementById('ka-online-leaderboards-mount') || document.getElementById('menu') || document.body;
+  const page = make('section', { id: 'ka-online-leaderboards-page', 'aria-labelledby': 'ka-online-lb-title' });
   const shell = make('div', { class: 'ka-online-lb-shell' });
   const head = make('div', { class: 'ka-online-lb-head' });
-  head.append(
-    make('h2', { id: 'ka-online-lb-title' }, 'ONLINE LEADERBOARDS'),
-    make('button', { type: 'button', id: 'ka-online-lb-close', class: 'ka-online-lb-close', 'aria-label': 'Close online leaderboards' }, '×')
-  );
+  head.append(make('h2', { id: 'ka-online-lb-title' }, 'ONLINE RANKINGS'));
+
+  const homeStatus = make('div', { id: 'ka-online-lb-home-status', class: 'ka-online-lb-status', 'aria-live': 'polite' }, pending().length
+    ? `${pending().length} online score submission${pending().length === 1 ? '' : 's'} queued.`
+    : 'Complete a single-player run to submit an online score.');
 
   const profile = make('div', { class: 'ka-online-lb-profile' });
   const nameInput = make('input', { id: 'ka-online-lb-name', maxlength: '24', 'aria-label': 'Leaderboard display name', placeholder: 'Display name' });
@@ -513,21 +505,11 @@ function buildUi() {
   table.append(thead, tbody);
   wrap.append(table);
 
-  shell.append(
-    head,
-    profile,
-    filters,
-    status,
-    wrap,
-    make('p', { class: 'ka-online-lb-note' }, 'Single-player runs only. Failed submissions are queued automatically. The latest completed map and difficulty open automatically.')
-  );
-  dialog.append(shell);
-  document.body.append(dialog);
+  shell.append(head, homeStatus, profile, filters, status, wrap, make('p', { class: 'ka-online-lb-note' }, 'Single-player runs only. Failed submissions are queued automatically. The latest completed map and difficulty open automatically.'));
+  page.append(shell);
+  mount.append(page);
+  restoreHomeStatus();
 
-  button.addEventListener('click', open);
-  document.getElementById('ka-online-lb-close')?.addEventListener('click', close);
-  dialog.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
-  dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });
   document.getElementById('ka-online-lb-save-name')?.addEventListener('click', () => {
     const input = document.getElementById('ka-online-lb-name');
     const name = cleanOnlineDisplayName(input?.value);
@@ -544,7 +526,6 @@ function buildUi() {
   updatePendingCount();
   render();
 }
-
 export function initOnlineLeaderboards() {
   if (typeof document === 'undefined') return;
   if (uiBound) return;

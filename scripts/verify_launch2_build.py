@@ -743,6 +743,51 @@ def main() -> None:
         if release_descriptor.get("workerChangeRequired") is not False:
             raise SystemExit("QUALITY.3 R1 descriptor must remain frontend-only")
 
+    onboarding1_r1 = manifest.get("onboarding1_r1", {})
+    if current_release.get("patch") == "onboarding1-r1-instant-quick-play-funnel":
+        if onboarding1_r1.get("patch") != current_release.get("patch"):
+            raise SystemExit("ONBOARDING.1 R1 production manifest patch mismatch")
+        for field in (
+            "one_click_quick_play",
+            "first_time_direct_deployment",
+            "grid_bunker_normal_preset",
+            "default_balanced_loadout",
+            "advanced_selections_preserved",
+            "launch_modal_auto_open_removed",
+            "first_run_field_training",
+            "post_run_discovery_guidance",
+            "deployment_failure_recovery",
+            "protocol_unchanged",
+            "frontend_only",
+            "crazygames_readiness_on_hold",
+            "android_readiness_on_hold",
+        ):
+            if onboarding1_r1.get(field) is not True:
+                raise SystemExit(f"ONBOARDING.1 R1 production policy mismatch: {field}")
+        if onboarding1_r1.get("worker_change_required") is not False:
+            raise SystemExit("ONBOARDING.1 R1 must remain frontend-only")
+        if release_descriptor.get("productVersion") != onboarding1_r1.get("product_version"):
+            raise SystemExit("ONBOARDING.1 R1 product version mismatch")
+        if release_descriptor.get("sourceBaselineSha") != onboarding1_r1.get("source_baseline_sha"):
+            raise SystemExit("ONBOARDING.1 R1 source baseline mismatch")
+        if release_descriptor.get("workerBaselineSha") != onboarding1_r1.get("worker_baseline_sha"):
+            raise SystemExit("ONBOARDING.1 R1 Worker baseline mismatch")
+        if release_descriptor.get("workerChangeRequired") is not False:
+            raise SystemExit("ONBOARDING.1 R1 descriptor must remain frontend-only")
+        for required_runtime in (
+            "js/onboarding1.js",
+            "js/onboarding1_core.js",
+            "js/loadout.js",
+            "js/launch1.js",
+            "js/main.js",
+            "index.html",
+            "css/menu.css",
+        ):
+            if not (build / required_runtime).is_file():
+                raise SystemExit(
+                    f"ONBOARDING.1 R1 production runtime file missing: {required_runtime}"
+                )
+
     quality2_r2 = manifest.get("quality2_r2", {})
     if current_release.get("patch") == "quality2-r2-consolidated-polish-certification":
         if quality2_r2.get("patch") != current_release.get("patch"):

@@ -20,7 +20,7 @@ const pvp5Runtime = fs.readFileSync(new URL('./pvp1.js', import.meta.url), 'utf8
 const pvp5Core = fs.readFileSync(new URL('./pvp5_core.js', import.meta.url), 'utf8');
 const productionRelease = createMultiplayerFrontendReleaseManifest();
 
-assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering', 'endgame1-r1-high-difficulty-operations', 'content2-r1-new-arena-enemy-expansion', 'quality2-r2-consolidated-polish-certification', 'quality3-r1-map-evolution-geometry-zero-failure'].includes(release.releaseId));
+assert.ok([PVP6_PATCH, 'social2-r1-arena-id-friend-discovery', 'net1-r1-webrtc-hybrid-transport', 'gameplay2-r1-late-round-arena-mutations', 'gameplay3-r1-interactive-evolving-maps', 'gameplay4-r1-expanded-boss-encounters', 'gameplay5-r1-narrative-operations', 'gameplay6-r1-world-progression', 'gameplay7-r1-dynamic-campaign-faction-control', 'loadout2-r1-weapon-mastery-operator-specialization-melee', 'quality2-r1-consolidated-low-gpu-rendering', 'endgame1-r1-high-difficulty-operations', 'content2-r1-new-arena-enemy-expansion', 'quality2-r2-consolidated-polish-certification', 'quality3-r1-map-evolution-geometry-zero-failure', 'onboarding1-r1-instant-quick-play-funnel'].includes(release.releaseId));
 if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, PVP6_PRODUCT_VERSION);
   assert.equal(release.releaseSequence, PVP6_RELEASE_SEQUENCE);
@@ -108,6 +108,14 @@ if (release.releaseId === PVP6_PATCH) {
   assert.equal(release.productVersion, '1.13.1-quality3-r1');
   assert.equal(release.releaseSequence, 2026072304);
   assert.equal(release.sourceBaselineSha, '0a1533493e3e3a5d86db698be3972510ef41c5b1');
+  assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
+  assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
+  assert.equal(release.workerChangeRequired, false);
+  assert.equal(release.certificationStatus, 'LOCAL_CANDIDATE_NOT_COMMITTED_NOT_DEPLOYED');
+} else if (release.releaseId === 'onboarding1-r1-instant-quick-play-funnel') {
+  assert.equal(release.productVersion, '1.14.0-onboarding1-r1');
+  assert.equal(release.releaseSequence, 2026072401);
+  assert.equal(release.sourceBaselineSha, 'fea265003ac0625c8f4268f237746abc6a2043fd');
   assert.equal(release.workerBaselineSha, 'a37d98313472d9f3706a7af2ce10810404b78607');
   assert.equal(release.baselineWorkerVersionId, '6243d37c-191f-4a06-b6a7-b2e60c2a768a');
   assert.equal(release.workerChangeRequired, false);

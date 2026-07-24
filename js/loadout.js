@@ -470,6 +470,37 @@ export function freezeActiveLoadoutForRun({
   return JSON.parse(JSON.stringify(snapshot));
 }
 
+export function freezeDefaultBalancedLoadoutForRun({
+  runId = '',
+  mapId = 'grid_bunker',
+  difficulty = 1,
+  mode = 'single',
+} = {}) {
+  const now = Date.now();
+  const defaultProfile = createDefaultLoadoutProfile({
+    now,
+    avatarProfile: currentAvatarProfile(),
+  });
+  const snapshot = createFrozenLoadoutSnapshot(
+    defaultProfile,
+    progressionProfile(),
+    { now, runId, mapId, difficulty, mode },
+  );
+  storageSet(LOADOUT_RUN_SNAPSHOT_KEY, JSON.stringify(snapshot), true);
+  applyAvatarProfile(snapshot.avatar);
+  applyCosmetics(snapshot.cosmetics);
+  if (root) {
+    root.dataset.kaRunLoadout = snapshot.loadoutId;
+    root.dataset.kaRunLoadoutPolicy = 'onboarding-default-balanced-pve';
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ka:loadout-run-frozen', {
+      detail: { ...snapshot, onboardingDefault: true },
+    }));
+  }
+  return JSON.parse(JSON.stringify(snapshot));
+}
+
 export function clearFrozenLoadoutForRun() {
   storageRemove(LOADOUT_RUN_SNAPSHOT_KEY, true);
   if (root) {
@@ -835,6 +866,7 @@ if (typeof window !== 'undefined') {
     duplicateAvatarPreset,
     deleteAvatarPreset,
     freezeForRun: freezeActiveLoadoutForRun,
+    freezeDefaultBalancedForRun: freezeDefaultBalancedLoadoutForRun,
     getRunSnapshot: getFrozenLoadoutForRun,
     clearRunSnapshot: clearFrozenLoadoutForRun,
     reset: resetLoadoutProfile,

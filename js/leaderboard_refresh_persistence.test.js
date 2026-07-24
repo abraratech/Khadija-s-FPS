@@ -89,10 +89,17 @@ assert.equal(restoredQueue?.queued, true);
 assert.equal(restoredQueue?.restored, true);
 assert.match(restoredQueue?.message || '', /^ONLINE SCORE QUEUED/);
 
-for (const file of ['local_leaderboards.js', 'online_leaderboards.js', 'career_achievements.js']) {
+const pageContracts = {
+  'local_leaderboards.js': ['ka-local-leaderboards-page', 'ka-local-leaderboards-mount'],
+  'online_leaderboards.js': ['ka-online-leaderboards-page', 'ka-online-leaderboards-mount'],
+  'career_achievements.js': ['ka-career-page', 'ka-career-page-mount']
+};
+for (const [file, [pageId, mountId]] of Object.entries(pageContracts)) {
   const source = readFileSync(new URL(`./${file}`, import.meta.url), 'utf8');
-  assert.match(source, /class: 'ka-link-btn ka-player-data-open'/, `${file} menu button must use the game UI class`);
-  assert.match(source, /style: 'width:100%;text-align:center;'/, `${file} menu button must fill the menu column`);
+  assert.ok(source.includes(pageId), `${file} must render a full in-page section`);
+  assert.ok(source.includes(mountId), `${file} must use the approved section mount`);
+  assert.doesNotMatch(source, /createElement\(['"]dialog['"]\)|make(?:Element)?\(['"]dialog['"]/, `${file} must not create a modal dialog`);
+  assert.doesNotMatch(source, /data-rail-action/, `${file} must not append duplicate rail actions`);
 }
 
 assert.equal(requests.filter((path) => path === '/leaderboards/challenge').length, 1);

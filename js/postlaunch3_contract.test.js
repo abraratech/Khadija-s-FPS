@@ -7,7 +7,8 @@ const lobbyUi = read('./multiplayer/lobby_ui.js');
 const matchmaking = read('./multiplayer/matchmaking_core.js');
 const release = JSON.parse(read('../multiplayer-release.json'));
 
-assert.match(index, /ONLINE READY/);
+assert.match(index, /id="startup-status">STARTING GAME/);
+assert.doesNotMatch(index, />ONLINE READY</);
 assert.match(index, /Khadija's Arena · Version 1\.0/);
 assert.doesNotMatch(index, /BUILD ONLINE/);
 assert.doesNotMatch(index, /Khadija Protocol/i);

@@ -1488,6 +1488,20 @@
   }
 </style>
 
+
+<style id="startup-readiness-style">
+#startup-notice{flex-shrink:0;max-height:40vh;overflow:auto;padding:12px 16px;margin-bottom:12px;border:1px solid #e4b85b;border-radius:12px;background:#17212b;color:#f5f8fc}
+#startup-notice[hidden],#startup-retry[hidden]{display:none}
+#startup-notice p{margin:6px 0;font-size:13px;line-height:1.5}
+#startup-retry{padding:8px 14px;margin-top:6px;border:1px solid #79ecff;border-radius:7px;background:#113644;color:#fff;cursor:pointer}
+[data-onboarding1-quick-play]:disabled,#start-btn:disabled{opacity:.55;cursor:wait;transform:none}
+html[data-startup-state="failed"] [data-onboarding1-quick-play]:disabled{cursor:not-allowed}
+html:not([data-startup-state="ready"]) .ka-online-pulse{background:#e4b85b;box-shadow:none;animation:none}
+.ka-clean-profile-strip{color:#edf7fc}
+.ka-clean-profile-strip small{color:#9bb1bd}
+.ka-clean-profile-strip:focus-visible,#startup-retry:focus-visible{outline:2px solid #79ecff;outline-offset:3px}
+@media(min-width:921px){.ka-rail-home-button .ka-rail-title{font-size:32px;line-height:1;letter-spacing:-1px}}
+</style>
 </head>
 <body>
 <div id="portrait-warning">
@@ -1659,17 +1673,22 @@
 </nav>
 <div class="ka-rail-footer">
 <span class="ka-online-pulse"></span>
-<div><b>ONLINE READY</b><small>PC · Controller · Mobile</small></div>
+<div><b id="startup-status">STARTING GAME</b><small>PC · Controller · Mobile</small></div>
 </div>
 </aside>
 <main class="ka-menu-main">
+<section id="startup-notice" role="status" aria-live="polite">
+<strong id="startup-title">Preparing the game</strong>
+<p id="startup-message">Loading the components needed to play. Play buttons become available when startup finishes.</p>
+<button id="startup-retry" type="button" hidden>Reload game</button>
+</section>
 <div class="ka-topline">
 <div class="ka-section-context">
 <div class="ka-eyebrow" id="ka-section-kicker">Command dashboard</div>
 <strong id="ka-section-title">Welcome Back, Survivor</strong>
 </div>
 <div class="ka-top-actions">
-<div class="ka-top-profile"><b>FIELD SURVIVOR</b><small>Profile and online services ready</small></div>
+<div class="ka-top-profile"><b>FIELD SURVIVOR</b><small id="startup-detail">Checking game readiness…</small></div>
 <div aria-label="Deployment setup progress" class="ka-stepper" id="ka-deployment-stepper">
 <div class="ka-step active" data-step-dot="map">Arena</div>
 <div class="ka-step" data-step-dot="difficulty">Loadout</div>
@@ -1717,10 +1736,10 @@
 <div class="ka-clean-meta"><span class="ka-pill good">ACTIVE</span><span class="ka-pill">SOLO / CO-OP</span><span class="ka-pill">750 XP</span></div>
 </article>
 <article class="ka-clean-card">
-<span class="ka-card-kicker">Current priorities</span><div class="ka-clean-objectives">
-<div class="ka-clean-objective"><span>Complete an evolving-map event</span><b>1 / 3</b></div>
-<div class="ka-clean-objective"><span>Defeat an expanded boss</span><b>0 / 1</b></div>
-<div class="ka-clean-objective"><span>Secure a faction operation</span><b>2 / 4</b></div>
+<span class="ka-card-kicker">Suggested goals</span><div class="ka-clean-objectives">
+<div class="ka-clean-objective"><span>Complete an evolving-map event</span></div>
+<div class="ka-clean-objective"><span>Defeat an expanded boss</span></div>
+<div class="ka-clean-objective"><span>Secure a faction operation</span></div>
 </div>
 </article>
 </div>
@@ -1838,7 +1857,7 @@
 <button class="ka-map-card" data-difficulty="HARD" data-map="stormbreak_canal" type="button"><span class="ka-map-index">07</span>
 <div class="ka-map-thumb stormbreak-canal"></div>
 <div>
-<span class="ka-map-tag stable">CONTENT.2</span>
+<span class="ka-map-tag stable">NEW</span>
 <strong>Stormbreak Canal</strong>
 <small>Single-level flood-control nexus with pump-house flanks, unlockable floodgates, electrical traps, and specialist enemy pressure.</small>
 </div>
@@ -1875,13 +1894,13 @@
 <button class="ka-diff-card" data-diff="0.75" type="button">
 <span class="ka-card-kicker">Difficulty</span>
 <strong>Easy</strong>
-<small>Lower pressure while testing maps, controls, and mobile layout.</small>
+<small>More time to learn the arena and practice your aim.</small>
 <div class="ka-diff-line"><span>Enemy pressure</span><b>Low</b></div>
 </button>
 <button class="ka-diff-card selected" data-diff="1.0" type="button">
 <span class="ka-card-kicker">Recommended</span>
 <strong>Normal</strong>
-<small>Balanced wave survival for the current procedural zombie system.</small>
+<small>Balanced enemy pressure for a standard survival run.</small>
 <div class="ka-diff-line"><span>Enemy pressure</span><b>Standard</b></div>
 </button>
 <button class="ka-diff-card" data-diff="1.5" type="button">
@@ -3096,6 +3115,7 @@
 </div>
 <div id="lock-hint">Click to resume mouse look</div>
 <!-- Static ES-module deployment: index.html is the production public entry. -->
+<script src="js/startup_guard.js"></script>
 <script type="importmap">
     {
       "imports": {

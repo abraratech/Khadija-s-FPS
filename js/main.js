@@ -2551,3 +2551,6 @@ if (isMobile) {
 
 // LOADOUT.2 diagnostic bridge for objective attribution and live verification.
 if (typeof window !== 'undefined') window.KAGetActiveWeaponFamily = getActiveWeaponFamily;
+
+// Signal only after the entire gameplay module has initialized successfully.
+window.KAStartup?.runtimeReady();

@@ -1,3 +1,4 @@
+import { getBunkerEnvironment } from './art/surface_library.js';
 // PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/map.js
 import * as THREE from 'three';
@@ -143,21 +144,21 @@ scene.add(dirLight);
 // Each map can now control its fog, lighting, clear color, and bloom mood.
 const MAP_ENVIRONMENTS = {
   [MAP_IDS.GRID_BUNKER]: {
-  name: "Grid Bunker - Cold Lockdown",
-  fogColor: 0x06111b,
-  fogDensity: 0.020,
-  clearColor: 0x020609,
+  name: "Grid Bunker - Containment Works",
+  fogColor: 0x17262c,
+  fogDensity: 0.013,
+  clearColor: 0x0c151a,
 
-  ambientColor: 0x7fcfff,
-  ambientIntensity: 0.76,
+  ambientColor: 0xc0d1d5,
+  ambientIntensity: 0.90,
 
-  dirColor: 0xb7e8ff,
-  dirIntensity: 0.72,
+  dirColor: 0xffddae,
+  dirIntensity: 1.35,
   dirPosition: new THREE.Vector3(18, 30, -16),
 
-  bloomStrength: 0.78,
-  bloomRadius: 0.36,
-  bloomThreshold: 0.80
+  bloomStrength: 0.34,
+  bloomRadius: 0.24,
+  bloomThreshold: 0.92
 },
 
   [MAP_IDS.INDUSTRIAL_YARD]: {
@@ -295,6 +296,8 @@ let gameplay2LightingState = Object.freeze({
 
 function applyGameplay2LightingOverlay({ applyLights = true } = {}) {
   const tuning = gameplay2LightingState;
+  // The reflection fill follows blackout lighting instead of illuminating it away.
+  scene.environmentIntensity = 0.65 * (tuning.blackout ? Math.max(0.12, Number(tuning.ambientScale) || 1) : 1);
   if (!tuning.blackout) return;
 
   const profile = getGraphicsProfile();
@@ -477,6 +480,11 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
 
   const effectiveMode = resolveGraphicsQuality(graphicsQuality);
   const profile = GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
+
+  // Reflections are scoped to the bunker and omitted on Low to preserve its budget.
+  scene.environment = currentMapId === MAP_IDS.GRID_BUNKER && effectiveMode !== 'low'
+    ? getBunkerEnvironment() : null;
+  scene.environmentIntensity = 0.65;
 
   const targetPixelRatio = Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap);
   if (Math.abs(renderer.getPixelRatio() - targetPixelRatio) > 0.001) {

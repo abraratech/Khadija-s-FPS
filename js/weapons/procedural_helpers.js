@@ -1,5 +1,7 @@
 // js/weapons/procedural_helpers.js
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { applySurface } from '../art/surface_library.js';
 
 export const WEAPON_VISUAL_PATCH = 'vis8-r1-1-weapon-silhouette-hand-integration';
 
@@ -12,6 +14,15 @@ function authoredBoxGeometry(size, name = '') {
   const micro = Math.min(sx, sy, sz) <= 0.011 || Math.max(sx, sy, sz) < 0.055;
   const keepSquare = /(?:accent|light|dot|notch|rail_|rib_|serration|tooth|trigger|pin|port|shell|brass|muzzleFlash)/i.test(String(name));
   if (micro || keepSquare) return new THREE.BoxGeometry(sx, sy, sz);
+
+  // Rounded edges catch light; cache one geometry per size instead of per weapon instance.
+  if (/^(pistol|rifle)_/.test(name)) {
+    const key = `rounded:${sx}:${sy}:${sz}`;
+    if (!AUTHORED_BOX_GEOMETRY_CACHE.has(key)) {
+      AUTHORED_BOX_GEOMETRY_CACHE.set(key, new RoundedBoxGeometry(sx, sy, sz, 2, Math.min(sx, sy, sz) * 0.09));
+    }
+    return AUTHORED_BOX_GEOMETRY_CACHE.get(key);
+  }
 
   const ratio = /(?:grip|stock|magazine|mag_base|handguard|pump|cheek)/i.test(String(name)) ? 0.22 : 0.14;
   const cut = Math.min(sx, sy) * ratio * 0.5;
@@ -56,7 +67,9 @@ export function makeStandardMaterial({
   metalness = 0.2,
   roughness = 0.55,
   emissive = 0x000000,
-  emissiveIntensity = 0
+  emissiveIntensity = 0,
+  surface = null,
+  smooth = false
 } = {}) {
   const material = new THREE.MeshStandardMaterial({
     color,
@@ -64,9 +77,10 @@ export function makeStandardMaterial({
     roughness,
     emissive,
     emissiveIntensity,
-    flatShading: true,
-    envMapIntensity: 0.30
+    flatShading: !smooth,
+    envMapIntensity: surface ? 0.85 : 0.30
   });
+  if (surface) applySurface(material, surface, { bumpScale: 0.00045 });
   material.needsUpdate = true;
   return material;
 }
@@ -142,7 +156,9 @@ export function addTacticalHandRig(group, {
   markProceduralHandObject(rig, defaultVisible);
   rig.visible = defaultVisible;
 
+  const detailedSurface = /^(pistol|rifle)_/.test(name);
   const gloveMat = makeStandardMaterial({
+    surface: detailedSurface ? 'rubber' : null, smooth: detailedSurface,
     color: upgraded ? 0x171114 : 0x101519,
     metalness: 0.04,
     roughness: 0.86
@@ -153,6 +169,7 @@ export function addTacticalHandRig(group, {
     roughness: 0.54
   });
   const sleeveMat = makeStandardMaterial({
+    surface: detailedSurface ? 'fabric' : null, smooth: detailedSurface,
     color: upgraded ? 0x3a2028 : 0x27323a,
     metalness: 0.02,
     roughness: 0.92

@@ -13,19 +13,19 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'RIFLE';
-  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.visualPatch = 'visual1-textured-beveled-weapons';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.850 });
   group.userData.thirdPersonMuzzleSize = 0.170;
 
-  const receiverColor = upgraded ? 0x542a32 : 0x887453;
-  const woodColor = upgraded ? 0x40232a : 0x40382d;
+  const receiverColor = upgraded ? 0x542a32 : 0x8a938b;
+  const woodColor = upgraded ? 0x40232a : 0x59615b;
   const darkColor = 0x07090b;
   const magColor = upgraded ? 0x301822 : 0x20262a;
   const accentColor = upgraded ? 0xff4963 : 0xe6a13a;
   const skinColor = 0xd2b48c;
 
-  const receiverMat = makeStandardMaterial({
+  const receiverMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: receiverColor,
     metalness: 0.30,
     roughness: 0.46,
@@ -33,9 +33,9 @@ export function createProceduralRifleMesh({ upgraded = false } = {}) {
     emissiveIntensity: upgraded ? 0.18 : 0
   });
 
-  const woodMat = makeStandardMaterial({ color: woodColor, metalness: 0.04, roughness: 0.82 });
-  const darkMat = makeStandardMaterial({ color: darkColor, metalness: 0.24, roughness: 0.60 });
-  const magMat = makeStandardMaterial({ color: magColor, metalness: 0.18, roughness: 0.66 });
+  const woodMat = makeStandardMaterial({ surface: 'rubber', smooth: true, color: woodColor, metalness: 0.04, roughness: 0.82 });
+  const darkMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: darkColor, metalness: 0.24, roughness: 0.60 });
+  const magMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: magColor, metalness: 0.18, roughness: 0.66 });
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,

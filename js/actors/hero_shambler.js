@@ -1,6 +1,7 @@
 // js/actors/hero_shambler.js
 // VIS.6 R2B.1 — Shambler render-budget performance hotfix.
 import * as THREE from 'three';
+import { getSurface } from '../art/surface_library.js';
 
 const GEOMETRY_CACHE = new Map();
 
@@ -16,7 +17,9 @@ function makeMaterial(color, options = {}) {
     metalness: options.metalness ?? 0.02,
     emissive: options.emissive ?? 0x000000,
     emissiveIntensity: options.emissiveIntensity ?? 0,
-    flatShading: true,
+    flatShading: options.flatShading ?? true,
+    ...(options.surface ? getSurface(options.surface) : {}),
+    bumpScale: options.surface === 'skin' ? 0.004 : 0.008,
     envMapIntensity: options.envMapIntensity ?? 0.32,
     transparent: options.transparent ?? false,
     opacity: options.opacity ?? 1,
@@ -445,7 +448,7 @@ export function createHeroShamblerVisual(options = {}) {
   root.userData.basePosition = root.position.clone();
   root.userData.baseRotation = root.rotation.clone();
   root.userData.baseScale = root.scale.clone();
-  root.userData.visualPatch = 'vis6-r2f-enemy-family-cohesion';
+  root.userData.visualPatch = 'visual1-shambler-material-separation';
   root.userData.motionPhase = Number(options.motionPhase) || Math.random() * Math.PI * 2;
   root.userData.motionSeed = Number.isFinite(Number(options.motionSeed))
     ? Number(options.motionSeed)
@@ -454,18 +457,18 @@ export function createHeroShamblerVisual(options = {}) {
   root.userData.renderTier = normalizeHeroRenderTier(options.renderTier);
 
   const materials = {
-    skin: makeMaterial(0x778173, { roughness: 0.94, envMapIntensity: 0.18 }),
+    skin: makeMaterial(0xa5ab91, { surface: 'skin', flatShading: false, roughness: 0.86, envMapIntensity: 0.24 }),
     skinShadow: makeMaterial(0x465049, { roughness: 0.97, envMapIntensity: 0.10 }),
-    deadSkin: makeMaterial(0x8d8877, { roughness: 0.98, envMapIntensity: 0.10 }),
+    deadSkin: makeMaterial(0xb1a38b, { surface: 'skin', flatShading: false, roughness: 0.92, envMapIntensity: 0.18 }),
     wound: makeMaterial(0x3d090b, { roughness: 0.88, emissive: 0x120102, emissiveIntensity: 0.045 }),
     freshWound: makeMaterial(0x5b1113, { roughness: 0.76, emissive: 0x1a0203, emissiveIntensity: 0.07 }),
     bone: makeMaterial(0xd0c59e, { roughness: 0.76 }),
-    cloth: makeMaterial(0x252d2d, { roughness: 0.99, envMapIntensity: 0.10 }),
+    cloth: makeMaterial(0x68776c, { surface: 'fabric', roughness: 0.95, envMapIntensity: 0.16 }),
     clothDark: makeMaterial(0x111718, { roughness: 1.0, envMapIntensity: 0.08 }),
-    clothAccent: makeMaterial(0x344044, { roughness: 0.96, envMapIntensity: 0.14 }),
+    clothAccent: makeMaterial(0x879289, { surface: 'fabric', roughness: 0.92, envMapIntensity: 0.20 }),
     hazard: makeMaterial(0xb47728, { roughness: 0.74, metalness: 0.08, envMapIntensity: 0.24 }),
     rubber: makeMaterial(0x0b0e0f, { roughness: 0.92, envMapIntensity: 0.08 }),
-    pants: makeMaterial(0x1a2022, { roughness: 0.99, envMapIntensity: 0.08 }),
+    pants: makeMaterial(0x3e4a47, { surface: 'fabric', roughness: 0.97, envMapIntensity: 0.12 }),
     leather: makeMaterial(0x1d1816, { roughness: 0.88, envMapIntensity: 0.16 }),
     metal: makeMaterial(0x394347, { roughness: 0.50, metalness: 0.45, envMapIntensity: 0.50 }),
     socket: makeMaterial(0x030607, { roughness: 1.0, envMapIntensity: 0.0 }),

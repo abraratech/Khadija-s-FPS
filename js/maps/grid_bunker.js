@@ -4,16 +4,19 @@
 // remain unchanged while the bunker receives a cold containment presentation.
 
 import * as THREE from 'three';
+import { applySurface, getSurface, getSoftPoolMask } from '../art/surface_library.js';
 import { createMapFloor, gridTileToWorld } from './map_helpers.js';
 
-const ART_PATCH = 'art3-grid-bunker-r1';
+const ART_PATCH = 'visual1-grid-bunker-material-lighting';
 const MATERIALS = new Map();
 const GEOMETRIES = new Map();
-let bunkerFloorTexture = null;
 
 function material(key, options) {
   if (!MATERIALS.has(key)) {
-    MATERIALS.set(key, new THREE.MeshStandardMaterial(options));
+    const mat = new THREE.MeshStandardMaterial(options);
+    if (key === 'bunker-wall-panel') applySurface(mat, 'panel', { bumpScale: .025 });
+    else if (/frame|beam|fixture|pipe|housing/.test(key)) applySurface(mat, 'metal', { bumpScale: .012 });
+    MATERIALS.set(key, mat);
   }
   return MATERIALS.get(key);
 }
@@ -48,64 +51,6 @@ function planeGeometry(w, h) {
     GEOMETRIES.set(key, new THREE.PlaneGeometry(w, h));
   }
   return GEOMETRIES.get(key);
-}
-
-function createBunkerFloorTexture() {
-  if (bunkerFloorTexture) return bunkerFloorTexture;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#101820';
-  ctx.fillRect(0, 0, 256, 256);
-
-  ctx.strokeStyle = 'rgba(95, 132, 154, 0.24)';
-  ctx.lineWidth = 2;
-  for (let x = 0; x <= 256; x += 64) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, 256);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= 256; y += 64) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(256, y);
-    ctx.stroke();
-  }
-
-  let seed = 0x42554e4b;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 0xffffffff;
-  };
-
-  for (let i = 0; i < 1450; i++) {
-    const shade = 14 + Math.floor(random() * 34);
-    ctx.fillStyle = `rgba(${shade},${shade + 7},${shade + 12},${0.10 + random() * 0.28})`;
-    const size = random() > 0.93 ? 3 : 1;
-    ctx.fillRect(random() * 256, random() * 256, size, size);
-  }
-
-  ctx.strokeStyle = 'rgba(3, 6, 8, 0.60)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 15; i++) {
-    const x = random() * 256;
-    const y = random() * 256;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + 12 + random() * 40, y - 10 + random() * 20);
-    ctx.stroke();
-  }
-
-  bunkerFloorTexture = new THREE.CanvasTexture(canvas);
-  bunkerFloorTexture.wrapS = THREE.RepeatWrapping;
-  bunkerFloorTexture.wrapT = THREE.RepeatWrapping;
-  bunkerFloorTexture.repeat.set(9, 9);
-  bunkerFloorTexture.colorSpace = THREE.SRGBColorSpace;
-  return bunkerFloorTexture;
 }
 
 function createArtRoot(context, name, minGraphicsQuality = 'medium') {
@@ -171,6 +116,7 @@ function addFloorPanel(root, name, x, z, w, d, color, opacity = 0.22, rotationY 
 function addLightPool(root, name, x, z, radius, color, opacity = 0.13) {
   const poolMaterial = basicMaterial(`pool:${color}:${opacity}`, {
     color,
+    alphaMap: getSoftPoolMask(),
     transparent: true,
     opacity,
     depthWrite: false,
@@ -304,9 +250,9 @@ function addExposedWallFace(root, row, col, face, tileSize, wallHeight, tile) {
   );
 
   const panel = material('bunker-wall-panel', {
-    color: 0x18232d,
-    roughness: 0.62,
-    metalness: 0.48
+    color: 0xc4c9c3,
+    roughness: 0.78,
+    metalness: 0.18
   });
   const frame = material('bunker-wall-frame', {
     color: 0x293843,
@@ -480,9 +426,9 @@ function addContainmentLighting(root) {
     metalness: 0.74
   });
   const cyan = material('bunker-light-cyan', {
-    color: 0x74e9ff,
-    emissive: 0x2ec7ff,
-    emissiveIntensity: 3.2,
+    color: 0xd5e9e8,
+    emissive: 0xb3d9df,
+    emissiveIntensity: 1.7,
     roughness: 0.16,
     metalness: 0.04
   });
@@ -501,10 +447,10 @@ function addContainmentLighting(root) {
   lights.forEach(([x, z, rotationY], index) => {
     addVisualBox(root, `bunker_light_fixture_${index}`, x, 4.24, z, 3.8, 0.18, 0.42, fixture, { rotationY });
     addVisualBox(root, `bunker_light_glow_${index}`, x, 4.12, z, 3.25, 0.05, 0.14, cyan, { rotationY });
-    addLightPool(root, `bunker_light_pool_${index}`, x, z, 5.2, 0x37c9ff, 0.10);
+    addLightPool(root, `bunker_light_pool_${index}`, x, z, 5.2, index % 2 ? 0xf2c990 : 0xa9d5e4, 0.12);
 
     if (index < 4) {
-      const light = new THREE.PointLight(0x55d9ff, 9.5, 18, 2.1);
+      const light = new THREE.PointLight(index % 2 ? 0xffd1a0 : 0xb3dfed, 12.0, 18, 2.0);
       light.position.set(x, 3.85, z);
       light.castShadow = false;
       addArtObject(root, light, `bunker_point_light_${index}`);
@@ -572,7 +518,7 @@ function addGridBunkerDressing(context, tileSize, wallHeight) {
   const cyanLine = material('bunker-guide-cyan', {
     color: 0x3edcff,
     emissive: 0x109fd2,
-    emissiveIntensity: 2.2,
+    emissiveIntensity: 0.8,
     roughness: 0.20,
     metalness: 0.05
   });
@@ -618,9 +564,10 @@ function addGridBunkerDressing(context, tileSize, wallHeight) {
   addPipeRun(high, 'bunker_pipe_east', 23.72, 3.54, 0, 38, Math.PI / 2, 0x31535f);
 
   const puddle = basicMaterial('bunker-puddle', {
-    color: 0x1d9bc6,
+    color: 0x91b8c0,
+    alphaMap: getSoftPoolMask(),
     transparent: true,
-    opacity: 0.13,
+    opacity: 0.08,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   });
@@ -630,7 +577,10 @@ function addGridBunkerDressing(context, tileSize, wallHeight) {
     [-20, 10, 5.4, 2.1, 0.46],
     [20, -9, 5.8, 2.2, -0.35]
   ].forEach(([x, z, w, d, rotation], index) => {
-    addVisualBox(high, `bunker_puddle_${index}`, x, 0.041, z, w, 0.015, d, puddle, { rotationY: rotation });
+    const patch = new THREE.Mesh(planeGeometry(w, d), puddle);
+    patch.rotation.set(-Math.PI / 2, 0, rotation);
+    patch.position.set(x, 0.041, z);
+    addArtObject(high, patch, `bunker_puddle_${index}`);
   });
 }
 
@@ -657,12 +607,13 @@ export function buildGridBunker(context) {
   const gridRows = GRID_BUNKER_LAYOUT.length;
   const gridCols = GRID_BUNKER_LAYOUT[0].length;
   const floorMaterial = new THREE.MeshPhysicalMaterial({
-    color: 0x16212a,
-    map: createBunkerFloorTexture(),
-    roughness: 0.54,
-    metalness: 0.12,
-    clearcoat: 0.42,
-    clearcoatRoughness: 0.36
+    color: 0xc6cecb,
+    ...getSurface('floor', 15),
+    bumpScale: 0.035,
+    roughness: 0.86,
+    metalness: 0.10,
+    clearcoat: 0.16,
+    clearcoatRoughness: 0.42
   });
   const floorMesh = createMapFloor(
     { scene, mapMeshes },

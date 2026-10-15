@@ -13,19 +13,19 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
   const group = new THREE.Group();
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'PISTOL';
-  group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.visualPatch = 'visual1-textured-beveled-weapons';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -0.336 });
   group.userData.thirdPersonMuzzleSize = 0.125;
 
-  const slideColor = upgraded ? 0xc58b42 : 0x9a8765;
+  const slideColor = upgraded ? 0xc58b42 : 0x88949c;
   const frameColor = upgraded ? 0x34202d : 0x20272b;
-  const gripColor = upgraded ? 0x512d22 : 0x332d25;
+  const gripColor = upgraded ? 0x512d22 : 0x3f4749;
   const darkColor = 0x07090b;
   const accentColor = upgraded ? 0xff5b78 : 0xe9a43a;
   const skinColor = 0xd2b48c;
 
-  const slideMat = makeStandardMaterial({
+  const slideMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: slideColor,
     metalness: 0.42,
     roughness: 0.34,
@@ -33,19 +33,19 @@ export function createProceduralPistolMesh({ upgraded = false } = {}) {
     emissiveIntensity: upgraded ? 0.18 : 0
   });
 
-  const frameMat = makeStandardMaterial({
+  const frameMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: frameColor,
     metalness: 0.20,
     roughness: 0.58
   });
 
-  const gripMat = makeStandardMaterial({
+  const gripMat = makeStandardMaterial({ surface: 'rubber', smooth: true,
     color: gripColor,
     metalness: 0.05,
     roughness: 0.78
   });
 
-  const darkMat = makeStandardMaterial({
+  const darkMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: darkColor,
     metalness: 0.24,
     roughness: 0.62

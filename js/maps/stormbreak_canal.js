@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // js/maps/stormbreak_canal.js
 // CONTENT.2 R1 — Stormbreak Canal, a single-level flood-control arena.
 
@@ -139,6 +140,8 @@ export function buildStormbreakCanal(context) {
   [[-18, -34], [-7, -34], [18, 34], [7, 34]].forEach(([x, z]) => spawn(context, x, z, true));
 
   [[-15, -7], [15, 7], [-15, 7], [15, -7]].forEach(([x, z]) => playerSpawn(context, x, z));
+
+  finishArenaSurfaces(context.mapMeshes);
 
   return {
     floorMesh,

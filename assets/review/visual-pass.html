@@ -1,10 +1,10 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Khadija's Arena · Visual review</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#11191d;color:#e8eeeb;font-family:system-ui,sans-serif}header{position:absolute;z-index:2;top:0;left:0;right:0;padding:22px 26px;background:linear-gradient(#10191ef2,#10191e00);pointer-events:none}small{color:#cba46e;letter-spacing:3px;font-size:10px}h1{font-weight:550;font-size:24px;margin:6px 0}p{color:#aebabc;font-size:13px;line-height:1.5;margin:5px 0}nav{display:flex;gap:7px;margin-top:16px;flex-wrap:wrap;pointer-events:auto}button{border:1px solid #546269;background:#172229e8;color:#d6dfdf;border-radius:6px;padding:10px 14px;cursor:pointer}button[aria-pressed=true]{background:#d9b982;color:#11191d;border-color:#d9b982}button:focus-visible{outline:2px solid #fff;outline-offset:3px}footer{position:absolute;bottom:0;left:0;right:0;padding:18px 26px;background:linear-gradient(transparent,#10191ef2);pointer-events:none}#stage{display:block;width:100vw;height:100vh}#error{position:absolute;z-index:5;left:5%;top:35%;width:90%;background:#30251e;padding:24px;border:1px solid #d9b982;border-radius:12px}#error[hidden]{display:none}@media(max-width:600px){header,footer{padding:16px}h1{font-size:19px}button{padding:9px 10px}}
+*{box-sizing:border-box}body{margin:0;background:#11191d;color:#e8eeeb;font-family:system-ui,sans-serif}header{position:absolute;z-index:2;top:0;left:0;right:0;padding:22px 26px;background:linear-gradient(#10191ef2,#10191e00);pointer-events:none}small{color:#cba46e;letter-spacing:3px;font-size:10px}h1{font-weight:550;font-size:24px;margin:6px 0}p{color:#aebabc;font-size:13px;line-height:1.5;margin:5px 0}nav{display:flex;gap:7px;margin-top:16px;flex-wrap:wrap;pointer-events:auto;max-height:24vh;overflow:auto}button{border:1px solid #546269;background:#172229e8;color:#d6dfdf;border-radius:6px;padding:10px 14px;cursor:pointer}button[aria-pressed=true]{background:#d9b982;color:#11191d;border-color:#d9b982}button:focus-visible{outline:2px solid #fff;outline-offset:3px}footer{position:absolute;bottom:0;left:0;right:0;padding:18px 26px;background:linear-gradient(transparent,#10191ef2);pointer-events:none}#stage{display:block;width:100vw;height:100vh}#error{position:absolute;z-index:5;left:5%;top:35%;width:90%;background:#30251e;padding:24px;border:1px solid #d9b982;border-radius:12px}#error[hidden]{display:none}@media(max-width:600px){header,footer{padding:16px}h1{font-size:19px}button{padding:9px 10px}}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.185.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.185.0/examples/jsm/"}}</script>
 </head><body>
-<header><small>KHADIJA'S ARENA / VISUAL PASS 02</small><h1 id="title">Containment Works</h1><p id="description">An asset inspection scene. Review the full game separately for combat lighting and performance.</p><nav aria-label="Review assets"><button data-scene="bunker" aria-pressed="true">Grid Bunker</button><button data-scene="yard" aria-pressed="false">Industrial Yard</button><button data-scene="pistol" aria-pressed="false">Pistol</button><button data-scene="rifle" aria-pressed="false">Rifle</button><button data-scene="smg" aria-pressed="false">SMG</button><button data-scene="shotgun" aria-pressed="false">Shotgun</button><button data-scene="sniper" aria-pressed="false">Sniper</button><button data-scene="enemy" aria-pressed="false">Shambler</button><button id="entry">Entry view</button><button id="reset">Reset view</button></nav></header>
+<header><small>KHADIJA'S ARENA / VISUAL PASS 03 · FINAL</small><h1 id="title">Containment Works</h1><p id="description">An asset inspection scene. Review the full game separately for combat lighting and performance.</p><nav aria-label="Review assets"><button data-scene="bunker" aria-pressed="true">Grid Bunker</button><button data-scene="yard" aria-pressed="false">Industrial Yard</button><button data-scene="pistol" aria-pressed="false">Pistol</button><button data-scene="rifle" aria-pressed="false">Rifle</button><button data-scene="smg" aria-pressed="false">SMG</button><button data-scene="shotgun" aria-pressed="false">Shotgun</button><button data-scene="sniper" aria-pressed="false">Sniper</button><button data-scene="enemy" aria-pressed="false">Shambler</button><button data-scene="neon" aria-pressed="false">Neon Depot</button><button data-scene="garage" aria-pressed="false">Parking Garage</button><button data-scene="hospital" aria-pressed="false">Hospital Wing</button><button data-scene="reactor" aria-pressed="false">Reactor Courtyard</button><button data-scene="canal" aria-pressed="false">Stormbreak Canal</button><button data-scene="terminal" aria-pressed="false">Crossfire Terminal</button><button data-scene="foundry" aria-pressed="false">Foundry Ring</button><button data-scene="skyline" aria-pressed="false">Skyline Relay</button><button id="entry">Entry view</button><button id="reset">Reset view</button></nav></header>
 <canvas id="stage"></canvas><section id="error" role="alert" hidden><h2>3D preview could not start</h2><p>Use a WebGL 2 capable browser with hardware acceleration enabled. This page needs to be served over HTTP or HTTPS, not opened as a local file.</p><p id="error-detail"></p></section>
 <footer><p>Drag to orbit · Scroll to zoom · Right-drag to pan</p><p id="caption">Cool painted steel, warm fixtures, weathered concrete and restrained glow.</p></footer>
 <script>
@@ -26,6 +26,16 @@ import { createProceduralRifleMesh } from '../../js/weapons/rifle.js';
 import { createHeroShamblerVisual } from '../../js/actors/hero_shambler.js';
 import { getSurface, getBunkerEnvironment, getYardEnvironment } from '../../js/art/surface_library.js';
 
+import { buildNeonDepot } from '../../js/maps/neon_depot.js';
+import { buildParkingGarage } from '../../js/maps/parking_garage.js';
+import { buildHospitalWing } from '../../js/maps/hospital_wing.js';
+import { buildReactorCourtyard } from '../../js/maps/reactor_courtyard.js';
+import { buildStormbreakCanal } from '../../js/maps/stormbreak_canal.js';
+import { buildCrossfireTerminal } from '../../js/maps/pvp_competitive_arenas.js';
+import { buildFoundryRing } from '../../js/maps/pvp_competitive_arenas.js';
+import { buildSkylineRelay } from '../../js/maps/pvp_competitive_arenas.js';
+const profiles={"neon": {"fogColor": 722714, "fogDensity": 0.017, "clearColor": 66058, "ambientColor": 8486399, "ambientIntensity": 0.78, "dirColor": 16728783, "dirIntensity": 0.72, "dirPosition": [-16.0, 28.0, 20.0]}, "garage": {"fogColor": 593170, "fogDensity": 0.02, "clearColor": 131845, "ambientColor": 9414843, "ambientIntensity": 0.84, "dirColor": 16761706, "dirIntensity": 0.74, "dirPosition": [18.0, 28.0, -20.0]}, "hospital": {"fogColor": 397327, "fogDensity": 0.029, "clearColor": 66307, "ambientColor": 7908002, "ambientIntensity": 0.74, "dirColor": 11862001, "dirIntensity": 0.46, "dirPosition": [-18.0, 26.0, 18.0]}, "reactor": {"fogColor": 267034, "fogDensity": 0.019, "clearColor": 66568, "ambientColor": 7920895, "ambientIntensity": 0.88, "dirColor": 16751170, "dirIntensity": 0.94, "dirPosition": [24.0, 32.0, -20.0]}, "canal": {"fogColor": 201754, "fogDensity": 0.018, "clearColor": 67081, "ambientColor": 8052722, "ambientIntensity": 0.84, "dirColor": 16754522, "dirIntensity": 0.86, "dirPosition": [-22.0, 30.0, 18.0]}, "terminal": {"fogColor": 463388, "fogDensity": 0.014, "clearColor": 132875, "ambientColor": 7919871, "ambientIntensity": 0.92, "dirColor": 16760945, "dirIntensity": 0.86, "dirPosition": [20.0, 32.0, -22.0]}, "foundry": {"fogColor": 1706245, "fogDensity": 0.015, "clearColor": 393729, "ambientColor": 16751464, "ambientIntensity": 0.78, "dirColor": 16765594, "dirIntensity": 0.92, "dirPosition": [-18.0, 34.0, 20.0]}, "skyline": {"fogColor": 397341, "fogDensity": 0.012, "clearColor": 66826, "ambientColor": 8047103, "ambientIntensity": 0.88, "dirColor": 14282751, "dirIntensity": 0.82, "dirPosition": [24.0, 38.0, -18.0]}};
+const arenas={neon:buildNeonDepot,garage:buildParkingGarage,hospital:buildHospitalWing,reactor:buildReactorCourtyard,canal:buildStormbreakCanal,terminal:buildCrossfireTerminal,foundry:buildFoundryRing,skyline:buildSkylineRelay};
 try {
  const renderer=new THREE.WebGLRenderer({canvas:document.getElementById('stage'),antialias:true});
  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));renderer.setSize(innerWidth,innerHeight);
@@ -37,13 +47,13 @@ try {
  const fill=new THREE.DirectionalLight(0xb7d6ed,.55);fill.position.set(-4,3,4);scene.add(fill);
  const content=new THREE.Group();scene.add(content);
  const cache=new Map();let current='';
- const labels={yard:['Industrial Yard · Blue Hour','Weathered containers, coarse asphalt, timber grain and warm floodlights.'],smg:['Compact SMG','Textured steel receiver, polymer frame and softened edges.'],shotgun:['Field Shotgun','Grained timber furniture, steel receiver and differentiated surface roughness.'],sniper:['Precision Rifle','Textured receiver, polymer stock and preserved scope clearance.'],bunker:['Containment Works','Cool painted steel, warm fixtures, weathered concrete and restrained glow.'],pistol:['Field Pistol','Beveled slide, brushed metal, textured grip and tactical gloves.'],rifle:['Service Rifle','Worn receiver, polymer furniture and differentiated surface roughness.'],enemy:['Containment Shambler','Mottled skin, woven clothing and clearer separation between body surfaces.']};
+ const labels={neon:['Neon Depot','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],garage:['Parking Garage','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],hospital:['Hospital Wing','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],reactor:['Reactor Courtyard','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],canal:['Stormbreak Canal','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],terminal:['Crossfire Terminal','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],foundry:['Foundry Ring','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],skyline:['Skyline Relay','Textured surfaces and softened atmospheric overlays. Check combat and performance in the full game.'],yard:['Industrial Yard · Blue Hour','Weathered containers, coarse asphalt, timber grain and warm floodlights.'],smg:['Compact SMG','Textured steel receiver, polymer frame and softened edges.'],shotgun:['Field Shotgun','Grained timber furniture, steel receiver and differentiated surface roughness.'],sniper:['Precision Rifle','Textured receiver, polymer stock and preserved scope clearance.'],bunker:['Containment Works','Cool painted steel, warm fixtures, weathered concrete and restrained glow.'],pistol:['Field Pistol','Beveled slide, brushed metal, textured grip and tactical gloves.'],rifle:['Service Rifle','Worn receiver, polymer furniture and differentiated surface roughness.'],enemy:['Containment Shambler','Mottled skin, woven clothing and clearer separation between body surfaces.']};
  function build(name){
   if(cache.has(name))return cache.get(name);
   let object;
-  if(name==='bunker' || name==='yard'){
+  if(name==='bunker' || name==='yard' || arenas[name]){
    object=new THREE.Group();const mapMeshes=[],walls=[];
-   const builder=name==='bunker'?buildGridBunker:buildIndustrialYard;
+   const builder=arenas[name] || (name==='bunker'?buildGridBunker:buildIndustrialYard);
    builder({scene:object,mapMeshes,walls,doors:[],spawnPoints:[],playerSpawnPoints:[],lockedSpawnPoints:[],wallTex:getSurface('panel').map,
     spawnBlock(w,h,d,x,y,z,colorOrMap,isWall,isDoor){return createMapBlock({scene:object,mapMeshes,walls},{w,h,d,x,y,z,colorOrMap,isWall,isDoor});}});
   } else if(name==='pistol')object=createProceduralPistolMesh();
@@ -55,7 +65,7 @@ try {
   object.visible=true;object.updateMatrixWorld(true);cache.set(name,object);return object;
  }
  function reset(){
-  if(current==='yard'){camera.position.set(-40,30,40);controls.target.set(0,0,0);controls.minDistance=1;controls.maxDistance=110;}
+  if(current==='yard'||arenas[current]){camera.position.set(-40,30,40);controls.target.set(0,0,0);controls.minDistance=1;controls.maxDistance=110;}
   else if(current==='bunker'){camera.position.set(-18,19,22);controls.target.set(0,0,0);controls.minDistance=1;controls.maxDistance=85;}
   else{
    const box=new THREE.Box3().setFromObject(build(current));const center=box.getCenter(new THREE.Vector3()),size=box.getSize(new THREE.Vector3());
@@ -63,18 +73,19 @@ try {
    camera.position.copy(center).add(new THREE.Vector3(-1,.50,1.1).multiplyScalar(radius*1.7));controls.minDistance=radius*.5;controls.maxDistance=radius*5;
   }controls.update();
  }
- function select(name){content.clear();content.add(build(name));current=name;scene.fog=name==='bunker'?new THREE.FogExp2(0x17262c,.013):name==='yard'?new THREE.FogExp2(0x263541,.010):null;fill.visible=name!=='bunker'&&name!=='yard';
-  scene.environment=name==='yard'?getYardEnvironment():getBunkerEnvironment();
+ function select(name){content.clear();content.add(build(name));current=name;scene.fog=name==='bunker'?new THREE.FogExp2(0x17262c,.013):name==='yard'?new THREE.FogExp2(0x263541,.010):null;fill.visible=name!=='bunker'&&name!=='yard'&&!arenas[name];
+  scene.environment=['yard','canal','skyline'].includes(name)?getYardEnvironment():getBunkerEnvironment();
   scene.background.set(name==='yard'?0x182833:0x11191d);
   ambient.color.set(name==='yard'?0xb0c6dc:0xc0d1d5);ambient.intensity=name==='yard'?1:.9;
   key.color.set(name==='yard'?0xffd4a0:0xffddae);key.position.set(...(name==='yard'?[-22,34,18]:[18,30,-16]));
+  if(profiles[name]){const p=profiles[name];scene.fog=new THREE.FogExp2(p.fogColor,p.fogDensity);scene.background.set(p.clearColor);ambient.color.set(p.ambientColor);ambient.intensity=p.ambientIntensity;key.color.set(p.dirColor);key.intensity=p.dirIntensity;key.position.set(...p.dirPosition);}else{key.intensity=1.35;}
   document.getElementById('title').textContent=labels[name][0];document.getElementById('caption').textContent=labels[name][1];
   document.getElementById('entry').hidden=name!=='bunker'&&name!=='yard';document.querySelectorAll('[data-scene]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scene===name)));reset();
  }
  document.querySelectorAll('[data-scene]').forEach(b=>b.addEventListener('click',()=>select(b.dataset.scene)));
  document.getElementById('reset').addEventListener('click',reset);
- document.getElementById('entry').addEventListener('click',()=>{if(current==='yard'){camera.position.set(-8,1.65,8);controls.target.set(5,1.65,-5);}else{camera.position.set(-21,1.65,21);controls.target.set(-21,1.65,10);}controls.update();});
+ document.getElementById('entry').addEventListener('click',()=>{if(current==='yard'||arenas[current]){camera.position.set(-8,1.65,8);controls.target.set(5,1.65,-5);}else{camera.position.set(-21,1.65,21);controls.target.set(-21,1.65,10);}controls.update();});
  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
- select('yard');renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
+ select('neon');renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
 } catch(error){window.showVisualError(error.message);}
 </script></body></html>

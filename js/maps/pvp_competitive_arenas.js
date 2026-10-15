@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // PVP.4 R1 — dedicated competitive arenas.
 // These maps use mirrored lanes, readable cover, authored team spawns, and
 // neutral-drop anchors. They remain technically playable outside PvP, but are
@@ -125,6 +126,8 @@ export function buildCrossfireTerminal(context) {
   addBeacon(context, 0, 0, 0x33d6ff, 'crossfire-central-uplink');
   addBeacon(context, -43, 0, 0xffb04a, 'crossfire-west-uplink');
   addBeacon(context, 43, 0, 0xffb04a, 'crossfire-east-uplink');
+  finishArenaSurfaces(context.mapMeshes);
+
   return { floorMesh, width, depth, navigationCellSize: 2.25 };
 }
 
@@ -159,6 +162,8 @@ export function buildFoundryRing(context) {
   addBeacon(context, 0, 0, 0xff6a32, 'foundry-core-beacon');
   addBeacon(context, -34, 0, 0x61d6ff, 'foundry-west-beacon');
   addBeacon(context, 34, 0, 0x61d6ff, 'foundry-east-beacon');
+  finishArenaSurfaces(context.mapMeshes);
+
   return { floorMesh, width, depth, navigationCellSize: 2.25 };
 }
 
@@ -189,5 +194,7 @@ export function buildSkylineRelay(context) {
   addBeacon(context, 0, 0, 0x72e4ff, 'skyline-central-relay');
   addBeacon(context, 0, -40, 0xffcc66, 'skyline-south-relay');
   addBeacon(context, 0, 40, 0xffcc66, 'skyline-north-relay');
+  finishArenaSurfaces(context.mapMeshes);
+
   return { floorMesh, width, depth, navigationCellSize: 2.25 };
 }

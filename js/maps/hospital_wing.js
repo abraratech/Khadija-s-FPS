@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // js/maps/hospital_wing.js
 // ART.5 — Hospital Wing cinematic visual-art overhaul.
 // Gameplay collision, quarantine gate, traps, barricades, and spawn coordinates
@@ -912,6 +913,8 @@ export function buildHospitalWing(context) {
     [44, 0],
     [38, -12]
   ].forEach(([x, z]) => addPoint(lockedSpawnPoints, x, z));
+
+  finishArenaSurfaces(context.mapMeshes);
 
   return {
     floorMesh,

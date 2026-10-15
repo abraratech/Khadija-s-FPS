@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // js/maps/parking_garage.js
 // ART.4 — Parking Garage cinematic visual-art overhaul.
 // Gameplay collision, security gate, traps, barricades, and spawn coordinates
@@ -832,6 +833,8 @@ export function buildParkingGarage(context) {
   ].forEach(([x, z]) => addPoint(lockedSpawnPoints, x, z));
 
   addGarageDressing(context, cars);
+
+  finishArenaSurfaces(context.mapMeshes);
 
   return {
     floorMesh,

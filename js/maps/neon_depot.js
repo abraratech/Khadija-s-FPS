@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // js/maps/neon_depot.js
 // ART.2 — Neon Depot cinematic visual-art overhaul.
 // Gameplay collision, doors, traps, barricades, and spawn coordinates remain
@@ -1508,6 +1509,8 @@ export function buildNeonDepot(context) {
   addPlayerSpawns(context);
   addZombieSpawns(context);
   addNeonDepotDressing(context);
+
+  finishArenaSurfaces(context.mapMeshes);
 
   return {
     floorMesh,

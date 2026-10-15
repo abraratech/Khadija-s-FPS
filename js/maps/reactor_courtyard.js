@@ -1,3 +1,4 @@
+import { finishArenaSurfaces } from '../art/arena_finish.js';
 // js/maps/reactor_courtyard.js
 // ART.6 — Reactor Courtyard cinematic visual-art overhaul.
 // Gameplay collision, traps, barricades, player starts, zombie spawns, and navigation
@@ -672,6 +673,8 @@ export function buildReactorCourtyard(context) {
   addPlayerSpawns(context);
   addZombieSpawns(context);
   addReactorDressing(context);
+
+  finishArenaSurfaces(context.mapMeshes);
 
   return {
     floorMesh,

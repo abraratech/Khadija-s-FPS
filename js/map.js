@@ -191,7 +191,7 @@ const MAP_ENVIRONMENTS = {
   dirIntensity: 0.72,
   dirPosition: new THREE.Vector3(-16, 28, 20),
 
-  bloomStrength: 0.96,
+  bloomStrength: 0.624,
   bloomRadius: 0.41,
   bloomThreshold: 0.76
   },
@@ -209,7 +209,7 @@ const MAP_ENVIRONMENTS = {
   dirIntensity: 0.74,
   dirPosition: new THREE.Vector3(18, 28, -20),
 
-  bloomStrength: 0.68,
+  bloomStrength: 0.442,
   bloomRadius: 0.30,
   bloomThreshold: 0.84
   },
@@ -227,7 +227,7 @@ const MAP_ENVIRONMENTS = {
   dirIntensity: 0.46,
   dirPosition: new THREE.Vector3(-18, 26, 18),
 
-  bloomStrength: 0.70,
+  bloomStrength: 0.455,
   bloomRadius: 0.32,
   bloomThreshold: 0.82
   },
@@ -245,7 +245,7 @@ const MAP_ENVIRONMENTS = {
   dirIntensity: 0.94,
   dirPosition: new THREE.Vector3(24, 32, -20),
 
-  bloomStrength: 0.78,
+  bloomStrength: 0.507,
   bloomRadius: 0.34,
   bloomThreshold: 0.81
   },
@@ -260,7 +260,7 @@ const MAP_ENVIRONMENTS = {
   dirColor: 0xffa75a,
   dirIntensity: 0.86,
   dirPosition: new THREE.Vector3(-22, 30, 18),
-  bloomStrength: 0.80,
+  bloomStrength: 0.52,
   bloomRadius: 0.35,
   bloomThreshold: 0.80
   },
@@ -268,17 +268,17 @@ const MAP_ENVIRONMENTS = {
   [MAP_IDS.CROSSFIRE_TERMINAL]: {
     name: 'Crossfire Terminal - Cold Junction', fogColor: 0x07121c, fogDensity: 0.014, clearColor: 0x02070b,
     ambientColor: 0x78d8ff, ambientIntensity: 0.92, dirColor: 0xffc071, dirIntensity: 0.86,
-    dirPosition: new THREE.Vector3(20, 32, -22), bloomStrength: 0.82, bloomRadius: 0.36, bloomThreshold: 0.79
+    dirPosition: new THREE.Vector3(20, 32, -22), bloomStrength: 0.533, bloomRadius: 0.36, bloomThreshold: 0.79
   },
   [MAP_IDS.FOUNDRY_RING]: {
     name: 'Foundry Ring - Heat Cycle', fogColor: 0x1a0905, fogDensity: 0.015, clearColor: 0x060201,
     ambientColor: 0xff9b68, ambientIntensity: 0.78, dirColor: 0xffd29a, dirIntensity: 0.92,
-    dirPosition: new THREE.Vector3(-18, 34, 20), bloomStrength: 0.88, bloomRadius: 0.37, bloomThreshold: 0.77
+    dirPosition: new THREE.Vector3(-18, 34, 20), bloomStrength: 0.572, bloomRadius: 0.37, bloomThreshold: 0.77
   },
   [MAP_IDS.SKYLINE_RELAY]: {
     name: 'Skyline Relay - Storm Roof', fogColor: 0x06101d, fogDensity: 0.012, clearColor: 0x01050a,
     ambientColor: 0x7ac9ff, ambientIntensity: 0.88, dirColor: 0xd9efff, dirIntensity: 0.82,
-    dirPosition: new THREE.Vector3(24, 38, -18), bloomStrength: 0.92, bloomRadius: 0.40, bloomThreshold: 0.76
+    dirPosition: new THREE.Vector3(24, 38, -18), bloomStrength: 0.598, bloomRadius: 0.40, bloomThreshold: 0.76
   }
 
 };
@@ -484,7 +484,7 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
   // Authored reflections are map-specific and omitted on Low.
   scene.environment = effectiveMode === 'low' ? null
     : currentMapId === MAP_IDS.GRID_BUNKER ? getBunkerEnvironment()
-    : currentMapId === MAP_IDS.INDUSTRIAL_YARD ? getYardEnvironment() : null;
+    : [MAP_IDS.INDUSTRIAL_YARD, MAP_IDS.STORMBREAK_CANAL, MAP_IDS.SKYLINE_RELAY].includes(currentMapId) ? getYardEnvironment() : getBunkerEnvironment();
   scene.environmentIntensity = 0.65;
 
   const targetPixelRatio = Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap);

@@ -1,4 +1,4 @@
-import { getBunkerEnvironment } from './art/surface_library.js';
+import { getBunkerEnvironment, getYardEnvironment } from './art/surface_library.js';
 // PERF.1 R1 — cross-platform renderer, frame-loop, and allocation optimization.
 // js/map.js
 import * as THREE from 'three';
@@ -162,21 +162,21 @@ const MAP_ENVIRONMENTS = {
 },
 
   [MAP_IDS.INDUSTRIAL_YARD]: {
-  name: "Industrial Yard - Night Shift",
-  fogColor: 0x111820,
-  fogDensity: 0.016,
-  clearColor: 0x05090d,
+  name: "Industrial Yard - Blue Hour",
+  fogColor: 0x263541,
+  fogDensity: 0.010,
+  clearColor: 0x182833,
 
-  ambientColor: 0x8ea7bd,
-  ambientIntensity: 0.86,
+  ambientColor: 0xb0c6dc,
+  ambientIntensity: 1.00,
 
-  dirColor: 0xffb36b,
-  dirIntensity: 1.18,
+  dirColor: 0xffd4a0,
+  dirIntensity: 1.35,
   dirPosition: new THREE.Vector3(-22, 34, 18),
 
-  bloomStrength: 0.62,
-  bloomRadius: 0.30,
-  bloomThreshold: 0.86
+  bloomStrength: 0.32,
+  bloomRadius: 0.24,
+  bloomThreshold: 0.92
   },
   [MAP_IDS.NEON_DEPOT]: {
   name: "Neon Depot - Storm Circuit",
@@ -481,9 +481,10 @@ export function applyGraphicsQuality(mode = graphicsQuality, options = {}) {
   const effectiveMode = resolveGraphicsQuality(graphicsQuality);
   const profile = GRAPHICS_QUALITY_PROFILES[effectiveMode] || GRAPHICS_QUALITY_PROFILES.medium;
 
-  // Reflections are scoped to the bunker and omitted on Low to preserve its budget.
-  scene.environment = currentMapId === MAP_IDS.GRID_BUNKER && effectiveMode !== 'low'
-    ? getBunkerEnvironment() : null;
+  // Authored reflections are map-specific and omitted on Low.
+  scene.environment = effectiveMode === 'low' ? null
+    : currentMapId === MAP_IDS.GRID_BUNKER ? getBunkerEnvironment()
+    : currentMapId === MAP_IDS.INDUSTRIAL_YARD ? getYardEnvironment() : null;
   scene.environmentIntensity = 0.65;
 
   const targetPixelRatio = Math.min(window.devicePixelRatio || 1, profile.pixelRatioCap);

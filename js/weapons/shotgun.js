@@ -14,6 +14,7 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SHOTGUN';
   group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.artPass = 'visual2-firearms-surfaces';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.028, z: -0.795 });
   group.userData.thirdPersonMuzzleSize = 0.225;
@@ -22,12 +23,12 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
 
   const receiverColor = upgraded ? 0x3d2648 : 0x49494a;
   const woodColor = upgraded ? 0x5b294f : 0x653b2c;
-  const darkColor = 0x07090b;
+  const darkColor = 0x252d31;
   const metalColor = upgraded ? 0x76598a : 0x74797b;
   const accentColor = upgraded ? 0xb45cff : 0xe69a37;
   const skinColor = 0xd2b48c;
 
-  const receiverMat = makeStandardMaterial({
+  const receiverMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: receiverColor,
     metalness: 0.30,
     roughness: 0.50,
@@ -35,9 +36,9 @@ export function createProceduralShotgunMesh({ upgraded = false } = {}) {
     emissiveIntensity: upgraded ? 0.18 : 0
   });
 
-  const woodMat = makeStandardMaterial({ color: woodColor, metalness: 0.04, roughness: 0.82 });
-  const darkMat = makeStandardMaterial({ color: darkColor, metalness: 0.24, roughness: 0.60 });
-  const metalMat = makeStandardMaterial({ color: metalColor, metalness: 0.38, roughness: 0.40 });
+  const woodMat = makeStandardMaterial({ surface: 'wood', smooth: true, color: woodColor, metalness: 0.04, roughness: 0.82 });
+  const darkMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: darkColor, metalness: 0.24, roughness: 0.60 });
+  const metalMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: metalColor, metalness: 0.38, roughness: 0.40 });
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,

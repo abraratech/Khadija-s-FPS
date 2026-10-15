@@ -16,7 +16,7 @@ function authoredBoxGeometry(size, name = '') {
   if (micro || keepSquare) return new THREE.BoxGeometry(sx, sy, sz);
 
   // Rounded edges catch light; cache one geometry per size instead of per weapon instance.
-  if (/^(pistol|rifle)_/.test(name)) {
+  if (/^(pistol|rifle|smg|shotgun|sniper)_/.test(name)) {
     const key = `rounded:${sx}:${sy}:${sz}`;
     if (!AUTHORED_BOX_GEOMETRY_CACHE.has(key)) {
       AUTHORED_BOX_GEOMETRY_CACHE.set(key, new RoundedBoxGeometry(sx, sy, sz, 2, Math.min(sx, sy, sz) * 0.09));
@@ -156,7 +156,7 @@ export function addTacticalHandRig(group, {
   markProceduralHandObject(rig, defaultVisible);
   rig.visible = defaultVisible;
 
-  const detailedSurface = /^(pistol|rifle)_/.test(name);
+  const detailedSurface = /^(pistol|rifle|smg|shotgun|sniper)_/.test(name);
   const gloveMat = makeStandardMaterial({
     surface: detailedSurface ? 'rubber' : null, smooth: detailedSurface,
     color: upgraded ? 0x171114 : 0x101519,

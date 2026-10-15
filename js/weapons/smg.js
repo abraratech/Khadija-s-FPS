@@ -14,6 +14,7 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SMG';
   group.userData.visualPatch = 'vis8-r1-1-weapon-silhouette-hand-integration';
+  group.userData.artPass = 'visual2-firearms-surfaces';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.030, z: -0.440 });
   group.userData.thirdPersonMuzzleSize = 0.145;
@@ -21,11 +22,11 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
   const receiverColor = upgraded ? 0x31544e : 0x505960;
   const frameColor = upgraded ? 0x17302a : 0x1b2227;
   const magColor = upgraded ? 0x173d34 : 0x20272d;
-  const darkColor = 0x050708;
+  const darkColor = 0x252e33;
   const accentColor = upgraded ? 0x22e6a7 : 0xe5a442;
   const skinColor = 0xd2b48c;
 
-  const receiverMat = makeStandardMaterial({
+  const receiverMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: receiverColor,
     metalness: 0.28,
     roughness: 0.48,
@@ -33,19 +34,19 @@ export function createProceduralSMGMesh({ upgraded = false } = {}) {
     emissiveIntensity: upgraded ? 0.12 : 0
   });
 
-  const frameMat = makeStandardMaterial({
+  const frameMat = makeStandardMaterial({ surface: 'rubber', smooth: true,
     color: frameColor,
     metalness: 0.18,
     roughness: 0.62
   });
 
-  const magMat = makeStandardMaterial({
+  const magMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: magColor,
     metalness: 0.18,
     roughness: 0.68
   });
 
-  const darkMat = makeStandardMaterial({
+  const darkMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: darkColor,
     metalness: 0.22,
     roughness: 0.60

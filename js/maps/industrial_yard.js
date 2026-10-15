@@ -4,6 +4,7 @@
 // remain aligned with the certified Industrial Yard layout.
 
 import * as THREE from 'three';
+import { applySurface, getSurface, getSoftPoolMask } from '../art/surface_library.js';
 import { createMapFloor } from './map_helpers.js';
 
 const YARD_WIDTH = 84;
@@ -11,15 +12,19 @@ const YARD_DEPTH = 84;
 const WALL_HEIGHT = 4.5;
 const WALL_THICKNESS = 2;
 
-const INDUSTRIAL_ART_PATCH = 'art1-industrial-yard-r1';
+const INDUSTRIAL_ART_PATCH = 'visual2-industrial-yard-surfaces';
 
 const MATERIALS = new Map();
 const GEOMETRIES = new Map();
-let industrialFloorTexture = null;
 
 function material(key, options) {
   if (!MATERIALS.has(key)) {
-    MATERIALS.set(key, new THREE.MeshStandardMaterial(options));
+    const mat = new THREE.MeshStandardMaterial(options);
+    if (/pallet-(wood|dark)|crate-brace/.test(key)) applySurface(mat, 'wood', {bumpScale: .018});
+    else if (/concrete/.test(key)) applySurface(mat, 'concrete', {bumpScale: .025});
+    else if (/steel|housing|pipe-dark|tank-ring/.test(key)) applySurface(mat, 'metal', {bumpScale: .009});
+    else if (/container|rust|tank-body|barrel/.test(key)) applySurface(mat, 'paint', {bumpScale: .018});
+    MATERIALS.set(key, mat);
   }
   return MATERIALS.get(key);
 }
@@ -146,53 +151,6 @@ function addVisualCylinder(context, {
   return addMapObject(context, mesh, { name });
 }
 
-function createIndustrialFloorTexture() {
-  if (industrialFloorTexture) return industrialFloorTexture;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = '#171b1e';
-  ctx.fillRect(0, 0, 256, 256);
-
-  // Deterministic aggregate/grit pattern.
-  let seed = 0x4b414931;
-  const random = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 0xffffffff;
-  };
-
-  for (let i = 0; i < 1500; i++) {
-    const shade = 24 + Math.floor(random() * 28);
-    ctx.globalAlpha = 0.18 + random() * 0.28;
-    ctx.fillStyle = `rgb(${shade},${shade + 2},${shade + 4})`;
-    const size = random() > 0.92 ? 3 : 1;
-    ctx.fillRect(random() * 256, random() * 256, size, size);
-  }
-
-  ctx.globalAlpha = 0.18;
-  ctx.strokeStyle = '#080a0b';
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 11; i++) {
-    const x = random() * 256;
-    const y = random() * 256;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + 10 + random() * 38, y - 8 + random() * 18);
-    ctx.stroke();
-  }
-
-  ctx.globalAlpha = 1;
-  industrialFloorTexture = new THREE.CanvasTexture(canvas);
-  industrialFloorTexture.wrapS = THREE.RepeatWrapping;
-  industrialFloorTexture.wrapT = THREE.RepeatWrapping;
-  industrialFloorTexture.repeat.set(10, 10);
-  industrialFloorTexture.colorSpace = THREE.SRGBColorSpace;
-  return industrialFloorTexture;
-}
-
 function addBlock(context, options) {
   const {
     w,
@@ -202,10 +160,11 @@ function addBlock(context, options) {
     z,
     color = 0x3a3a4a,
     isWall = true,
-    isDoor = false
+    isDoor = false,
+    surface = 'concrete'
   } = options;
 
-  return context.spawnBlock(
+  const block = context.spawnBlock(
     w,
     h,
     d,
@@ -216,6 +175,13 @@ function addBlock(context, options) {
     isWall,
     isDoor
   );
+  if (!isDoor && block?.mesh?.material) {
+    const mat = block.mesh.material;
+    if (mat.isMeshStandardMaterial) applySurface(mat, surface, {bumpScale: surface === 'wood' ? .018 : .025});
+    else { mat.map = getSurface(surface).map; mat.needsUpdate = true; }
+    if (surface === 'paint') mat.color.multiplyScalar(1.35);
+  }
+  return block;
 }
 
 function addZombieSpawn(context, x, z, locked = false) {
@@ -231,6 +197,7 @@ function addPlayerSpawn(context, x, z) {
 function addGroundShadow(context, name, x, z, w, d, rotationY = 0, opacity = 0.28) {
   const shadowMaterial = basicMaterial(`shadow-${opacity}`, {
     color: 0x020304,
+    alphaMap: getSoftPoolMask(),
     transparent: true,
     opacity,
     depthWrite: false,
@@ -239,17 +206,10 @@ function addGroundShadow(context, name, x, z, w, d, rotationY = 0, opacity = 0.2
     polygonOffsetUnits: -1
   });
 
-  addVisualBox(context, {
-    name,
-    x,
-    y: 0.025,
-    z,
-    w,
-    h: 0.018,
-    d,
-    material: shadowMaterial,
-    rotationY
-  });
+  const patch = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shadowMaterial);
+  patch.rotation.set(-Math.PI / 2, 0, rotationY);
+  patch.position.set(x, 0.025, z);
+  addMapObject(context, patch, {name});
 }
 
 function addHazardZone(context, name, x, z, length, width, rotationY = 0) {
@@ -425,6 +385,7 @@ function addContainer(context, x, z, w = 14, d = 4, color = 0x1f5f7a, key = 'con
     d,
     x,
     z,
+    surface: 'paint',
     color,
     isWall: true
   });
@@ -436,6 +397,7 @@ function addContainer(context, x, z, w = 14, d = 4, color = 0x1f5f7a, key = 'con
     x,
     z,
     color: new THREE.Color(color).multiplyScalar(0.62),
+    surface: 'paint',
     isWall: false
   });
 
@@ -495,6 +457,7 @@ function addCrateStack(context, x, z, key) {
     x,
     z,
     color: woodA,
+    surface: 'wood',
     isWall: true
   });
   addBlock(context, {
@@ -504,6 +467,7 @@ function addCrateStack(context, x, z, key) {
     x: x + 0.45,
     z: z - 0.35,
     color: woodB,
+    surface: 'wood',
     isWall: true
   });
 
@@ -600,7 +564,7 @@ function addFloodlightTower(context, name, x, z, facingY, includeLight) {
   const lamp = material('lamp-emissive', {
     color: 0xffc36b,
     emissive: 0xff8a1f,
-    emissiveIntensity: 3.6,
+    emissiveIntensity: 2.0,
     roughness: 0.24,
     metalness: 0.05
   });
@@ -608,24 +572,18 @@ function addFloodlightTower(context, name, x, z, facingY, includeLight) {
   addGroundShadow(context, `${name}_shadow`, x, z, 3.6, 3.6, 0, 0.30);
 
   const poolMaterial = basicMaterial('floodlight-pool', {
-    color: 0xff7a22,
+    color: 0xffd5a6,
+    alphaMap: getSoftPoolMask(),
     transparent: true,
     opacity: 0.13,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     toneMapped: false
   });
-  addVisualCylinder(context, {
-    name: `${name}_light_pool`,
-    x,
-    y: 0.035,
-    z,
-    radiusTop: 6.8,
-    radiusBottom: 6.8,
-    height: 0.022,
-    material: poolMaterial,
-    segments: 24
-  });
+  const pool = new THREE.Mesh(new THREE.PlaneGeometry(13.6, 13.6), poolMaterial);
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.set(x, 0.035, z);
+  addMapObject(context, pool, {name: `${name}_light_pool`});
 
   addVisualCylinder(context, {
     name: `${name}_pole`,
@@ -680,7 +638,7 @@ function addFloodlightTower(context, name, x, z, facingY, includeLight) {
   });
 
   if (includeLight) {
-    const light = new THREE.PointLight(0xff9b3d, 18, 27, 2.0);
+    const light = new THREE.PointLight(0xffd5a6, 18, 27, 2.0);
     light.name = `${name}_point_light`;
     light.position.set(x, 6.65, z);
     light.castShadow = false;
@@ -1167,9 +1125,10 @@ export function buildIndustrialYard(context) {
   } = context;
 
   const floorMaterial = material('yard-floor', {
-    color: 0x1f2428,
-    map: createIndustrialFloorTexture(),
-    roughness: 0.96,
+    color: 0xb6bfbc,
+    ...getSurface('asphalt', 14),
+    bumpScale: 0.025,
+    roughness: 0.94,
     metalness: 0.03
   });
 

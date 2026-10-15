@@ -68,19 +68,20 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
   group.userData.isProceduralWeapon = true;
   group.userData.weaponFamily = 'SNIPER';
   group.userData.visualPatch = 'match2-r1-sniper-ads-clearance';
+  group.userData.artPass = 'visual2-firearms-surfaces';
   group.userData.liveBrowserProfile = 'authored-low-draw';
   group.userData.thirdPersonMuzzle = Object.freeze({ x: 0.000, y: 0.034, z: -1.040 });
   group.userData.thirdPersonMuzzleSize = 0.260;
 
   const receiverColor = upgraded ? 0x2d3654 : 0x3f4a45;
   const stockColor = upgraded ? 0x291837 : 0x30352b;
-  const darkColor = 0x07090b;
+  const darkColor = 0x252d31;
   const metalColor = upgraded ? 0x566486 : 0x68736f;
   const accentColor = upgraded ? 0x72d7ff : 0xe0b154;
   const lensColor = upgraded ? 0x8af5ff : 0x7dcfe2;
   const skinColor = 0xd2b48c;
 
-  const receiverMat = makeStandardMaterial({
+  const receiverMat = makeStandardMaterial({ surface: 'metal', smooth: true,
     color: receiverColor,
     metalness: 0.32,
     roughness: 0.46,
@@ -88,9 +89,9 @@ export function createProceduralSniperMesh({ upgraded = false } = {}) {
     emissiveIntensity: upgraded ? 0.16 : 0
   });
 
-  const stockMat = makeStandardMaterial({ color: stockColor, metalness: 0.06, roughness: 0.78 });
-  const darkMat = makeStandardMaterial({ color: darkColor, metalness: 0.26, roughness: 0.60 });
-  const metalMat = makeStandardMaterial({ color: metalColor, metalness: 0.42, roughness: 0.38 });
+  const stockMat = makeStandardMaterial({ surface: 'rubber', smooth: true, color: stockColor, metalness: 0.06, roughness: 0.78 });
+  const darkMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: darkColor, metalness: 0.26, roughness: 0.60 });
+  const metalMat = makeStandardMaterial({ surface: 'metal', smooth: true, color: metalColor, metalness: 0.42, roughness: 0.38 });
   const accentMat = makeStandardMaterial({
     color: accentColor,
     emissive: accentColor,
